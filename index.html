@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia VPMS | نظام إدارة متزامن</title>
+    <title>Drmedia VPMS | شركة Dr Media</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
@@ -60,18 +60,16 @@
     </div>
 
     <script>
-        // ===================== إعدادات Firebase (استبدلها ببيانات مشروعك) =====================
-        // 🔴 🔴 🔴 هام: استبدل هذه البيانات بالبيانات التي حصلت عليها من Firebase 🔴 🔴 🔴
+        // ===================== إعدادات Firebase (تم إدخال بياناتك) =====================
         const firebaseConfig = {
-    apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
-    authDomain: "drmedia-vpms.firebaseapp.com",
-    databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
-    projectId: "drmedia-vpms",
-    storageBucket: "drmedia-vpms.firebasestorage.app",
-    messagingSenderId: "681162512380",
-    appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
-    measurementId: "G-9KHN6N33FX"
-   };
+            apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
+            authDomain: "drmedia-vpms.firebaseapp.com",
+            databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
+            projectId: "drmedia-vpms",
+            storageBucket: "drmedia-vpms.firebasestorage.app",
+            messagingSenderId: "681162512380",
+            appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
+            measurementId: "G-9KHN6N33FX"
         };
         
         // تهيئة Firebase
@@ -87,6 +85,7 @@
         let holidays = [];
         let isSyncing = false;
         let syncQueue = [];
+        let dataLoaded = false;
         
         // ===================== دوال المزامنة =====================
         function showLoading(show) {
@@ -108,75 +107,13 @@
                 database.ref('equipment').set(equipment);
                 database.ref('users').set(users);
                 database.ref('holidays').set(holidays);
-            }).finally(() => {
+            }).catch(err => console.error("Sync error:", err)).finally(() => {
                 isSyncing = false;
                 if (syncQueue.length) {
                     const next = syncQueue.shift();
                     next();
                 }
             });
-        }
-        
-        function listenToFirebase() {
-            showLoading(true);
-            
-            database.ref('bookings').on('value', (snapshot) => {
-                const newBookings = snapshot.val();
-                if (newBookings && JSON.stringify(bookings) !== JSON.stringify(newBookings)) {
-                    bookings = newBookings;
-                    if (currentUser) {
-                        updateEmployeeTotalOrders();
-                        renderAll();
-                        showToast("🔄 تم تحديث الحجوزات من جهاز آخر");
-                    }
-                }
-            });
-            
-            database.ref('employees').on('value', (snapshot) => {
-                const newEmployees = snapshot.val();
-                if (newEmployees && JSON.stringify(employees) !== JSON.stringify(newEmployees)) {
-                    employees = newEmployees;
-                    if (currentUser) {
-                        updateEmployeeTotalOrders();
-                        renderAll();
-                        showToast("🔄 تم تحديث بيانات الموظفين من جهاز آخر");
-                    }
-                }
-            });
-            
-            database.ref('equipment').on('value', (snapshot) => {
-                const newEquipment = snapshot.val();
-                if (newEquipment && JSON.stringify(equipment) !== JSON.stringify(newEquipment)) {
-                    equipment = newEquipment;
-                    if (currentUser) renderAll();
-                }
-            });
-            
-            database.ref('users').on('value', (snapshot) => {
-                const newUsers = snapshot.val();
-                if (newUsers && JSON.stringify(users) !== JSON.stringify(newUsers)) {
-                    users = newUsers;
-                    if (currentUser) {
-                        renderAll();
-                        showToast("🔄 تم تحديث بيانات المستخدمين من جهاز آخر");
-                    }
-                }
-            });
-            
-            database.ref('holidays').on('value', (snapshot) => {
-                const newHolidays = snapshot.val();
-                if (newHolidays && JSON.stringify(holidays) !== JSON.stringify(newHolidays)) {
-                    holidays = newHolidays || [];
-                    if (currentUser) renderAll();
-                }
-            });
-            
-            setTimeout(() => {
-                showLoading(false);
-                if (bookings.length === 0 && employees.length === 0) initDefaultData();
-                else updateEmployeeTotalOrders();
-                if (currentUser) renderAll();
-            }, 1000);
         }
         
         // ===================== البيانات الافتراضية =====================
@@ -237,6 +174,71 @@
             setTimeout(() => { autoDistribute(); }, 100);
         }
         
+        function listenToFirebase() {
+            showLoading(true);
+            
+            let loadedCount = 0;
+            function checkAllLoaded() {
+                loadedCount++;
+                if (loadedCount === 5) {
+                    showLoading(false);
+                    dataLoaded = true;
+                    if (bookings.length === 0 && employees.length === 0) {
+                        initDefaultData();
+                    } else {
+                        updateEmployeeTotalOrders();
+                        if (currentUser) renderAll();
+                    }
+                }
+            }
+            
+            database.ref('bookings').on('value', (snapshot) => {
+                const newBookings = snapshot.val();
+                if (newBookings) bookings = newBookings;
+                else bookings = [];
+                checkAllLoaded();
+                if (dataLoaded && currentUser) {
+                    updateEmployeeTotalOrders();
+                    renderAll();
+                }
+            });
+            
+            database.ref('employees').on('value', (snapshot) => {
+                const newEmployees = snapshot.val();
+                if (newEmployees) employees = newEmployees;
+                else employees = [];
+                checkAllLoaded();
+                if (dataLoaded && currentUser) {
+                    updateEmployeeTotalOrders();
+                    renderAll();
+                }
+            });
+            
+            database.ref('equipment').on('value', (snapshot) => {
+                const newEquipment = snapshot.val();
+                if (newEquipment) equipment = newEquipment;
+                else equipment = [];
+                checkAllLoaded();
+                if (dataLoaded && currentUser) renderAll();
+            });
+            
+            database.ref('users').on('value', (snapshot) => {
+                const newUsers = snapshot.val();
+                if (newUsers) users = newUsers;
+                else users = [];
+                checkAllLoaded();
+                if (dataLoaded && currentUser) renderAll();
+            });
+            
+            database.ref('holidays').on('value', (snapshot) => {
+                const newHolidays = snapshot.val();
+                if (newHolidays) holidays = newHolidays;
+                else holidays = [];
+                checkAllLoaded();
+                if (dataLoaded && currentUser) renderAll();
+            });
+        }
+        
         // ===================== دوال مساعدة =====================
         function showToast(msg, type = 'success') {
             const toast = document.createElement('div');
@@ -255,7 +257,7 @@
         }
         
         function isHoliday(date) {
-            if (holidays.includes(date)) return true;
+            if (holidays && holidays.includes(date)) return true;
             const d = new Date(date);
             if (d.getDay() === 5) return true;
             return false;
@@ -337,20 +339,7 @@
             showToast(`✅ تم التوزيع العادل على ${bookings.length} حجز`);
         }
         
-        // ===================== دوال العرض (مختصرة للمساحة) =====================
-        // تم تضمين جميع دوال العرض الكاملة في الكود الأصلي، سيتم إعادة استخدامها
-        
-        // دالة رئيسية لإعادة العرض
-        function renderAll() {
-            if (!currentUser) return;
-            if (currentUser.role === 'employee') {
-                renderEmployeeDashboard();
-            } else {
-                renderAdminDashboard();
-            }
-        }
-        
-        // واجهة الموظف
+        // ===================== واجهة الموظف =====================
         function renderEmployeeDashboard() {
             const empData = employees.find(e => e.id === currentUser.employeeId);
             if (!empData) {
@@ -407,8 +396,12 @@
             document.getElementById('appRoot').innerHTML = html;
         }
         
-        // واجهة المدير المبسطة (سيتم إكمالها)
+        // ===================== واجهة المدير =====================
         function renderAdminDashboard() {
+            const totalBookings = bookings.length;
+            const totalEmployees = employees.length;
+            const totalRevenue = bookings.reduce((s, b) => s + b.price, 0);
+            
             const html = `
                 <header class="bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-lg sticky top-0 z-20">
                     <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
@@ -416,15 +409,39 @@
                         <div class="flex gap-3 items-center"><span class="text-sm bg-emerald-700 px-3 py-1.5 rounded-full"><i class="fas fa-user-circle ml-1"></i> ${currentUser.username} (مدير)</span><button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-sign-out-alt ml-1"></i> خروج</button></div>
                     </div>
                 </header>
-                <div class="container mx-auto px-3 py-8 text-center">
-                    <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-8">
-                        <i class="fas fa-cloud-upload-alt text-5xl text-emerald-600 mb-4"></i>
-                        <h2 class="text-2xl font-bold text-emerald-800 mb-2">🎉 النظام متزامن بالكامل!</h2>
-                        <p class="text-gray-600 mb-4">جميع البيانات (الحجوزات - الموظفين - المستخدمين - أيام الإجازة) متزامنة بين جميع الأجهزة.</p>
-                        <p class="text-gray-500 text-sm">✅ أي تعديل من أي جهاز يظهر فوراً على جميع الأجهزة الأخرى</p>
-                        <p class="text-gray-500 text-sm">✅ يمكنك إضافة مستخدمين جدد وسيظهرون تلقائياً للجميع</p>
-                        <p class="text-gray-500 text-sm">✅ التوزيع والتعديلات لحظية ومتزامنة</p>
-                        <button onclick="location.reload()" class="mt-4 bg-emerald-700 text-white px-6 py-2 rounded-xl">تحديث</button>
+                <div class="container mx-auto px-3 py-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-2xl p-5 text-center shadow-lg">
+                            <i class="fas fa-calendar-check text-3xl mb-2"></i>
+                            <p class="text-sm opacity-90">إجمالي الحجوزات</p>
+                            <p class="text-3xl font-bold">${totalBookings}</p>
+                        </div>
+                        <div class="bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-2xl p-5 text-center shadow-lg">
+                            <i class="fas fa-users text-3xl mb-2"></i>
+                            <p class="text-sm opacity-90">الموظفين</p>
+                            <p class="text-3xl font-bold">${totalEmployees}</p>
+                        </div>
+                        <div class="bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl p-5 text-center shadow-lg">
+                            <i class="fas fa-chart-line text-3xl mb-2"></i>
+                            <p class="text-sm opacity-90">إجمالي الإيرادات</p>
+                            <p class="text-3xl font-bold">${totalRevenue.toLocaleString()} ج.م</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                        <h2 class="text-2xl font-bold text-emerald-800 mb-4"><i class="fas fa-cloud-upload-alt ml-2"></i>🎉 النظام متزامن بالكامل!</h2>
+                        <p class="text-gray-600 mb-3">جميع البيانات (الحجوزات - الموظفين - المستخدمين - أيام الإجازة) متزامنة بين جميع الأجهزة.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-500">
+                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> أي تعديل من أي جهاز يظهر فوراً</div>
+                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> إضافة مستخدمين جدد تظهر للجميع</div>
+                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> التوزيع والتعديلات لحظية</div>
+                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> قاعدة بيانات سحابية مجانية</div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-3">
+                        <button onclick="location.reload()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-6 py-2 rounded-xl transition"><i class="fas fa-sync-alt ml-1"></i> تحديث الصفحة</button>
+                        <button onclick="autoDistribute();" class="bg-purple-700 hover:bg-purple-800 text-white px-6 py-2 rounded-xl transition"><i class="fas fa-random ml-1"></i> إعادة توزيع الموظفين</button>
                     </div>
                 </div>
             `;
@@ -436,7 +453,7 @@
             const html = `
                 <div class="login-container">
                     <div class="login-card">
-                        <div class="text-center mb-8"><i class="fas fa-cloud-upload-alt text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia VPMS</h1><p class="text-gray-500 mt-2">نظام إدارة متزامن بالكامل</p></div>
+                        <div class="text-center mb-8"><i class="fas fa-cloud-upload-alt text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia VPMS</h1><p class="text-gray-500 mt-2"> شركة Dr Media</p></div>
                         <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
                             <div class="mb-4"><label class="block text-gray-700 mb-2"><i class="fas fa-user ml-1"></i> اسم المستخدم</label><input type="text" id="loginUser" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل اسم المستخدم" autocomplete="off"></div>
                             <div class="mb-6"><label class="block text-gray-700 mb-2"><i class="fas fa-lock ml-1"></i> كلمة المرور</label><input type="password" id="loginPass" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل كلمة المرور"></div>
@@ -444,7 +461,7 @@
                             <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-semibold transition"><i class="fas fa-sign-in-alt ml-2"></i> تسجيل الدخول</button>
                         </form>
                         <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t">
-                            <p>© 2026 Drmedia | نظام متزامن بالكامل</p>
+                            <p>© 2026 Drmedia | ahmed shreif 01002670948</p>
                             <p class="mt-1">admin / admin123 | ahmed / emp123</p>
                         </div>
                     </div>
@@ -475,7 +492,7 @@
             renderLoginPage();
         }
         
-        function renderApp() {
+        function renderAll() {
             if (!currentUser) { renderLoginPage(); return; }
             if (currentUser.role === 'employee') renderEmployeeDashboard();
             else renderAdminDashboard();
@@ -491,11 +508,10 @@
         document.getElementById('closeModalBtn')?.addEventListener('click', () => window.closeModal());
         
         // بدء التطبيق والمزامنة
-        initDefaultData(); //
         listenToFirebase();
         const savedUser = sessionStorage.getItem('vpms_current');
         if (savedUser) currentUser = JSON.parse(savedUser);
-        renderApp();
+        renderAll();
     </script>
 </body>
 </html>
