@@ -71,7 +71,7 @@
     messagingSenderId: "681162512380",
     appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
     measurementId: "G-9KHN6N33FX"
-};
+   };
         };
         
         // تهيئة Firebase
@@ -491,6 +491,7 @@
         document.getElementById('closeModalBtn')?.addEventListener('click', () => window.closeModal());
         
         // بدء التطبيق والمزامنة
+        initDefaultData(); //
         listenToFirebase();
         const savedUser = sessionStorage.getItem('vpms_current');
         if (savedUser) currentUser = JSON.parse(savedUser);
