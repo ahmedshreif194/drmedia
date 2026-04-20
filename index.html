@@ -675,7 +675,7 @@
         };
         
         window.addUser = function() {
-            const un = prompt(" المستخدم");
+            const un = prompt("اسم المستخدم");
             const pw = prompt("كلمة المرور");
             const role = prompt("الدور (admin/manager/employee)", "employee");
             if (un && pw) {
@@ -769,14 +769,14 @@
             const html = `
                 <div class="login-container">
                     <div class="login-card">
-                        <div class="text-center mb-8"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia VPMS</h1><p class="text-gray-500 mt-2">نظام إدارة شركة تصوير الأفراح</p></div>
+                        <div class="text-center mb-8"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia VPMS</h1><p class="text-gray-500 mt-2">نظام إدارة شركة Dr Media</p></div>
                         <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
                             <div class="mb-4"><label class="block text-gray-700 mb-2"><i class="fas fa-user ml-1"></i> اسم المستخدم</label><input type="text" id="loginUser" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل اسم المستخدم" autocomplete="off"></div>
                             <div class="mb-6"><label class="block text-gray-700 mb-2"><i class="fas fa-lock ml-1"></i> كلمة المرور</label><input type="password" id="loginPass" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل كلمة المرور"></div>
                             <div id="loginError" class="text-red-500 text-sm mb-4 text-center hidden"></div>
                             <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-semibold transition"><i class="fas fa-sign-in-alt ml-2"></i> تسجيل الدخول</button>
                         </form>
-                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2025 Drmedia | جميع الحقوق محفوظة</p></div>
+                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2026 Drmedia | جميع الحقوق محفوظة</p></div>
                     </div>
                 </div>
             `;
