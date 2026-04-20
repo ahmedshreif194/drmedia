@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia VPMS | شركة Dr Media</title>
+    <title>Drmedia VPMS | Dr Media</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
@@ -46,7 +46,7 @@
 <body>
 
     <div id="appRoot"></div>
-    <div class="version-badge">Drmedia VPMS v5.0 | متزامن بالكامل</div>
+    <div class="version-badge">Drmedia VPMS v5.1 | متزامن بالكامل</div>
 
     <div id="genericModal" class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden z-30 p-3">
         <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-auto shadow-2xl">
@@ -60,7 +60,7 @@
     </div>
 
     <script>
-        // ===================== إعدادات Firebase (تم إدخال بياناتك) =====================
+        // ===================== إعدادات Firebase =====================
         const firebaseConfig = {
             apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
             authDomain: "drmedia-vpms.firebaseapp.com",
@@ -72,7 +72,6 @@
             measurementId: "G-9KHN6N33FX"
         };
         
-        // تهيئة Firebase
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
         
@@ -86,6 +85,7 @@
         let isSyncing = false;
         let syncQueue = [];
         let dataLoaded = false;
+        let currentTab = 'bookingsTab';
         
         // ===================== دوال المزامنة =====================
         function showLoading(show) {
@@ -149,7 +149,8 @@
             if (equipment.length === 0) {
                 equipment = [
                     { id: 'eq1', name: 'كاميرا سوني A7IV', type: 'كاميرا', status: 'متاحة', bookingId: null },
-                    { id: 'eq2', name: 'كرين كهربائي 6m', type: 'كرين', status: 'متاحة', bookingId: null }
+                    { id: 'eq2', name: 'كرين كهربائي 6m', type: 'كرين', status: 'متاحة', bookingId: null },
+                    { id: 'eq3', name: 'مايك لاسلكي', type: 'مايك', status: 'متاحة', bookingId: null }
                 ];
             }
             
@@ -199,7 +200,7 @@
                 checkAllLoaded();
                 if (dataLoaded && currentUser) {
                     updateEmployeeTotalOrders();
-                    renderAll();
+                    renderCurrentTabContent();
                 }
             });
             
@@ -210,7 +211,7 @@
                 checkAllLoaded();
                 if (dataLoaded && currentUser) {
                     updateEmployeeTotalOrders();
-                    renderAll();
+                    renderCurrentTabContent();
                 }
             });
             
@@ -219,7 +220,7 @@
                 if (newEquipment) equipment = newEquipment;
                 else equipment = [];
                 checkAllLoaded();
-                if (dataLoaded && currentUser) renderAll();
+                if (dataLoaded && currentUser) renderCurrentTabContent();
             });
             
             database.ref('users').on('value', (snapshot) => {
@@ -227,7 +228,7 @@
                 if (newUsers) users = newUsers;
                 else users = [];
                 checkAllLoaded();
-                if (dataLoaded && currentUser) renderAll();
+                if (dataLoaded && currentUser) renderCurrentTabContent();
             });
             
             database.ref('holidays').on('value', (snapshot) => {
@@ -235,7 +236,7 @@
                 if (newHolidays) holidays = newHolidays;
                 else holidays = [];
                 checkAllLoaded();
-                if (dataLoaded && currentUser) renderAll();
+                if (dataLoaded && currentUser) renderCurrentTabContent();
             });
         }
         
@@ -336,7 +337,625 @@
             });
             
             syncToFirebase();
+            renderCurrentTabContent();
             showToast(`✅ تم التوزيع العادل على ${bookings.length} حجز`);
+        }
+        
+        // ===================== دوال العرض لكل تبويب =====================
+        function renderBookingsContent() {
+            const container = document.getElementById('bookingsTab');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
+                    <h2 class="text-2xl font-bold text-emerald-800"><i class="fas fa-calendar-check ml-2"></i>الحجوزات (${bookings.length})</h2>
+                    <div class="flex gap-2">
+                        <button onclick="showAddBookingModal()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl"><i class="fas fa-plus ml-1"></i> حجز جديد</button>
+                        <button onclick="autoDistribute();" class="bg-purple-700 hover:bg-purple-800 text-white px-4 py-2 rounded-xl"><i class="fas fa-random ml-1"></i> إعادة توزيع</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-xl overflow-hidden shadow">
+                        <thead class="bg-gray-100"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>النوع</th><th>الخدمات</th><th>السعر</th><th>الموظفون</th><th></th></tr></thead>
+                        <tbody>
+                            ${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${b.hallType === 'closed' ? 'bg-purple-100' : b.hallType === 'open' ? 'bg-blue-100' : 'bg-amber-100'}">${b.hallType === 'closed' ? 'مغلقة' : b.hallType === 'open' ? 'أوبن' : 'كافيه'}</span></td><td class="p-2">${(b.services || []).join(', ')}</span></span></td><td class="p-2 font-bold text-emerald-700">${b.price} ج.م</span></span></td><td class="p-2 text-sm">${(b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name || '').join(', ') || '⚠️ لم يتم التوزيع'}</td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
+                            ${bookings.length === 0 ? '<tr><td colspan="8" class="text-center p-6 text-gray-500">📭 لا توجد حجوزات</span></span></td>' : ''}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        function renderEmployeesContent() {
+            updateEmployeeTotalOrders();
+            const container = document.getElementById('employeesTab');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="flex justify-between mb-4"><h2 class="text-2xl font-bold"><i class="fas fa-users ml-2"></i>الموظفين (${employees.length})</h2><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
+                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl shadow"><thead class="bg-gray-100"><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th><tr></thead><tbody>
+                ${employees.map(e => { 
+                    const salary = (e.totalOrders || 0) * e.salaryPerOrder;
+                    const userAccount = users.find(u => u.employeeId === e.id);
+                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 font-bold">${e.totalOrders || 0}</span></span></td><td class="p-2 text-emerald-700">${salary} ج.م</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${e.active ? 'bg-green-100' : 'bg-red-100'}">${e.active ? 'نشط' : 'غير نشط'}</span></td><td class="p-2 text-sm">${userAccount ? `${userAccount.username}` : 'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`; }).join('')}
+                </tbody></table></div>`;
+        }
+        
+        function renderDistributionContent() {
+            const container = document.getElementById('distributionTab');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="bg-gradient-to-r from-purple-50 to-indigo-50 p-5 rounded-2xl mb-5">
+                    <h2 class="text-2xl font-bold mb-2">🔄 توزيع الموظفين العادل</h2>
+                    <p class="text-gray-600 mb-3">📌 مغلقة/أوبن: مخرج + 2 مصورين + كرين | كافيه: مصور واحد | توزيع حسب أقل عدد أوردرات وترتيب التاريخ</p>
+                    <button onclick="autoDistribute();" class="bg-purple-700 hover:bg-purple-800 text-white px-6 py-2.5 rounded-xl"><i class="fas fa-magic ml-1"></i> توزيع تلقائي عادل</button>
+                </div>
+                <div class="space-y-3 max-h-[500px] overflow-y-auto">
+                    ${[...bookings].sort((a,b)=>new Date(a.date)-new Date(b.date)).map(b => `
+                        <div class="border rounded-xl p-4 bg-white shadow-sm">
+                            <div class="flex justify-between items-center flex-wrap">
+                                <div><span class="font-bold text-lg">${b.clientName}</span> <span class="text-gray-500 text-sm">${b.date}</span></div>
+                                <span class="px-3 py-1 rounded-full text-xs ${b.hallType === 'closed' ? 'bg-purple-100' : b.hallType === 'open' ? 'bg-blue-100' : 'bg-amber-100'}">${b.hallType === 'closed' ? 'مغلقة' : b.hallType === 'open' ? 'أوبن' : 'كافيه'}</span>
+                            </div>
+                            <div class="mt-2 p-2 bg-gray-50 rounded-lg">
+                                <span class="font-semibold">الموظفون:</span> 
+                                <span class="text-gray-700">${(b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name || id).join(', ') || '⚠️ لم يتم التوزيع'}</span>
+                            </div>
+                            <button onclick="manualAssign('${b.id}')" class="mt-2 text-sm bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg"><i class="fas fa-hand-paper ml-1"></i> تعديل يدوي</button>
+                        </div>
+                    `).join('')}
+                    ${bookings.length === 0 ? '<div class="text-center p-8 text-gray-500">📭 لا توجد حجوزات</div>' : ''}
+                </div>`;
+        }
+        
+        function renderPayrollContent() {
+            updateEmployeeTotalOrders();
+            const totalRevenue = bookings.reduce((s, b) => s + b.price, 0);
+            const totalSalaries = employees.reduce((s, e) => s + ((e.totalOrders || 0) * e.salaryPerOrder), 0);
+            const container = document.getElementById('payrollTab');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="grid grid-cols-3 gap-3 mb-4"><div class="bg-green-100 p-3 rounded-xl text-center"><p class="text-sm">الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
+                <div class="bg-amber-100 p-3 rounded-xl text-center"><p class="text-sm">المرتبات</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
+                <div class="bg-purple-100 p-3 rounded-xl text-center"><p class="text-sm">صافي الأرباح</p><p class="text-2xl font-bold">${(totalRevenue - totalSalaries).toLocaleString()} ج.م</p></div></div>
+                <div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>
+                ${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2 font-bold">${e.totalOrders || 0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 text-emerald-700">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}
+                </tbody></table></div>`;
+        }
+        
+        function renderCalendarContent() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = today.getMonth();
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysCount = new Date(year, month + 1, 0).getDate();
+            const monthNames = ['يناير', 'فبراير', 'مارس', 'إبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+            let html = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-calendar-alt ml-2"></i>${monthNames[month]} ${year}</h2><div class="calendar-grid">`;
+            ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].forEach(day => html += `<div class="text-center font-bold text-gray-500 py-2">${day}</div>`);
+            for (let i = 0; i < firstDay; i++) html += `<div></div>`;
+            for (let d = 1; d <= daysCount; d++) {
+                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const dayBookings = bookings.filter(b => b.date === dateStr);
+                html += `<div class="calendar-day ${dayBookings.length ? 'booked' : ''}" onclick="showDayBookings('${dateStr}')">${d}</div>`;
+            }
+            html += '</div><div id="calendarInfo" class="mt-4 text-sm bg-gray-50 p-3 rounded-xl"></div>';
+            const container = document.getElementById('calendarTab');
+            if (container) container.innerHTML = html;
+        }
+        
+        window.showDayBookings = function(date) {
+            const filtered = bookings.filter(b => b.date === date);
+            const info = document.getElementById('calendarInfo');
+            if (info) {
+                if (filtered.length === 0) info.innerHTML = `<div class="text-center p-4">📭 لا توجد حجوزات في ${date}</div>`;
+                else info.innerHTML = `<div class="bg-emerald-50 p-4 rounded-xl"><strong>📅 حجوزات يوم ${date}</strong><ul class="mt-2">${filtered.map(b => `<li>${b.clientName} - ${b.hallName} (${b.price} ج.م)</li>`).join('')}</ul></div>`;
+            }
+        };
+        
+        function renderReportsContent() {
+            updateEmployeeTotalOrders();
+            const top = [...employees].sort((a,b) => b.totalOrders - a.totalOrders)[0];
+            const bottom = [...employees].sort((a,b) => a.totalOrders - b.totalOrders)[0];
+            const stats = { closed: 0, open: 0, cafe: 0 };
+            bookings.forEach(b => stats[b.hallType]++);
+            const totalRevenue = bookings.reduce((s,b) => s + b.price, 0);
+            const container = document.getElementById('reportsTab');
+            if (!container) return;
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4"><i class="fas fa-chart-line ml-2"></i>التقارير</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><div class="bg-emerald-100 p-3 rounded-xl text-center"><p class="text-sm">الأكثر شغل</p><p class="font-bold">${top?.name || '-'}</p><p>${top?.totalOrders || 0} أوردر</p></div>
+                <div class="bg-amber-100 p-3 rounded-xl text-center"><p class="text-sm">الأقل شغل</p><p class="font-bold">${bottom?.name || '-'}</p><p>${bottom?.totalOrders || 0} أوردر</p></div>
+                <div class="bg-blue-100 p-3 rounded-xl text-center"><p class="text-sm">إجمالي الحجوزات</p><p class="text-2xl font-bold">${bookings.length}</p></div>
+                <div class="bg-purple-100 p-3 rounded-xl text-center"><p class="text-sm">الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div></div>
+                <div class="flex gap-3"><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-file-excel ml-1"></i> Excel</button><button onclick="exportToPDF()" class="bg-red-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-file-pdf ml-1"></i> PDF</button></div>`;
+        }
+        
+        function renderEquipmentContent() {
+            const container = document.getElementById('equipmentTab');
+            if (!container) return;
+            container.innerHTML = `<div class="flex justify-between mb-4"><h2 class="text-2xl font-bold"><i class="fas fa-video ml-2"></i>المعدات</h2><button onclick="addEquipment()" class="bg-indigo-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">${equipment.map(eq => `<div class="border rounded-xl p-3"><div class="flex justify-between"><i class="fas ${eq.type === 'كاميرا' ? 'fa-camera' : 'fa-tower-broadcast'} text-2xl text-indigo-600"></i><span class="px-2 py-1 rounded-full text-xs ${eq.status === 'متاحة' ? 'bg-green-100' : 'bg-red-100'}">${eq.status}</span></div><h3 class="font-bold mt-1">${eq.name}</h3><p class="text-gray-500 text-sm">${eq.type}</p><button onclick="assignEquipment('${eq.id}')" class="mt-2 text-sm bg-gray-100 w-full py-1 rounded">ربط بحجز</button></div>`).join('')}</div>`;
+        }
+        
+        function renderUsersContent() {
+            const container = document.getElementById('usersTab');
+            if (!container) return;
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-lock ml-2"></i>المستخدمين</h2><div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th><tr></thead><tbody>
+                ${users.map(u => `<tr><td class="p-2">${u.username}</span></span><td><td class="p-2">${u.employeeId ? (employees.find(e=>e.id===u.employeeId)?.name || '-') : '-'}</span></span><td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role === 'admin' ? 'bg-red-100' : u.role === 'manager' ? 'bg-purple-100' : 'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
+                </tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
+        }
+        
+        function renderSettingsContent() {
+            const container = document.getElementById('settingsTab');
+            if (!container) return;
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4"><i class="fas fa-cog ml-2"></i>الإعدادات</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد Excel</button></div>
+                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF</h3><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد PDF</button></div>
+                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>أيام الإجازة</h3><p class="text-sm text-gray-500">الجمعة إجازة تلقائياً</p><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">إدارة الإجازات</button></div>
+                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-palette text-purple-600 ml-2"></i>تغيير اسم الشركة</h3><input type="text" id="companyName" class="mb-2" placeholder="اسم الشركة"><button onclick="changeCompanyName()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl w-full">تحديث</button></div>
+                </div>
+                <div class="mt-4 border rounded-2xl p-4 bg-amber-50"><h3 class="font-bold"><i class="fas fa-info-circle ml-2 text-amber-600"></i>تنبيه مهم</h3><p class="text-sm text-gray-600">بعد إضافة حجوزات جديدة، اضغط على "إعادة توزيع" لتوزيع المهام بشكل متساوٍ بين الموظفين حسب التاريخ.</p></div>
+            `;
+        }
+        
+        function renderCurrentTabContent() {
+            if (!currentUser || currentUser.role === 'employee') return;
+            if (currentTab === 'bookingsTab') renderBookingsContent();
+            else if (currentTab === 'employeesTab') renderEmployeesContent();
+            else if (currentTab === 'distributionTab') renderDistributionContent();
+            else if (currentTab === 'payrollTab') renderPayrollContent();
+            else if (currentTab === 'calendarTab') renderCalendarContent();
+            else if (currentTab === 'reportsTab') renderReportsContent();
+            else if (currentTab === 'equipmentTab') renderEquipmentContent();
+            else if (currentTab === 'usersTab') renderUsersContent();
+            else if (currentTab === 'settingsTab') renderSettingsContent();
+        }
+        
+        // ===================== واجهة المدير الكاملة =====================
+        function renderAdminDashboard() {
+            const html = `
+                <header class="bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-lg sticky top-0 z-20">
+                    <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
+                        <div class="flex items-center gap-3"><i class="fas fa-camera-retro text-amber-300 text-2xl"></i><h1 id="logoText" class="text-xl md:text-2xl font-bold">Drmedia</h1></div>
+                        <div class="flex gap-3 items-center"><span class="text-sm bg-emerald-700 px-3 py-1.5 rounded-full"><i class="fas fa-user-circle ml-1"></i> ${currentUser.username} (مدير)</span><button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-sign-out-alt ml-1"></i> خروج</button></div>
+                    </div>
+                </header>
+                <div class="container mx-auto px-3 mt-4">
+                    <div class="flex flex-wrap gap-1 border-b border-gray-300 overflow-x-auto pb-1">
+                        <button data-tab="bookingsTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-calendar-check ml-1"></i> الحجوزات</button>
+                        <button data-tab="employeesTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-users ml-1"></i> الموظفين</button>
+                        <button data-tab="distributionTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-random ml-1"></i> التوزيع</button>
+                        <button data-tab="payrollTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-money-bill-wave ml-1"></i> المرتبات</button>
+                        <button data-tab="calendarTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-calendar-alt ml-1"></i> التقويم</button>
+                        <button data-tab="reportsTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-chart-line ml-1"></i> التقارير</button>
+                        <button data-tab="equipmentTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-video ml-1"></i> المعدات</button>
+                        <button data-tab="usersTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-lock ml-1"></i> المستخدمين</button>
+                        <button data-tab="settingsTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-cog ml-1"></i> الإعدادات</button>
+                    </div>
+                    <div class="mt-4 bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-2xl shadow-xl min-h-[550px]">
+                        <div id="bookingsTab" class="tab-content"></div>
+                        <div id="employeesTab" class="tab-content hidden"></div>
+                        <div id="distributionTab" class="tab-content hidden"></div>
+                        <div id="payrollTab" class="tab-content hidden"></div>
+                        <div id="calendarTab" class="tab-content hidden"></div>
+                        <div id="reportsTab" class="tab-content hidden"></div>
+                        <div id="equipmentTab" class="tab-content hidden"></div>
+                        <div id="usersTab" class="tab-content hidden"></div>
+                        <div id="settingsTab" class="tab-content hidden"></div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('appRoot').innerHTML = html;
+            
+            // ربط أحداث التبويبات
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    currentTab = btn.dataset.tab;
+                    document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+                    document.getElementById(currentTab).classList.remove('hidden');
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderCurrentTabContent();
+                });
+            });
+            
+            // عرض المحتوى الأول
+            renderBookingsContent();
+            document.getElementById('bookingsTab')?.classList.remove('hidden');
+            document.querySelector('.tab-btn')?.classList.add('active');
+        }
+        
+        // ===================== دوال العمليات =====================
+        function showAddBookingModal() {
+            const html = `
+                <h3 class="text-xl font-bold mb-4"><i class="fas fa-plus-circle text-emerald-600 ml-2"></i>حجز جديد</h3>
+                <input id="clientName" placeholder="اسم العميل *" class="mb-3">
+                <input id="phone" placeholder="رقم الهاتف" class="mb-3">
+                <input id="hallName" placeholder="اسم القاعة *" class="mb-3">
+                <input id="date" type="date" class="mb-3">
+                <select id="hallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select>
+                <div class="mb-3"><label class="block text-sm mb-1">الخدمات:</label><div class="flex gap-3 flex-wrap"><label><input type="checkbox" value="فيديو"> فيديو</label><label><input type="checkbox" value="فوتو"> فوتو</label><label><input type="checkbox" value="كرين"> كرين</label><label><input type="checkbox" value="لايف"> لايف</label></div></div>
+                <input id="price" type="number" placeholder="السعر (ج.م) *" class="mb-3" value="2500">
+                <button onclick="saveNewBooking()" class="bg-emerald-700 text-white w-full py-2.5 rounded-xl"><i class="fas fa-save ml-1"></i> حفظ</button>
+            `;
+            showModal(html);
+        }
+        
+        function saveNewBooking() {
+            const services = Array.from(document.querySelectorAll('#modalContent input[type="checkbox"]:checked')).map(cb => cb.value);
+            const newBooking = {
+                id: Date.now().toString(),
+                clientName: document.getElementById('clientName').value || "عميل جديد",
+                phone: document.getElementById('phone').value || "غير مدخل",
+                hallName: document.getElementById('hallName').value || "قاعة جديدة",
+                date: document.getElementById('date').value,
+                hallType: document.getElementById('hallType').value,
+                services: services.length ? services : ['فيديو'],
+                price: parseInt(document.getElementById('price').value) || 2500,
+                assignedEmployees: []
+            };
+            if (!newBooking.date) { alert("⚠️ الرجاء إدخال التاريخ"); return; }
+            bookings.push(newBooking);
+            syncToFirebase();
+            closeModal();
+            autoDistribute();
+            renderCurrentTabContent();
+            showToast(`✅ تم إضافة حجز لـ ${newBooking.clientName}`);
+        }
+        
+        function deleteBooking(id) {
+            if (confirm("⚠️ هل أنت متأكد من حذف هذا الحجز؟")) {
+                bookings = bookings.filter(b => b.id !== id);
+                syncToFirebase();
+                autoDistribute();
+                renderCurrentTabContent();
+                showToast("🗑️ تم حذف الحجز");
+            }
+        }
+        
+        function showAddEmployeeModal() {
+            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-blue-600 ml-2"></i>إضافة موظف</h3>
+                <input id="empName" placeholder="الاسم" class="mb-3">
+                <select id="empRole" class="mb-3"><option value="مخرج">مخرج</option><option value="مصور">مصور</option><option value="كرين">كرين</option></select>
+                <input id="empPhone" placeholder="الهاتف" class="mb-3">
+                <input id="empSalary" placeholder="المرتب لكل أوردر" value="200" class="mb-3" type="number">
+                <div class="bg-amber-50 p-2 rounded text-sm mb-2">🔐 سيتم إنشاء حساب للموظف (اسم المستخدم: الاسم بالإنجليزي، كلمة المرور: emp123)</div>
+                <button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2.5 rounded-xl">حفظ</button>`;
+            showModal(html);
+        }
+        
+        function saveNewEmployee() {
+            const name = document.getElementById('empName').value;
+            if (!name) { alert("⚠️ الرجاء إدخال اسم الموظف"); return; }
+            const newEmp = { id: 'emp' + Date.now(), name: name, role: document.getElementById('empRole').value, phone: document.getElementById('empPhone').value, salaryPerOrder: parseInt(document.getElementById('empSalary').value) || 200, active: true, totalOrders: 0 };
+            employees.push(newEmp);
+            const username = name.replace(/\s/g, '').toLowerCase();
+            let finalUsername = username;
+            let counter = 1;
+            while (users.some(u => u.username === finalUsername)) finalUsername = username + counter++;
+            users.push({ username: finalUsername, password: 'emp123', role: 'employee', employeeId: newEmp.id, name: name });
+            syncToFirebase();
+            closeModal();
+            renderCurrentTabContent();
+            showToast(`✅ تم إضافة الموظف ${name} - حسابه: ${finalUsername} / emp123`);
+        }
+        
+        function showEditEmployeeModal(empId) {
+            const emp = employees.find(e => e.id === empId);
+            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-edit text-amber-600 ml-2"></i>تعديل موظف</h3>
+                <input id="empName" value="${emp.name}" class="mb-3">
+                <select id="empRole" class="mb-3"><option ${emp.role === 'مخرج' ? 'selected' : ''}>مخرج</option><option ${emp.role === 'مصور' ? 'selected' : ''}>مصور</option><option ${emp.role === 'كرين' ? 'selected' : ''}>كرين</option></select>
+                <input id="empPhone" value="${emp.phone}" class="mb-3">
+                <input id="empSalary" value="${emp.salaryPerOrder}" class="mb-3" type="number">
+                <div class="flex gap-2 mb-3"><label><input type="checkbox" id="empActive" ${emp.active ? 'checked' : ''}> نشط</label></div>
+                <button onclick="saveEditEmployee('${empId}')" class="bg-amber-700 text-white w-full py-2.5 rounded-xl">حفظ</button>`;
+            showModal(html);
+        }
+        
+        function saveEditEmployee(empId) {
+            const emp = employees.find(e => e.id === empId);
+            if (emp) {
+                emp.name = document.getElementById('empName').value;
+                emp.role = document.getElementById('empRole').value;
+                emp.phone = document.getElementById('empPhone').value;
+                emp.salaryPerOrder = parseInt(document.getElementById('empSalary').value) || 200;
+                emp.active = document.getElementById('empActive').checked;
+                syncToFirebase();
+                closeModal();
+                autoDistribute();
+                renderCurrentTabContent();
+                showToast("✅ تم تحديث الموظف");
+            }
+        }
+        
+        function deleteEmployee(empId) {
+            if (confirm("⚠️ حذف الموظف؟")) {
+                employees = employees.filter(e => e.id !== empId);
+                users = users.filter(u => u.employeeId !== empId);
+                syncToFirebase();
+                autoDistribute();
+                renderCurrentTabContent();
+                showToast("تم الحذف");
+            }
+        }
+        
+        function manualAssign(bookingId) {
+            const b = bookings.find(bk => bk.id === bookingId);
+            const empList = employees.filter(e => e.active).map(e => `${e.id}|${e.name} (${e.role})`).join('\n');
+            const ids = prompt("أدخل أيدي الموظفين مفصولة بفواصل:\n" + empList, b.assignedEmployees?.join(',') || '');
+            if (ids) {
+                b.assignedEmployees = ids.split(',').map(s => s.trim());
+                syncToFirebase();
+                renderCurrentTabContent();
+                showToast("تم التعديل");
+            }
+        }
+        
+        function addEquipment() {
+            const name = prompt("اسم المعدة");
+            if (name) {
+                equipment.push({ id: 'eq' + Date.now(), name: name, type: 'كاميرا', status: 'متاحة', bookingId: null });
+                syncToFirebase();
+                renderCurrentTabContent();
+                showToast("تمت الإضافة");
+            }
+        }
+        
+        function assignEquipment(eqId) {
+            const eq = equipment.find(e => e.id === eqId);
+            const bid = prompt("أدخل ID الحجز لربط المعدة به");
+            if (bid) {
+                eq.bookingId = bid;
+                eq.status = 'مستخدم';
+                syncToFirebase();
+                renderCurrentTabContent();
+                showToast("تم الربط");
+            }
+        }
+        
+        function editUser(username) {
+            const user = users.find(u => u.username === username);
+            const newPass = prompt("كلمة المرور الجديدة", user.password);
+            if (newPass) {
+                user.password = newPass;
+                syncToFirebase();
+                renderCurrentTabContent();
+                showToast("تم التحديث");
+            }
+        }
+        
+        function deleteUser(username) {
+            if (confirm("حذف المستخدم؟")) {
+                users = users.filter(u => u.username !== username);
+                syncToFirebase();
+                renderCurrentTabContent();
+                showToast("تم الحذف");
+            }
+        }
+        
+        function addUser() {
+            const un = prompt("اسم المستخدم");
+            const pw = prompt("كلمة المرور");
+            const role = prompt("الدور (admin/manager/employee)", "employee");
+            if (un && pw) {
+                users.push({ username: un, password: pw, role: role || 'employee', employeeId: null, name: un });
+                syncToFirebase();
+                renderCurrentTabContent();
+                showToast("تمت الإضافة");
+            }
+        }
+        
+        function changeCompanyName() {
+            const newName = document.getElementById('companyName')?.value;
+            if (newName) {
+                const logoText = document.getElementById('logoText');
+                if (logoText) logoText.innerText = newName;
+            }
+        }
+        
+        function exportToExcel() {
+            const ws = XLSX.utils.json_to_sheet(bookings.map(b => ({ العميل: b.clientName, التاريخ: b.date, القاعة: b.hallName, النوع: b.hallType, السعر: b.price })));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "الحجوزات");
+            XLSX.writeFile(wb, `Drmedia_Bookings.xlsx`);
+            showToast("تم التصدير");
+        }
+        
+        function exportToPDF() {
+            const win = window.open();
+            win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
+            win.print();
+        }
+        
+        function showImportExcelModal() {
+            const html = `
+                <h3 class="text-xl font-bold mb-4"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel</h3>
+                <p class="text-sm text-gray-500 mb-3">اختر ملف Excel يحتوي على أعمدة: التاريخ، العميل، القاعة، السعر</p>
+                <input type="file" id="excelFile" accept=".xlsx,.xls" class="mb-3">
+                <select id="importHallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select>
+                <div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="skipFriday" checked> الجمعة</label><label><input type="checkbox" id="skipSaturday"> السبت</label><label><input type="checkbox" id="skipHolidays" checked> الأيام المسجلة كإجازة</label></div></div>
+                <button onclick="importExcelData()" class="bg-green-700 text-white w-full py-2.5 rounded-xl">استيراد</button>
+                <div id="importPreview" class="mt-3 text-sm text-gray-600"></div>
+            `;
+            showModal(html);
+        }
+        
+        async function importExcelData() {
+            const fileInput = document.getElementById('excelFile');
+            const file = fileInput.files[0];
+            if (!file) { alert("📁 اختر ملف Excel أولاً"); return; }
+            const skipFriday = document.getElementById('skipFriday')?.checked || false;
+            const skipSaturday = document.getElementById('skipSaturday')?.checked || false;
+            const skipHolidays = document.getElementById('skipHolidays')?.checked || false;
+            const selectedHallType = document.getElementById('importHallType').value;
+            
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data);
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            if (!rows || rows.length < 2) { alert("الملف لا يحتوي على بيانات"); return; }
+            
+            const headers = rows[0];
+            let colMap = { date: -1, client: -1, hall: -1, price: -1 };
+            headers.forEach((h, idx) => {
+                const str = String(h || '').toLowerCase();
+                if (str.includes('تاريخ') || str.includes('date')) colMap.date = idx;
+                if (str.includes('عميل') || str.includes('اسم') || str.includes('client')) colMap.client = idx;
+                if (str.includes('قاعة') || str.includes('hall')) colMap.hall = idx;
+                if (str.includes('سعر') || str.includes('price')) colMap.price = idx;
+            });
+            
+            let addedCount = 0, skippedCount = 0;
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || row.length === 0) continue;
+                let rawDate = colMap.date !== -1 ? row[colMap.date] : row[0];
+                if (!rawDate) continue;
+                let formattedDate = '';
+                if (typeof rawDate === 'number') {
+                    const excelDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+                    formattedDate = excelDate.toISOString().split('T')[0];
+                } else if (typeof rawDate === 'string') {
+                    let match = rawDate.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+                    if (match) formattedDate = match[0];
+                    else {
+                        match = rawDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                        if (match) formattedDate = `${match[3]}-${match[2]}-${match[1]}`;
+                        else formattedDate = rawDate;
+                    }
+                }
+                if (!formattedDate || !formattedDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) continue;
+                
+                let isSkipped = false;
+                if (skipFriday) { const d = new Date(formattedDate); if (d.getDay() === 5) isSkipped = true; }
+                if (skipSaturday) { const d = new Date(formattedDate); if (d.getDay() === 6) isSkipped = true; }
+                if (skipHolidays && holidays.includes(formattedDate)) isSkipped = true;
+                if (isSkipped) { skippedCount++; continue; }
+                
+                const clientName = colMap.client !== -1 ? row[colMap.client] : (row[1] || 'عميل جديد');
+                const hallName = colMap.hall !== -1 ? row[colMap.hall] : (row[2] || 'قاعة');
+                const price = colMap.price !== -1 ? (parseInt(row[colMap.price]) || 2500) : 2500;
+                
+                bookings.push({
+                    id: Date.now() + Math.random().toString(36) + addedCount,
+                    clientName: String(clientName).trim(),
+                    phone: "تم استيراده",
+                    hallName: String(hallName).trim(),
+                    date: formattedDate,
+                    hallType: selectedHallType,
+                    services: ["فيديو"],
+                    price: price,
+                    assignedEmployees: []
+                });
+                addedCount++;
+            }
+            
+            if (addedCount === 0) alert(`⚠️ لم يتم العثور على تواريخ صالحة${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
+            else {
+                syncToFirebase();
+                autoDistribute();
+                closeModal();
+                renderCurrentTabContent();
+                showToast(`✅ تم استيراد ${addedCount} حجز من نوع ${selectedHallType === 'closed' ? 'مغلقة' : selectedHallType === 'open' ? 'أوبن' : 'كافيه'}`);
+            }
+        }
+        
+        function showImportPdfModal() {
+            const html = `
+                <h3 class="text-xl font-bold mb-4"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF</h3>
+                <p class="text-sm text-gray-500 mb-3">اختر ملف PDF وسيتم استخراج التواريخ تلقائياً</p>
+                <input type="file" id="pdfFile" accept="application/pdf" class="mb-3">
+                <select id="pdfHallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select>
+                <div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="pdfSkipFriday" checked> الجمعة</label><label><input type="checkbox" id="pdfSkipSaturday"> السبت</label><label><input type="checkbox" id="pdfSkipHolidays" checked> الأيام المسجلة كإجازة</label></div></div>
+                <input id="pdfClientName" placeholder="اسم العميل الافتراضي" class="mb-3" value="عميل من PDF">
+                <button onclick="importPdfData()" class="bg-red-700 text-white w-full py-2.5 rounded-xl">استيراد</button>
+                <div id="pdfImportPreview" class="mt-3 text-sm text-gray-600"></div>
+            `;
+            showModal(html);
+        }
+        
+        async function importPdfData() {
+            const fileInput = document.getElementById('pdfFile');
+            const file = fileInput.files[0];
+            if (!file) { alert("📁 اختر ملف PDF أولاً"); return; }
+            const skipFriday = document.getElementById('pdfSkipFriday')?.checked || false;
+            const skipSaturday = document.getElementById('pdfSkipSaturday')?.checked || false;
+            const skipHolidays = document.getElementById('pdfSkipHolidays')?.checked || false;
+            const defaultClientName = document.getElementById('pdfClientName')?.value || "عميل من PDF";
+            const selectedPdfHallType = document.getElementById('pdfHallType').value;
+            
+            const pdfjsLib = window.pdfjsLib;
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = "";
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(" ") + "\n";
+                }
+                const dateRegex = /\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}\/\d{4})\b/g;
+                const foundDates = [...new Set(fullText.match(dateRegex) || [])];
+                const formattedDates = foundDates.map(d => d.includes('/') ? d.split('/').reverse().join('-') : d);
+                let addedCount = 0, skippedCount = 0;
+                for (const rawDate of formattedDates) {
+                    let isSkipped = false;
+                    if (skipFriday) { const d = new Date(rawDate); if (d.getDay() === 5) isSkipped = true; }
+                    if (skipSaturday) { const d = new Date(rawDate); if (d.getDay() === 6) isSkipped = true; }
+                    if (skipHolidays && holidays.includes(rawDate)) isSkipped = true;
+                    if (isSkipped) { skippedCount++; continue; }
+                    bookings.push({
+                        id: Date.now() + Math.random().toString(36) + addedCount,
+                        clientName: defaultClientName + " " + (addedCount + 1),
+                        phone: "تم استيراده",
+                        hallName: "قاعة من PDF",
+                        date: rawDate,
+                        hallType: selectedPdfHallType,
+                        services: ["فيديو"],
+                        price: 2500,
+                        assignedEmployees: []
+                    });
+                    addedCount++;
+                }
+                if (addedCount === 0) alert(`⚠️ لم يتم العثور على تواريخ صالحة${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
+                else {
+                    syncToFirebase();
+                    autoDistribute();
+                    closeModal();
+                    renderCurrentTabContent();
+                    showToast(`✅ تم استيراد ${addedCount} حجز من نوع ${selectedPdfHallType === 'closed' ? 'مغلقة' : selectedPdfHallType === 'open' ? 'أوبن' : 'كافيه'}`);
+                }
+            } catch(e) { alert("فشل استيراد PDF: " + e.message); }
+        }
+        
+        function showHolidaysModal() {
+            const holidaysList = holidays.map(h => `<div class="flex justify-between items-center p-2 border-b"><span>${h}</span><button onclick="removeHoliday('${h}')" class="text-red-500 text-sm">حذف</button></div>`).join('');
+            const html = `
+                <h3 class="text-xl font-bold mb-4"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>إدارة أيام الإجازة</h3>
+                <p class="text-sm text-gray-500 mb-3">أيام الجمعة محسوبة إجازة تلقائياً. يمكنك إضافة أيام إضافية.</p>
+                <div class="flex gap-2 mb-3"><input type="date" id="newHoliday" class="flex-1"><button onclick="addHoliday()" class="bg-amber-600 text-white px-3 py-2 rounded-xl">+ إضافة</button></div>
+                <div class="max-h-48 overflow-y-auto border rounded-lg p-2">${holidaysList || '<p class="text-gray-500 text-center">لا توجد أيام إجازة إضافية</p>'}</div>
+                <button onclick="closeModal(); renderCurrentTabContent();" class="mt-3 bg-gray-600 text-white w-full py-2 rounded-xl">إغلاق</button>
+            `;
+            showModal(html);
+        }
+        
+        function addHoliday() {
+            const newHoliday = document.getElementById('newHoliday')?.value;
+            if (newHoliday && !holidays.includes(newHoliday)) {
+                holidays.push(newHoliday);
+                syncToFirebase();
+                showHolidaysModal();
+                showToast(`✅ تم إضافة ${newHoliday} كيوم إجازة`);
+            }
+        }
+        
+        function removeHoliday(date) {
+            holidays = holidays.filter(h => h !== date);
+            syncToFirebase();
+            showHolidaysModal();
+            showToast(`🗑️ تم حذف ${date} من أيام الإجازة`);
         }
         
         // ===================== واجهة الموظف =====================
@@ -346,7 +965,6 @@
                 document.getElementById('appRoot').innerHTML = `<div class="text-center p-8 text-red-500">⚠️ لم يتم ربط حسابك بموظف</div>`;
                 return;
             }
-            
             const myOrders = bookings.filter(b => b.assignedEmployees && b.assignedEmployees.includes(empData.id));
             const totalOrders = myOrders.length;
             const totalSalary = totalOrders * empData.salaryPerOrder;
@@ -355,7 +973,7 @@
             const html = `
                 <header class="bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-lg sticky top-0 z-20">
                     <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
-                        <div class="flex items-center gap-3"><i class="fas fa-camera-retro text-amber-300 text-2xl"></i><h1 id="logoText" class="text-xl md:text-2xl font-bold">Drmedia | VPMS</h1></div>
+                        <div class="flex items-center gap-3"><i class="fas fa-camera-retro text-amber-300 text-2xl"></i><h1 id="logoText" class="text-xl md:text-2xl font-bold">Drmedia</h1></div>
                         <div class="flex gap-3 items-center"><span class="text-sm bg-emerald-700 px-3 py-1.5 rounded-full"><i class="fas fa-user-circle ml-1"></i> ${currentUser.username} (موظف)</span><button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-sign-out-alt ml-1"></i> خروج</button></div>
                     </div>
                 </header>
@@ -396,74 +1014,19 @@
             document.getElementById('appRoot').innerHTML = html;
         }
         
-        // ===================== واجهة المدير =====================
-        function renderAdminDashboard() {
-            const totalBookings = bookings.length;
-            const totalEmployees = employees.length;
-            const totalRevenue = bookings.reduce((s, b) => s + b.price, 0);
-            
-            const html = `
-                <header class="bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-lg sticky top-0 z-20">
-                    <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
-                        <div class="flex items-center gap-3"><i class="fas fa-camera-retro text-amber-300 text-2xl"></i><h1 id="logoText" class="text-xl md:text-2xl font-bold">Drmedia | VPMS (متزامن)</h1></div>
-                        <div class="flex gap-3 items-center"><span class="text-sm bg-emerald-700 px-3 py-1.5 rounded-full"><i class="fas fa-user-circle ml-1"></i> ${currentUser.username} (مدير)</span><button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-sign-out-alt ml-1"></i> خروج</button></div>
-                    </div>
-                </header>
-                <div class="container mx-auto px-3 py-6">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <div class="bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-2xl p-5 text-center shadow-lg">
-                            <i class="fas fa-calendar-check text-3xl mb-2"></i>
-                            <p class="text-sm opacity-90">إجمالي الحجوزات</p>
-                            <p class="text-3xl font-bold">${totalBookings}</p>
-                        </div>
-                        <div class="bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-2xl p-5 text-center shadow-lg">
-                            <i class="fas fa-users text-3xl mb-2"></i>
-                            <p class="text-sm opacity-90">الموظفين</p>
-                            <p class="text-3xl font-bold">${totalEmployees}</p>
-                        </div>
-                        <div class="bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl p-5 text-center shadow-lg">
-                            <i class="fas fa-chart-line text-3xl mb-2"></i>
-                            <p class="text-sm opacity-90">إجمالي الإيرادات</p>
-                            <p class="text-3xl font-bold">${totalRevenue.toLocaleString()} ج.م</p>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
-                        <h2 class="text-2xl font-bold text-emerald-800 mb-4"><i class="fas fa-cloud-upload-alt ml-2"></i>🎉 النظام متزامن بالكامل!</h2>
-                        <p class="text-gray-600 mb-3">جميع البيانات (الحجوزات - الموظفين - المستخدمين - أيام الإجازة) متزامنة بين جميع الأجهزة.</p>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-500">
-                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> أي تعديل من أي جهاز يظهر فوراً</div>
-                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> إضافة مستخدمين جدد تظهر للجميع</div>
-                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> التوزيع والتعديلات لحظية</div>
-                            <div><i class="fas fa-check-circle text-green-600 ml-1"></i> قاعدة بيانات سحابية مجانية</div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-wrap gap-3">
-                        <button onclick="location.reload()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-6 py-2 rounded-xl transition"><i class="fas fa-sync-alt ml-1"></i> تحديث الصفحة</button>
-                        <button onclick="autoDistribute();" class="bg-purple-700 hover:bg-purple-800 text-white px-6 py-2 rounded-xl transition"><i class="fas fa-random ml-1"></i> إعادة توزيع الموظفين</button>
-                    </div>
-                </div>
-            `;
-            document.getElementById('appRoot').innerHTML = html;
-        }
-        
         // ===================== تسجيل الدخول =====================
         function renderLoginPage() {
             const html = `
                 <div class="login-container">
                     <div class="login-card">
-                        <div class="text-center mb-8"><i class="fas fa-cloud-upload-alt text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia VPMS</h1><p class="text-gray-500 mt-2"> شركة Dr Media</p></div>
+                        <div class="text-center mb-8"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia </h1><p class="text-gray-500 mt-2">Dr Media</p></div>
                         <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
                             <div class="mb-4"><label class="block text-gray-700 mb-2"><i class="fas fa-user ml-1"></i> اسم المستخدم</label><input type="text" id="loginUser" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل اسم المستخدم" autocomplete="off"></div>
                             <div class="mb-6"><label class="block text-gray-700 mb-2"><i class="fas fa-lock ml-1"></i> كلمة المرور</label><input type="password" id="loginPass" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل كلمة المرور"></div>
                             <div id="loginError" class="text-red-500 text-sm mb-4 text-center hidden"></div>
                             <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-semibold transition"><i class="fas fa-sign-in-alt ml-2"></i> تسجيل الدخول</button>
                         </form>
-                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t">
-                            <p>© 2026 Drmedia | ahmed shreif 01002670948</p>
-                            <p class="mt-1">admin / admin123 | ahmed / emp123</p>
-                        </div>
+                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2026 Drmedia |ahmed shreif</p><p class="mt-1">01002670948</p></div>
                     </div>
                 </div>
             `;
@@ -499,15 +1062,42 @@
         }
         
         // ===================== دوال عامة =====================
-        window.showModal = function(html) { document.getElementById('modalContent').innerHTML = html; document.getElementById('genericModal').classList.remove('hidden'); };
-        window.closeModal = function() { document.getElementById('genericModal').classList.add('hidden'); };
-        window.logout = logout;
-        window.doLogin = doLogin;
+        function showModal(html) { document.getElementById('modalContent').innerHTML = html; document.getElementById('genericModal').classList.remove('hidden'); }
+        function closeModal() { document.getElementById('genericModal').classList.add('hidden'); }
+        document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
+        
+        // ربط الدوال العامة
+        window.showAddBookingModal = showAddBookingModal;
+        window.saveNewBooking = saveNewBooking;
+        window.deleteBooking = deleteBooking;
+        window.showAddEmployeeModal = showAddEmployeeModal;
+        window.saveNewEmployee = saveNewEmployee;
+        window.showEditEmployeeModal = showEditEmployeeModal;
+        window.saveEditEmployee = saveEditEmployee;
+        window.deleteEmployee = deleteEmployee;
+        window.manualAssign = manualAssign;
+        window.addEquipment = addEquipment;
+        window.assignEquipment = assignEquipment;
+        window.editUser = editUser;
+        window.deleteUser = deleteUser;
+        window.addUser = addUser;
+        window.changeCompanyName = changeCompanyName;
+        window.exportToExcel = exportToExcel;
+        window.exportToPDF = exportToPDF;
+        window.showImportExcelModal = showImportExcelModal;
+        window.importExcelData = importExcelData;
+        window.showImportPdfModal = showImportPdfModal;
+        window.importPdfData = importPdfData;
+        window.showHolidaysModal = showHolidaysModal;
+        window.addHoliday = addHoliday;
+        window.removeHoliday = removeHoliday;
         window.autoDistribute = autoDistribute;
+        window.showModal = showModal;
+        window.closeModal = closeModal;
+        window.doLogin = doLogin;
+        window.logout = logout;
         
-        document.getElementById('closeModalBtn')?.addEventListener('click', () => window.closeModal());
-        
-        // بدء التطبيق والمزامنة
+        // بدء التطبيق
         listenToFirebase();
         const savedUser = sessionStorage.getItem('vpms_current');
         if (savedUser) currentUser = JSON.parse(savedUser);
