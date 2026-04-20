@@ -260,8 +260,16 @@
         function showImportExcelModal() {
             let html = `
                 <h3 class="text-xl font-bold mb-4"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel</h3>
-                <p class="text-sm text-gray-500 mb-3">اختر ملف Excel يحتوي على أعمدة: التاريخ، العميل، القاعة، النوع، السعر</p>
+                <p class="text-sm text-gray-500 mb-3">اختر ملف Excel يحتوي على أعمدة: التاريخ، العميل، القاعة، السعر</p>
                 <input type="file" id="excelFile" accept=".xlsx,.xls" class="mb-3">
+                <div class="mb-3">
+                    <label class="block text-sm font-bold mb-1">اختر نوع القاعة لجميع الحجوزات المستوردة:</label>
+                    <select id="importHallType" class="mb-3">
+                        <option value="closed">مغلقة</option>
+                        <option value="open">أوبن</option>
+                        <option value="cafe">كافيه</option>
+                    </select>
+                </div>
                 <div class="mb-3">
                     <label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label>
                     <div class="flex gap-3"><label><input type="checkbox" id="skipFriday" checked> الجمعة</label><label><input type="checkbox" id="skipSaturday"> السبت</label><label><input type="checkbox" id="skipHolidays" checked> الأيام المسجلة كإجازة</label></div>
@@ -280,6 +288,7 @@
             const skipFriday = document.getElementById('skipFriday')?.checked || false;
             const skipSaturday = document.getElementById('skipSaturday')?.checked || false;
             const skipHolidays = document.getElementById('skipHolidays')?.checked || false;
+            const selectedHallType = document.getElementById('importHallType').value;
             
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
@@ -290,13 +299,12 @@
             
             // تحديد أسماء الأعمدة من الصف الأول
             const headers = rows[0];
-            let colMap = { date: -1, client: -1, hall: -1, type: -1, price: -1 };
+            let colMap = { date: -1, client: -1, hall: -1, price: -1 };
             headers.forEach((h, idx) => {
                 const str = String(h || '').toLowerCase();
                 if (str.includes('تاريخ') || str.includes('date')) colMap.date = idx;
                 if (str.includes('عميل') || str.includes('اسم') || str.includes('client')) colMap.client = idx;
                 if (str.includes('قاعة') || str.includes('hall')) colMap.hall = idx;
-                if (str.includes('نوع') || str.includes('type')) colMap.type = idx;
                 if (str.includes('سعر') || str.includes('price')) colMap.price = idx;
             });
             
@@ -347,11 +355,6 @@
                 
                 const clientName = colMap.client !== -1 ? row[colMap.client] : (row[1] || 'عميل جديد');
                 const hallName = colMap.hall !== -1 ? row[colMap.hall] : (row[2] || 'قاعة');
-                let hallType = colMap.type !== -1 ? String(row[colMap.type]).toLowerCase() : '';
-                if (hallType.includes('closed') || hallType.includes('مغلقة')) hallType = 'closed';
-                else if (hallType.includes('open') || hallType.includes('أوبن')) hallType = 'open';
-                else if (hallType.includes('cafe') || hallType.includes('كافيه')) hallType = 'cafe';
-                else hallType = 'closed';
                 const price = colMap.price !== -1 ? (parseInt(row[colMap.price]) || 2500) : 2500;
                 
                 bookings.push({
@@ -360,7 +363,7 @@
                     phone: "تم استيراده",
                     hallName: String(hallName).trim(),
                     date: formattedDate,
-                    hallType: hallType,
+                    hallType: selectedHallType,
                     services: ["فيديو"],
                     price: price,
                     assignedEmployees: []
@@ -377,7 +380,7 @@
                 if (typeof renderBookingsContent === 'function') renderBookingsContent();
                 if (typeof renderDistributionContent === 'function') renderDistributionContent();
                 closeModal();
-                showToast(`✅ تم استيراد ${addedCount} حجز${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
+                showToast(`✅ تم استيراد ${addedCount} حجز من نوع ${selectedHallType === 'closed' ? 'مغلقة' : selectedHallType === 'open' ? 'أوبن' : 'كافيه'}${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
                 const previewDiv = document.getElementById('importPreview');
                 if (previewDiv) previewDiv.innerHTML = `<span class="text-green-600">تم استيراد ${addedCount} حجز في التواريخ: ${previewDates.join(', ')}</span>`;
             }
@@ -389,6 +392,14 @@
                 <h3 class="text-xl font-bold mb-4"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF</h3>
                 <p class="text-sm text-gray-500 mb-3">اختر ملف PDF وسيتم استخراج التواريخ تلقائياً</p>
                 <input type="file" id="pdfFile" accept="application/pdf" class="mb-3">
+                <div class="mb-3">
+                    <label class="block text-sm font-bold mb-1">اختر نوع القاعة لجميع الحجوزات المستوردة:</label>
+                    <select id="pdfHallType" class="mb-3">
+                        <option value="closed">مغلقة</option>
+                        <option value="open">أوبن</option>
+                        <option value="cafe">كافيه</option>
+                    </select>
+                </div>
                 <div class="mb-3">
                     <label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label>
                     <div class="flex gap-3"><label><input type="checkbox" id="pdfSkipFriday" checked> الجمعة</label><label><input type="checkbox" id="pdfSkipSaturday"> السبت</label><label><input type="checkbox" id="pdfSkipHolidays" checked> الأيام المسجلة كإجازة</label></div>
@@ -409,6 +420,7 @@
             const skipSaturday = document.getElementById('pdfSkipSaturday')?.checked || false;
             const skipHolidays = document.getElementById('pdfSkipHolidays')?.checked || false;
             const defaultClientName = document.getElementById('pdfClientName')?.value || "عميل من PDF";
+            const selectedPdfHallType = document.getElementById('pdfHallType').value;
             
             const pdfjsLib = window.pdfjsLib;
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
@@ -454,7 +466,7 @@
                         phone: "تم استيراده",
                         hallName: "قاعة من PDF",
                         date: rawDate,
-                        hallType: "closed",
+                        hallType: selectedPdfHallType,
                         services: ["فيديو"],
                         price: 2500,
                         assignedEmployees: []
@@ -471,7 +483,7 @@
                     if (typeof renderBookingsContent === 'function') renderBookingsContent();
                     if (typeof renderDistributionContent === 'function') renderDistributionContent();
                     closeModal();
-                    showToast(`✅ تم استيراد ${addedCount} حجز${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
+                    showToast(`✅ تم استيراد ${addedCount} حجز من نوع ${selectedPdfHallType === 'closed' ? 'مغلقة' : selectedPdfHallType === 'open' ? 'أوبن' : 'كافيه'}${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
                     const previewDiv = document.getElementById('pdfImportPreview');
                     if (previewDiv) previewDiv.innerHTML = `<span class="text-green-600">تم استيراد ${addedCount} حجز في التواريخ: ${previewDates.join(', ')}</span>`;
                 }
@@ -609,8 +621,8 @@
                 <div class="bg-amber-100 p-3 rounded-xl text-center"><p class="text-sm">المرتبات</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
                 <div class="bg-purple-100 p-3 rounded-xl text-center"><p class="text-sm">صافي الأرباح</p><p class="text-2xl font-bold">${(totalRevenue - totalSalaries).toLocaleString()} ج.م</p></div></div>
                 <div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>
-                ${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2 font-bold">${e.totalOrders || 0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 text-emerald-700">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}
-                </tbody></table></div>`;
+                ${employees.map(e => `<td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2 font-bold">${e.totalOrders || 0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 text-emerald-700">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}
+                </tbody><tr></div>`;
         }
         
         function renderCalendarContent() {
