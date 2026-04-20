@@ -41,12 +41,16 @@
         .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .loading-spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #065f46; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .employee-checkbox-list { max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
+        .employee-checkbox-list label { display: block; padding: 8px; margin: 0; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
+        .employee-checkbox-list label:hover { background-color: #f0fdf4; }
+        .employee-checkbox-list input { margin-left: 10px; transform: scale(1.1); }
     </style>
 </head>
 <body>
 
     <div id="appRoot"></div>
-    <div class="version-badge">Drmedia v5.1 | ahmed shreif</div>
+    <div class="version-badge">Drmedia v5.2 | ahmed shreif</div>
 
     <div id="genericModal" class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden z-30 p-3">
         <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-auto shadow-2xl">
@@ -257,10 +261,11 @@
             employees.forEach(emp => { emp.totalOrders = getEmployeeOrderCount(emp.id); });
         }
         
+        // تم إلغاء إجازة الجمعة - أصبحت جميع الأيام عادية
         function isHoliday(date) {
+            // فقط التحقق من أيام الإجازة المسجلة في القائمة
             if (holidays && holidays.includes(date)) return true;
-            const d = new Date(date);
-            if (d.getDay() === 5) return true;
+            // تم إزالة التحقق من يوم الجمعة
             return false;
         }
         
@@ -371,11 +376,11 @@
             if (!container) return;
             container.innerHTML = `
                 <div class="flex justify-between mb-4"><h2 class="text-2xl font-bold"><i class="fas fa-users ml-2"></i>الموظفين (${employees.length})</h2><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
-                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl shadow"><thead class="bg-gray-100"><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th><tr></thead><tbody>
+                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl shadow"><thead class="bg-gray-100"><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th></tr></thead><tbody>
                 ${employees.map(e => { 
                     const salary = (e.totalOrders || 0) * e.salaryPerOrder;
                     const userAccount = users.find(u => u.employeeId === e.id);
-                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 font-bold">${e.totalOrders || 0}</span></span></td><td class="p-2 text-emerald-700">${salary} ج.م</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${e.active ? 'bg-green-100' : 'bg-red-100'}">${e.active ? 'نشط' : 'غير نشط'}</span></td><td class="p-2 text-sm">${userAccount ? `${userAccount.username}` : 'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`; }).join('')}
+                    return `<td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 font-bold">${e.totalOrders || 0}</span></span></td><td class="p-2 text-emerald-700">${salary} ج.م</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${e.active ? 'bg-green-100' : 'bg-red-100'}">${e.active ? 'نشط' : 'غير نشط'}</span></td><td class="p-2 text-sm">${userAccount ? `${userAccount.username}` : 'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`; }).join('')}
                 </tbody></table></div>`;
         }
         
@@ -399,12 +404,62 @@
                                 <span class="font-semibold">الموظفون:</span> 
                                 <span class="text-gray-700">${(b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name || id).join(', ') || '⚠️ لم يتم التوزيع'}</span>
                             </div>
-                            <button onclick="manualAssign('${b.id}')" class="mt-2 text-sm bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg"><i class="fas fa-hand-paper ml-1"></i> تعديل يدوي</button>
+                            <button onclick="showManualAssignModal('${b.id}')" class="mt-2 text-sm bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg"><i class="fas fa-hand-paper ml-1"></i> تعديل يدوي</button>
                         </div>
                     `).join('')}
                     ${bookings.length === 0 ? '<div class="text-center p-8 text-gray-500">📭 لا توجد حجوزات</div>' : ''}
                 </div>`;
         }
+        
+        // ===================== دالة التعديل اليدوي بالقائمة المنبثقة =====================
+        window.showManualAssignModal = function(bookingId) {
+            const booking = bookings.find(b => b.id === bookingId);
+            if (!booking) return;
+            
+            const activeEmployees = employees.filter(e => e.active);
+            const currentAssigned = booking.assignedEmployees || [];
+            
+            let employeesHtml = '<div class="employee-checkbox-list">';
+            activeEmployees.forEach(emp => {
+                const isChecked = currentAssigned.includes(emp.id);
+                employeesHtml += `
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" value="${emp.id}" ${isChecked ? 'checked' : ''}>
+                        <span><strong>${emp.name}</strong> (${emp.role})</span>
+                    </label>
+                `;
+            });
+            employeesHtml += '</div>';
+            
+            const modalHtml = `
+                <h3 class="text-xl font-bold mb-4 text-center"><i class="fas fa-users text-amber-600 ml-2"></i>تعديل توزيع الموظفين</h3>
+                <p class="text-gray-600 mb-3 text-sm text-center">حجز: <strong>${booking.clientName}</strong> - ${booking.date}</p>
+                <p class="text-gray-500 mb-2 text-sm">اختر الموظفين المطلوبين لهذا الحجز:</p>
+                ${employeesHtml}
+                <div class="flex gap-3 mt-4">
+                    <button onclick="saveManualAssign('${bookingId}')" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white py-2.5 rounded-xl transition"><i class="fas fa-save ml-1"></i> حفظ التعديل</button>
+                    <button onclick="closeModal()" class="flex-1 bg-gray-400 hover:bg-gray-500 text-white py-2.5 rounded-xl transition"><i class="fas fa-times ml-1"></i> إلغاء</button>
+                </div>
+            `;
+            showModal(modalHtml);
+        };
+        
+        window.saveManualAssign = function(bookingId) {
+            const booking = bookings.find(b => b.id === bookingId);
+            if (!booking) return;
+            
+            const checkboxes = document.querySelectorAll('#modalContent input[type="checkbox"]');
+            const selectedEmployees = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) selectedEmployees.push(cb.value);
+            });
+            
+            booking.assignedEmployees = selectedEmployees;
+            syncToFirebase();
+            closeModal();
+            renderCurrentTabContent();
+            showToast(`✅ تم تحديث توزيع الموظفين للحجز`);
+        };
         
         function renderPayrollContent() {
             updateEmployeeTotalOrders();
@@ -478,8 +533,8 @@
         function renderUsersContent() {
             const container = document.getElementById('usersTab');
             if (!container) return;
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-lock ml-2"></i>المستخدمين</h2><div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th><tr></thead><tbody>
-                ${users.map(u => `<tr><td class="p-2">${u.username}</span></span><td><td class="p-2">${u.employeeId ? (employees.find(e=>e.id===u.employeeId)?.name || '-') : '-'}</span></span><td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role === 'admin' ? 'bg-red-100' : u.role === 'manager' ? 'bg-purple-100' : 'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-lock ml-2"></i>المستخدمين</h2><div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>
+                ${users.map(u => `<tr><td class="p-2">${u.username}</span></span></td><td class="p-2">${u.employeeId ? (employees.find(e=>e.id===u.employeeId)?.name || '-') : '-'}</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role === 'admin' ? 'bg-red-100' : u.role === 'manager' ? 'bg-purple-100' : 'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
                 </tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
         }
         
@@ -491,7 +546,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد Excel</button></div>
                     <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF</h3><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد PDF</button></div>
-                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>أيام الإجازة</h3><p class="text-sm text-gray-500">الجمعة إجازة تلقائياً</p><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">إدارة الإجازات</button></div>
+                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>أيام الإجازة</h3><p class="text-sm text-gray-500">أضف أيام الإجازة الرسمية فقط (الجمعة أصبحت يوم عمل عادي)</p><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">إدارة الإجازات</button></div>
                     <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-palette text-purple-600 ml-2"></i>تغيير اسم الشركة</h3><input type="text" id="companyName" class="mb-2" placeholder="اسم الشركة"><button onclick="changeCompanyName()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl w-full">تحديث</button></div>
                 </div>
                 <div class="mt-4 border rounded-2xl p-4 bg-amber-50"><h3 class="font-bold"><i class="fas fa-info-circle ml-2 text-amber-600"></i>تنبيه مهم</h3><p class="text-sm text-gray-600">بعد إضافة حجوزات جديدة، اضغط على "إعادة توزيع" لتوزيع المهام بشكل متساوٍ بين الموظفين حسب التاريخ.</p></div>
@@ -679,18 +734,6 @@
             }
         }
         
-        function manualAssign(bookingId) {
-            const b = bookings.find(bk => bk.id === bookingId);
-            const empList = employees.filter(e => e.active).map(e => `${e.id}|${e.name} (${e.role})`).join('\n');
-            const ids = prompt("أدخل أيدي الموظفين مفصولة بفواصل:\n" + empList, b.assignedEmployees?.join(',') || '');
-            if (ids) {
-                b.assignedEmployees = ids.split(',').map(s => s.trim());
-                syncToFirebase();
-                renderCurrentTabContent();
-                showToast("تم التعديل");
-            }
-        }
-        
         function addEquipment() {
             const name = prompt("اسم المعدة");
             if (name) {
@@ -763,7 +806,7 @@
         
         function exportToPDF() {
             const win = window.open();
-            win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
+            win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><td><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
             win.print();
         }
         
@@ -773,7 +816,7 @@
                 <p class="text-sm text-gray-500 mb-3">اختر ملف Excel يحتوي على أعمدة: التاريخ، العميل، القاعة، السعر</p>
                 <input type="file" id="excelFile" accept=".xlsx,.xls" class="mb-3">
                 <select id="importHallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select>
-                <div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="skipFriday" checked> الجمعة</label><label><input type="checkbox" id="skipSaturday"> السبت</label><label><input type="checkbox" id="skipHolidays" checked> الأيام المسجلة كإجازة</label></div></div>
+                <div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="skipFriday"> الجمعة</label><label><input type="checkbox" id="skipSaturday"> السبت</label><label><input type="checkbox" id="skipHolidays" checked> الأيام المسجلة كإجازة</label></div></div>
                 <button onclick="importExcelData()" class="bg-green-700 text-white w-full py-2.5 rounded-xl">استيراد</button>
                 <div id="importPreview" class="mt-3 text-sm text-gray-600"></div>
             `;
@@ -866,7 +909,7 @@
                 <p class="text-sm text-gray-500 mb-3">اختر ملف PDF وسيتم استخراج التواريخ تلقائياً</p>
                 <input type="file" id="pdfFile" accept="application/pdf" class="mb-3">
                 <select id="pdfHallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select>
-                <div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="pdfSkipFriday" checked> الجمعة</label><label><input type="checkbox" id="pdfSkipSaturday"> السبت</label><label><input type="checkbox" id="pdfSkipHolidays" checked> الأيام المسجلة كإجازة</label></div></div>
+                <div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="pdfSkipFriday"> الجمعة</label><label><input type="checkbox" id="pdfSkipSaturday"> السبت</label><label><input type="checkbox" id="pdfSkipHolidays" checked> الأيام المسجلة كإجازة</label></div></div>
                 <input id="pdfClientName" placeholder="اسم العميل الافتراضي" class="mb-3" value="عميل من PDF">
                 <button onclick="importPdfData()" class="bg-red-700 text-white w-full py-2.5 rounded-xl">استيراد</button>
                 <div id="pdfImportPreview" class="mt-3 text-sm text-gray-600"></div>
@@ -933,7 +976,7 @@
             const holidaysList = holidays.map(h => `<div class="flex justify-between items-center p-2 border-b"><span>${h}</span><button onclick="removeHoliday('${h}')" class="text-red-500 text-sm">حذف</button></div>`).join('');
             const html = `
                 <h3 class="text-xl font-bold mb-4"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>إدارة أيام الإجازة</h3>
-                <p class="text-sm text-gray-500 mb-3">أيام الجمعة محسوبة إجازة تلقائياً. يمكنك إضافة أيام إضافية.</p>
+                <p class="text-sm text-gray-500 mb-3">أضف أيام الإجازة الرسمية فقط (مثل شم النسيم، العيد، إلخ)</p>
                 <div class="flex gap-2 mb-3"><input type="date" id="newHoliday" class="flex-1"><button onclick="addHoliday()" class="bg-amber-600 text-white px-3 py-2 rounded-xl">+ إضافة</button></div>
                 <div class="max-h-48 overflow-y-auto border rounded-lg p-2">${holidaysList || '<p class="text-gray-500 text-center">لا توجد أيام إجازة إضافية</p>'}</div>
                 <button onclick="closeModal(); renderCurrentTabContent();" class="mt-3 bg-gray-600 text-white w-full py-2 rounded-xl">إغلاق</button>
@@ -1026,7 +1069,7 @@
                             <div id="loginError" class="text-red-500 text-sm mb-4 text-center hidden"></div>
                             <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-semibold transition"><i class="fas fa-sign-in-alt ml-2"></i> تسجيل الدخول</button>
                         </form>
-                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2026 Drmedia |ahmed shreif</p><p class="mt-1">01002670948</p></div>
+                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2026 Drmedia | ahmed shreif</p><p class="mt-1">01002670948</p></div>
                     </div>
                 </div>
             `;
@@ -1075,7 +1118,6 @@
         window.showEditEmployeeModal = showEditEmployeeModal;
         window.saveEditEmployee = saveEditEmployee;
         window.deleteEmployee = deleteEmployee;
-        window.manualAssign = manualAssign;
         window.addEquipment = addEquipment;
         window.assignEquipment = assignEquipment;
         window.editUser = editUser;
