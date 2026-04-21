@@ -80,7 +80,7 @@
     let currentHallFilter = 'all';
     let selectedEmployees = new Set();
 
-    // -------------------- دالة الحفظ الموحدة (القلب النابض للنظام) --------------------
+    // -------------------- دالة الحفظ الموحدة --------------------
     function saveAllToFirebase(showIndicator = true) {
         if(showIndicator) {
             const indicator = document.getElementById('saveIndicator');
@@ -99,9 +99,10 @@
         
         Promise.all(saves).then(() => {
             console.log("✅ جميع البيانات تم حفظها في Firebase");
+            showMsg("✅ تم حفظ جميع البيانات");
         }).catch(err => {
             console.error("❌ خطأ في الحفظ:", err);
-            showMsg("⚠️ خطأ في حفظ البيانات، تأكد من اتصال الإنترنت", "error");
+            showMsg("⚠️ خطأ في حفظ البيانات، تأكد من اتصال الإنترنت وقواعد Firebase", "error");
         });
     }
 
@@ -342,7 +343,7 @@
                 <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-line ml-1"></i>الإيرادات الشهرية</h3><canvas id="revenueChartCanvas"></canvas></div>
                 <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-bar ml-1"></i>أداء الموظفين (أفضل 5)</h3><canvas id="empChartCanvas"></canvas></div>
             </div>
-            <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${upcoming.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></td>`).join('')||'}<tr<td colspan="4">لا توجد حجوزات</span></span></td>'}</tbody></table></div></div>
+            <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${upcoming.map(b=>`<td><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></td>`).join('')||'}<tr<td colspan="4">لا توجد حجوزات</span></span></td>'}</tbody></table></div></div>
         `;
         document.getElementById('dashboardTab').innerHTML = html;
         setTimeout(()=>{
@@ -371,7 +372,7 @@
             </div>
             <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الموظفون</th><th></th></td></thead><tbody>
                 ${filteredBookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</span></span></td><td class="p-2">${b.hallName}</span></span></td><td class="p-2">${b.price} ج.م</span></span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</span></span></td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`).join('')}
-                ${filteredBookings.length===0?'}<tr<td colspan="6" class="text-center">لا توجد حجوزات</span></span></tr>':''}
+                ${filteredBookings.length===0?'}<tr<td colspan="6" class="text-center">لا توجد حجوزات</span></span></table>':''}
             </tbody></table></div>
         `;
         document.getElementById('bookingsTab').innerHTML = html;
@@ -427,10 +428,10 @@
     function renderHallsContent() {
         const html = `
             <div class="flex justify-between mb-4"><h2 class="text-xl font-bold">🏛️ القاعات</h2><button onclick="showAddHallModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة قاعة</button></div>
-            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>اسم القاعة</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th><th></th></tr></thead><tbody>
+            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>اسم القاعة</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th><th></th><tr></thead><tbody>
                 ${halls.map(h=>{
                     const count = bookings.filter(b=>b.hallId===h.id).length;
-                    return `<tr><td class="p-2">${h.name}</td><td class="p-2">${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td class="p-2">${h.active?'🟢 نشطة':'🔴 غير نشطة'}</td><td class="p-2">${count}</td><td class="p-2"><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`;
+                    return `<tr><td class="p-2">${h.name}</td><td class="p-2">${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td class="p-2">${h.active?'🟢 نشطة':'🔴 غير نشطة'}</td><td class="p-2">${count}</td><td class="p-2"><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`;
                 }).join('')}
             </tbody></table></div>
         `;
@@ -709,7 +710,7 @@
             <div class="grid grid-cols-3 gap-3 mb-4"><div class="bg-green-100 p-3 rounded-xl text-center"><p>الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
             <div class="bg-amber-100 p-3 rounded-xl text-center"><p>المرتبات</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
             <div class="bg-purple-100 p-3 rounded-xl text-center"><p>صافي الأرباح</p><p class="text-2xl font-bold">${(totalRevenue-totalSalaries).toLocaleString()} ج.م</p></div></div>
-            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></td></thead><tbody>${employees.map(e=>`<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}</tbody></table></div>
+            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>${employees.map(e=>`<td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}</tbody></table></div>
         `;
         document.getElementById('payrollTab').innerHTML = html;
     }
@@ -759,7 +760,7 @@
     }
     function exportToPDF(){
         const win = window.open();
-        win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b=>`<td><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
+        win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
         win.print();
     }
 
@@ -774,7 +775,7 @@
 
     // -------------------- المستخدمين --------------------
     function renderUsersContent() {
-        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></tr></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
+        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th><tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`).join('')}</tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
         document.getElementById('usersTab').innerHTML = html;
     }
 
