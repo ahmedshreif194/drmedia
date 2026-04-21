@@ -204,7 +204,7 @@
                     <h1 class="text-2xl font-bold text-emerald-800"><i class="fas fa-chart-line ml-2"></i>Drmedia Pro - لوحة التحكم</h1>
                     <div><span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full ml-2">${currentUser?.username}</span><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div>
                 </div>
-                <div class="flex flex-wrap gap-1 border-b">
+                <div class="flex flex-wrap gap-1 border-b" id="tabsContainer">
                     <button data-tab="dashboardTab" class="tab-btn active">📊 لوحة التحكم</button>
                     <button data-tab="bookingsTab" class="tab-btn">📅 الحجوزات</button>
                     <button data-tab="employeesTab" class="tab-btn">👥 الموظفين</button>
@@ -231,28 +231,35 @@
             </div>
         `;
         document.getElementById('app').innerHTML = html;
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.onclick = () => {
-                document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-                btn.classList.add('active');
-                currentTab = btn.dataset.tab;
-                renderCurrentTab();
-            };
+        
+        // ربط أحداث التبويبات
+        document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                // إزالة active من جميع الأزرار
+                document.querySelectorAll('#tabsContainer .tab-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                // إخفاء جميع المحتويات
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                // إظهار المحتوى المحدد
+                const tabId = this.getAttribute('data-tab');
+                document.getElementById(tabId).classList.remove('hidden');
+                currentTab = tabId;
+                // تحديث المحتوى
+                if(tabId === 'dashboardTab') renderDashboardContent();
+                else if(tabId === 'bookingsTab') renderBookingsContent();
+                else if(tabId === 'employeesTab') renderEmployeesContent();
+                else if(tabId === 'distributionTab') renderDistributionContent();
+                else if(tabId === 'payrollTab') renderPayrollContent();
+                else if(tabId === 'calendarTab') renderCalendarContent();
+                else if(tabId === 'reportsTab') renderReportsContent();
+                else if(tabId === 'equipmentTab') renderEquipmentContent();
+                else if(tabId === 'usersTab') renderUsersContent();
+                else if(tabId === 'settingsTab') renderSettingsContent();
+            });
         });
-        renderCurrentTab();
-    }
-
-    function renderCurrentTab() {
-        if(currentTab === 'dashboardTab') renderDashboardContent();
-        else if(currentTab === 'bookingsTab') renderBookingsContent();
-        else if(currentTab === 'employeesTab') renderEmployeesContent();
-        else if(currentTab === 'distributionTab') renderDistributionContent();
-        else if(currentTab === 'payrollTab') renderPayrollContent();
-        else if(currentTab === 'calendarTab') renderCalendarContent();
-        else if(currentTab === 'reportsTab') renderReportsContent();
-        else if(currentTab === 'equipmentTab') renderEquipmentContent();
-        else if(currentTab === 'usersTab') renderUsersContent();
-        else if(currentTab === 'settingsTab') renderSettingsContent();
+        
+        // عرض المحتوى الافتراضي
+        renderDashboardContent();
     }
 
     // -------------------- لوحة التحكم --------------------
@@ -290,7 +297,7 @@
                 <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-line ml-1"></i>الإيرادات الشهرية</h3><canvas id="revenueChartCanvas"></canvas></div>
                 <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-bar ml-1"></i>أداء الموظفين (أفضل 5)</h3><canvas id="empChartCanvas"></canvas></div>
             </div>
-            <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${upcoming.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>
+            <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${upcoming.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</span></span></td>`).join('')||'}<tr<td colspan="4">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>
         `;
         document.getElementById('dashboardTab').innerHTML = html;
         setTimeout(()=>{
@@ -312,7 +319,7 @@
                 <button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl mr-2">إعادة توزيع</button></div>
             </div>
             <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>النوع</th><th>الخدمات</th><th>السعر</th><th>الموظفون</th><th></th></tr></thead><tbody>
-                ${bookings.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.hallType==='closed'?'مغلقة':b.hallType==='open'?'أوبن':'كافيه'}</td><td>${(b.services||[]).join(', ')}</td><td>${b.price} ج.م</td><td>${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</td><td><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
+                ${bookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</span></span></td><td class="p-2">${b.hallName}</span></span></td><td class="p-2">${b.hallType==='closed'?'مغلقة':b.hallType==='open'?'أوبن':'كافيه'}</span></span></td><td class="p-2">${(b.services||[]).join(', ')}</span></span></td><td class="p-2">${b.price} ج.م</span></span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</span></span></td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></tr>`).join('')}
                 ${bookings.length===0?'<tr><td colspan="8" class="text-center">لا توجد حجوزات</td></tr>':''}
             </tbody></table></div>
         `;
@@ -368,7 +375,7 @@
                 ${employees.map(e=>{
                     const salary = (e.totalOrders||0)*e.salaryPerOrder;
                     const acc = users.find(u=>u.employeeId===e.id);
-                    return `<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.salaryPerOrder} ج.م</td><td>${e.totalOrders||0}</td><td>${salary} ج.م</td><td>${e.active?'🟢 نشط':'🔴 غير نشط'}</td><td>${acc?acc.username:'لا يوجد'}</td><td><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`;
+                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${salary} ج.م</td><td class="p-2">${e.active?'🟢 نشط':'🔴 غير نشط'}</td><td class="p-2">${acc?acc.username:'لا يوجد'}</td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`;
                 }).join('')}
             </tbody></table></div>
         `;
@@ -481,7 +488,7 @@
             <div class="grid grid-cols-3 gap-3 mb-4"><div class="bg-green-100 p-3 rounded-xl text-center"><p>الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
             <div class="bg-amber-100 p-3 rounded-xl text-center"><p>المرتبات</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
             <div class="bg-purple-100 p-3 rounded-xl text-center"><p>صافي الأرباح</p><p class="text-2xl font-bold">${(totalRevenue-totalSalaries).toLocaleString()} ج.م</p></div></div>
-            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>${employees.map(e=>`<tr><td>${e.name}</td><td>${e.role}</td><td>${e.totalOrders||0}</td><td>${e.salaryPerOrder} ج.م</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>
+            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>${employees.map(e=>`<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>
         `;
         document.getElementById('payrollTab').innerHTML = html;
     }
@@ -548,7 +555,7 @@
 
     // -------------------- المستخدمين --------------------
     function renderUsersContent() {
-        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td>${u.username}</td><td>${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td><button onclick="editUser('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
+        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
         document.getElementById('usersTab').innerHTML = html;
     }
 
@@ -668,7 +675,7 @@
                 <div class="flex justify-between items-center mb-4"><h1 class="text-2xl font-bold text-emerald-800">Drmedia Pro</h1><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div>
                 <div class="bg-emerald-700 text-white p-6 rounded-2xl mb-6"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><p class="opacity-90">${emp.role}</p></div>
                 <div class="grid grid-cols-2 gap-4 mb-6"><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${total}</div><div>عدد الأوردرات</div></div><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${salary.toLocaleString()} ج.م</div><div>إجمالي المستحق</div></div></div>
-                <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 الأوردرات التي عملت بها</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map((o,i)=>`<tr><td>${i+1}</td><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')||'<tr><td colspan="4" class="text-center">لا توجد أوردرات</td></tr>'}</tbody></table></div></div>
+                <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 الأوردرات التي عملت بها</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map((o,i)=>`<tr><td class="p-2">${i+1}</td><td class="p-2">${o.date}</td><td class="p-2">${o.clientName}</td><td class="p-2">${o.hallName}</td></tr>`).join('')||'<tr><td colspan="4" class="text-center">لا توجد أوردرات</td></tr>'}</tbody></table></div></div>
                 <div class="mt-4 p-3 bg-gray-50 rounded-lg text-center"><i class="fas fa-chart-simple ml-1 text-emerald-600"></i> إجمالي المستحق ${salary.toLocaleString()} ج.م | عدد الأوردرات ${total} | قيمة الأوردر ${emp.salaryPerOrder} ج.م</div>
             </div>
         `;
