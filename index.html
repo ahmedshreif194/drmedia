@@ -3,1173 +3,308 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia VPMS Pro | لوحة تحكم متقدمة</title>
+    <title>Drmedia Pro - لوحة تحكم متقدمة</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
     <style>
-        * { box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); min-height: 100vh; }
-        .tab-btn { cursor: pointer; transition: all 0.2s; border-radius: 12px 12px 0 0; }
-        .tab-btn.active { background-color: #065f46 !important; color: white !important; }
-        .tab-btn:not(.active):hover { background-color: #d1d5db !important; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 10px 20px; border-radius: 50px; z-index: 999; font-size: 14px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; }
-        @media (max-width: 640px) { .toast { white-space: normal; width: 90%; text-align: center; } .tab-btn { padding: 8px 12px; font-size: 12px; } }
-        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-        .calendar-day { background: #f1f5f9; border-radius: 12px; padding: 10px 4px; text-align: center; cursor: pointer; transition: all 0.2s; font-weight: 500; }
-        .calendar-day.booked { background: #10b981; color: white; }
-        .calendar-day:hover { transform: scale(1.05); background: #cbd5e1; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #e5e7eb; padding: 10px 8px; text-align: right; }
-        th { background-color: #f3f4f6; font-weight: bold; }
-        input, select, textarea { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; width: 100%; }
-        button { transition: all 0.2s; cursor: pointer; }
-        button:active { transform: scale(0.97); }
-        .employee-card { background: linear-gradient(135deg, #065f46 0%, #047857 100%); }
-        .stat-card { transition: all 0.2s; }
-        .stat-card:hover { transform: translateY(-3px); }
-        .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #065f46 0%, #047857 100%); }
-        .login-card { background: white; border-radius: 32px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
-        .version-badge { position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.5); color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; z-index: 100; }
-        .admin-only { display: inline-block; }
-        .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .loading-spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #065f46; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .employee-checkbox-list { max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
-        .employee-checkbox-list label { display: block; padding: 8px; margin: 0; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
-        .employee-checkbox-list label:hover { background-color: #f0fdf4; }
-        .employee-checkbox-list input { margin-left: 10px; transform: scale(1.1); }
-        .dashboard-card { transition: all 0.2s; border-radius: 1rem; }
-        .dashboard-card:hover { transform: translateY(-5px); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
-        .chart-container { height: 250px; position: relative; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0fdf4; }
+        .tab-btn { cursor: pointer; padding: 10px 16px; border-radius: 16px 16px 0 0; display: inline-block; background: #e5e7eb; margin-left: 4px; }
+        .tab-btn.active { background: #065f46; color: white; }
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 8px 16px; border-radius: 40px; z-index: 1000; font-size: 14px; }
+        .dashboard-card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
+        .stat-number { font-size: 32px; font-weight: bold; color: #065f46; }
+        canvas { max-height: 250px; width: 100% !important; }
     </style>
 </head>
 <body>
 
-    <div id="appRoot"></div>
-    <div class="version-badge">Drmedia Pro v6.1 | لوحة تحكم متقدمة</div>
+<div id="app"></div>
+<div id="toast" class="toast hidden"></div>
 
-    <div id="genericModal" class="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden z-30 p-3">
-        <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-auto shadow-2xl">
-            <div id="modalContent"></div>
-            <div class="flex justify-end gap-3 mt-5"><button id="closeModalBtn" class="bg-gray-400 hover:bg-gray-500 text-white px-5 py-2 rounded-xl transition">إغلاق</button></div>
-        </div>
-    </div>
+<script>
+    // -------------------- Firebase Config --------------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
+        authDomain: "drmedia-vpms.firebaseapp.com",
+        databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
+        projectId: "drmedia-vpms",
+        storageBucket: "drmedia-vpms.firebasestorage.app",
+        messagingSenderId: "681162512380",
+        appId: "1:681162512380:web:ab2482f3234d8b59fc4479"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    <div id="loadingOverlay" class="loading-overlay hidden">
-        <div class="loading-spinner"></div>
-    </div>
+    // -------------------- البيانات --------------------
+    let bookings = [], employees = [], users = [], currentUser = null;
+    let revenueChart = null;
 
-    <script>
-        // ===================== إعدادات Firebase =====================
-        const firebaseConfig = {
-            apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
-            authDomain: "drmedia-vpms.firebaseapp.com",
-            databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
-            projectId: "drmedia-vpms",
-            storageBucket: "drmedia-vpms.firebasestorage.app",
-            messagingSenderId: "681162512380",
-            appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
-            measurementId: "G-9KHN6N33FX"
-        };
-        
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
-        
-        // ===================== البيانات الأساسية =====================
-        let bookings = [];
-        let employees = [];
-        let equipment = [];
-        let users = [];
-        let currentUser = null;
-        let holidays = [];
-        let isSyncing = false;
-        let syncQueue = [];
-        let dataLoaded = false;
-        let currentTab = 'dashboardTab';
-        let revenueChart = null;
-        let ordersChart = null;
-        
-        // ===================== دوال المزامنة =====================
-        function showLoading(show) {
-            const overlay = document.getElementById('loadingOverlay');
-            if (overlay) {
-                if (show) overlay.classList.remove('hidden');
-                else overlay.classList.add('hidden');
-            }
+    // -------------------- بيانات افتراضية --------------------
+    function loadDefaultData() {
+        if (employees.length === 0) {
+            employees = [
+                { id: 'emp1', name: 'أحمد علي', role: 'مخرج', salaryPerOrder: 300, active: true, totalOrders: 0 },
+                { id: 'emp2', name: 'محمود حسن', role: 'مخرج', salaryPerOrder: 300, active: true, totalOrders: 0 },
+                { id: 'emp3', name: 'سامر خالد', role: 'مصور', salaryPerOrder: 200, active: true, totalOrders: 0 },
+                { id: 'emp4', name: 'نور الدين', role: 'مصور', salaryPerOrder: 200, active: true, totalOrders: 0 },
+                { id: 'emp5', name: 'ياسر محمد', role: 'مصور', salaryPerOrder: 200, active: true, totalOrders: 0 },
+                { id: 'emp6', name: 'كريم وائل', role: 'مصور', salaryPerOrder: 200, active: true, totalOrders: 0 },
+                { id: 'emp7', name: 'طارق رشاد', role: 'كرين', salaryPerOrder: 250, active: true, totalOrders: 0 },
+                { id: 'emp8', name: 'هاني سعيد', role: 'كرين', salaryPerOrder: 250, active: true, totalOrders: 0 }
+            ];
         }
-        
-        function syncToFirebase() {
-            if (isSyncing) {
-                syncQueue.push(() => syncToFirebase());
-                return;
-            }
-            isSyncing = true;
-            database.ref('bookings').set(bookings).then(() => {
-                database.ref('employees').set(employees);
-                database.ref('equipment').set(equipment);
-                database.ref('users').set(users);
-                database.ref('holidays').set(holidays);
-            }).catch(err => console.error("Sync error:", err)).finally(() => {
-                isSyncing = false;
-                if (syncQueue.length) {
-                    const next = syncQueue.shift();
-                    next();
+        if (users.length === 0) {
+            users = [
+                { username: 'admin', password: 'admin123', role: 'admin' },
+                { username: 'ahmed', password: 'emp123', role: 'employee', employeeId: 'emp1' }
+            ];
+        }
+        if (bookings.length === 0) {
+            const d = (days) => { let x = new Date(); x.setDate(x.getDate()+days); return x.toISOString().slice(0,10); };
+            bookings = [
+                { id: 'b1', clientName: 'محمد عبدالله', hallName: 'قاعة الأندلس', date: d(5), hallType: 'closed', price: 5000, assignedEmployees: [] },
+                { id: 'b2', clientName: 'سارة خالد', hallName: 'قاعة البحر', date: d(7), hallType: 'open', price: 4500, assignedEmployees: [] },
+                { id: 'b3', clientName: 'عمر وليد', hallName: 'كافيه روز', date: d(10), hallType: 'cafe', price: 2000, assignedEmployees: [] }
+            ];
+        }
+        saveToFirebase();
+        autoDistribute();
+    }
+
+    function saveToFirebase() {
+        db.ref('bookings').set(bookings);
+        db.ref('employees').set(employees);
+        db.ref('users').set(users);
+    }
+
+    function listenToFirebase() {
+        db.ref('bookings').on('value', snap => { if(snap.val()) bookings = snap.val(); renderDashboard(); });
+        db.ref('employees').on('value', snap => { if(snap.val()) employees = snap.val(); renderDashboard(); });
+        db.ref('users').on('value', snap => { if(snap.val()) users = snap.val(); if(!currentUser) showLogin(); else renderDashboard(); });
+    }
+
+    // -------------------- التوزيع العادل --------------------
+    function autoDistribute() {
+        bookings.forEach(b => b.assignedEmployees = []);
+        const sorted = [...bookings].sort((a,b)=>new Date(a.date)-new Date(b.date));
+        let dirs = employees.filter(e=>e.role==='مخرج'&&e.active).map(e=>({...e, temp:0}));
+        let photos = employees.filter(e=>e.role==='مصور'&&e.active).map(e=>({...e, temp:0}));
+        let cranes = employees.filter(e=>e.role==='كرين'&&e.active).map(e=>({...e, temp:0}));
+        let assignedToday = new Map();
+        for(let b of sorted){
+            let busy = assignedToday.get(b.date)||new Set();
+            let assigned = [];
+            if(b.hallType === 'cafe'){
+                let avail = photos.filter(p=>!busy.has(p.id));
+                if(avail.length){
+                    avail.sort((a,c)=>a.temp-c.temp);
+                    let chosen = avail[0];
+                    assigned.push(chosen.id);
+                    chosen.temp++;
+                    busy.add(chosen.id);
                 }
-            });
-        }
-        
-        // ===================== البيانات الافتراضية =====================
-        function initDefaultData() {
-            if (employees.length === 0) {
-                employees = [
-                    { id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 },
-                    { id: 'emp2', name: 'محمود حسن', role: 'مخرج', phone: '01002345678', salaryPerOrder: 300, active: true, totalOrders: 0 },
-                    { id: 'emp3', name: 'سامر خالد', role: 'مصور', phone: '01003456789', salaryPerOrder: 200, active: true, totalOrders: 0 },
-                    { id: 'emp4', name: 'نور الدين', role: 'مصور', phone: '01004567890', salaryPerOrder: 200, active: true, totalOrders: 0 },
-                    { id: 'emp5', name: 'ياسر محمد', role: 'مصور', phone: '01005678901', salaryPerOrder: 200, active: true, totalOrders: 0 },
-                    { id: 'emp6', name: 'كريم وائل', role: 'مصور', phone: '01006789012', salaryPerOrder: 200, active: true, totalOrders: 0 },
-                    { id: 'emp7', name: 'طارق رشاد', role: 'كرين', phone: '01007890123', salaryPerOrder: 250, active: true, totalOrders: 0 },
-                    { id: 'emp8', name: 'هاني سعيد', role: 'كرين', phone: '01008901234', salaryPerOrder: 250, active: true, totalOrders: 0 }
-                ];
-            }
-            
-            if (users.length === 0) {
-                users = [
-                    { username: 'admin', password: 'admin123', role: 'admin', employeeId: null, name: 'مدير النظام' },
-                    { username: 'manager', password: 'manager123', role: 'manager', employeeId: null, name: 'مدير عام' },
-                    { username: 'ahmed', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد علي' },
-                    { username: 'mahmoud', password: 'emp123', role: 'employee', employeeId: 'emp2', name: 'محمود حسن' },
-                    { username: 'samer', password: 'emp123', role: 'employee', employeeId: 'emp3', name: 'سامر خالد' },
-                    { username: 'nour', password: 'emp123', role: 'employee', employeeId: 'emp4', name: 'نور الدين' },
-                    { username: 'yasser', password: 'emp123', role: 'employee', employeeId: 'emp5', name: 'ياسر محمد' },
-                    { username: 'kareem', password: 'emp123', role: 'employee', employeeId: 'emp6', name: 'كريم وائل' },
-                    { username: 'tarek', password: 'emp123', role: 'employee', employeeId: 'emp7', name: 'طارق رشاد' },
-                    { username: 'hany', password: 'emp123', role: 'employee', employeeId: 'emp8', name: 'هاني سعيد' }
-                ];
-            }
-            
-            if (equipment.length === 0) {
-                equipment = [
-                    { id: 'eq1', name: 'كاميرا سوني A7IV', type: 'كاميرا', status: 'متاحة', bookingId: null },
-                    { id: 'eq2', name: 'كرين كهربائي 6m', type: 'كرين', status: 'متاحة', bookingId: null },
-                    { id: 'eq3', name: 'مايك لاسلكي', type: 'مايك', status: 'متاحة', bookingId: null }
-                ];
-            }
-            
-            if (holidays.length === 0) {
-                holidays = ['2025-04-18', '2025-05-01'];
-            }
-            
-            if (bookings.length === 0) {
-                const futureDate = (days) => {
-                    let d = new Date();
-                    d.setDate(d.getDate() + days);
-                    return d.toISOString().split('T')[0];
-                };
-                bookings = [
-                    { id: 'b1', clientName: 'محمد عبدالله', phone: '01001112223', hallName: 'قاعة الأندلس', date: futureDate(5), hallType: 'closed', services: ['فيديو', 'فوتو', 'كرين'], price: 5000, assignedEmployees: [] },
-                    { id: 'b2', clientName: 'سارة خالد', phone: '01004445556', hallName: 'قاعة البحر', date: futureDate(7), hallType: 'open', services: ['فيديو', 'فوتو'], price: 4500, assignedEmployees: [] },
-                    { id: 'b3', clientName: 'عمر وليد', phone: '01007778889', hallName: 'كافيه روز', date: futureDate(10), hallType: 'cafe', services: ['فيديو'], price: 2000, assignedEmployees: [] }
-                ];
-            }
-            
-            syncToFirebase();
-            setTimeout(() => { autoDistribute(); }, 100);
-        }
-        
-        function listenToFirebase() {
-            showLoading(true);
-            
-            let loadedCount = 0;
-            function checkAllLoaded() {
-                loadedCount++;
-                if (loadedCount === 5) {
-                    showLoading(false);
-                    dataLoaded = true;
-                    if (bookings.length === 0 && employees.length === 0) {
-                        initDefaultData();
-                    } else {
-                        updateEmployeeTotalOrders();
-                        if (currentUser) {
-                            renderAll();
-                            if (currentUser.role !== 'employee' && currentTab === 'dashboardTab') {
-                                renderDashboardContent();
-                            }
-                        }
-                    }
-                }
-            }
-            
-            database.ref('bookings').on('value', (snapshot) => {
-                const newBookings = snapshot.val();
-                if (newBookings) bookings = newBookings;
-                else bookings = [];
-                checkAllLoaded();
-                if (dataLoaded && currentUser && currentUser.role !== 'employee') {
-                    updateEmployeeTotalOrders();
-                    if (currentTab === 'dashboardTab') renderDashboardContent();
-                    else renderCurrentTabContent();
-                }
-            });
-            
-            database.ref('employees').on('value', (snapshot) => {
-                const newEmployees = snapshot.val();
-                if (newEmployees) employees = newEmployees;
-                else employees = [];
-                checkAllLoaded();
-                if (dataLoaded && currentUser && currentUser.role !== 'employee') {
-                    updateEmployeeTotalOrders();
-                    if (currentTab === 'dashboardTab') renderDashboardContent();
-                    else renderCurrentTabContent();
-                }
-            });
-            
-            database.ref('equipment').on('value', (snapshot) => {
-                const newEquipment = snapshot.val();
-                if (newEquipment) equipment = newEquipment;
-                else equipment = [];
-                checkAllLoaded();
-                if (dataLoaded && currentUser && currentUser.role !== 'employee' && currentTab === 'dashboardTab') renderDashboardContent();
-            });
-            
-            database.ref('users').on('value', (snapshot) => {
-                const newUsers = snapshot.val();
-                if (newUsers) users = newUsers;
-                else users = [];
-                checkAllLoaded();
-                if (dataLoaded && currentUser && currentUser.role !== 'employee' && currentTab === 'dashboardTab') renderDashboardContent();
-            });
-            
-            database.ref('holidays').on('value', (snapshot) => {
-                const newHolidays = snapshot.val();
-                if (newHolidays) holidays = newHolidays;
-                else holidays = [];
-                checkAllLoaded();
-                if (dataLoaded && currentUser && currentUser.role !== 'employee' && currentTab === 'dashboardTab') renderDashboardContent();
-            });
-        }
-        
-        // ===================== دوال مساعدة =====================
-        function showToast(msg, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} ml-2"></i>${msg}`;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 2500);
-        }
-        
-        function getEmployeeOrderCount(empId) {
-            return bookings.filter(b => b.assignedEmployees && b.assignedEmployees.includes(empId)).length;
-        }
-        
-        function updateEmployeeTotalOrders() {
-            employees.forEach(emp => { emp.totalOrders = getEmployeeOrderCount(emp.id); });
-        }
-        
-        function isHoliday(date) {
-            if (holidays && holidays.includes(date)) return true;
-            return false;
-        }
-        
-        // ===================== التوزيع العادل =====================
-        function autoDistribute() {
-            bookings.forEach(b => { b.assignedEmployees = []; });
-            
-            const sortedBookings = [...bookings].sort((a, b) => new Date(a.date) - new Date(b.date));
-            
-            let availableDirectors = employees.filter(e => e.role === 'مخرج' && e.active).map(e => ({ ...e, tempOrders: e.totalOrders || 0 }));
-            let availablePhotographers = employees.filter(e => e.role === 'مصور' && e.active).map(e => ({ ...e, tempOrders: e.totalOrders || 0 }));
-            let availableCrane = employees.filter(e => e.role === 'كرين' && e.active).map(e => ({ ...e, tempOrders: e.totalOrders || 0 }));
-            
-            let assignedToday = new Map();
-            
-            for (const booking of sortedBookings) {
-                if (isHoliday(booking.date)) continue;
-                
-                const assigned = [];
-                const busyToday = assignedToday.get(booking.date) || new Set();
-                
-                if (booking.hallType === 'cafe') {
-                    let available = availablePhotographers.filter(p => !busyToday.has(p.id));
-                    if (available.length) {
-                        available.sort((a, b) => a.tempOrders - b.tempOrders);
-                        const chosen = available[0];
-                        assigned.push(chosen.id);
-                        chosen.tempOrders++;
-                        busyToday.add(chosen.id);
-                    }
-                } else {
-                    let availableDir = availableDirectors.filter(d => !busyToday.has(d.id));
-                    if (availableDir.length) {
-                        availableDir.sort((a, b) => a.tempOrders - b.tempOrders);
-                        const chosen = availableDir[0];
-                        assigned.push(chosen.id);
-                        chosen.tempOrders++;
-                        busyToday.add(chosen.id);
-                    }
-                    
-                    let availablePhoto = availablePhotographers.filter(p => !busyToday.has(p.id));
-                    for (let i = 0; i < 2; i++) {
-                        if (availablePhoto.length) {
-                            availablePhoto.sort((a, b) => a.tempOrders - b.tempOrders);
-                            const chosen = availablePhoto[0];
-                            assigned.push(chosen.id);
-                            chosen.tempOrders++;
-                            busyToday.add(chosen.id);
-                            availablePhoto = availablePhoto.filter(p => p.id !== chosen.id);
-                        }
-                    }
-                    
-                    let availableCr = availableCrane.filter(c => !busyToday.has(c.id));
-                    if (availableCr.length) {
-                        availableCr.sort((a, b) => a.tempOrders - b.tempOrders);
-                        const chosen = availableCr[0];
-                        assigned.push(chosen.id);
-                        chosen.tempOrders++;
-                        busyToday.add(chosen.id);
-                    }
-                }
-                
-                booking.assignedEmployees = assigned;
-                assignedToday.set(booking.date, busyToday);
-            }
-            
-            employees.forEach(emp => {
-                const inDirectors = availableDirectors.find(d => d.id === emp.id);
-                if (inDirectors) emp.totalOrders = inDirectors.tempOrders;
-                const inPhotographers = availablePhotographers.find(p => p.id === emp.id);
-                if (inPhotographers) emp.totalOrders = inPhotographers.tempOrders;
-                const inCrane = availableCrane.find(c => c.id === emp.id);
-                if (inCrane) emp.totalOrders = inCrane.tempOrders;
-            });
-            
-            syncToFirebase();
-            if (currentTab === 'dashboardTab') renderDashboardContent();
-            else renderCurrentTabContent();
-            showToast(`✅ تم التوزيع العادل على ${bookings.length} حجز`);
-        }
-        
-        // ===================== لوحة التحكم المتقدمة =====================
-        function renderDashboardContent() {
-            const container = document.getElementById('dashboardTab');
-            if (!container) return;
-            
-            const totalBookings = bookings.length;
-            const totalRevenue = bookings.reduce((sum, b) => sum + (b.price || 0), 0);
-            const totalEmployees = employees.filter(e => e.active).length;
-            const upcomingBookings = bookings.filter(b => new Date(b.date) >= new Date()).sort((a,b) => new Date(a.date) - new Date(b.date)).slice(0, 5);
-            
-            const hallStats = { closed: 0, open: 0, cafe: 0 };
-            bookings.forEach(b => hallStats[b.hallType]++);
-            
-            const now = new Date();
-            const currentMonth = now.getMonth();
-            const currentYear = now.getFullYear();
-            const monthlyBookings = bookings.filter(b => {
-                const d = new Date(b.date);
-                return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-            });
-            const monthlyRevenue = monthlyBookings.reduce((sum, b) => sum + (b.price || 0), 0);
-            
-            const topEmployee = [...employees].sort((a,b) => b.totalOrders - a.totalOrders)[0];
-            
-            const months = [];
-            const revenues = [];
-            for (let i = 5; i >= 0; i--) {
-                const d = new Date();
-                d.setMonth(d.getMonth() - i);
-                const monthName = d.toLocaleString('ar', { month: 'short' });
-                months.push(monthName);
-                const monthBookings = bookings.filter(b => {
-                    const bd = new Date(b.date);
-                    return bd.getMonth() === d.getMonth() && bd.getFullYear() === d.getFullYear();
-                });
-                revenues.push(monthBookings.reduce((sum, b) => sum + (b.price || 0), 0));
-            }
-            
-            const topEmployeesChart = [...employees].sort((a,b) => b.totalOrders - a.totalOrders).slice(0, 5);
-            const empNames = topEmployeesChart.map(e => e.name || 'موظف');
-            const empOrders = topEmployeesChart.map(e => e.totalOrders || 0);
-            
-            const html = `
-                <div class="space-y-6">
-                    <h2 class="text-2xl font-bold text-emerald-800 mb-4"><i class="fas fa-chart-line ml-2"></i>لوحة التحكم المتقدمة</h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div class="dashboard-card bg-gradient-to-r from-emerald-500 to-green-500 text-white p-5 rounded-2xl shadow-lg">
-                            <div class="flex justify-between items-center">
-                                <div><i class="fas fa-calendar-check text-3xl opacity-80"></i></div>
-                                <div class="text-left"><p class="text-sm opacity-90">إجمالي الحجوزات</p><p class="text-3xl font-bold">${totalBookings}</p></div>
-                            </div>
-                        </div>
-                        <div class="dashboard-card bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-5 rounded-2xl shadow-lg">
-                            <div class="flex justify-between items-center">
-                                <div><i class="fas fa-chart-line text-3xl opacity-80"></i></div>
-                                <div class="text-left"><p class="text-sm opacity-90">إجمالي الإيرادات</p><p class="text-3xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
-                            </div>
-                        </div>
-                        <div class="dashboard-card bg-gradient-to-r from-amber-500 to-orange-500 text-white p-5 rounded-2xl shadow-lg">
-                            <div class="flex justify-between items-center">
-                                <div><i class="fas fa-users text-3xl opacity-80"></i></div>
-                                <div class="text-left"><p class="text-sm opacity-90">الموظفين النشطين</p><p class="text-3xl font-bold">${totalEmployees}</p></div>
-                            </div>
-                        </div>
-                        <div class="dashboard-card bg-gradient-to-r from-purple-500 to-pink-500 text-white p-5 rounded-2xl shadow-lg">
-                            <div class="flex justify-between items-center">
-                                <div><i class="fas fa-trophy text-3xl opacity-80"></i></div>
-                                <div class="text-left"><p class="text-sm opacity-90">الأكثر شغل</p><p class="text-lg font-bold truncate">${topEmployee?.name || '-'}</p><p class="text-xl font-bold">${topEmployee?.totalOrders || 0} أوردر</p></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-white rounded-2xl p-5 shadow-md">
-                            <h3 class="font-bold text-gray-700 mb-3"><i class="fas fa-chart-simple ml-2 text-emerald-600"></i>إحصائيات الشهر الحالي</h3>
-                            <div class="grid grid-cols-2 gap-3 text-center">
-                                <div class="bg-emerald-50 p-3 rounded-xl"><p class="text-sm text-gray-500">حجوزات الشهر</p><p class="text-2xl font-bold text-emerald-700">${monthlyBookings.length}</p></div>
-                                <div class="bg-blue-50 p-3 rounded-xl"><p class="text-sm text-gray-500">إيرادات الشهر</p><p class="text-2xl font-bold text-blue-700">${monthlyRevenue.toLocaleString()} ج.م</p></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-2xl p-5 shadow-md">
-                            <h3 class="font-bold text-gray-700 mb-3"><i class="fas fa-building ml-2 text-emerald-600"></i>توزيع الحجوزات حسب القاعة</h3>
-                            <div class="grid grid-cols-3 gap-2 text-center">
-                                <div class="bg-purple-50 p-2 rounded-xl"><p class="text-sm text-purple-700">مغلقة</p><p class="text-xl font-bold text-purple-700">${hallStats.closed}</p></div>
-                                <div class="bg-blue-50 p-2 rounded-xl"><p class="text-sm text-blue-700">أوبن</p><p class="text-xl font-bold text-blue-700">${hallStats.open}</p></div>
-                                <div class="bg-amber-50 p-2 rounded-xl"><p class="text-sm text-amber-700">كافيه</p><p class="text-xl font-bold text-amber-700">${hallStats.cafe}</p></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <div class="bg-white rounded-2xl p-5 shadow-md">
-                            <h3 class="font-bold text-gray-700 mb-3"><i class="fas fa-chart-line ml-2 text-emerald-600"></i>الإيرادات الشهرية (آخر 6 أشهر)</h3>
-                            <div class="chart-container">
-                                <canvas id="revenueChart"></canvas>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-2xl p-5 shadow-md">
-                            <h3 class="font-bold text-gray-700 mb-3"><i class="fas fa-chart-bar ml-2 text-emerald-600"></i>أداء الموظفين (أكثر 5)</h3>
-                            <div class="chart-container">
-                                <canvas id="employeesChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-white rounded-2xl p-5 shadow-md">
-                        <h3 class="font-bold text-gray-700 mb-3"><i class="fas fa-calendar-alt ml-2 text-emerald-600"></i>أقرب الحجوزات</h3>
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead class="bg-gray-50"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead>
-                                <tbody>
-                                    ${upcomingBookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></td>`).join('')}
-                                    ${upcomingBookings.length === 0 ? '<tr><td colspan="4" class="text-center p-4 text-gray-500">لا توجد حجوزات قادمة</span></span></td>` : ''}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            `;
-            container.innerHTML = html;
-            
-            setTimeout(() => {
-                try {
-                    const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
-                    if (revenueCtx) {
-                        if (revenueChart) revenueChart.destroy();
-                        revenueChart = new Chart(revenueCtx, {
-                            type: 'line',
-                            data: { labels: months, datasets: [{ label: 'الإيرادات (ج.م)', data: revenues, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', tension: 0.3, fill: true }] },
-                            options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' } } }
-                        });
-                    }
-                    const empCtx = document.getElementById('employeesChart')?.getContext('2d');
-                    if (empCtx) {
-                        if (ordersChart) ordersChart.destroy();
-                        ordersChart = new Chart(empCtx, {
-                            type: 'bar',
-                            data: { labels: empNames, datasets: [{ label: 'عدد الأوردرات', data: empOrders, backgroundColor: '#f59e0b', borderRadius: 8 }] },
-                            options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' } } }
-                        });
-                    }
-                } catch(e) { console.error("Chart error:", e); }
-            }, 100);
-        }
-        
-        // ===================== دوال العرض لكل تبويب =====================
-        function renderBookingsContent() {
-            const container = document.getElementById('bookingsTab');
-            if (!container) return;
-            container.innerHTML = `
-                <div class="flex justify-between items-center flex-wrap gap-3 mb-5">
-                    <h2 class="text-2xl font-bold text-emerald-800"><i class="fas fa-calendar-check ml-2"></i>الحجوزات (${bookings.length})</h2>
-                    <div class="flex gap-2">
-                        <button onclick="showAddBookingModal()" class="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl"><i class="fas fa-plus ml-1"></i> حجز جديد</button>
-                        <button onclick="autoDistribute();" class="bg-purple-700 hover:bg-purple-800 text-white px-4 py-2 rounded-xl"><i class="fas fa-random ml-1"></i> إعادة توزيع</button>
-                    </div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full bg-white rounded-xl overflow-hidden shadow">
-                        <thead class="bg-gray-100"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>النوع</th><th>الخدمات</th><th>السعر</th><th>الموظفون</th><th></th></tr></thead>
-                        <tbody>
-                            ${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${b.hallType === 'closed' ? 'bg-purple-100' : b.hallType === 'open' ? 'bg-blue-100' : 'bg-amber-100'}">${b.hallType === 'closed' ? 'مغلقة' : b.hallType === 'open' ? 'أوبن' : 'كافيه'}</span></td><td class="p-2">${(b.services || []).join(', ')}</span></span></td><td class="p-2 font-bold text-emerald-700">${b.price} ج.م</span></span></td><td class="p-2 text-sm">${(b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name || '').join(', ') || '⚠️ لم يتم التوزيع'}</td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
-                            ${bookings.length === 0 ? '<tr><td colspan="8" class="text-center p-6 text-gray-500">📭 لا توجد حجوزات</span></span><tr>' : ''}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        }
-        
-        function renderEmployeesContent() {
-            updateEmployeeTotalOrders();
-            const container = document.getElementById('employeesTab');
-            if (!container) return;
-            container.innerHTML = `
-                <div class="flex justify-between mb-4"><h2 class="text-2xl font-bold"><i class="fas fa-users ml-2"></i>الموظفين (${employees.length})</h2><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
-                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl shadow"><thead class="bg-gray-100"><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th><tr></thead><tbody>
-                ${employees.map(e => { 
-                    const salary = (e.totalOrders || 0) * e.salaryPerOrder;
-                    const userAccount = users.find(u => u.employeeId === e.id);
-                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 font-bold">${e.totalOrders || 0}</span></span></td><td class="p-2 text-emerald-700">${salary} ج.م</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${e.active ? 'bg-green-100' : 'bg-red-100'}">${e.active ? 'نشط' : 'غير نشط'}</span></td><td class="p-2 text-sm">${userAccount ? `${userAccount.username}` : 'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`; }).join('')}
-                </tbody></table></div>`;
-        }
-        
-        function renderDistributionContent() {
-            const container = document.getElementById('distributionTab');
-            if (!container) return;
-            container.innerHTML = `
-                <div class="bg-gradient-to-r from-purple-50 to-indigo-50 p-5 rounded-2xl mb-5">
-                    <h2 class="text-2xl font-bold mb-2">🔄 توزيع الموظفين العادل</h2>
-                    <p class="text-gray-600 mb-3">📌 مغلقة/أوبن: مخرج + 2 مصورين + كرين | كافيه: مصور واحد | توزيع حسب أقل عدد أوردرات وترتيب التاريخ</p>
-                    <button onclick="autoDistribute();" class="bg-purple-700 hover:bg-purple-800 text-white px-6 py-2.5 rounded-xl"><i class="fas fa-magic ml-1"></i> توزيع تلقائي عادل</button>
-                </div>
-                <div class="space-y-3 max-h-[500px] overflow-y-auto">
-                    ${[...bookings].sort((a,b)=>new Date(a.date)-new Date(b.date)).map(b => `
-                        <div class="border rounded-xl p-4 bg-white shadow-sm">
-                            <div class="flex justify-between items-center flex-wrap">
-                                <div><span class="font-bold text-lg">${b.clientName}</span> <span class="text-gray-500 text-sm">${b.date}</span></div>
-                                <span class="px-3 py-1 rounded-full text-xs ${b.hallType === 'closed' ? 'bg-purple-100' : b.hallType === 'open' ? 'bg-blue-100' : 'bg-amber-100'}">${b.hallType === 'closed' ? 'مغلقة' : b.hallType === 'open' ? 'أوبن' : 'كافيه'}</span>
-                            </div>
-                            <div class="mt-2 p-2 bg-gray-50 rounded-lg">
-                                <span class="font-semibold">الموظفون:</span> 
-                                <span class="text-gray-700">${(b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name || id).join(', ') || '⚠️ لم يتم التوزيع'}</span>
-                            </div>
-                            <button onclick="showManualAssignModal('${b.id}')" class="mt-2 text-sm bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg"><i class="fas fa-hand-paper ml-1"></i> تعديل يدوي</button>
-                        </div>
-                    `).join('')}
-                    ${bookings.length === 0 ? '<div class="text-center p-8 text-gray-500">📭 لا توجد حجوزات</div>' : ''}
-                </div>`;
-        }
-        
-        window.showManualAssignModal = function(bookingId) {
-            const booking = bookings.find(b => b.id === bookingId);
-            if (!booking) return;
-            const activeEmployees = employees.filter(e => e.active);
-            const currentAssigned = booking.assignedEmployees || [];
-            let employeesHtml = '<div class="employee-checkbox-list">';
-            activeEmployees.forEach(emp => {
-                const isChecked = currentAssigned.includes(emp.id);
-                employeesHtml += `<label style="display: flex; align-items: center; gap: 10px; cursor: pointer;"><input type="checkbox" value="${emp.id}" ${isChecked ? 'checked' : ''}><span><strong>${emp.name}</strong> (${emp.role})</span></label>`;
-            });
-            employeesHtml += '</div>';
-            const modalHtml = `
-                <h3 class="text-xl font-bold mb-4 text-center"><i class="fas fa-users text-amber-600 ml-2"></i>تعديل توزيع الموظفين</h3>
-                <p class="text-gray-600 mb-3 text-sm text-center">حجز: <strong>${booking.clientName}</strong> - ${booking.date}</p>
-                <p class="text-gray-500 mb-2 text-sm">اختر الموظفين المطلوبين لهذا الحجز:</p>
-                ${employeesHtml}
-                <div class="flex gap-3 mt-4"><button onclick="saveManualAssign('${bookingId}')" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white py-2.5 rounded-xl"><i class="fas fa-save ml-1"></i> حفظ</button><button onclick="closeModal()" class="flex-1 bg-gray-400 hover:bg-gray-500 text-white py-2.5 rounded-xl"><i class="fas fa-times ml-1"></i> إلغاء</button></div>
-            `;
-            showModal(modalHtml);
-        };
-        
-        window.saveManualAssign = function(bookingId) {
-            const booking = bookings.find(b => b.id === bookingId);
-            if (!booking) return;
-            const checkboxes = document.querySelectorAll('#modalContent input[type="checkbox"]');
-            const selectedEmployees = [];
-            checkboxes.forEach(cb => { if (cb.checked) selectedEmployees.push(cb.value); });
-            booking.assignedEmployees = selectedEmployees;
-            syncToFirebase();
-            closeModal();
-            if (currentTab === 'dashboardTab') renderDashboardContent();
-            else renderCurrentTabContent();
-            showToast(`✅ تم تحديث توزيع الموظفين للحجز`);
-        };
-        
-        function renderPayrollContent() {
-            updateEmployeeTotalOrders();
-            const totalRevenue = bookings.reduce((s, b) => s + (b.price || 0), 0);
-            const totalSalaries = employees.reduce((s, e) => s + ((e.totalOrders || 0) * e.salaryPerOrder), 0);
-            const container = document.getElementById('payrollTab');
-            if (!container) return;
-            container.innerHTML = `
-                <div class="grid grid-cols-3 gap-3 mb-4"><div class="bg-green-100 p-3 rounded-xl text-center"><p class="text-sm">الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
-                <div class="bg-amber-100 p-3 rounded-xl text-center"><p class="text-sm">المرتبات</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
-                <div class="bg-purple-100 p-3 rounded-xl text-center"><p class="text-sm">صافي الأرباح</p><p class="text-2xl font-bold">${(totalRevenue - totalSalaries).toLocaleString()} ج.م</p></div></div>
-                <div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>
-                ${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2 font-bold">${e.totalOrders || 0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 text-emerald-700">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}
-                </tbody></table></div>`;
-        }
-        
-        function renderCalendarContent() {
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = today.getMonth();
-            const firstDay = new Date(year, month, 1).getDay();
-            const daysCount = new Date(year, month + 1, 0).getDate();
-            const monthNames = ['يناير', 'فبراير', 'مارس', 'إبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-            let html = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-calendar-alt ml-2"></i>${monthNames[month]} ${year}</h2><div class="calendar-grid">`;
-            ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].forEach(day => html += `<div class="text-center font-bold text-gray-500 py-2">${day}</div>`);
-            for (let i = 0; i < firstDay; i++) html += `<div></div>`;
-            for (let d = 1; d <= daysCount; d++) {
-                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                const dayBookings = bookings.filter(b => b.date === dateStr);
-                html += `<div class="calendar-day ${dayBookings.length ? 'booked' : ''}" onclick="showDayBookings('${dateStr}')">${d}</div>`;
-            }
-            html += '</div><div id="calendarInfo" class="mt-4 text-sm bg-gray-50 p-3 rounded-xl"></div>';
-            const container = document.getElementById('calendarTab');
-            if (container) container.innerHTML = html;
-        }
-        
-        window.showDayBookings = function(date) {
-            const filtered = bookings.filter(b => b.date === date);
-            const info = document.getElementById('calendarInfo');
-            if (info) {
-                if (filtered.length === 0) info.innerHTML = `<div class="text-center p-4">📭 لا توجد حجوزات في ${date}</div>`;
-                else info.innerHTML = `<div class="bg-emerald-50 p-4 rounded-xl"><strong>📅 حجوزات يوم ${date}</strong><ul class="mt-2">${filtered.map(b => `<li>${b.clientName} - ${b.hallName} (${b.price} ج.م)</li>`).join('')}</ul></div>`;
-            }
-        };
-        
-        function renderReportsContent() {
-            updateEmployeeTotalOrders();
-            const top = [...employees].sort((a,b) => b.totalOrders - a.totalOrders)[0];
-            const bottom = [...employees].sort((a,b) => a.totalOrders - b.totalOrders)[0];
-            const stats = { closed: 0, open: 0, cafe: 0 };
-            bookings.forEach(b => stats[b.hallType]++);
-            const totalRevenue = bookings.reduce((s,b) => s + (b.price || 0), 0);
-            const container = document.getElementById('reportsTab');
-            if (!container) return;
-            container.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4"><i class="fas fa-chart-line ml-2"></i>التقارير</h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><div class="bg-emerald-100 p-3 rounded-xl text-center"><p class="text-sm">الأكثر شغل</p><p class="font-bold">${top?.name || '-'}</p><p>${top?.totalOrders || 0} أوردر</p></div>
-                <div class="bg-amber-100 p-3 rounded-xl text-center"><p class="text-sm">الأقل شغل</p><p class="font-bold">${bottom?.name || '-'}</p><p>${bottom?.totalOrders || 0} أوردر</p></div>
-                <div class="bg-blue-100 p-3 rounded-xl text-center"><p class="text-sm">إجمالي الحجوزات</p><p class="text-2xl font-bold">${bookings.length}</p></div>
-                <div class="bg-purple-100 p-3 rounded-xl text-center"><p class="text-sm">الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div></div>
-                <div class="flex gap-3"><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-file-excel ml-1"></i> Excel</button><button onclick="exportToPDF()" class="bg-red-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-file-pdf ml-1"></i> PDF</button></div>`;
-        }
-        
-        function renderEquipmentContent() {
-            const container = document.getElementById('equipmentTab');
-            if (!container) return;
-            container.innerHTML = `<div class="flex justify-between mb-4"><h2 class="text-2xl font-bold"><i class="fas fa-video ml-2"></i>المعدات</h2><button onclick="addEquipment()" class="bg-indigo-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">${equipment.map(eq => `<div class="border rounded-xl p-3"><div class="flex justify-between"><i class="fas ${eq.type === 'كاميرا' ? 'fa-camera' : 'fa-tower-broadcast'} text-2xl text-indigo-600"></i><span class="px-2 py-1 rounded-full text-xs ${eq.status === 'متاحة' ? 'bg-green-100' : 'bg-red-100'}">${eq.status}</span></div><h3 class="font-bold mt-1">${eq.name}</h3><p class="text-gray-500 text-sm">${eq.type}</p><button onclick="assignEquipment('${eq.id}')" class="mt-2 text-sm bg-gray-100 w-full py-1 rounded">ربط بحجز</button></div>`).join('')}</div>`;
-        }
-        
-        function renderUsersContent() {
-            const container = document.getElementById('usersTab');
-            if (!container) return;
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-lock ml-2"></i>المستخدمين</h2><div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>
-                ${users.map(u => `<tr><td class="p-2">${u.username}</span></span></td><td class="p-2">${u.employeeId ? (employees.find(e=>e.id===u.employeeId)?.name || '-') : '-'}</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role === 'admin' ? 'bg-red-100' : u.role === 'manager' ? 'bg-purple-100' : 'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
-                </tbody><table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
-        }
-        
-        function renderSettingsContent() {
-            const container = document.getElementById('settingsTab');
-            if (!container) return;
-            container.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4"><i class="fas fa-cog ml-2"></i>الإعدادات</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد Excel</button></div>
-                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF</h3><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد PDF</button></div>
-                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>أيام الإجازة</h3><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">إدارة الإجازات</button></div>
-                    <div class="border rounded-2xl p-4"><h3 class="font-bold"><i class="fas fa-palette text-purple-600 ml-2"></i>تغيير اسم الشركة</h3><input type="text" id="companyName" class="mb-2" placeholder="اسم الشركة"><button onclick="changeCompanyName()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl w-full">تحديث</button></div>
-                </div>
-            `;
-        }
-        
-        function renderCurrentTabContent() {
-            if (!currentUser || currentUser.role === 'employee') return;
-            if (currentTab === 'dashboardTab') renderDashboardContent();
-            else if (currentTab === 'bookingsTab') renderBookingsContent();
-            else if (currentTab === 'employeesTab') renderEmployeesContent();
-            else if (currentTab === 'distributionTab') renderDistributionContent();
-            else if (currentTab === 'payrollTab') renderPayrollContent();
-            else if (currentTab === 'calendarTab') renderCalendarContent();
-            else if (currentTab === 'reportsTab') renderReportsContent();
-            else if (currentTab === 'equipmentTab') renderEquipmentContent();
-            else if (currentTab === 'usersTab') renderUsersContent();
-            else if (currentTab === 'settingsTab') renderSettingsContent();
-        }
-        
-        // ===================== واجهة المدير الكاملة =====================
-        function renderAdminDashboard() {
-            const html = `
-                <header class="bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-lg sticky top-0 z-20">
-                    <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
-                        <div class="flex items-center gap-3"><i class="fas fa-camera-retro text-amber-300 text-2xl"></i><h1 id="logoText" class="text-xl md:text-2xl font-bold">Drmedia Pro</h1></div>
-                        <div class="flex gap-3 items-center"><span class="text-sm bg-emerald-700 px-3 py-1.5 rounded-full"><i class="fas fa-user-circle ml-1"></i> ${currentUser.username} (مدير)</span><button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-sign-out-alt ml-1"></i> خروج</button></div>
-                    </div>
-                </header>
-                <div class="container mx-auto px-3 mt-4">
-                    <div class="flex flex-wrap gap-1 border-b border-gray-300 overflow-x-auto pb-1">
-                        <button data-tab="dashboardTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-chart-line ml-1"></i> لوحة التحكم</button>
-                        <button data-tab="bookingsTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-calendar-check ml-1"></i> الحجوزات</button>
-                        <button data-tab="employeesTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-users ml-1"></i> الموظفين</button>
-                        <button data-tab="distributionTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-random ml-1"></i> التوزيع</button>
-                        <button data-tab="payrollTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-money-bill-wave ml-1"></i> المرتبات</button>
-                        <button data-tab="calendarTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-calendar-alt ml-1"></i> التقويم</button>
-                        <button data-tab="reportsTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-chart-line ml-1"></i> التقارير</button>
-                        <button data-tab="equipmentTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-video ml-1"></i> المعدات</button>
-                        <button data-tab="usersTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-lock ml-1"></i> المستخدمين</button>
-                        <button data-tab="settingsTab" class="tab-btn px-4 py-2.5 rounded-t-xl bg-gray-200 font-semibold text-sm"><i class="fas fa-cog ml-1"></i> الإعدادات</button>
-                    </div>
-                    <div class="mt-4 bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-2xl shadow-xl min-h-[550px]">
-                        <div id="dashboardTab" class="tab-content"></div>
-                        <div id="bookingsTab" class="tab-content hidden"></div>
-                        <div id="employeesTab" class="tab-content hidden"></div>
-                        <div id="distributionTab" class="tab-content hidden"></div>
-                        <div id="payrollTab" class="tab-content hidden"></div>
-                        <div id="calendarTab" class="tab-content hidden"></div>
-                        <div id="reportsTab" class="tab-content hidden"></div>
-                        <div id="equipmentTab" class="tab-content hidden"></div>
-                        <div id="usersTab" class="tab-content hidden"></div>
-                        <div id="settingsTab" class="tab-content hidden"></div>
-                    </div>
-                </div>
-            `;
-            document.getElementById('appRoot').innerHTML = html;
-            
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    currentTab = btn.dataset.tab;
-                    document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
-                    document.getElementById(currentTab).classList.remove('hidden');
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    renderCurrentTabContent();
-                });
-            });
-            
-            renderDashboardContent();
-            document.getElementById('dashboardTab')?.classList.remove('hidden');
-            document.querySelector('.tab-btn')?.classList.add('active');
-        }
-        
-        // ===================== دوال العمليات (مختصرة) =====================
-        function showAddBookingModal() {
-            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-plus-circle text-emerald-600 ml-2"></i>حجز جديد</h3><input id="clientName" placeholder="اسم العميل *" class="mb-3"><input id="phone" placeholder="رقم الهاتف" class="mb-3"><input id="hallName" placeholder="اسم القاعة *" class="mb-3"><input id="date" type="date" class="mb-3"><select id="hallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select><div class="mb-3"><label class="block text-sm mb-1">الخدمات:</label><div class="flex gap-3 flex-wrap"><label><input type="checkbox" value="فيديو"> فيديو</label><label><input type="checkbox" value="فوتو"> فوتو</label><label><input type="checkbox" value="كرين"> كرين</label><label><input type="checkbox" value="لايف"> لايف</label></div></div><input id="price" type="number" placeholder="السعر (ج.م) *" class="mb-3" value="2500"><button onclick="saveNewBooking()" class="bg-emerald-700 text-white w-full py-2.5 rounded-xl">حفظ</button>`;
-            showModal(html);
-        }
-        
-        function saveNewBooking() {
-            const services = Array.from(document.querySelectorAll('#modalContent input[type="checkbox"]:checked')).map(cb => cb.value);
-            const newBooking = { id: Date.now().toString(), clientName: document.getElementById('clientName').value || "عميل جديد", phone: document.getElementById('phone').value || "غير مدخل", hallName: document.getElementById('hallName').value || "قاعة جديدة", date: document.getElementById('date').value, hallType: document.getElementById('hallType').value, services: services.length ? services : ['فيديو'], price: parseInt(document.getElementById('price').value) || 2500, assignedEmployees: [] };
-            if (!newBooking.date) { alert("⚠️ الرجاء إدخال التاريخ"); return; }
-            bookings.push(newBooking);
-            syncToFirebase();
-            closeModal();
-            autoDistribute();
-            if (currentTab === 'dashboardTab') renderDashboardContent();
-            else renderCurrentTabContent();
-            showToast(`✅ تم إضافة حجز لـ ${newBooking.clientName}`);
-        }
-        
-        function deleteBooking(id) {
-            if (confirm("⚠️ هل أنت متأكد من حذف هذا الحجز؟")) {
-                bookings = bookings.filter(b => b.id !== id);
-                syncToFirebase();
-                autoDistribute();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("🗑️ تم حذف الحجز");
-            }
-        }
-        
-        function showAddEmployeeModal() {
-            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-user-plus text-blue-600 ml-2"></i>إضافة موظف</h3><input id="empName" placeholder="الاسم" class="mb-3"><select id="empRole" class="mb-3"><option value="مخرج">مخرج</option><option value="مصور">مصور</option><option value="كرين">كرين</option></select><input id="empPhone" placeholder="الهاتف" class="mb-3"><input id="empSalary" placeholder="المرتب لكل أوردر" value="200" class="mb-3" type="number"><div class="bg-amber-50 p-2 rounded text-sm mb-2">🔐 سيتم إنشاء حساب للموظف (اسم المستخدم: الاسم بالإنجليزي، كلمة المرور: emp123)</div><button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2.5 rounded-xl">حفظ</button>`;
-            showModal(html);
-        }
-        
-        function saveNewEmployee() {
-            const name = document.getElementById('empName').value;
-            if (!name) { alert("⚠️ الرجاء إدخال اسم الموظف"); return; }
-            const newEmp = { id: 'emp' + Date.now(), name: name, role: document.getElementById('empRole').value, phone: document.getElementById('empPhone').value, salaryPerOrder: parseInt(document.getElementById('empSalary').value) || 200, active: true, totalOrders: 0 };
-            employees.push(newEmp);
-            const username = name.replace(/\s/g, '').toLowerCase();
-            let finalUsername = username;
-            let counter = 1;
-            while (users.some(u => u.username === finalUsername)) finalUsername = username + counter++;
-            users.push({ username: finalUsername, password: 'emp123', role: 'employee', employeeId: newEmp.id, name: name });
-            syncToFirebase();
-            closeModal();
-            if (currentTab === 'dashboardTab') renderDashboardContent();
-            else renderCurrentTabContent();
-            showToast(`✅ تم إضافة الموظف ${name} - حسابه: ${finalUsername} / emp123`);
-        }
-        
-        function showEditEmployeeModal(empId) {
-            const emp = employees.find(e => e.id === empId);
-            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-edit text-amber-600 ml-2"></i>تعديل موظف</h3><input id="empName" value="${emp.name}" class="mb-3"><select id="empRole" class="mb-3"><option ${emp.role === 'مخرج' ? 'selected' : ''}>مخرج</option><option ${emp.role === 'مصور' ? 'selected' : ''}>مصور</option><option ${emp.role === 'كرين' ? 'selected' : ''}>كرين</option></select><input id="empPhone" value="${emp.phone}" class="mb-3"><input id="empSalary" value="${emp.salaryPerOrder}" class="mb-3" type="number"><div class="flex gap-2 mb-3"><label><input type="checkbox" id="empActive" ${emp.active ? 'checked' : ''}> نشط</label></div><button onclick="saveEditEmployee('${empId}')" class="bg-amber-700 text-white w-full py-2.5 rounded-xl">حفظ</button>`;
-            showModal(html);
-        }
-        
-        function saveEditEmployee(empId) {
-            const emp = employees.find(e => e.id === empId);
-            if (emp) {
-                emp.name = document.getElementById('empName').value;
-                emp.role = document.getElementById('empRole').value;
-                emp.phone = document.getElementById('empPhone').value;
-                emp.salaryPerOrder = parseInt(document.getElementById('empSalary').value) || 200;
-                emp.active = document.getElementById('empActive').checked;
-                syncToFirebase();
-                closeModal();
-                autoDistribute();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("✅ تم تحديث الموظف");
-            }
-        }
-        
-        function deleteEmployee(empId) {
-            if (confirm("⚠️ حذف الموظف؟")) {
-                employees = employees.filter(e => e.id !== empId);
-                users = users.filter(u => u.employeeId !== empId);
-                syncToFirebase();
-                autoDistribute();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("تم الحذف");
-            }
-        }
-        
-        function addEquipment() {
-            const name = prompt("اسم المعدة");
-            if (name) {
-                equipment.push({ id: 'eq' + Date.now(), name: name, type: 'كاميرا', status: 'متاحة', bookingId: null });
-                syncToFirebase();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("تمت الإضافة");
-            }
-        }
-        
-        function assignEquipment(eqId) {
-            const eq = equipment.find(e => e.id === eqId);
-            const bid = prompt("أدخل ID الحجز لربط المعدة به");
-            if (bid) {
-                eq.bookingId = bid;
-                eq.status = 'مستخدم';
-                syncToFirebase();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("تم الربط");
-            }
-        }
-        
-        function editUser(username) {
-            const user = users.find(u => u.username === username);
-            const newPass = prompt("كلمة المرور الجديدة", user.password);
-            if (newPass) {
-                user.password = newPass;
-                syncToFirebase();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("تم التحديث");
-            }
-        }
-        
-        function deleteUser(username) {
-            if (confirm("حذف المستخدم؟")) {
-                users = users.filter(u => u.username !== username);
-                syncToFirebase();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("تم الحذف");
-            }
-        }
-        
-        function addUser() {
-            const un = prompt("اسم المستخدم");
-            const pw = prompt("كلمة المرور");
-            const role = prompt("الدور (admin/manager/employee)", "employee");
-            if (un && pw) {
-                users.push({ username: un, password: pw, role: role || 'employee', employeeId: null, name: un });
-                syncToFirebase();
-                if (currentTab === 'dashboardTab') renderDashboardContent();
-                else renderCurrentTabContent();
-                showToast("تمت الإضافة");
-            }
-        }
-        
-        function changeCompanyName() {
-            const newName = document.getElementById('companyName')?.value;
-            if (newName) {
-                const logoText = document.getElementById('logoText');
-                if (logoText) logoText.innerText = newName;
-            }
-        }
-        
-        function exportToExcel() {
-            const ws = XLSX.utils.json_to_sheet(bookings.map(b => ({ العميل: b.clientName, التاريخ: b.date, القاعة: b.hallName, النوع: b.hallType, السعر: b.price })));
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "الحجوزات");
-            XLSX.writeFile(wb, `Drmedia_Bookings.xlsx`);
-            showToast("تم التصدير");
-        }
-        
-        function exportToPDF() {
-            const win = window.open();
-            win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
-            win.print();
-        }
-        
-        function showImportExcelModal() {
-            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel</h3><p class="text-sm text-gray-500 mb-3">اختر ملف Excel يحتوي على أعمدة: التاريخ، العميل، القاعة، السعر</p><input type="file" id="excelFile" accept=".xlsx,.xls" class="mb-3"><select id="importHallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select><div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="skipFriday"> الجمعة</label><label><input type="checkbox" id="skipSaturday"> السبت</label><label><input type="checkbox" id="skipHolidays" checked> الأيام المسجلة كإجازة</label></div></div><button onclick="importExcelData()" class="bg-green-700 text-white w-full py-2.5 rounded-xl">استيراد</button><div id="importPreview" class="mt-3 text-sm text-gray-600"></div>`;
-            showModal(html);
-        }
-        
-        async function importExcelData() {
-            const fileInput = document.getElementById('excelFile');
-            const file = fileInput.files[0];
-            if (!file) { alert("📁 اختر ملف Excel أولاً"); return; }
-            const skipFriday = document.getElementById('skipFriday')?.checked || false;
-            const skipSaturday = document.getElementById('skipSaturday')?.checked || false;
-            const skipHolidays = document.getElementById('skipHolidays')?.checked || false;
-            const selectedHallType = document.getElementById('importHallType').value;
-            const data = await file.arrayBuffer();
-            const workbook = XLSX.read(data);
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            if (!rows || rows.length < 2) { alert("الملف لا يحتوي على بيانات"); return; }
-            const headers = rows[0];
-            let colMap = { date: -1, client: -1, hall: -1, price: -1 };
-            headers.forEach((h, idx) => {
-                const str = String(h || '').toLowerCase();
-                if (str.includes('تاريخ') || str.includes('date')) colMap.date = idx;
-                if (str.includes('عميل') || str.includes('اسم') || str.includes('client')) colMap.client = idx;
-                if (str.includes('قاعة') || str.includes('hall')) colMap.hall = idx;
-                if (str.includes('سعر') || str.includes('price')) colMap.price = idx;
-            });
-            let addedCount = 0, skippedCount = 0;
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row || row.length === 0) continue;
-                let rawDate = colMap.date !== -1 ? row[colMap.date] : row[0];
-                if (!rawDate) continue;
-                let formattedDate = '';
-                if (typeof rawDate === 'number') {
-                    const excelDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
-                    formattedDate = excelDate.toISOString().split('T')[0];
-                } else if (typeof rawDate === 'string') {
-                    let match = rawDate.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-                    if (match) formattedDate = match[0];
-                    else {
-                        match = rawDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-                        if (match) formattedDate = `${match[3]}-${match[2]}-${match[1]}`;
-                        else formattedDate = rawDate;
-                    }
-                }
-                if (!formattedDate || !formattedDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) continue;
-                let isSkipped = false;
-                if (skipFriday) { const d = new Date(formattedDate); if (d.getDay() === 5) isSkipped = true; }
-                if (skipSaturday) { const d = new Date(formattedDate); if (d.getDay() === 6) isSkipped = true; }
-                if (skipHolidays && holidays.includes(formattedDate)) isSkipped = true;
-                if (isSkipped) { skippedCount++; continue; }
-                const clientName = colMap.client !== -1 ? row[colMap.client] : (row[1] || 'عميل جديد');
-                const hallName = colMap.hall !== -1 ? row[colMap.hall] : (row[2] || 'قاعة');
-                const price = colMap.price !== -1 ? (parseInt(row[colMap.price]) || 2500) : 2500;
-                bookings.push({ id: Date.now() + Math.random().toString(36) + addedCount, clientName: String(clientName).trim(), phone: "تم استيراده", hallName: String(hallName).trim(), date: formattedDate, hallType: selectedHallType, services: ["فيديو"], price: price, assignedEmployees: [] });
-                addedCount++;
-            }
-            if (addedCount === 0) alert(`⚠️ لم يتم العثور على تواريخ صالحة${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
-            else { syncToFirebase(); autoDistribute(); closeModal(); if (currentTab === 'dashboardTab') renderDashboardContent(); else renderCurrentTabContent(); showToast(`✅ تم استيراد ${addedCount} حجز من نوع ${selectedHallType === 'closed' ? 'مغلقة' : selectedHallType === 'open' ? 'أوبن' : 'كافيه'}`); }
-        }
-        
-        function showImportPdfModal() {
-            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF</h3><p class="text-sm text-gray-500 mb-3">اختر ملف PDF وسيتم استخراج التواريخ تلقائياً</p><input type="file" id="pdfFile" accept="application/pdf" class="mb-3"><select id="pdfHallType" class="mb-3"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select><div class="mb-3"><label class="block text-sm font-bold mb-1">تخطي أيام الإجازة:</label><div class="flex gap-3"><label><input type="checkbox" id="pdfSkipFriday"> الجمعة</label><label><input type="checkbox" id="pdfSkipSaturday"> السبت</label><label><input type="checkbox" id="pdfSkipHolidays" checked> الأيام المسجلة كإجازة</label></div></div><input id="pdfClientName" placeholder="اسم العميل الافتراضي" class="mb-3" value="عميل من PDF"><button onclick="importPdfData()" class="bg-red-700 text-white w-full py-2.5 rounded-xl">استيراد</button><div id="pdfImportPreview" class="mt-3 text-sm text-gray-600"></div>`;
-            showModal(html);
-        }
-        
-        async function importPdfData() {
-            const fileInput = document.getElementById('pdfFile');
-            const file = fileInput.files[0];
-            if (!file) { alert("📁 اختر ملف PDF أولاً"); return; }
-            const skipFriday = document.getElementById('pdfSkipFriday')?.checked || false;
-            const skipSaturday = document.getElementById('pdfSkipSaturday')?.checked || false;
-            const skipHolidays = document.getElementById('pdfSkipHolidays')?.checked || false;
-            const defaultClientName = document.getElementById('pdfClientName')?.value || "عميل من PDF";
-            const selectedPdfHallType = document.getElementById('pdfHallType').value;
-            const pdfjsLib = window.pdfjsLib;
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                let fullText = "";
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    fullText += textContent.items.map(item => item.str).join(" ") + "\n";
-                }
-                const dateRegex = /\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}\/\d{4})\b/g;
-                const foundDates = [...new Set(fullText.match(dateRegex) || [])];
-                const formattedDates = foundDates.map(d => d.includes('/') ? d.split('/').reverse().join('-') : d);
-                let addedCount = 0, skippedCount = 0;
-                for (const rawDate of formattedDates) {
-                    let isSkipped = false;
-                    if (skipFriday) { const d = new Date(rawDate); if (d.getDay() === 5) isSkipped = true; }
-                    if (skipSaturday) { const d = new Date(rawDate); if (d.getDay() === 6) isSkipped = true; }
-                    if (skipHolidays && holidays.includes(rawDate)) isSkipped = true;
-                    if (isSkipped) { skippedCount++; continue; }
-                    bookings.push({ id: Date.now() + Math.random().toString(36) + addedCount, clientName: defaultClientName + " " + (addedCount + 1), phone: "تم استيراده", hallName: "قاعة من PDF", date: rawDate, hallType: selectedPdfHallType, services: ["فيديو"], price: 2500, assignedEmployees: [] });
-                    addedCount++;
-                }
-                if (addedCount === 0) alert(`⚠️ لم يتم العثور على تواريخ صالحة${skippedCount > 0 ? ` (تم تخطي ${skippedCount} يوم إجازة)` : ''}`);
-                else { syncToFirebase(); autoDistribute(); closeModal(); if (currentTab === 'dashboardTab') renderDashboardContent(); else renderCurrentTabContent(); showToast(`✅ تم استيراد ${addedCount} حجز من نوع ${selectedPdfHallType === 'closed' ? 'مغلقة' : selectedPdfHallType === 'open' ? 'أوبن' : 'كافيه'}`); }
-            } catch(e) { alert("فشل استيراد PDF: " + e.message); }
-        }
-        
-        function showHolidaysModal() {
-            const holidaysList = holidays.map(h => `<div class="flex justify-between items-center p-2 border-b"><span>${h}</span><button onclick="removeHoliday('${h}')" class="text-red-500 text-sm">حذف</button></div>`).join('');
-            const html = `<h3 class="text-xl font-bold mb-4"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>إدارة أيام الإجازة</h3><p class="text-sm text-gray-500 mb-3">أضف أيام الإجازة الرسمية فقط</p><div class="flex gap-2 mb-3"><input type="date" id="newHoliday" class="flex-1"><button onclick="addHoliday()" class="bg-amber-600 text-white px-3 py-2 rounded-xl">+ إضافة</button></div><div class="max-h-48 overflow-y-auto border rounded-lg p-2">${holidaysList || '<p class="text-gray-500 text-center">لا توجد أيام إجازة إضافية</p>'}</div><button onclick="closeModal(); if (currentTab === 'dashboardTab') renderDashboardContent(); else renderCurrentTabContent();" class="mt-3 bg-gray-600 text-white w-full py-2 rounded-xl">إغلاق</button>`;
-            showModal(html);
-        }
-        
-        function addHoliday() {
-            const newHoliday = document.getElementById('newHoliday')?.value;
-            if (newHoliday && !holidays.includes(newHoliday)) {
-                holidays.push(newHoliday);
-                syncToFirebase();
-                showHolidaysModal();
-                showToast(`✅ تم إضافة ${newHoliday} كيوم إجازة`);
-            }
-        }
-        
-        function removeHoliday(date) {
-            holidays = holidays.filter(h => h !== date);
-            syncToFirebase();
-            showHolidaysModal();
-            showToast(`🗑️ تم حذف ${date} من أيام الإجازة`);
-        }
-        
-        // ===================== واجهة الموظف =====================
-        function renderEmployeeDashboard() {
-            const empData = employees.find(e => e.id === currentUser.employeeId);
-            if (!empData) {
-                document.getElementById('appRoot').innerHTML = `<div class="text-center p-8 text-red-500">⚠️ لم يتم ربط حسابك بموظف</div>`;
-                return;
-            }
-            const myOrders = bookings.filter(b => b.assignedEmployees && b.assignedEmployees.includes(empData.id));
-            const totalOrders = myOrders.length;
-            const totalSalary = totalOrders * empData.salaryPerOrder;
-            const sortedOrders = [...myOrders].sort((a, b) => new Date(b.date) - new Date(a.date));
-            const html = `
-                <header class="bg-gradient-to-r from-emerald-900 to-teal-800 text-white shadow-lg sticky top-0 z-20">
-                    <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
-                        <div class="flex items-center gap-3"><i class="fas fa-camera-retro text-amber-300 text-2xl"></i><h1 id="logoText" class="text-xl md:text-2xl font-bold">Drmedia Pro</h1></div>
-                        <div class="flex gap-3 items-center"><span class="text-sm bg-emerald-700 px-3 py-1.5 rounded-full"><i class="fas fa-user-circle ml-1"></i> ${currentUser.username} (موظف)</span><button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg text-sm transition"><i class="fas fa-sign-out-alt ml-1"></i> خروج</button></div>
-                    </div>
-                </header>
-                <div class="container mx-auto px-3 py-4">
-                    <div class="employee-card text-white rounded-2xl p-6 mb-6 shadow-xl"><div class="flex items-center gap-4"><div class="bg-white/20 p-4 rounded-full"><i class="fas fa-user-circle text-4xl"></i></div><div><h2 class="text-2xl font-bold">مرحباً ${empData.name}</h2><p class="text-emerald-100 mt-1"><i class="fas fa-briefcase ml-1"></i> ${empData.role}</p></div></div></div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"><div class="stat-card bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-xl p-4 text-center shadow-md"><i class="fas fa-calendar-check text-3xl mb-2"></i><p class="text-sm opacity-90">عدد الأوردرات</p><p class="text-3xl font-bold">${totalOrders}</p></div><div class="stat-card bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl p-4 text-center shadow-md"><i class="fas fa-chart-line text-3xl mb-2"></i><p class="text-sm opacity-90">إجمالي الحساب</p><p class="text-3xl font-bold">${totalSalary.toLocaleString()} ج.م</p></div></div>
-                    <div class="bg-white rounded-xl shadow-md overflow-hidden"><div class="bg-gray-100 px-4 py-3 border-b"><h3 class="text-lg font-bold"><i class="fas fa-list-ul ml-2 text-emerald-600"></i>الأوردرات التي عملت بها</h3></div>${totalOrders > 0 ? `<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">#</th><th class="p-3">التاريخ</th><th class="p-3">العميل</th><th class="p-3">القاعة</th></tr></thead><tbody>${sortedOrders.map((order, idx) => `<tr class="border-b"><td class="p-3 text-center">${idx+1}</td><td class="p-3">${order.date}</td><td class="p-3">${order.clientName}</td><td class="p-3">${order.hallName}</td></tr>`).join('')}</tbody></table></div>` : `<div class="text-center p-8 text-gray-500"><i class="fas fa-inbox text-4xl mb-3 block"></i><p>لا توجد أوردرات حالياً</p></div>`}</div>
-                    <div class="mt-4 p-3 bg-gray-50 rounded-lg text-center text-gray-600 border"><i class="fas fa-chart-simple ml-1 text-emerald-600"></i><span class="font-bold">خلاصة حسابك:</span> إجمالي المستحق ${totalSalary.toLocaleString()} ج.م | عدد الأوردرات ${totalOrders} | قيمة الأوردر الواحد ${empData.salaryPerOrder} ج.م</div>
-                </div>
-            `;
-            document.getElementById('appRoot').innerHTML = html;
-        }
-        
-        // ===================== تسجيل الدخول =====================
-        function renderLoginPage() {
-            const html = `
-                <div class="login-container">
-                    <div class="login-card">
-                        <div class="text-center mb-8"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-3"></i><h1 class="text-3xl font-bold text-gray-800">Drmedia Pro</h1><p class="text-gray-500 mt-2">لوحة تحكم متقدمة + تطبيق جوال</p></div>
-                        <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
-                            <div class="mb-4"><label class="block text-gray-700 mb-2"><i class="fas fa-user ml-1"></i> اسم المستخدم</label><input type="text" id="loginUser" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل اسم المستخدم" autocomplete="off"></div>
-                            <div class="mb-6"><label class="block text-gray-700 mb-2"><i class="fas fa-lock ml-1"></i> كلمة المرور</label><input type="password" id="loginPass" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="أدخل كلمة المرور"></div>
-                            <div id="loginError" class="text-red-500 text-sm mb-4 text-center hidden"></div>
-                            <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 rounded-xl font-semibold transition"><i class="fas fa-sign-in-alt ml-2"></i> تسجيل الدخول</button>
-                        </form>
-                        <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2026 Drmedia Pro | ahmed shreif</p><p class="mt-1">admin / admin123 | ahmed / emp123</p></div>
-                    </div>
-                </div>
-            `;
-            document.getElementById('appRoot').innerHTML = html;
-        }
-        
-        function doLogin() {
-            const username = document.getElementById('loginUser').value.trim();
-            const password = document.getElementById('loginPass').value;
-            const user = users.find(u => u.username === username && u.password === password);
-            if (user) {
-                currentUser = user;
-                sessionStorage.setItem('vpms_current', JSON.stringify(user));
-                renderAll();
-                showToast(`مرحباً ${user.name || user.username}`);
             } else {
-                const errorDiv = document.getElementById('loginError');
-                errorDiv.textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
-                errorDiv.classList.remove('hidden');
+                let availDir = dirs.filter(d=>!busy.has(d.id));
+                if(availDir.length){
+                    availDir.sort((a,c)=>a.temp-c.temp);
+                    let chosen = availDir[0];
+                    assigned.push(chosen.id);
+                    chosen.temp++;
+                    busy.add(chosen.id);
+                }
+                let availPhoto = photos.filter(p=>!busy.has(p.id));
+                for(let i=0;i<2;i++){
+                    if(availPhoto.length){
+                        availPhoto.sort((a,c)=>a.temp-c.temp);
+                        let chosen = availPhoto[0];
+                        assigned.push(chosen.id);
+                        chosen.temp++;
+                        busy.add(chosen.id);
+                        availPhoto = availPhoto.filter(p=>p.id!==chosen.id);
+                    }
+                }
+                let availCrane = cranes.filter(c=>!busy.has(c.id));
+                if(availCrane.length){
+                    availCrane.sort((a,c)=>a.temp-c.temp);
+                    let chosen = availCrane[0];
+                    assigned.push(chosen.id);
+                    chosen.temp++;
+                    busy.add(chosen.id);
+                }
             }
+            b.assignedEmployees = assigned;
+            assignedToday.set(b.date, busy);
         }
+        employees.forEach(e=>{
+            let d = dirs.find(d=>d.id===e.id);
+            if(d) e.totalOrders = d.temp;
+            let p = photos.find(p=>p.id===e.id);
+            if(p) e.totalOrders = p.temp;
+            let c = cranes.find(c=>c.id===e.id);
+            if(c) e.totalOrders = c.temp;
+        });
+        saveToFirebase();
+        showMsg("✅ تم التوزيع العادل");
+    }
+
+    // -------------------- عرض لوحة التحكم --------------------
+    function renderDashboard() {
+        const totalBookings = bookings.length;
+        const totalRevenue = bookings.reduce((s,b)=>s+b.price,0);
+        const totalEmployees = employees.filter(e=>e.active).length;
+        const upcoming = bookings.filter(b=>new Date(b.date)>=new Date()).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,5);
+        const hallStats = {closed:0, open:0, cafe:0};
+        bookings.forEach(b=>hallStats[b.hallType]++);
         
-        function logout() {
-            sessionStorage.removeItem('vpms_current');
-            currentUser = null;
-            renderLoginPage();
+        const now = new Date();
+        const monthBookings = bookings.filter(b=>{
+            let d=new Date(b.date);
+            return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+        });
+        const monthRevenue = monthBookings.reduce((s,b)=>s+b.price,0);
+        const topEmp = [...employees].sort((a,b)=>b.totalOrders-a.totalOrders)[0];
+        
+        // بيانات الرسم البياني
+        const months = [];
+        const revenues = [];
+        for(let i=5;i>=0;i--){
+            let d = new Date(); d.setMonth(d.getMonth()-i);
+            months.push(d.toLocaleString('ar',{month:'short'}));
+            let mBook = bookings.filter(b=>{
+                let bd=new Date(b.date);
+                return bd.getMonth()===d.getMonth() && bd.getFullYear()===d.getFullYear();
+            });
+            revenues.push(mBook.reduce((s,b)=>s+b.price,0));
         }
+        const top5 = [...employees].sort((a,b)=>b.totalOrders-a.totalOrders).slice(0,5);
         
-        function renderAll() {
-            if (!currentUser) { renderLoginPage(); return; }
-            if (currentUser.role === 'employee') renderEmployeeDashboard();
-            else renderAdminDashboard();
+        const html = `
+            <div class="p-4 max-w-7xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-2xl font-bold text-emerald-800"><i class="fas fa-chart-line ml-2"></i>لوحة التحكم المتقدمة</h1>
+                    <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${totalBookings}</div><div>إجمالي الحجوزات</div></div>
+                    <div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${totalRevenue.toLocaleString()} ج.م</div><div>إجمالي الإيرادات</div></div>
+                    <div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${totalEmployees}</div><div>الموظفين النشطين</div></div>
+                    <div class="dashboard-card"><i class="fas fa-trophy text-2xl text-emerald-600"></i><div class="stat-number">${topEmp?.totalOrders||0}</div><div>الأكثر شغل: ${topEmp?.name||'-'}</div></div>
+                </div>
+                <div class="grid md:grid-cols-2 gap-4 mb-6">
+                    <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-simple ml-1 text-emerald-600"></i>إحصائيات الشهر الحالي</h3><div class="flex justify-around"><div>حجوزات: ${monthBookings.length}</div><div>إيرادات: ${monthRevenue.toLocaleString()} ج.م</div></div></div>
+                    <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-building ml-1 text-emerald-600"></i>حسب القاعة</h3><div class="flex justify-around"><div>مغلقة: ${hallStats.closed}</div><div>أوبن: ${hallStats.open}</div><div>كافيه: ${hallStats.cafe}</div></div></div>
+                </div>
+                <div class="grid md:grid-cols-2 gap-4 mb-6">
+                    <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-line ml-1"></i>الإيرادات الشهرية</h3><canvas id="revenueChartCanvas"></canvas></div>
+                    <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-chart-bar ml-1"></i>أداء الموظفين (أفضل 5)</h3><canvas id="empChartCanvas"></canvas></div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${upcoming.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>
+            </div>
+        `;
+        document.getElementById('app').innerHTML = html;
+        
+        // رسم الرسوم البيانية
+        setTimeout(()=>{
+            const revCtx = document.getElementById('revenueChartCanvas')?.getContext('2d');
+            if(revCtx && revenueChart) revenueChart.destroy();
+            if(revCtx){
+                revenueChart = new Chart(revCtx, {
+                    type: 'line',
+                    data: { labels: months, datasets: [{ label: 'الإيرادات (ج.م)', data: revenues, borderColor: '#10b981', fill: false }] }
+                });
+            }
+            const empCtx = document.getElementById('empChartCanvas')?.getContext('2d');
+            if(empCtx){
+                new Chart(empCtx, {
+                    type: 'bar',
+                    data: { labels: top5.map(e=>e.name), datasets: [{ label: 'عدد الأوردرات', data: top5.map(e=>e.totalOrders||0), backgroundColor: '#f59e0b' }] }
+                });
+            }
+        }, 100);
+    }
+    
+    // -------------------- واجهة الموظف --------------------
+    function renderEmployee() {
+        const emp = employees.find(e=>e.id===currentUser.employeeId);
+        if(!emp){ document.getElementById('app').innerHTML='<div class="p-8 text-center">⚠️ لم يتم ربط حسابك</div>'; return; }
+        const myOrders = bookings.filter(b=>b.assignedEmployees?.includes(emp.id));
+        const total = myOrders.length;
+        const salary = total * emp.salaryPerOrder;
+        const html = `
+            <div class="p-4 max-w-4xl mx-auto">
+                <div class="bg-emerald-700 text-white p-6 rounded-2xl mb-6"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><p class="opacity-90">${emp.role}</p></div>
+                <div class="grid grid-cols-2 gap-4 mb-6"><div class="bg-white p-4 rounded-xl text-center"><div class="text-3xl font-bold text-emerald-700">${total}</div><div>عدد الأوردرات</div></div><div class="bg-white p-4 rounded-xl text-center"><div class="text-3xl font-bold text-emerald-700">${salary.toLocaleString()} ج.م</div><div>إجمالي المستحق</div></div></div>
+                <div class="bg-white rounded-xl overflow-hidden"><table class="w-full"><thead class="bg-gray-100"><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')||'<tr><td colspan="3">لا توجد أوردرات</td></tr>'}</tbody></table></div>
+                <button onclick="logout()" class="mt-4 bg-red-600 text-white px-4 py-2 rounded-xl w-full">تسجيل خروج</button>
+            </div>
+        `;
+        document.getElementById('app').innerHTML = html;
+    }
+    
+    // -------------------- شاشة تسجيل الدخول --------------------
+    function showLogin() {
+        const html = `
+            <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700">
+                <div class="bg-white p-8 rounded-2xl w-96 text-center">
+                    <i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i>
+                    <h1 class="text-2xl font-bold">Drmedia Pro</h1>
+                    <p class="text-gray-500 mb-6">نظام إدارة متقدم</p>
+                    <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-2 rounded-xl mb-3">
+                    <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-2 rounded-xl mb-4">
+                    <div id="loginError" class="text-red-500 text-sm mb-2 hidden"></div>
+                    <button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-2 rounded-xl">دخول</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('app').innerHTML = html;
+    }
+    
+    function doLogin() {
+        const un = document.getElementById('loginUser').value;
+        const pw = document.getElementById('loginPass').value;
+        const user = users.find(u=>u.username===un && u.password===pw);
+        if(user){
+            currentUser = user;
+            sessionStorage.setItem('vpms_user', JSON.stringify(user));
+            renderApp();
+        } else {
+            const err = document.getElementById('loginError');
+            err.innerText = 'بيانات غير صحيحة';
+            err.classList.remove('hidden');
         }
-        
-        // ===================== دوال عامة =====================
-        function showModal(html) { document.getElementById('modalContent').innerHTML = html; document.getElementById('genericModal').classList.remove('hidden'); }
-        function closeModal() { document.getElementById('genericModal').classList.add('hidden'); }
-        document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
-        
-        window.showAddBookingModal = showAddBookingModal;
-        window.saveNewBooking = saveNewBooking;
-        window.deleteBooking = deleteBooking;
-        window.showAddEmployeeModal = showAddEmployeeModal;
-        window.saveNewEmployee = saveNewEmployee;
-        window.showEditEmployeeModal = showEditEmployeeModal;
-        window.saveEditEmployee = saveEditEmployee;
-        window.deleteEmployee = deleteEmployee;
-        window.addEquipment = addEquipment;
-        window.assignEquipment = assignEquipment;
-        window.editUser = editUser;
-        window.deleteUser = deleteUser;
-        window.addUser = addUser;
-        window.changeCompanyName = changeCompanyName;
-        window.exportToExcel = exportToExcel;
-        window.exportToPDF = exportToPDF;
-        window.showImportExcelModal = showImportExcelModal;
-        window.importExcelData = importExcelData;
-        window.showImportPdfModal = showImportPdfModal;
-        window.importPdfData = importPdfData;
-        window.showHolidaysModal = showHolidaysModal;
-        window.addHoliday = addHoliday;
-        window.removeHoliday = removeHoliday;
-        window.autoDistribute = autoDistribute;
-        window.showModal = showModal;
-        window.closeModal = closeModal;
-        window.doLogin = doLogin;
-        window.logout = logout;
-        
-        listenToFirebase();
-        const savedUser = sessionStorage.getItem('vpms_current');
-        if (savedUser) currentUser = JSON.parse(savedUser);
-        renderAll();
-    </script>
+    }
+    
+    function logout() {
+        sessionStorage.removeItem('vpms_user');
+        currentUser = null;
+        showLogin();
+    }
+    
+    function renderApp() {
+        if(!currentUser) showLogin();
+        else if(currentUser.role === 'employee') renderEmployee();
+        else renderDashboard();
+    }
+    
+    function showMsg(msg) {
+        const toast = document.getElementById('toast');
+        toast.innerText = msg;
+        toast.classList.remove('hidden');
+        setTimeout(()=>toast.classList.add('hidden'), 2000);
+    }
+    
+    // بدء التطبيق
+    listenToFirebase();
+    const saved = sessionStorage.getItem('vpms_user');
+    if(saved) currentUser = JSON.parse(saved);
+    setTimeout(()=>{
+        if(bookings.length===0) loadDefaultData();
+        renderApp();
+    }, 500);
+</script>
 </body>
 </html>
