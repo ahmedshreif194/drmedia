@@ -519,7 +519,7 @@
                         <thead class="bg-gray-100"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>النوع</th><th>الخدمات</th><th>السعر</th><th>الموظفون</th><th></th></tr></thead>
                         <tbody>
                             ${bookings.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${b.hallType === 'closed' ? 'bg-purple-100' : b.hallType === 'open' ? 'bg-blue-100' : 'bg-amber-100'}">${b.hallType === 'closed' ? 'مغلقة' : b.hallType === 'open' ? 'أوبن' : 'كافيه'}</span></td><td class="p-2">${(b.services || []).join(', ')}</span></span></td><td class="p-2 font-bold text-emerald-700">${b.price} ج.م</span></span></td><td class="p-2 text-sm">${(b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name || '').join(', ') || '⚠️ لم يتم التوزيع'}</td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
-                            ${bookings.length === 0 ? '<tr><td colspan="8" class="text-center p-6 text-gray-500">📭 لا توجد حجوزات</span></span></td>' : ''}
+                            ${bookings.length === 0 ? '<tr><td colspan="8" class="text-center p-6 text-gray-500">📭 لا توجد حجوزات</span></span><tr>' : ''}
                         </tbody>
                     </table>
                 </div>
@@ -532,11 +532,11 @@
             if (!container) return;
             container.innerHTML = `
                 <div class="flex justify-between mb-4"><h2 class="text-2xl font-bold"><i class="fas fa-users ml-2"></i>الموظفين (${employees.length})</h2><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
-                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl shadow"><thead class="bg-gray-100"><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th></tr></thead><tbody>
+                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl shadow"><thead class="bg-gray-100"><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th><tr></thead><tbody>
                 ${employees.map(e => { 
                     const salary = (e.totalOrders || 0) * e.salaryPerOrder;
                     const userAccount = users.find(u => u.employeeId === e.id);
-                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 font-bold">${e.totalOrders || 0}</span></span><td><td class="p-2 text-emerald-700">${salary} ج.م</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${e.active ? 'bg-green-100' : 'bg-red-100'}">${e.active ? 'نشط' : 'غير نشط'}</span></td><td class="p-2 text-sm">${userAccount ? `${userAccount.username}` : 'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`; }).join('')}
+                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2 font-bold">${e.totalOrders || 0}</span></span></td><td class="p-2 text-emerald-700">${salary} ج.م</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${e.active ? 'bg-green-100' : 'bg-red-100'}">${e.active ? 'نشط' : 'غير نشط'}</span></td><td class="p-2 text-sm">${userAccount ? `${userAccount.username}` : 'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`; }).join('')}
                 </tbody></table></div>`;
         }
         
@@ -674,9 +674,9 @@
         function renderUsersContent() {
             const container = document.getElementById('usersTab');
             if (!container) return;
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-lock ml-2"></i>المستخدمين</h2><div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></table></thead><tbody>
-                ${users.map(u => `<tr><td class="p-2">${u.username}</span></span></td><td class="p-2">${u.employeeId ? (employees.find(e=>e.id===u.employeeId)?.name || '-') : '-'}</span></span><td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role === 'admin' ? 'bg-red-100' : u.role === 'manager' ? 'bg-purple-100' : 'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
-                </tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-4"><i class="fas fa-lock ml-2"></i>المستخدمين</h2><div class="overflow-x-auto"><table class="w-full border"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>
+                ${users.map(u => `<tr><td class="p-2">${u.username}</span></span></td><td class="p-2">${u.employeeId ? (employees.find(e=>e.id===u.employeeId)?.name || '-') : '-'}</span></span></td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role === 'admin' ? 'bg-red-100' : u.role === 'manager' ? 'bg-purple-100' : 'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600 ml-2"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
+                </tbody><table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
         }
         
         function renderSettingsContent() {
