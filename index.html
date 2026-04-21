@@ -37,12 +37,14 @@
         button { transition: 0.2s; cursor: pointer; }
         button:active { transform: scale(0.97); }
         .checkbox-col { width: 40px; text-align: center; }
+        .save-indicator { position: fixed; top: 10px; right: 10px; background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; z-index: 1000; }
     </style>
 </head>
 <body>
 
 <div id="app"></div>
 <div id="toast" class="toast hidden"></div>
+<div id="saveIndicator" class="save-indicator hidden">💾 جاري الحفظ...</div>
 
 <div id="modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50 p-3">
     <div class="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-auto">
@@ -78,6 +80,31 @@
     let currentHallFilter = 'all';
     let selectedEmployees = new Set();
 
+    // -------------------- دالة الحفظ الموحدة (القلب النابض للنظام) --------------------
+    function saveAllToFirebase(showIndicator = true) {
+        if(showIndicator) {
+            const indicator = document.getElementById('saveIndicator');
+            indicator.classList.remove('hidden');
+            setTimeout(() => indicator.classList.add('hidden'), 800);
+        }
+        
+        const saves = [
+            db.ref('bookings').set(bookings),
+            db.ref('employees').set(employees),
+            db.ref('equipment').set(equipment),
+            db.ref('users').set(users),
+            db.ref('halls').set(halls),
+            db.ref('holidays').set(holidays)
+        ];
+        
+        Promise.all(saves).then(() => {
+            console.log("✅ جميع البيانات تم حفظها في Firebase");
+        }).catch(err => {
+            console.error("❌ خطأ في الحفظ:", err);
+            showMsg("⚠️ خطأ في حفظ البيانات، تأكد من اتصال الإنترنت", "error");
+        });
+    }
+
     // -------------------- تحميل القاعات الافتراضية --------------------
     function initHalls() {
         if(halls.length === 0) {
@@ -86,6 +113,7 @@
                 { id: 'hall2', name: 'القاعة الكبرى - أوبن', type: 'open', active: true },
                 { id: 'hall3', name: 'القاعة الكبرى - كافيه', type: 'cafe', active: true }
             ];
+            saveAllToFirebase(false);
         }
     }
 
@@ -106,8 +134,8 @@
         }
         if(users.length === 0) {
             users = [
-                { username: 'admin', password: 'admin123', role: 'admin', name: 'مدير النظام' },
-                { username: 'manager', password: 'manager123', role: 'manager', name: 'مدير عام' },
+                { username: 'admin', password: 'admin123', role: 'admin', name: 'مدير النظام', employeeId: null },
+                { username: 'manager', password: 'manager123', role: 'manager', name: 'مدير عام', employeeId: null },
                 { username: 'ahmed', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد علي' },
                 { username: 'mahmoud', password: 'emp123', role: 'employee', employeeId: 'emp2', name: 'محمود حسن' },
                 { username: 'samer', password: 'emp123', role: 'employee', employeeId: 'emp3', name: 'سامر خالد' },
@@ -133,17 +161,8 @@
                 { id: 'b3', clientName: 'عمر وليد', phone: '01007778889', hallId: 'hall3', hallName: halls.find(h=>h.id==='hall3')?.name || 'كافيه', date: fd(10), price: 2000, assignedEmployees: [] }
             ];
         }
-        saveToFirebase();
+        saveAllToFirebase(false);
         setTimeout(autoDistribute, 200);
-    }
-
-    function saveToFirebase() {
-        db.ref('bookings').set(bookings);
-        db.ref('employees').set(employees);
-        db.ref('equipment').set(equipment);
-        db.ref('users').set(users);
-        db.ref('halls').set(halls);
-        db.ref('holidays').set(holidays);
     }
 
     function listenToFirebase() {
@@ -155,7 +174,12 @@
         db.ref('holidays').on('value', s => { if(s.val()) holidays = s.val(); renderCurrentTab(); });
     }
 
-    function showMsg(msg) { let t = document.getElementById('toast'); t.innerText = msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'), 2500); }
+    function showMsg(msg, type = 'success') { 
+        let t = document.getElementById('toast'); 
+        t.innerText = msg; 
+        t.classList.remove('hidden'); 
+        setTimeout(()=>t.classList.add('hidden'), 2500); 
+    }
 
     // -------------------- التوزيع العادل --------------------
     function autoDistribute() {
@@ -216,7 +240,7 @@
             let p = photos.find(p=>p.id===e.id); if(p) e.totalOrders = p.temp;
             let c = cranes.find(c=>c.id===e.id); if(c) e.totalOrders = c.temp;
         });
-        saveToFirebase();
+        saveAllToFirebase();
         showMsg("✅ تم التوزيع العادل");
     }
 
@@ -347,7 +371,7 @@
             </div>
             <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الموظفون</th><th></th></td></thead><tbody>
                 ${filteredBookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</span></span></td><td class="p-2">${b.hallName}</span></span></td><td class="p-2">${b.price} ج.م</span></span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</span></span></td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`).join('')}
-                ${filteredBookings.length===0?'}<tr<td colspan="6" class="text-center">لا توجد حجوزات</span></span></table>':''}
+                ${filteredBookings.length===0?'}<tr<td colspan="6" class="text-center">لا توجد حجوزات</span></span></tr>':''}
             </tbody></table></div>
         `;
         document.getElementById('bookingsTab').innerHTML = html;
@@ -380,7 +404,7 @@
         };
         if(!newBooking.date){ alert("⚠️ أدخل التاريخ"); return; }
         bookings.push(newBooking);
-        saveToFirebase();
+        saveAllToFirebase();
         closeModal();
         autoDistribute();
         renderBookingsContent();
@@ -391,7 +415,7 @@
     function deleteBooking(id) {
         if(confirm("حذف الحجز؟")){
             bookings = bookings.filter(b=>b.id!==id);
-            saveToFirebase();
+            saveAllToFirebase();
             autoDistribute();
             renderBookingsContent();
             renderDistributionContent();
@@ -428,7 +452,7 @@
         };
         if(!newHall.name){ alert("⚠️ أدخل اسم القاعة"); return; }
         halls.push(newHall);
-        saveToFirebase();
+        saveAllToFirebase();
         closeModal();
         renderHallsContent();
         renderBookingsContent();
@@ -448,7 +472,7 @@
             h.name = document.getElementById('hallName').value;
             h.type = document.getElementById('hallType').value;
             h.active = document.getElementById('hallActive').checked;
-            saveToFirebase();
+            saveAllToFirebase();
             closeModal();
             renderHallsContent();
             renderBookingsContent();
@@ -460,7 +484,7 @@
         if(confirm("حذف القاعة؟ سيتم حذف جميع حجوزاتها")){
             bookings = bookings.filter(b=>b.hallId!==id);
             halls = halls.filter(h=>h.id!==id);
-            saveToFirebase();
+            saveAllToFirebase();
             renderHallsContent();
             renderBookingsContent();
             showMsg("تم الحذف");
@@ -495,7 +519,7 @@
                         <td class="p-2">${e.active?'🟢 نشط':'🔴 غير نشط'}</span></span></td>
                         <td class="p-2">${acc?acc.username:'لا يوجد'} </span></span></td>
                         <td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>
-                    <tr>`;
+                    </tr>`;
                 }).join('')}
             </tbody></table></div>
         `;
@@ -550,7 +574,7 @@
             }
         }
         if(changed){
-            saveToFirebase();
+            saveAllToFirebase();
             autoDistribute();
             renderEmployeesContent();
             showMsg(`✅ تم تعديل ${selectedEmployees.size} موظف`);
@@ -569,7 +593,7 @@
             employees = employees.filter(e => !selectedEmployees.has(e.id));
             users = users.filter(u => !selectedEmployees.has(u.employeeId));
             selectedEmployees.clear();
-            saveToFirebase();
+            saveAllToFirebase();
             autoDistribute();
             renderEmployeesContent();
             showMsg(`✅ تم حذف الموظفين المحددين`);
@@ -593,7 +617,7 @@
         let final = username, c=1;
         while(users.some(u=>u.username===final)) final=username+(c++);
         users.push({ username:final, password:'emp123', role:'employee', employeeId:newEmp.id, name });
-        saveToFirebase();
+        saveAllToFirebase();
         closeModal();
         renderEmployeesContent();
         showMsg(`✅ تم إضافة ${name} - حسابه: ${final} / emp123`);
@@ -614,7 +638,7 @@
             e.phone = document.getElementById('empPhone').value;
             e.salaryPerOrder = parseInt(document.getElementById('empSalary').value)||200;
             e.active = document.getElementById('empActive').checked;
-            saveToFirebase();
+            saveAllToFirebase();
             closeModal();
             autoDistribute();
             renderEmployeesContent();
@@ -628,7 +652,7 @@
             employees = employees.filter(e=>e.id!==id);
             users = users.filter(u=>u.employeeId!==id);
             selectedEmployees.delete(id);
-            saveToFirebase();
+            saveAllToFirebase();
             autoDistribute();
             renderEmployeesContent();
             renderDistributionContent();
@@ -669,7 +693,7 @@
         const selected = [];
         checkboxes.forEach(cb=>{ if(cb.checked) selected.push(cb.value); });
         booking.assignedEmployees = selected;
-        saveToFirebase();
+        saveAllToFirebase();
         closeModal();
         renderDistributionContent();
         renderBookingsContent();
@@ -735,7 +759,7 @@
     }
     function exportToPDF(){
         const win = window.open();
-        win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span><tr>`).join('')}</tbody></table></body></html>`);
+        win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b=>`<td><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
         win.print();
     }
 
@@ -745,16 +769,15 @@
         document.getElementById('equipmentTab').innerHTML = html;
     }
 
-    function addEquipment(){ let name=prompt("اسم المعدة"); if(name){ equipment.push({id:'eq'+Date.now(),name,type:'كاميرا',status:'متاحة',bookingId:null}); saveToFirebase(); renderEquipmentContent(); showMsg("تمت الإضافة"); } }
-    function assignEquipment(eqId){ let eq=equipment.find(e=>e.id===eqId); let bid=prompt("ID الحجز"); if(bid){ eq.bookingId=bid; eq.status='مستخدم'; saveToFirebase(); renderEquipmentContent(); showMsg("تم الربط"); } }
+    function addEquipment(){ let name=prompt("اسم المعدة"); if(name){ equipment.push({id:'eq'+Date.now(),name,type:'كاميرا',status:'متاحة',bookingId:null}); saveAllToFirebase(); renderEquipmentContent(); showMsg("تمت الإضافة"); } }
+    function assignEquipment(eqId){ let eq=equipment.find(e=>e.id===eqId); let bid=prompt("ID الحجز"); if(bid){ eq.bookingId=bid; eq.status='مستخدم'; saveAllToFirebase(); renderEquipmentContent(); showMsg("تم الربط"); } }
 
-    // -------------------- المستخدمين (تم إصلاح مشكلة الحفظ) --------------------
+    // -------------------- المستخدمين --------------------
     function renderUsersContent() {
-        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
+        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></tr></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
         document.getElementById('usersTab').innerHTML = html;
     }
 
-    // دالة تعديل المستخدم مع حفظ في Firebase
     function showEditUserModal(username) {
         const user = users.find(u=>u.username===username);
         if(!user) return;
@@ -790,28 +813,23 @@
         const newRole = document.getElementById('editRole').value;
         const newEmployeeId = document.getElementById('editEmployeeId').value || null;
         
-        // التحقق من عدم تكرار اسم المستخدم الجديد مع مستخدم آخر
         if(newUsername !== oldUsername && users.some(u=>u.username === newUsername)) {
             alert("⚠️ اسم المستخدم موجود بالفعل!");
             return;
         }
         
-        // تحديث بيانات المستخدم
         user.username = newUsername;
         user.password = newPassword;
         user.role = newRole;
         user.employeeId = newEmployeeId;
         
-        // حفظ التغييرات في Firebase
-        saveToFirebase();
+        saveAllToFirebase();
         
-        // إذا كان المستخدم المعدل هو المستخدم الحالي، قم بتحديث الجلسة
         if(currentUser && currentUser.username === oldUsername) {
             currentUser.username = newUsername;
             currentUser.role = newRole;
             currentUser.employeeId = newEmployeeId;
             sessionStorage.setItem('vpms_user', JSON.stringify(currentUser));
-            // تحديث اسم المستخدم المعروض في الواجهة
             const userBadge = document.querySelector('.bg-emerald-100.text-emerald-800');
             if(userBadge) userBadge.innerText = newUsername;
         }
@@ -824,7 +842,7 @@
     function deleteUser(username){
         if(confirm(`⚠️ هل أنت متأكد من حذف المستخدم "${username}"؟`)){
             users = users.filter(u=>u.username!==username);
-            saveToFirebase();
+            saveAllToFirebase();
             renderUsersContent();
             showMsg("🗑️ تم حذف المستخدم");
         }
@@ -840,7 +858,7 @@
                 return;
             }
             users.push({username:un, password:pw, role:role||'employee', employeeId:null, name:un});
-            saveToFirebase();
+            saveAllToFirebase();
             renderUsersContent();
             showMsg("✅ تمت إضافة المستخدم");
         }
@@ -848,7 +866,18 @@
 
     // -------------------- الإعدادات --------------------
     function renderSettingsContent() {
-        const html = `<h2 class="text-xl font-bold mb-3">⚙️ الإعدادات</h2><div class="grid md:grid-cols-2 gap-4"><div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel (للقاعة المحددة)</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد Excel</button></div><div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF (للقاعة المحددة)</h3><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد PDF</button></div><div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>أيام الإجازة</h3><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">إدارة الإجازات</button></div><div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-palette text-purple-600 ml-2"></i>تغيير اسم الشركة</h3><input type="text" id="companyName" placeholder="اسم الشركة"><button onclick="changeCompanyName()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl w-full mt-2">تحديث</button></div></div>`;
+        const html = `<h2 class="text-xl font-bold mb-3">⚙️ الإعدادات</h2>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-file-excel text-green-600 ml-2"></i>استيراد من Excel (للقاعة المحددة)</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد Excel</button></div>
+                <div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد من PDF (للقاعة المحددة)</h3><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">استيراد PDF</button></div>
+                <div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>أيام الإجازة</h3><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">إدارة الإجازات</button></div>
+                <div class="border p-4 rounded-2xl"><h3 class="font-bold"><i class="fas fa-palette text-purple-600 ml-2"></i>تغيير اسم الشركة</h3><input type="text" id="companyName" placeholder="اسم الشركة"><button onclick="changeCompanyName()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl w-full mt-2">تحديث</button></div>
+            </div>
+            <div class="mt-4 bg-yellow-50 p-3 rounded-xl text-center">
+                <button onclick="saveAllToFirebase()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-save ml-2"></i> حفظ جميع البيانات يدوياً</button>
+                <p class="text-xs text-gray-500 mt-2">البيانات تحفظ تلقائياً بعد كل عملية، لكن يمكنك الضغط هنا للتأكد</p>
+            </div>
+        `;
         document.getElementById('settingsTab').innerHTML = html;
     }
 
@@ -907,7 +936,7 @@
             added++;
         }
         if(added===0) alert(`لا توجد تواريخ صالحة (تم تخطي ${skipped})`);
-        else{ saveToFirebase(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); closeModal(); showMsg(`✅ استيراد ${added} حجز إلى ${hall.name}`); }
+        else{ saveAllToFirebase(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); closeModal(); showMsg(`✅ استيراد ${added} حجز إلى ${hall.name}`); }
     }
 
     function showImportPdfModal(){
@@ -955,7 +984,7 @@
                 added++;
             }
             if(added===0) alert(`لا توجد تواريخ (تم تخطي ${skipped})`);
-            else{ saveToFirebase(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); closeModal(); showMsg(`✅ استيراد ${added} حجز إلى ${hall.name}`); }
+            else{ saveAllToFirebase(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); closeModal(); showMsg(`✅ استيراد ${added} حجز إلى ${hall.name}`); }
         }catch(e){ alert("فشل الاستيراد"); }
     }
 
@@ -966,8 +995,8 @@
         document.getElementById('modal').classList.remove('hidden');
     }
 
-    function addHoliday(){ let d=document.getElementById('newHoliday').value; if(d && !holidays.includes(d)){ holidays.push(d); saveToFirebase(); showHolidaysModal(); showMsg(`✅ تم إضافة ${d}`); } }
-    function removeHoliday(d){ holidays=holidays.filter(h=>h!==d); saveToFirebase(); showHolidaysModal(); showMsg(`🗑️ تم حذف ${d}`); }
+    function addHoliday(){ let d=document.getElementById('newHoliday').value; if(d && !holidays.includes(d)){ holidays.push(d); saveAllToFirebase(); showHolidaysModal(); showMsg(`✅ تم إضافة ${d}`); } }
+    function removeHoliday(d){ holidays=holidays.filter(h=>h!==d); saveAllToFirebase(); showHolidaysModal(); showMsg(`🗑️ تم حذف ${d}`); }
     function changeCompanyName(){ let newName=document.getElementById('companyName')?.value; if(newName) document.querySelector('h1').innerText = newName; }
 
     // -------------------- واجهة الموظف --------------------
@@ -982,7 +1011,7 @@
                 <div class="flex justify-between items-center mb-4"><h1 class="text-2xl font-bold text-emerald-800">Drmedia Pro</h1><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div>
                 <div class="bg-emerald-700 text-white p-6 rounded-2xl mb-6"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><p class="opacity-90">${emp.role}</p></div>
                 <div class="grid grid-cols-2 gap-4 mb-6"><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${total}</div><div>عدد الأوردرات</div></div><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${salary.toLocaleString()} ج.م</div><div>إجمالي المستحق</div></div></div>
-                <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 الأوردرات التي عملت بها</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map((o,i)=>`<tr><td class="p-2">${i+1}</td><td class="p-2">${o.date}</td><td class="p-2">${o.clientName}</td><td class="p-2">${o.hallName}</td></tr>`).join('')||'}<tr<td colspan="4" class="text-center">لا توجد أوردرات</span></span></td>'}</tbody></table></div></div>
+                <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 الأوردرات التي عملت بها</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map((o,i)=>`<td><td class="p-2">${i+1}</td><td class="p-2">${o.date}</td><td class="p-2">${o.clientName}</td><td class="p-2">${o.hallName}</td></tr>`).join('')||'}<tr<td colspan="4" class="text-center">لا توجد أوردرات</span></span></td>'}</tbody></table></div></div>
                 <div class="mt-4 p-3 bg-gray-50 rounded-lg text-center"><i class="fas fa-chart-simple ml-1 text-emerald-600"></i> إجمالي المستحق ${salary.toLocaleString()} ج.م | عدد الأوردرات ${total} | قيمة الأوردر ${emp.salaryPerOrder} ج.م</div>
             </div>
         `;
@@ -1070,6 +1099,7 @@
     window.showBulkEditModal = showBulkEditModal;
     window.applyBulkEdit = applyBulkEdit;
     window.bulkDeleteEmployees = bulkDeleteEmployees;
+    window.saveAllToFirebase = saveAllToFirebase;
 
     // بدء التطبيق
     listenToFirebase();
