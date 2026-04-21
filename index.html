@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia Pro | نظام إدارة القاعات المتعددة</title>
+    <title>Drmedia Pro | نظام إدارة متقدم</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -36,6 +36,7 @@
         input, select, textarea { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; width: 100%; margin-bottom: 10px; }
         button { transition: 0.2s; cursor: pointer; }
         button:active { transform: scale(0.97); }
+        .checkbox-col { width: 40px; text-align: center; }
     </style>
 </head>
 <body>
@@ -69,12 +70,13 @@
     let employees = [];
     let equipment = [];
     let users = [];
-    let halls = []; // قائمة القاعات
+    let halls = [];
     let holidays = [];
     let currentUser = null;
     let currentTab = 'dashboardTab';
     let revenueChart = null, ordersChart = null;
-    let currentHallFilter = 'all'; // فلتر الحجوزات حسب القاعة
+    let currentHallFilter = 'all';
+    let selectedEmployees = new Set(); // لتخزين ID الموظفين المحددين
 
     // -------------------- تحميل القاعات الافتراضية --------------------
     function initHalls() {
@@ -125,7 +127,6 @@
         if(holidays.length === 0) holidays = ['2025-04-18', '2025-05-01'];
         if(bookings.length === 0) {
             const fd = (d) => { let x = new Date(); x.setDate(x.getDate()+d); return x.toISOString().slice(0,10); };
-            // إضافة حجوزات تجريبية لكل قاعة
             bookings = [
                 { id: 'b1', clientName: 'محمد عبدالله', phone: '01001112223', hallId: 'hall1', hallName: halls.find(h=>h.id==='hall1')?.name || 'قاعة مغلقة', date: fd(5), price: 5000, assignedEmployees: [] },
                 { id: 'b2', clientName: 'سارة خالد', phone: '01004445556', hallId: 'hall2', hallName: halls.find(h=>h.id==='hall2')?.name || 'قاعة أوبن', date: fd(7), price: 4500, assignedEmployees: [] },
@@ -156,7 +157,7 @@
 
     function showMsg(msg) { let t = document.getElementById('toast'); t.innerText = msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'), 2500); }
 
-    // -------------------- التوزيع العادل (على جميع الحجوزات) --------------------
+    // -------------------- التوزيع العادل --------------------
     function autoDistribute() {
         bookings.forEach(b => b.assignedEmployees = []);
         const sorted = [...bookings].sort((a,b)=>new Date(a.date)-new Date(b.date));
@@ -330,7 +331,7 @@
         }, 100);
     }
 
-    // -------------------- الحجوزات مع فلتر القاعة --------------------
+    // -------------------- الحجوزات --------------------
     function renderBookingsContent() {
         const filteredBookings = currentHallFilter === 'all' ? bookings : bookings.filter(b=>b.hallId===currentHallFilter);
         const hallOptions = `<option value="all">كل القاعات</option>${halls.map(h=>`<option value="${h.id}" ${currentHallFilter===h.id?'selected':''}>${h.name}</option>`).join('')}`;
@@ -344,8 +345,8 @@
                     <button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl">إعادة توزيع</button>
                 </div>
             </div>
-            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الموظفون</th><th></th></tr></thead><tbody>
-                ${filteredBookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</span></span></td><td class="p-2">${b.hallName}</span></span></td><td class="p-2">${b.price} ج.م</span></span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</span></span></td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></tr>`).join('')}
+            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الموظفون</th><th></th></td></thead><tbody>
+                ${filteredBookings.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</span></span></td><td class="p-2">${b.hallName}</span></span></td><td class="p-2">${b.price} ج.م</span></span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</span></span></td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`).join('')}
                 ${filteredBookings.length===0?'<tr><td colspan="6" class="text-center">لا توجد حجوزات</td></tr>':''}
             </tbody></table></div>
         `;
@@ -405,7 +406,7 @@
             <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>اسم القاعة</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th><th></th></tr></thead><tbody>
                 ${halls.map(h=>{
                     const count = bookings.filter(b=>b.hallId===h.id).length;
-                    return `<tr><td class="p-2">${h.name}</span></span></td><td class="p-2">${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</span></span></td><td class="p-2">${h.active?'🟢 نشطة':'🔴 غير نشطة'}</span></span></td><td class="p-2">${count}</span></span></td><td class="p-2"><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></tr>`;
+                    return `<tr><td class="p-2">${h.name}</td><td class="p-2">${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td class="p-2">${h.active?'🟢 نشطة':'🔴 غير نشطة'}</td><td class="p-2">${count}</td><td class="p-2"><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`;
                 }).join('')}
             </tbody></table></div>
         `;
@@ -430,7 +431,7 @@
         saveToFirebase();
         closeModal();
         renderHallsContent();
-        renderBookingsContent(); // تحديث الفلتر
+        renderBookingsContent();
         showMsg("✅ تم إضافة القاعة");
     }
 
@@ -466,20 +467,114 @@
         }
     }
 
-    // -------------------- الموظفين (نفس السابق) --------------------
+    // -------------------- الموظفين مع التحديد المتعدد --------------------
     function renderEmployeesContent() {
         updateEmployeeOrders();
         const html = `
-            <div class="flex justify-between mb-4"><h2 class="text-xl font-bold">👥 الموظفين (${employees.length})</h2><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button></div>
-            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th></tr></thead><tbody>
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h2 class="text-xl font-bold">👥 الموظفين (${employees.length})</h2>
+                <div class="flex gap-2">
+                    <button onclick="selectAllEmployees()" class="bg-gray-600 text-white px-3 py-2 rounded-xl">تحديد الكل</button>
+                    <button onclick="showBulkEditModal()" class="bg-amber-600 text-white px-3 py-2 rounded-xl">تعديل جماعي</button>
+                    <button onclick="bulkDeleteEmployees()" class="bg-red-600 text-white px-3 py-2 rounded-xl">حذف محددين</button>
+                    <button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-3 py-2 rounded-xl">+ إضافة</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>الحساب</th><th></th></tr></thead><tbody>
                 ${employees.map(e=>{
                     const salary = (e.totalOrders||0)*e.salaryPerOrder;
                     const acc = users.find(u=>u.employeeId===e.id);
-                    return `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2">${e.totalOrders||0}</span></span></td><td class="p-2">${salary} ج.م</span></span></td><td class="p-2">${e.active?'🟢 نشط':'🔴 غير نشط'}</span></span></td><td class="p-2">${acc?acc.username:'لا يوجد'}</span></span></td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></span></span></td>`;
+                    return `<tr>
+                        <td class="checkbox-col text-center"><input type="checkbox" class="employee-checkbox" value="${e.id}" ${selectedEmployees.has(e.id)?'checked':''} onchange="toggleEmployeeSelection('${e.id}', this.checked)"></td>
+                        <td class="p-2">${e.name}</td>
+                        <td class="p-2">${e.role}</td>
+                        <td class="p-2">${e.phone}</td>
+                        <td class="p-2">${e.salaryPerOrder} ج.م</td>
+                        <td class="p-2">${e.totalOrders||0}</td>
+                        <td class="p-2">${salary} ج.م</td>
+                        <td class="p-2">${e.active?'🟢 نشط':'🔴 غير نشط'}</td>
+                        <td class="p-2">${acc?acc.username:'لا يوجد'}</td>
+                        <td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td>
+                    </tr>`;
                 }).join('')}
             </tbody></table></div>
         `;
         document.getElementById('employeesTab').innerHTML = html;
+        // مزامنة حالة checkbox الكل
+        const allCheckbox = document.getElementById('selectAllCheckbox');
+        if(allCheckbox) allCheckbox.checked = selectedEmployees.size === employees.length && employees.length > 0;
+    }
+
+    function toggleEmployeeSelection(id, checked) {
+        if(checked) selectedEmployees.add(id);
+        else selectedEmployees.delete(id);
+        renderEmployeesContent(); // إعادة الرندر لتحديث واجهة الـ checkbox الكل
+    }
+
+    function selectAllEmployees() {
+        if(selectedEmployees.size === employees.length) selectedEmployees.clear();
+        else employees.forEach(e => selectedEmployees.add(e.id));
+        renderEmployeesContent();
+    }
+
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAllCheckbox').checked;
+        if(selectAll) employees.forEach(e => selectedEmployees.add(e.id));
+        else selectedEmployees.clear();
+        renderEmployeesContent();
+    }
+
+    function showBulkEditModal() {
+        if(selectedEmployees.size === 0){
+            alert("⚠️ لم تختر أي موظف. حدد الموظفين أولاً.");
+            return;
+        }
+        const html = `<h3 class="text-xl font-bold mb-3">✏️ تعديل جماعي للموظفين (${selectedEmployees.size} موظف)</h3>
+            <label>المرتب لكل أوردر:</label>
+            <input type="number" id="bulkSalary" placeholder="اترك فارغاً لعدم التغيير">
+            <label>الحالة:</label>
+            <select id="bulkActive"><option value="">بدون تغيير</option><option value="true">نشط</option><option value="false">غير نشط</option></select>
+            <button onclick="applyBulkEdit()" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-3">تطبيق التعديلات</button>`;
+        document.getElementById('modalContent').innerHTML = html;
+        document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function applyBulkEdit() {
+        const newSalary = document.getElementById('bulkSalary').value;
+        const newActive = document.getElementById('bulkActive').value;
+        let changed = false;
+        for(let id of selectedEmployees){
+            const emp = employees.find(e=>e.id===id);
+            if(emp){
+                if(newSalary !== '') { emp.salaryPerOrder = parseInt(newSalary); changed=true; }
+                if(newActive !== '') { emp.active = newActive === 'true'; changed=true; }
+            }
+        }
+        if(changed){
+            saveToFirebase();
+            autoDistribute();
+            renderEmployeesContent();
+            showMsg(`✅ تم تعديل ${selectedEmployees.size} موظف`);
+        } else {
+            showMsg("لم يتم إجراء أي تغيير");
+        }
+        closeModal();
+    }
+
+    function bulkDeleteEmployees() {
+        if(selectedEmployees.size === 0){
+            alert("⚠️ لم تختر أي موظف للحذف.");
+            return;
+        }
+        if(confirm(`⚠️ هل أنت متأكد من حذف ${selectedEmployees.size} موظف؟`)){
+            employees = employees.filter(e => !selectedEmployees.has(e.id));
+            users = users.filter(u => !selectedEmployees.has(u.employeeId));
+            selectedEmployees.clear();
+            saveToFirebase();
+            autoDistribute();
+            renderEmployeesContent();
+            showMsg(`✅ تم حذف الموظفين المحددين`);
+        }
     }
 
     function updateEmployeeOrders() { employees.forEach(e=>e.totalOrders = bookings.filter(b=>b.assignedEmployees?.includes(e.id)).length); }
@@ -533,6 +628,7 @@
         if(confirm("حذف الموظف؟")){
             employees = employees.filter(e=>e.id!==id);
             users = users.filter(u=>u.employeeId!==id);
+            selectedEmployees.delete(id);
             saveToFirebase();
             autoDistribute();
             renderEmployeesContent();
@@ -590,7 +686,7 @@
             <div class="grid grid-cols-3 gap-3 mb-4"><div class="bg-green-100 p-3 rounded-xl text-center"><p>الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
             <div class="bg-amber-100 p-3 rounded-xl text-center"><p>المرتبات</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
             <div class="bg-purple-100 p-3 rounded-xl text-center"><p>صافي الأرباح</p><p class="text-2xl font-bold">${(totalRevenue-totalSalaries).toLocaleString()} ج.م</p></div></div>
-            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></tr></thead><tbody>${employees.map(e=>`<td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${e.salaryPerOrder} ج.م</span></span></td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</span></span></tr>`).join('')}</tbody></table></div>
+            <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>الموظف</th><th>المهمة</th><th>عدد الأوردرات</th><th>المرتب لكل أوردر</th><th>الإجمالي</th></td></thead><tbody>${employees.map(e=>`<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>
         `;
         document.getElementById('payrollTab').innerHTML = html;
     }
@@ -640,7 +736,7 @@
     }
     function exportToPDF(){
         const win = window.open();
-        win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b=>`<td><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></tr>`).join('')}</tbody></table></body></html>`);
+        win.document.write(`<html><head><title>تقرير Drmedia</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>تقرير Drmedia</h2><p>إجمالي الحجوزات: ${bookings.length}</p><table><thead><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></thead><tbody>${bookings.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')}</tbody></table></body></html>`);
         win.print();
     }
 
@@ -655,7 +751,7 @@
 
     // -------------------- المستخدمين --------------------
     function renderUsersContent() {
-        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody><td></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
+        const html = `<h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الموظف المرتبط</th><th>الدور</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2">${u.employeeId?employees.find(e=>e.id===u.employeeId)?.name||'-':'-'}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':u.role==='manager'?'bg-purple-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="editUser('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td class="p-2"><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة مستخدم</button>`;
         document.getElementById('usersTab').innerHTML = html;
     }
 
@@ -669,7 +765,7 @@
         document.getElementById('settingsTab').innerHTML = html;
     }
 
-    // -------------------- استيراد Excel/PDF مع اختيار القاعة --------------------
+    // -------------------- استيراد Excel/PDF --------------------
     function showImportExcelModal(){
         const hallOptions = halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
         const html = `<h3 class="text-xl font-bold mb-3">📂 استيراد من Excel</h3><p class="text-sm text-gray-500 mb-2">اختر ملف Excel (الصف الأول: التاريخ، العميل، القاعة، السعر)</p><input type="file" id="excelFile" accept=".xlsx,.xls"><select id="importHallId" class="mt-2">${hallOptions}</select><div class="flex gap-2 my-2"><label><input type="checkbox" id="skipFriday"> الجمعة</label><label><input type="checkbox" id="skipSaturday"> السبت</label><label><input type="checkbox" id="skipHolidays" checked> أيام الإجازة</label></div><button onclick="importExcelData()" class="bg-green-700 text-white w-full py-2 rounded-xl mt-2">استيراد</button><div id="importPreview" class="text-sm mt-2"></div>`;
@@ -799,7 +895,7 @@
                 <div class="flex justify-between items-center mb-4"><h1 class="text-2xl font-bold text-emerald-800">Drmedia Pro</h1><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div>
                 <div class="bg-emerald-700 text-white p-6 rounded-2xl mb-6"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><p class="opacity-90">${emp.role}</p></div>
                 <div class="grid grid-cols-2 gap-4 mb-6"><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${total}</div><div>عدد الأوردرات</div></div><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${salary.toLocaleString()} ج.م</div><div>إجمالي المستحق</div></div></div>
-                <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 الأوردرات التي عملت بها</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map((o,i)=>`<tr><td class="p-2">${i+1}</td><td class="p-2">${o.date}</td><td class="p-2">${o.clientName}</td><td class="p-2">${o.hallName}</td></tr>`).join('')||'}<tr<td colspan="4" class="text-center">لا توجد أوردرات</td></tr>'}</tbody></table></div></div>
+                <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 الأوردرات التي عملت بها</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myOrders.map((o,i)=>`<tr><td class="p-2">${i+1}</td><td class="p-2">${o.date}</td><td class="p-2">${o.clientName}</td><td class="p-2">${o.hallName}</td></tr>`).join('')||'<tr><td colspan="4" class="text-center">لا توجد أوردرات</td></tr>'}</tbody></table></div></div>
                 <div class="mt-4 p-3 bg-gray-50 rounded-lg text-center"><i class="fas fa-chart-simple ml-1 text-emerald-600"></i> إجمالي المستحق ${salary.toLocaleString()} ج.م | عدد الأوردرات ${total} | قيمة الأوردر ${emp.salaryPerOrder} ج.م</div>
             </div>
         `;
@@ -880,6 +976,12 @@
     window.removeHoliday = removeHoliday;
     window.autoDistribute = autoDistribute;
     window.changeHallFilter = changeHallFilter;
+    window.selectAllEmployees = selectAllEmployees;
+    window.toggleSelectAll = toggleSelectAll;
+    window.toggleEmployeeSelection = toggleEmployeeSelection;
+    window.showBulkEditModal = showBulkEditModal;
+    window.applyBulkEdit = applyBulkEdit;
+    window.bulkDeleteEmployees = bulkDeleteEmployees;
 
     // بدء التطبيق
     listenToFirebase();
