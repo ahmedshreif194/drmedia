@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>اختبار Firebase</title>
+    <meta charset="UTF-8">
+    <title>Firebase Test</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
 <body>
-    <h1>اختبار الاتصال بـ Firebase</h1>
-    <button onclick="testSave()">حفظ بيانات تجريبية</button>
-    <button onclick="testLoad()">تحميل البيانات</button>
-    <div id="result"></div>
+    <h1>Firebase Connection Test</h1>
+    <button onclick="testSave()" style="padding:10px;margin:5px;">Save Test Data</button>
+    <button onclick="testLoad()" style="padding:10px;margin:5px;">Load Data</button>
+    <div id="result" style="margin-top:20px;padding:10px;border:1px solid #ccc;"></div>
 
     <script>
-        // إعدادات Firebase (نفس بياناتك)
         const firebaseConfig = {
             apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
             authDomain: "drmedia-vpms.firebaseapp.com",
@@ -29,13 +29,13 @@
         function testSave() {
             const testRef = db.ref('test/data');
             testRef.set({
-                message: 'تم الحفظ بنجاح',
+                message: 'Save successful!',
                 time: new Date().toLocaleString(),
-                testValue: Math.random()
+                value: Math.random()
             }).then(() => {
-                document.getElementById('result').innerHTML = '<p style="color:green">✅ تم حفظ البيانات بنجاح في Firebase!</p>';
+                document.getElementById('result').innerHTML = '<p style="color:green">✅ SUCCESS: Data saved to Firebase!</p>';
             }).catch((error) => {
-                document.getElementById('result').innerHTML = '<p style="color:red">❌ خطأ في الحفظ: ' + error.message + '</p>';
+                document.getElementById('result').innerHTML = '<p style="color:red">❌ ERROR: ' + error.message + '</p>';
                 console.error(error);
             });
         }
@@ -45,12 +45,12 @@
             testRef.once('value').then((snapshot) => {
                 const data = snapshot.val();
                 if(data) {
-                    document.getElementById('result').innerHTML = '<p style="color:blue">📦 البيانات المسترجعة: ' + JSON.stringify(data) + '</p>';
+                    document.getElementById('result').innerHTML = '<p style="color:blue">📦 Data loaded: ' + JSON.stringify(data) + '</p>';
                 } else {
-                    document.getElementById('result').innerHTML = '<p style="color:orange">⚠️ لا توجد بيانات، اضغط "حفظ" أولاً</p>';
+                    document.getElementById('result').innerHTML = '<p style="color:orange">⚠️ No data found. Click Save first.</p>';
                 }
             }).catch((error) => {
-                document.getElementById('result').innerHTML = '<p style="color:red">❌ خطأ في القراءة: ' + error.message + '</p>';
+                document.getElementById('result').innerHTML = '<p style="color:red">❌ ERROR: ' + error.message + '</p>';
             });
         }
     </script>
