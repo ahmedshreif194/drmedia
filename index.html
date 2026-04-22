@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DrMedia Pro V2</title>
+<title>Drmedia Pro V3</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -11,6 +11,11 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
+<style>
+body {font-family: Arial;}
+.tab{display:none;}
+.tab.active{display:block;}
+</style>
 </head>
 
 <body class="bg-gray-100">
@@ -18,206 +23,165 @@
 <div id="app"></div>
 
 <script>
-
 // ================= FIREBASE =================
 const firebaseConfig = {
-    apiKey: "PUT-YOUR-KEY-HERE",
+    apiKey: "ضع_المفتاح_الصحيح",
     authDomain: "drmedia-vpms.firebaseapp.com",
     databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
     projectId: "drmedia-vpms"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+let fbReady = true;
+try {
+    firebase.initializeApp(firebaseConfig);
+} catch(e){
+    fbReady = false;
+    console.log("Firebase Error:", e.message);
+}
+
+const db = fbReady ? firebase.database() : null;
 
 // ================= DATA =================
-let bookings = [];
-let employees = [];
 let users = [];
-let notifications = [];
+let employees = [];
+let bookings = [];
 let currentUser = null;
 
-// ================= SAFE INIT =================
-function initDefaults(){
+// ================= DEFAULT =================
+function initData(){
+    users = [
+        {username:"admin", password:"admin123", role:"admin", name:"Admin"},
+        {username:"emp", password:"123", role:"employee", employeeId:"e1", name:"Employee"}
+    ];
 
-    if(users.length === 0){
-        users = [
-            {username:"admin", password:"admin123", role:"admin"}
-        ];
-    }
+    employees = [
+        {id:"e1", name:"Ahmed", role:"مصور", salary:200, active:true}
+    ];
 
-    if(employees.length === 0){
-        employees = [
-            {id:"e1", name:"أحمد", role:"مخرج", salaryPerOrder:300, active:true, totalOrders:0},
-            {id:"e2", name:"محمد", role:"مصور", salaryPerOrder:200, active:true, totalOrders:0},
-            {id:"e3", name:"ياسر", role:"كرين", salaryPerOrder:250, active:true, totalOrders:0}
-        ];
-    }
-
-    if(bookings.length === 0){
-        bookings = [
-            {id:"b1", clientName:"عميل تجريبي", date:"2026-04-25", hallName:"قاعة", price:3000, assignedEmployees:[]}
-        ];
-    }
-}
-
-// ================= NOTIFICATIONS =================
-function sendNotification(userId,title,msg){
-    notifications.push({
-        id:Date.now(),
-        userId,
-        title,
-        msg,
-        read:false,
-        time:new Date().toLocaleString()
-    });
-}
-
-function notifyEmployees(booking){
-    (booking.assignedEmployees||[]).forEach(id=>{
-        sendNotification(id,"📅 أوردر جديد",
-        `عندك شغل يوم ${booking.date} في ${booking.hallName}`);
-    });
-}
-
-// ================= SAVE =================
-function save(){
-    db.ref("bookings").set(bookings);
-    db.ref("employees").set(employees);
-    db.ref("users").set(users);
-}
-
-// ================= LOAD =================
-function load(){
-    db.ref("bookings").on("value",s=>{ bookings=s.val()||[]; render(); });
-    db.ref("employees").on("value",s=>{ employees=s.val()||[]; render(); });
-    db.ref("users").on("value",s=>{ users=s.val()||[]; render(); });
+    bookings = [
+        {id:"b1", client:"Ali", date:"2026-04-22", hall:"Hall A", assigned:["e1"], price:2000}
+    ];
 }
 
 // ================= LOGIN =================
-function login(){
-    const u=document.getElementById("u").value;
-    const p=document.getElementById("p").value;
+function loginPage(){
+document.getElementById("app").innerHTML = `
+<div class="flex items-center justify-center h-screen">
+<div class="bg-white p-6 rounded-xl w-80">
+<h2 class="text-xl mb-3">Login</h2>
 
-    const user = users.find(x=>x.username===u && x.password===p);
+<input id="u" class="border p-2 w-full mb-2" placeholder="User">
+<input id="p" class="border p-2 w-full mb-2" placeholder="Pass" type="password">
 
-    if(user){
-        currentUser=user;
-        render();
-    }else{
-        alert("بيانات غلط");
-    }
-}
-
-function logout(){
-    currentUser=null;
-    render();
-}
-
-// ================= AUTO DISTRIBUTE =================
-function autoDistribute(){
-
-    bookings.forEach(b=>b.assignedEmployees=[]);
-
-    let dirs = employees.filter(e=>e.role==="مخرج" && e.active);
-    let photos = employees.filter(e=>e.role==="مصور" && e.active);
-    let cranes = employees.filter(e=>e.role==="كرين" && e.active);
-
-    bookings.forEach(b=>{
-
-        let assigned = [];
-
-        if(b.hallType==="cafe"){
-            if(photos[0]) assigned.push(photos[0].id);
-        }else{
-            if(dirs[0]) assigned.push(dirs[0].id);
-            if(photos[0]) assigned.push(photos[0].id);
-            if(photos[1]) assigned.push(photos[1].id);
-            if(cranes[0]) assigned.push(cranes[0].id);
-        }
-
-        b.assignedEmployees = assigned;
-        notifyEmployees(b);
-    });
-
-    save();
-    alert("تم التوزيع");
-}
-
-// ================= RENDER =================
-function render(){
-
-if(!currentUser){
-document.getElementById("app").innerHTML=`
-<div class="h-screen flex items-center justify-center">
-<div class="bg-white p-6 rounded w-80">
-<h2>DrMedia Login</h2>
-<input id="u" class="border p-2 w-full mb-2" placeholder="user">
-<input id="p" type="password" class="border p-2 w-full mb-2" placeholder="pass">
-<button onclick="login()" class="bg-green-600 text-white w-full p-2">Login</button>
+<button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">
+Login
+</button>
 </div>
 </div>`;
+}
+
+function login(){
+const u = document.getElementById("u").value;
+const p = document.getElementById("p").value;
+
+const user = users.find(x=>x.username===u && x.password===p);
+
+if(!user){
+alert("Wrong login");
 return;
 }
 
-document.getElementById("app").innerHTML=`
+currentUser = user;
+renderApp();
+}
+
+// ================= APP =================
+function renderApp(){
+
+if(!currentUser){
+loginPage();
+return;
+}
+
+if(currentUser.role==="admin") adminPanel();
+else employeePanel();
+
+}
+
+// ================= ADMIN =================
+function adminPanel(){
+
+document.getElementById("app").innerHTML = `
 <div class="p-4">
 
-<div class="flex justify-between">
-<h1 class="text-xl">DrMedia V2</h1>
-<button onclick="logout()" class="bg-red-600 text-white px-3 py-1">Logout</button>
+<h1 class="text-xl font-bold mb-4">Drmedia V3 Admin</h1>
+
+<button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded">Logout</button>
+
+<div class="mt-4 bg-white p-4 rounded">
+<h2 class="font-bold">Employees</h2>
+
+${employees.map(e=>`
+<div class="border p-2 mt-2 rounded">
+${e.name} - ${e.role}
 </div>
-
-<div class="grid grid-cols-3 gap-3 mt-4">
-
-<div class="bg-white p-3 rounded">
-Bookings<br>${bookings.length}
-</div>
-
-<div class="bg-white p-3 rounded">
-Employees<br>${employees.length}
-</div>
-
-<div class="bg-white p-3 rounded">
-Notifications<br>${notifications.length}
-</div>
-
-</div>
-
-<button onclick="autoDistribute()" class="bg-purple-700 text-white px-4 py-2 mt-4 rounded">
-Auto Distribute
-</button>
-
-<div class="bg-white p-3 mt-4 rounded">
-
-<h3>Bookings</h3>
-
-<table class="w-full mt-2 border">
-<tr>
-<th>Client</th>
-<th>Date</th>
-<th>Employees</th>
-</tr>
-
-${bookings.map(b=>`
-<tr>
-<td>${b.clientName}</td>
-<td>${b.date}</td>
-<td>${(b.assignedEmployees||[]).join(",")}</td>
-</tr>
 `).join("")}
 
-</table>
+</div>
+
+<div class="mt-4 bg-white p-4 rounded">
+<h2 class="font-bold">Bookings</h2>
+
+${bookings.map(b=>`
+<div class="border p-2 mt-2 rounded">
+${b.client} - ${b.date}
+</div>
+`).join("")}
 
 </div>
 
-</div>`;
+</div>
+`;
+}
+
+// ================= EMPLOYEE =================
+function employeePanel(){
+
+const emp = employees.find(e=>e.id===currentUser.employeeId);
+
+const my = bookings.filter(b=>b.assigned.includes(emp.id));
+
+document.getElementById("app").innerHTML = `
+<div class="p-4">
+
+<h1>Welcome ${emp.name}</h1>
+
+<button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded">Logout</button>
+
+<div class="bg-white p-4 mt-4 rounded">
+<h2 class="font-bold">My Orders</h2>
+
+${my.map(m=>`
+<div class="border p-2 mt-2">
+${m.client} - ${m.date}
+</div>
+`).join("")}
+
+</div>
+
+</div>
+`;
+}
+
+// ================= LOGOUT =================
+function logout(){
+currentUser = null;
+loginPage();
 }
 
 // ================= START =================
-initDefaults();
-load();
-setTimeout(render,500);
+initData();
+loginPage();
 
 </script>
 
