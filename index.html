@@ -3,49 +3,54 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media Pro MAX - Smart System by Ahmed Shreif</title>
+<title>Dr Media Pro MAX v2 | By Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
-body{font-family:Tahoma;background:#f1f5f9}
-header{background:#0f172a;color:#fff;padding:15px;display:flex;justify-content:space-between;align-items:center}
-.container{padding:15px}
-.card{background:#fff;padding:15px;border-radius:12px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
-button{padding:10px;border-radius:8px;border:none;cursor:pointer}
-input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px solid #ddd}
-.row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.small{font-size:12px;color:gray}
+body{font-family:Tahoma;background:#0b1220;color:#e5e7eb}
+header{background:#0f172a;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1f2937}
+.container{padding:15px;max-width:1100px;margin:auto}
+.card{background:#111827;border:1px solid #1f2937;padding:15px;border-radius:14px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,0.25)}
+button{padding:10px;border-radius:10px;border:none;cursor:pointer;transition:.2s}
+button:hover{opacity:.9;transform:scale(1.02)}
+input,select{padding:10px;width:100%;margin:6px 0;border-radius:10px;border:1px solid #374151;background:#0b1220;color:#fff}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.small{font-size:12px;color:#9ca3af}
+.badge{padding:4px 10px;border-radius:999px;font-size:12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 18px;border-radius:999px;display:none;z-index:999}
 </style>
 </head>
 <body>
 
 <header>
 <h2>Dr Media Pro MAX</h2>
-<div>Developed by Ahmed Shreif</div>
+<div class="small">By Ahmed Shreif</div>
 </header>
+
+<div class="toast" id="toast"></div>
 
 <div class="container">
 
 <!-- LOGIN -->
 <div id="loginBox" class="card">
-<h3>تسجيل الدخول</h3>
+<h3>🔐 تسجيل الدخول</h3>
 <input id="user" placeholder="username">
 <input id="pass" type="password" placeholder="password">
-<button onclick="login()" style="background:#16a34a;color:white;width:100%">دخول</button>
+<button onclick="login()" style="background:#16a34a;color:#fff;width:100%">دخول</button>
 </div>
 
 <!-- ADMIN -->
 <div id="admin" style="display:none">
 
 <div class="row">
-<div class="card"><h3>الموظفين</h3><div id="empCount"></div></div>
-<div class="card"><h3>الأوردرات</h3><div id="orderCount"></div></div>
-<div class="card"><h3>الإيرادات</h3><div id="income"></div></div>
+<div class="card">👥 الموظفين<br><h2 id="empCount"></h2></div>
+<div class="card">📦 الأوردرات<br><h2 id="orderCount"></h2></div>
+<div class="card">💰 الإيرادات<br><h2 id="income"></h2></div>
 </div>
 
 <div class="card">
-<h3>إضافة أوردر (Smart System)</h3>
+<h3>➕ إضافة أوردر (Smart Engine)</h3>
 <input id="cname" placeholder="اسم العميل">
 <input id="date" type="date">
 <input id="price" placeholder="السعر">
@@ -58,12 +63,12 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 </div>
 
 <div class="card">
-<h3>الأوردرات</h3>
+<h3>📦 الأوردرات</h3>
 <div id="orders"></div>
 </div>
 
 <div class="card">
-<h3>الموظفين</h3>
+<h3>👤 الموظفين</h3>
 <div id="emps"></div>
 </div>
 
@@ -72,7 +77,7 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 <!-- EMPLOYEE -->
 <div id="employee" style="display:none">
 <div class="card">
-<h3>أوردراتي</h3>
+<h3>📋 أوردراتي</h3>
 <div id="myOrders"></div>
 </div>
 </div>
@@ -81,8 +86,8 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 
 <script>
 
-// ================= USERS =================
-let users = [
+// USERS
+let users=[
 {u:"admin",p:"123",role:"admin"},
 {u:"zakawa",p:"123",role:"emp"},
 {u:"titi",p:"123",role:"emp"},
@@ -94,90 +99,82 @@ let users = [
 {u:"mahmoud",p:"123",role:"emp"}
 ];
 
-// ================= EMPLOYEES SMART =================
-let employees = users.filter(u=>u.role=="emp").map(u=>({
-name:u.u,
-load:0
-}));
+let employees=users.filter(u=>u.role=="emp").map(u=>({name:u.u,load:0}));
+let orders=[];
+let currentUser=null;
 
-let orders = [];
-let currentUser = null;
+function toast(msg){
+let t=document.getElementById("toast");
+t.innerText=msg;
+t.style.display="block";
+setTimeout(()=>t.style.display="none",2000);
+}
 
-// ================= SMART ASSIGN =================
+// SMART ASSIGN
 function assignEmployee(){
 employees.sort((a,b)=>a.load-b.load);
-let emp = employees[0];
+let emp=employees[0];
 emp.load++;
 return emp.name;
 }
 
-// ================= LOGIN =================
+// LOGIN
 function login(){
 let u=document.getElementById("user").value;
 let p=document.getElementById("pass").value;
 let f=users.find(x=>x.u==u&&x.p==p);
-if(!f)return alert("error");
+if(!f)return alert("بيانات خطأ");
 currentUser=f;
 
-document.getElementById("loginBox").style.display="none";
-
-if(f.role=="admin") document.getElementById("admin").style.display="block";
-else document.getElementById("employee").style.display="block";
+loginBox.style.display="none";
+if(f.role=="admin")admin.style.display="block";
+else employee.style.display="block";
 
 render();
+toast("مرحباً " + f.u);
 }
 
-// ================= ADD ORDER SMART =================
+// ADD ORDER
 function addOrder(){
-let emp = assignEmployee();
-
-orders.push({
-client:cname.value,
-date:date.value,
-price:Number(price.value),
-hall:hall.value,
-emp:emp
-});
-
+let o={
+client:document.getElementById("cname").value,
+date:document.getElementById("date").value,
+price:Number(document.getElementById("price").value),
+hall:document.getElementById("hall").value,
+emp:assignEmployee()
+};
+orders.push(o);
 save();render();
+toast("تم إضافة الأوردر");
 }
 
-// ================= SAVE =================
-function save(){
-localStorage.setItem("orders",JSON.stringify(orders));
-}
-
-function load(){
-orders=JSON.parse(localStorage.getItem("orders")||"[]");
-}
+// SAVE
+function save(){localStorage.setItem("orders",JSON.stringify(orders));}
+function load(){orders=JSON.parse(localStorage.getItem("orders")||"[]");}
 load();
 
-// ================= RENDER =================
+// RENDER
 function render(){
-
 if(currentUser.role=="admin"){
+empCount.innerText=employees.length;
+orderCount.innerText=orders.length;
+income.innerText=orders.reduce((s,o)=>s+o.price,0);
 
-document.getElementById("empCount").innerText=employees.length;
-document.getElementById("orderCount").innerText=orders.length;
-let sum=orders.reduce((s,o)=>s+Number(o.price),0);
-document.getElementById("income").innerText=sum;
-
-let html="";
+ordersHTML="";
 orders.forEach(o=>{
-html+=`<div class='card'>${o.client} - ${o.date} - ${o.price} - 👤 ${o.emp}</div>`;
+ordersHTML+=`<div class='card'>👤 ${o.client} | 📅 ${o.date} | 💰 ${o.price} | 🎥 ${o.emp}</div>`;
 });
-document.getElementById("orders").innerHTML=html;
+document.getElementById("orders").innerHTML=ordersHTML;
 
-let ehtml="";
+empHTML="";
 employees.forEach(e=>{
-ehtml+=`<div class='card'>${e.name} | Load: ${e.load}</div>`;
+empHTML+=`<div class='card'>${e.name} <span class='badge'>Load ${e.load}</span></div>`;
 });
-document.getElementById("emps").innerHTML=ehtml;
-}
+document.getElementById("emps").innerHTML=empHTML;
 
-else{
+}else{
 let my=orders.filter(o=>o.emp==currentUser.u);
-document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} - ${o.date} - ${o.price}</div>`).join("");
+document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>📦 ${o.client} | ${o.date} | ${o.price}</div>`).join("");
 }
 }
 
