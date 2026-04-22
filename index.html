@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media Pro MAX AI FORECAST v6 | By Ahmed Shreif</title>
+<title>Dr Media Pro AI CEO DASHBOARD v7 | By Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -23,8 +23,8 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <body>
 
 <header>
-<h3>Dr Media Pro MAX AI FORECAST</h3>
-<div>Ahmed Shreif</div>
+<h3>Dr Media Pro AI CEO DASHBOARD</h3>
+<div>Powered by Ahmed Shreif</div>
 </header>
 
 <div class="toast" id="toast"></div>
@@ -48,12 +48,23 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 </div>
 
 <div class="card">
-<h3>📈 AI Forecasting Engine</h3>
-<button onclick="runForecast()" style="background:#7c3aed;color:#fff;width:100%">تشغيل التوقعات الذكية</button>
+<h3>🧠 AI CEO CONTROL CENTER</h3>
+<button onclick="runCEO()" style="background:#7c3aed;color:#fff;width:100%">تشغيل تحليل CEO الذكي</button>
+<div id="ceoPanel" style="margin-top:10px"></div>
 </div>
 
 <div class="card">
-<h3>➕ إضافة أوردر</h3>
+<h3>📊 Live Business Intelligence</h3>
+<div id="bi"></div>
+</div>
+
+<div class="card">
+<h3>📈 AI Forecast</h3>
+<button onclick="runForecast()" style="background:#2563eb;color:#fff;width:100%">تشغيل التوقع</button>
+</div>
+
+<div class="card">
+<h3>📦 إضافة أوردر</h3>
 <input id="client" placeholder="اسم العميل">
 <input id="date" type="date">
 <input id="price" placeholder="السعر">
@@ -62,7 +73,7 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <option>أوبن</option>
 <option>كافيه</option>
 </select>
-<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">إضافة</button>
+<button onclick="addOrder()" style="background:#16a34a;color:#fff;width:100%">إضافة</button>
 </div>
 
 <div class="card"><h3>📦 الأوردرات</h3><div id="orders"></div></div>
@@ -86,73 +97,58 @@ databaseURL:"https://drmedia-vpms-default-rtdb.firebaseio.com",
 projectId:"drmedia-vpms"
 }).database();
 
-let users=[{u:"admin",p:"123",role:"admin"},{u:"zakawa",p:"123",role:"emp"},{u:"titi",p:"123",role:"emp"}];
+let users=[{u:"admin",p:"123",role:"admin"},{u:"emp1",p:"123",role:"emp"},{u:"emp2",p:"123",role:"emp"}];
 let employees=users.filter(u=>u.role=="emp").map(u=>({name:u.u,load:0}));
 let orders=[],notifications=[],swaps=[],logs=[];
 let currentUser=null;
 
 function toast(m){let t=document.getElementById("toast");t.innerText=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000);}
-
-function log(a,d){logs.unshift({a,d,t:new Date().toLocaleString()});if(logs.length>50)logs.pop();db.ref("logs").set(logs);}
+function log(a,d){logs.unshift({a,d,t:new Date().toLocaleString()});db.ref("logs").set(logs);}
 
 function assign(){employees.sort((a,b)=>a.load-b.load);let e=employees[0];e.load++;return e.name;}
 
-// 🧠 AI FORECAST ENGINE
+// 📈 Forecast
 function runForecast(){
-let today=new Date();
-let next7=orders.filter(o=>new Date(o.date)-today<7*86400000);
 let revenue=orders.reduce((s,o)=>s+o.price,0);
 let avg=orders.length?revenue/orders.length:0;
-let prediction=Math.round(avg*(orders.length+next7.length));
-
-document.getElementById("forecast").innerText=prediction+" ج.م";
-log("AI_FORECAST",{prediction});
-toast("📈 Forecast Updated");
+let forecast=Math.round(avg*(orders.length*1.2));
+document.getElementById("forecast").innerText=forecast;
+log("FORECAST",forecast);
 }
 
-function login(){
-let f=users.find(x=>x.u==user.value&&x.p==pass.value);
-if(!f)return alert("error");currentUser=f;
-loginBox.style.display="none";
-if(f.role=="admin")admin.style.display="block";
-else employee.style.display="block";
-listen();}
+// 🧠 CEO ENGINE
+function runCEO(){
+let total=orders.length;
+let revenue=orders.reduce((s,o)=>s+o.price,0);
+let empPerf={};
+orders.forEach(o=>{empPerf[o.emp]=(empPerf[o.emp]||0)+1});
+let top=Object.keys(empPerf).sort((a,b)=>empPerf[b]-empPerf[a])[0];
 
-function addOrder(){
-let o={id:Date.now(),client:client.value,date:date.value,price:Number(price.value),hall:hall.value,emp:assign()};
-db.ref("orders").push(o);
-notifications.unshift({msg:`📦 ${o.client} -> ${o.emp}`});db.ref("notifications").set(notifications);
-log("ADD",o);
-toast("تم + AI");render();
+let risk = total<5?"LOW":"MEDIUM";
+if(revenue>10000) risk="HIGH PROFIT ZONE";
+
+let html=`
+<p>📊 Total Orders: ${total}</p>
+<p>💰 Revenue: ${revenue}</p>
+<p>🏆 Top Employee: ${top}</p>
+<p>⚠️ Business Risk: ${risk}</p>
+<p>📈 Recommendation: ${(revenue<5000)?"Increase marketing":"Stable operation"}</p>
+`;
+
+document.getElementById("ceoPanel").innerHTML=html;
+
+document.getElementById("bi").innerHTML=`Growth Index: ${(revenue/1000).toFixed(1)}%`;
+
+log("CEO_RUN",{total,revenue,top});
 }
 
-function listen(){
- db.ref("orders").on("value",s=>{orders=[];s.forEach(c=>orders.push(c.val()));render();});
- db.ref("notifications").on("value",s=>{notifications=[];s.forEach(c=>notifications.push(c.val()));render();});
- db.ref("swaps").on("value",s=>{swaps=[];s.forEach(c=>swaps.push(c.val()));render();});
- db.ref("logs").on("value",s=>{logs=[];s.forEach(c=>logs.push(c.val()));render();});
-}
+function login(){let f=users.find(x=>x.u==user.value&&x.p==pass.value);if(!f)return alert("error");currentUser=f;loginBox.style.display="none";admin.style.display=f.role=="admin"?"block":"none";employee.style.display=f.role=="emp"?"block":"none";listen();}
 
-function render(){
-if(currentUser.role=="admin"){
-empCount.innerText=employees.length;
-orderCount.innerText=orders.length;
-income.innerText=orders.reduce((s,o)=>s+o.price,0);
+function addOrder(){let o={id:Date.now(),client:client.value,date:date.value,price:+price.value,hall:hall.value,emp:assign()};orders.push(o);db.ref("orders").set(orders);notifications.unshift({msg:o.client+" -> "+o.emp});db.ref("notifications").set(notifications);log("ADD",o);render();}
 
-ordersHTML=orders.map(o=>`<div class='card'>${o.client} | ${o.emp} | ${o.price}</div>`).join("");
-document.getElementById("orders").innerHTML=ordersHTML;
+function listen(){db.ref("orders").on("value",s=>{orders=[];s.forEach(c=>orders.push(c.val()));render();});}
 
-notificationsHTML=notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");document.getElementById("notifications").innerHTML=notificationsHTML;
-
-swapsHTML=swaps.map(s=>`<div class='card'>${s.from||''} -> ${s.with||''}<br>${s.status||''}</div>`).join("");document.getElementById("swaps").innerHTML=swapsHTML;
-
-logsHTML=logs.map(l=>`<div class='card'>${l.t} - ${l.a}</div>`).join("");document.getElementById("logs").innerHTML=logsHTML;
-
-}else{
-let my=orders.filter(o=>o.emp==currentUser.u);
-document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} | ${o.date} | ${o.price}</div>`).join("");
-}
-}
+function render(){if(currentUser.role=="admin"){empCount.innerText=employees.length;orderCount.innerText=orders.length;income.innerText=orders.reduce((s,o)=>s+o.price,0);ordersHTML=orders.map(o=>`<div class='card'>${o.client} | ${o.emp} | ${o.price}</div>`).join("");document.getElementById("orders").innerHTML=ordersHTML;}else{let my=orders.filter(o=>o.emp==currentUser.u);document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} | ${o.date}</div>`).join("");}}
 </script>
 </body>
 </html>
