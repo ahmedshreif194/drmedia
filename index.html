@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media Pro AI CEO DASHBOARD v7 | By Ahmed Shreif</title>
+<title>Dr Media ERP CORE v1 | By Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -12,84 +12,72 @@
 <style>
 body{font-family:Tahoma;background:#0b1220;color:#e5e7eb}
 header{background:#0f172a;padding:12px;display:flex;justify-content:space-between;align-items:center}
-.container{padding:15px;max-width:1100px;margin:auto}
-.card{background:#111827;padding:12px;border-radius:12px;margin-bottom:10px;border:1px solid #1f2937}
+.container{max-width:1100px;margin:auto;padding:15px}
+.card{background:#111827;border:1px solid #1f2937;padding:12px;border-radius:12px;margin-bottom:10px}
 input,select{width:100%;padding:10px;margin:5px 0;border-radius:10px;background:#0b1220;color:#fff;border:1px solid #374151}
 button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 18px;border-radius:999px;display:none}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media Pro AI CEO DASHBOARD</h3>
-<div>Powered by Ahmed Shreif</div>
+<h3>Dr Media ERP CORE v1</h3>
+<div>Ahmed Shreif</div>
 </header>
-
-<div class="toast" id="toast"></div>
 
 <div class="container">
 
+<!-- LOGIN -->
 <div id="loginBox" class="card">
 <h3>تسجيل الدخول</h3>
 <input id="user" placeholder="username">
 <input id="pass" type="password" placeholder="password">
-<button onclick="login()" style="background:#16a34a;color:white;width:100%">دخول</button>
+<button onclick="login()" style="background:#16a34a;color:#fff;width:100%">دخول</button>
 </div>
 
+<!-- ADMIN -->
 <div id="admin" style="display:none">
 
 <div class="row">
 <div class="card">👥 موظفين <h2 id="empCount"></h2></div>
 <div class="card">📦 أوردرات <h2 id="orderCount"></h2></div>
-<div class="card">💰 إيرادات <h2 id="income"></h2></div>
-<div class="card">📈 AI Forecast <h2 id="forecast"></h2></div>
+<div class="card">💰 إجمالي <h2 id="income"></h2></div>
+<div class="card">⚙️ النظام <h2>CORE ACTIVE</h2></div>
 </div>
 
 <div class="card">
-<h3>🧠 AI CEO CONTROL CENTER</h3>
-<button onclick="runCEO()" style="background:#7c3aed;color:#fff;width:100%">تشغيل تحليل CEO الذكي</button>
-<div id="ceoPanel" style="margin-top:10px"></div>
-</div>
-
-<div class="card">
-<h3>📊 Live Business Intelligence</h3>
-<div id="bi"></div>
-</div>
-
-<div class="card">
-<h3>📈 AI Forecast</h3>
-<button onclick="runForecast()" style="background:#2563eb;color:#fff;width:100%">تشغيل التوقع</button>
-</div>
-
-<div class="card">
-<h3>📦 إضافة أوردر</h3>
-<input id="client" placeholder="اسم العميل">
+<h3>➕ إضافة أوردر</h3>
+<input id="client" placeholder="العميل">
 <input id="date" type="date">
 <input id="price" placeholder="السعر">
 <select id="hall">
-<option>مغلقة</option>
-<option>أوبن</option>
-<option>كافيه</option>
+<option value="closed">مغلقة</option>
+<option value="open">أوبن</option>
+<option value="cafe">كافيه</option>
 </select>
-<button onclick="addOrder()" style="background:#16a34a;color:#fff;width:100%">إضافة</button>
+<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">إضافة</button>
 </div>
 
-<div class="card"><h3>📦 الأوردرات</h3><div id="orders"></div></div>
-<div class="card"><h3>🔔 إشعارات</h3><div id="notifications"></div></div>
-<div class="card"><h3>🔄 Swaps</h3><div id="swaps"></div></div>
-<div class="card"><h3>📜 Activity Log</h3><div id="logs"></div></div>
+<div class="card">
+<h3>📦 الأوردرات</h3>
+<div id="orders"></div>
+</div>
 
 </div>
 
+<!-- EMPLOYEE -->
 <div id="employee" style="display:none">
-<div class="card"><h3>📋 أوردراتي</h3><div id="myOrders"></div></div>
+<div class="card">
+<h3>📋 أوردراتي</h3>
+<div id="myOrders"></div>
+</div>
 </div>
 
 </div>
 
 <script>
+// ================= FIREBASE =================
 const db=firebase.initializeApp({
 apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
@@ -97,58 +85,114 @@ databaseURL:"https://drmedia-vpms-default-rtdb.firebaseio.com",
 projectId:"drmedia-vpms"
 }).database();
 
-let users=[{u:"admin",p:"123",role:"admin"},{u:"emp1",p:"123",role:"emp"},{u:"emp2",p:"123",role:"emp"}];
-let employees=users.filter(u=>u.role=="emp").map(u=>({name:u.u,load:0}));
-let orders=[],notifications=[],swaps=[],logs=[];
+// ================= CORE DATA =================
+let users=[
+{u:"admin",p:"123",role:"admin"},
+{u:"emp1",p:"123",role:"emp"},
+{u:"emp2",p:"123",role:"emp"}
+];
+
+let employees=[
+{name:"emp1",role:"مخرج",load:0},
+{name:"emp2",role:"مصور",load:0}
+];
+
+let orders=[];
 let currentUser=null;
 
-function toast(m){let t=document.getElementById("toast");t.innerText=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000);}
-function log(a,d){logs.unshift({a,d,t:new Date().toLocaleString()});db.ref("logs").set(logs);}
-
-function assign(){employees.sort((a,b)=>a.load-b.load);let e=employees[0];e.load++;return e.name;}
-
-// 📈 Forecast
-function runForecast(){
-let revenue=orders.reduce((s,o)=>s+o.price,0);
-let avg=orders.length?revenue/orders.length:0;
-let forecast=Math.round(avg*(orders.length*1.2));
-document.getElementById("forecast").innerText=forecast;
-log("FORECAST",forecast);
+// ================= RULE ENGINE (FIXED) =================
+function getRequiredStaff(hall){
+if(hall=="closed") return ["مخرج","مصور","مصور","كرين"];
+if(hall=="open") return ["مخرج","مصور","مصور","كرين"];
+if(hall=="cafe") return ["مصور"];
+return [];
 }
 
-// 🧠 CEO ENGINE
-function runCEO(){
-let total=orders.length;
-let revenue=orders.reduce((s,o)=>s+o.price,0);
-let empPerf={};
-orders.forEach(o=>{empPerf[o.emp]=(empPerf[o.emp]||0)+1});
-let top=Object.keys(empPerf).sort((a,b)=>empPerf[b]-empPerf[a])[0];
-
-let risk = total<5?"LOW":"MEDIUM";
-if(revenue>10000) risk="HIGH PROFIT ZONE";
-
-let html=`
-<p>📊 Total Orders: ${total}</p>
-<p>💰 Revenue: ${revenue}</p>
-<p>🏆 Top Employee: ${top}</p>
-<p>⚠️ Business Risk: ${risk}</p>
-<p>📈 Recommendation: ${(revenue<5000)?"Increase marketing":"Stable operation"}</p>
-`;
-
-document.getElementById("ceoPanel").innerHTML=html;
-
-document.getElementById("bi").innerHTML=`Growth Index: ${(revenue/1000).toFixed(1)}%`;
-
-log("CEO_RUN",{total,revenue,top});
+// ================= ASSIGN ENGINE =================
+function assignEmployee(role){
+let pool=employees.filter(e=>e.role==role);
+pool.sort((a,b)=>a.load-b.load);
+if(pool.length==0) return null;
+pool[0].load++;
+return pool[0].name;
 }
 
-function login(){let f=users.find(x=>x.u==user.value&&x.p==pass.value);if(!f)return alert("error");currentUser=f;loginBox.style.display="none";admin.style.display=f.role=="admin"?"block":"none";employee.style.display=f.role=="emp"?"block":"none";listen();}
+function autoAssign(order){
+let roles=getRequiredStaff(order.hall);
+let assigned=[];
+roles.forEach(r=>{
+let emp=assignEmployee(r);
+if(emp) assigned.push(emp);
+});
+return assigned;
+}
 
-function addOrder(){let o={id:Date.now(),client:client.value,date:date.value,price:+price.value,hall:hall.value,emp:assign()};orders.push(o);db.ref("orders").set(orders);notifications.unshift({msg:o.client+" -> "+o.emp});db.ref("notifications").set(notifications);log("ADD",o);render();}
+// ================= CORE FUNCTIONS =================
+function addOrder(){
+let o={
+id:Date.now(),
+client:client.value,
+date:date.value,
+price:+price.value,
+hall:hall.value
+};
 
-function listen(){db.ref("orders").on("value",s=>{orders=[];s.forEach(c=>orders.push(c.val()));render();});}
+o.emp=autoAssign(o);
+orders.push(o);
 
-function render(){if(currentUser.role=="admin"){empCount.innerText=employees.length;orderCount.innerText=orders.length;income.innerText=orders.reduce((s,o)=>s+o.price,0);ordersHTML=orders.map(o=>`<div class='card'>${o.client} | ${o.emp} | ${o.price}</div>`).join("");document.getElementById("orders").innerHTML=ordersHTML;}else{let my=orders.filter(o=>o.emp==currentUser.u);document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} | ${o.date}</div>`).join("");}}
+db.ref("orders").set(orders);
+render();
+}
+
+function login(){
+let f=users.find(x=>x.u==user.value&&x.p==pass.value);
+if(!f)return alert("error");
+currentUser=f;
+loginBox.style.display="none";
+admin.style.display=f.role=="admin"?"block":"none";
+employee.style.display=f.role=="emp"?"block":"none";
+listen();
+}
+
+// ================= REALTIME =================
+function listen(){
+db.ref("orders").on("value",s=>{
+orders=[];
+s.forEach(c=>orders.push(c.val()));
+render();
+});
+}
+
+// ================= RENDER =================
+function render(){
+
+if(currentUser.role=="admin"){
+empCount.innerText=employees.length;
+orderCount.innerText=orders.length;
+income.innerText=orders.reduce((s,o)=>s+o.price,0);
+
+ordersHTML=orders.map(o=>`
+<div class='card'>
+<b>${o.client}</b><br>
+${o.hall}<br>
+💰 ${o.price}<br>
+👷 ${o.emp.join?o.emp.join(", "):o.emp}
+</div>
+`).join("");
+
+document.getElementById("orders").innerHTML=ordersHTML;
+}
+
+else{
+let my=orders.filter(o=>o.emp.includes?o.emp.includes(currentUser.u):o.emp==currentUser.u);
+document.getElementById("myOrders").innerHTML=my.map(o=>`
+<div class='card'>
+${o.client} | ${o.date} | ${o.price}
+</div>
+`).join("");
+}
+}
 </script>
+
 </body>
 </html>
