@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP CORE v1 | By Ahmed Shreif</title>
+<title>Dr Media ERP PRO v3 | By Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -11,19 +11,21 @@
 
 <style>
 body{font-family:Tahoma;background:#0b1220;color:#e5e7eb}
-header{background:#0f172a;padding:12px;display:flex;justify-content:space-between;align-items:center}
-.container{max-width:1100px;margin:auto;padding:15px}
+header{background:#0f172a;padding:12px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0}
+.container{max-width:1200px;margin:auto;padding:15px}
 .card{background:#111827;border:1px solid #1f2937;padding:12px;border-radius:12px;margin-bottom:10px}
 input,select{width:100%;padding:10px;margin:5px 0;border-radius:10px;background:#0b1220;color:#fff;border:1px solid #374151}
 button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.small{font-size:12px;opacity:0.8}
+.badge{padding:3px 8px;border-radius:999px;background:#1f2937;font-size:12px}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media ERP CORE v1</h3>
-<div>Ahmed Shreif</div>
+<h3>Dr Media ERP PRO v3</h3>
+<div class="small">System by Ahmed Shreif</div>
 </header>
 
 <div class="container">
@@ -43,7 +45,7 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <div class="card">👥 موظفين <h2 id="empCount"></h2></div>
 <div class="card">📦 أوردرات <h2 id="orderCount"></h2></div>
 <div class="card">💰 إجمالي <h2 id="income"></h2></div>
-<div class="card">⚙️ النظام <h2>CORE ACTIVE</h2></div>
+<div class="card">🔔 إشعارات <h2 id="notifCount"></h2></div>
 </div>
 
 <div class="card">
@@ -64,6 +66,21 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <div id="orders"></div>
 </div>
 
+<div class="card">
+<h3>🔁 Swap Requests</h3>
+<div id="swaps"></div>
+</div>
+
+<div class="card">
+<h3>🔔 Notifications</h3>
+<div id="notifications"></div>
+</div>
+
+<div class="card">
+<h3>📊 Reports</h3>
+<div id="reports"></div>
+</div>
+
 </div>
 
 <!-- EMPLOYEE -->
@@ -72,126 +89,146 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <h3>📋 أوردراتي</h3>
 <div id="myOrders"></div>
 </div>
+
+<div class="card">
+<h3>🔁 طلب تبديل</h3>
+<input id="swapWith" placeholder="الموظف">
+<input id="swapOrder" placeholder="ID الأوردر">
+<button onclick="requestSwap()" style="background:#f59e0b;color:#fff;width:100%">طلب</button>
+</div>
 </div>
 
 </div>
 
 <script>
-// ================= FIREBASE =================
 const db=firebase.initializeApp({
-apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
+apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
 databaseURL:"https://drmedia-vpms-default-rtdb.firebaseio.com",
 projectId:"drmedia-vpms"
 }).database();
 
-// ================= CORE DATA =================
-let users=[
-{u:"admin",p:"123",role:"admin"},
-{u:"emp1",p:"123",role:"emp"},
-{u:"emp2",p:"123",role:"emp"}
-];
+let users=[{u:"admin",p:"123",role:"admin"},{u:"emp1",p:"123",role:"emp"},{u:"emp2",p:"123",role:"emp"}];
+let employees=[{name:"emp1",role:"مخرج",load:0},{name:"emp2",role:"مصور",load:0}];
+let orders=[],swaps=[],notifications=[],currentUser=null;
 
-let employees=[
-{name:"emp1",role:"مخرج",load:0},
-{name:"emp2",role:"مصور",load:0}
-];
-
-let orders=[];
-let currentUser=null;
-
-// ================= RULE ENGINE (FIXED) =================
-function getRequiredStaff(hall){
-if(hall=="closed") return ["مخرج","مصور","مصور","كرين"];
-if(hall=="open") return ["مخرج","مصور","مصور","كرين"];
-if(hall=="cafe") return ["مصور"];
-return [];
+// ===== CONFLICT SAFE ASSIGN =====
+function canAssign(emp,date){
+return !orders.some(o=>o.date===date && (o.emp||[]).includes(emp));
 }
 
-// ================= ASSIGN ENGINE =================
-function assignEmployee(role){
-let pool=employees.filter(e=>e.role==role);
+function getRoles(h){return h=="cafe"?["مصور"]:["مخرج","مصور","مصور"]}
+
+function assign(role,date){
+let pool=employees.filter(e=>e.role==role && canAssign(e.name,date));
 pool.sort((a,b)=>a.load-b.load);
-if(pool.length==0) return null;
+if(!pool.length)return null;
 pool[0].load++;
 return pool[0].name;
 }
 
-function autoAssign(order){
-let roles=getRequiredStaff(order.hall);
-let assigned=[];
-roles.forEach(r=>{
-let emp=assignEmployee(r);
-if(emp) assigned.push(emp);
-});
-return assigned;
+function autoAssign(o){
+return getRoles(o.hall).map(r=>assign(r,o.date));
 }
 
-// ================= CORE FUNCTIONS =================
+// ===== CORE =====
 function addOrder(){
-let o={
-id:Date.now(),
-client:client.value,
-date:date.value,
-price:+price.value,
-hall:hall.value
-};
-
+let o={id:Date.now(),client:client.value,date:date.value,price:+price.value,hall:hall.value};
 o.emp=autoAssign(o);
 orders.push(o);
-
 db.ref("orders").set(orders);
+notify("Order assigned");
 render();
 }
 
+// ===== SWAP SYSTEM v2 (approval) =====
+function requestSwap(){
+let s={id:Date.now(),from:currentUser.u,with:swapWith.value,order:swapOrder.value,status:"pending"};
+swaps.push(s);
+db.ref("swaps").set(swaps);
+notify("Swap request");
+render();
+}
+
+function approveSwap(id){
+let s=swaps.find(x=>x.id==id);
+if(!s)return;
+s.status="approved";
+notify("Swap approved");
+db.ref("swaps").set(swaps);
+render();
+}
+
+function rejectSwap(id){
+let s=swaps.find(x=>x.id==id);
+if(!s)return;
+s.status="rejected";
+notify("Swap rejected");
+db.ref("swaps").set(swaps);
+render();
+}
+
+// ===== NOTIFICATIONS =====
+function notify(msg){
+notifications.unshift({msg,t:new Date().toLocaleString()});
+db.ref("notifications").set(notifications);
+}
+
+// ===== LOGIN =====
 function login(){
 let f=users.find(x=>x.u==user.value&&x.p==pass.value);
 if(!f)return alert("error");
 currentUser=f;
+sessionStorage.setItem("user",JSON.stringify(f));
 loginBox.style.display="none";
 admin.style.display=f.role=="admin"?"block":"none";
 employee.style.display=f.role=="emp"?"block":"none";
 listen();
 }
 
-// ================= REALTIME =================
+// ===== LISTEN =====
 function listen(){
-db.ref("orders").on("value",s=>{
-orders=[];
-s.forEach(c=>orders.push(c.val()));
-render();
-});
+db.ref("orders").on("value",s=>{orders=[];s.forEach(c=>orders.push(c.val()));render();});
+db.ref("swaps").on("value",s=>{swaps=[];s.forEach(c=>swaps.push(c.val()));render();});
+db.ref("notifications").on("value",s=>{notifications=[];s.forEach(c=>notifications.push(c.val()));render();});
 }
 
-// ================= RENDER =================
-function render(){
+// ===== REPORTS =====
+function buildReports(){
+let rev=orders.reduce((s,o)=>s+o.price,0);
+return `💰 ${rev} ج.م`;
+}
 
+// ===== RENDER =====
+function render(){
 if(currentUser.role=="admin"){
 empCount.innerText=employees.length;
 orderCount.innerText=orders.length;
 income.innerText=orders.reduce((s,o)=>s+o.price,0);
+notifCount.innerText=notifications.length;
 
-ordersHTML=orders.map(o=>`
-<div class='card'>
-<b>${o.client}</b><br>
-${o.hall}<br>
-💰 ${o.price}<br>
-👷 ${o.emp.join?o.emp.join(", "):o.emp}
-</div>
-`).join("");
-
+ordersHTML=orders.map(o=>`<div class='card'>${o.client} | ${(o.emp||[]).join(",")}</div>`).join("");
 document.getElementById("orders").innerHTML=ordersHTML;
+
+document.getElementById("swaps").innerHTML=swaps.map(s=>`
+<div class='card'>${s.from} → ${s.with} (${s.status})
+${s.status=="pending"?`
+<button onclick="approveSwap(${s.id})">✔</button>
+<button onclick="rejectSwap(${s.id})">✖</button>`:``}
+</div>`).join("");
+
+document.getElementById("notifications").innerHTML=notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");
+
+document.getElementById("reports").innerHTML=buildReports();
+}else{
+let my=orders.filter(o=>(o.emp||[]).includes(currentUser.u));
+document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} | ${o.date}</div>`).join("");
+}
 }
 
-else{
-let my=orders.filter(o=>o.emp.includes?o.emp.includes(currentUser.u):o.emp==currentUser.u);
-document.getElementById("myOrders").innerHTML=my.map(o=>`
-<div class='card'>
-${o.client} | ${o.date} | ${o.price}
-</div>
-`).join("");
-}
-}
+// restore session
+let s=sessionStorage.getItem("user");
+if(s){currentUser=JSON.parse(s);loginBox.style.display="none";}
 </script>
 
 </body>
