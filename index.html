@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP SaaS v9 AI Enterprise | Ahmed Shreif</title>
+<title>Dr Media ERP SaaS v9 Stable FIX | Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -25,7 +25,7 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <body>
 
 <header>
-<h3>Dr Media ERP v9 Enterprise AI</h3>
+<h3>Dr Media ERP v9 Stable FIX</h3>
 <div class="badge">Built by Ahmed Shreif</div>
 </header>
 
@@ -73,17 +73,11 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <div id="notifBox"></div>
 </div>
 
-<div class="card">
-<h3>Swap Requests</h3>
-<div id="swapBox"></div>
-</div>
-
 </div>
 
 </div>
 
 <script>
-
 const firebaseConfig={
 apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
@@ -98,13 +92,12 @@ const auth=firebase.auth();
 let orders=[];
 let companies=[];
 let notifications=[];
-let swaps=[];
 let currentUser=null;
 let currentCompany=null;
 
 function el(id){return document.getElementById(id);}
 
-// LOGIN SAFE FIX
+// LOGIN FIXED
 function login(){
 const email=el("email").value;
 const pass=el("pass").value;
@@ -115,7 +108,8 @@ auth.signInWithEmailAndPassword(email,pass)
 function register(){
 const email=el("email").value;
 const pass=el("pass").value;
-auth.createUserWithEmailAndPassword(email,pass);
+auth.createUserWithEmailAndPassword(email,pass)
+.catch(e=>alert(e.message));
 }
 
 function switchCompany(){
@@ -124,10 +118,11 @@ render();
 }
 
 function addOrder(){
+if(!currentCompany) return alert("اختار شركة");
 orders.push({
 id:Date.now(),
-client:el("client").value,
-date:el("date").value,
+client:el("client").value||"",
+date:el("date").value||"",
 price:+el("price").value||0,
 hall:el("hall").value,
 companyId:currentCompany
@@ -136,23 +131,7 @@ db.ref("orders").set(orders);
 render();
 }
 
-// SWAP SYSTEM
-function requestSwap(orderId){
-swaps.push({id:Date.now(),orderId,user:currentUser.email,status:"pending"});
-db.ref("swaps").set(swaps);
-render();
-}
-
-function approveSwap(id){
-let s=swaps.find(x=>x.id==id);
-if(s) s.status="approved";
-db.ref("swaps").set(swaps);
-render();
-}
-
 function load(){
-
-let uid=currentUser.uid;
 
 db.ref("companies").on("value",s=>{
 companies=[];
@@ -161,7 +140,11 @@ if(companies.length===0){
 companies=[{id:"c1",name:"Dr Media Production"}];
 db.ref("companies").set(companies);
 }
+setTimeout(()=>{
+if(!currentCompany){currentCompany=companies[0].id;}
+updateCompanySelect();
 render();
+},200);
 });
 
 db.ref("orders").on("value",s=>{
@@ -175,16 +158,20 @@ notifications=[];
 s.forEach(x=>notifications.push(x.val()));
 render();
 });
+}
 
-db.ref("swaps").on("value",s=>{
-swaps=[];
-s.forEach(x=>swaps.push(x.val()));
-render();
+function updateCompanySelect(){
+const sel=el("companySelect");
+if(!sel) return;
+sel.innerHTML="";
+companies.forEach(c=>{
+sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`;
 });
+sel.value=currentCompany;
 }
 
 function render(){
-if(!currentUser)return;
+if(!currentUser) return;
 
 el("loginBox").classList.add("hidden");
 el("admin").classList.remove("hidden");
@@ -194,20 +181,17 @@ const filtered=orders.filter(o=>o.companyId===currentCompany);
 el("companyCount").innerText=companies.length;
 el("orderCount").innerText=filtered.length;
 el("income").innerText=filtered.reduce((s,o)=>s+(o.price||0),0);
-el("aiScore").innerText=Math.min(100,filtered.length*12)+"%";
+el("aiScore").innerText=Math.min(100,filtered.length*10)+"%";
 
-el("notifBox").innerHTML=notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");
-
-el("swapBox").innerHTML=swaps.map(s=>`
-<div class='card'>
-Swap Request - ${s.status}
-<button onclick="approveSwap(${s.id})">Approve</button>
-</div>
-`).join("");
+el("notifBox").innerHTML=notifications.map(n=>`<div class='card'>${n.msg||"update"}</div>`).join("");
 }
 
+// AUTH SAFE FIX
 auth.onAuthStateChanged(u=>{
-if(u){currentUser=u;load();}
+if(u){
+currentUser=u;
+load();
+}
 });
 
 </script>
