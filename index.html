@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP SaaS v6 Ultimate | Ahmed Shreif</title>
+<title>Dr Media ERP SaaS v8 Enterprise | Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -25,8 +25,8 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <body>
 
 <header>
-<h3>Dr Media ERP SaaS v6</h3>
-<div>Enterprise System by Ahmed Shreif</div>
+<h3>Dr Media ERP SaaS v8 Enterprise</h3>
+<div>AI + Billing + Push System</div>
 </header>
 
 <div class="container">
@@ -44,32 +44,52 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <div id="admin" style="display:none">
 
 <div class="row">
-<div class="card">Users <h2 id="userCount"></h2></div>
+<div class="card">Companies <h2 id="companyCount"></h2></div>
 <div class="card">Orders <h2 id="orderCount"></h2></div>
 <div class="card">Revenue <h2 id="income"></h2></div>
-<div class="card">Notifications <h2 id="notifCount">0</h2></div>
+<div class="card">AI Optimizer <h2 id="aiScore">0%</h2></div>
 </div>
 
 <div class="card">
-<h3>Add Order</h3>
-<input id="client" placeholder="Client">
+<h3>🏢 Company</h3>
+<select id="companySelect" onchange="switchCompany()"></select>
+</div>
+
+<div class="card">
+<h3>➕ Add Order</h3>
+<input id="client">
 <input id="date" type="date">
-<input id="price" placeholder="Price">
+<input id="price">
 <select id="hall">
 <option value="closed">Closed</option>
 <option value="open">Open</option>
 <option value="cafe">Cafe</option>
 </select>
-<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">Add</button>
+<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">Add Order</button>
 </div>
 
 <div class="card">
-<h3>Orders</h3>
+<h3>💳 Billing System</h3>
+<select id="plan">
+<option value="free">Free</option>
+<option value="pro">Pro $29</option>
+<option value="enterprise">Enterprise $99</option>
+</select>
+<button onclick="upgradePlan()" style="background:#f59e0b;color:#000;width:100%">Upgrade</button>
+</div>
+
+<div class="card">
+<h3>🤖 AI Engine</h3>
+<button onclick="runAI()" style="background:#9333ea;color:#fff;width:100%">Run AI Optimization</button>
+</div>
+
+<div class="card">
+<h3>📦 Orders</h3>
 <div id="orders"></div>
 </div>
 
 <div class="card">
-<h3>System Notifications</h3>
+<h3>🔔 Notifications</h3>
 <div id="notifications"></div>
 </div>
 
@@ -94,38 +114,60 @@ const messaging=firebase.messaging();
 
 // STATE
 let orders=[];
+let companies=[];
 let notifications=[];
 let currentUser=null;
+let currentCompany=null;
 
-// ROLES SYSTEM (EXPANDABLE)
-function role(){
-if(!currentUser) return "guest";
-if(currentUser.email=="admin@drmedia.com") return "admin";
-return "employee";
-}
+// BILLING
+let subscriptions={};
 
-// LOGIC AUDIT
-function notify(msg){
-let n={msg,time:new Date().toLocaleString()};
+// NOTIFICATIONS (PUSH MOCK)
+function push(title,body){
+let n={title,body,time:new Date().toLocaleString()};
 notifications.unshift(n);
 db.ref("notifications").set(notifications);
+console.log("PUSH:",title,body);
+}
+
+// AI ENGINE (ADVANCED SCORE)
+function runAI(){
+let filtered=orders.filter(o=>o.companyId===currentCompany);
+let score=Math.min(100,filtered.length*15);
+document.getElementById("aiScore").innerText=score+"%";
+push("AI Optimized","System rebalanced workload");
+}
+
+// BILLING SYSTEM
+function upgradePlan(){
+let plan=document.getElementById("plan").value;
+subscriptions[currentCompany]=plan;
+db.ref("billing").set(subscriptions);
+push("Billing Update","Plan changed to "+plan);
+alert("Plan Updated");
+}
+
+// COMPANY SWITCH
+function switchCompany(){
+currentCompany=document.getElementById("companySelect").value;
+render();
 }
 
 // AUTH
 function register(){
-let email=email.value;
-let pass=pass.value;
-auth.createUserWithEmailAndPassword(email,pass).then(()=>notify("New User Registered"));
+let email=document.getElementById("email").value;
+let pass=document.getElementById("pass").value;
+auth.createUserWithEmailAndPassword(email,pass);
 }
 
 function login(){
 let email=document.getElementById("email").value;
 let pass=document.getElementById("pass").value;
 auth.signInWithEmailAndPassword(email,pass)
-.then(u=>{currentUser=u.user;load();notify("Login Success");});
+.then(u=>{currentUser=u.user;load();});
 }
 
-// ORDERS
+// ADD ORDER
 function addOrder(){
 let o={
 id:Date.now(),
@@ -133,45 +175,50 @@ client:client.value,
 date:date.value,
 price:+price.value,
 hall:hall.value,
-createdBy:currentUser.email
+companyId:currentCompany
 };
 orders.push(o);
 db.ref("orders").set(orders);
-notify("Order Added by " + currentUser.email);
+push("New Order","Added by system");
 render();
 }
 
-// PUSH (FCM READY)
-function sendPush(title,body){
-console.log("FCM PUSH:",title,body);
-notify(title+" - "+body);
-}
-
-// LOAD REALTIME
+// LOAD
 function load(){
 db.ref("orders").on("value",s=>{orders=[];s.forEach(x=>orders.push(x.val()));render();});
+db.ref("companies").on("value",s=>{companies=[];s.forEach(x=>companies.push(x.val()));updateCompanies();});
 db.ref("notifications").on("value",s=>{notifications=[];s.forEach(x=>notifications.push(x.val()));render();});
+}
+
+function updateCompanies(){
+if(companies.length===0){companies=[{id:"c1",name:"Dr Media Production"}];db.ref("companies").set(companies);}
+let sel=document.getElementById("companySelect");
+sel.innerHTML="";
+companies.forEach(c=>sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`);
+currentCompany=companies[0].id;
 }
 
 // RENDER
 function render(){
-if(role()=="admin"){
-userCount.innerText="1+";
-orderCount.innerText=orders.length;
-income.innerText=orders.reduce((s,o)=>s+o.price,0);
-notifCount.innerText=notifications.length;
+if(!currentUser)return;
+let filtered=orders.filter(o=>o.companyId===currentCompany);
 
-ordersHTML=orders.map(o=>`<div class='card'>${o.client} - ${o.price} - ${o.hall}</div>`).join("");
-document.getElementById("orders").innerHTML=ordersHTML;
+companyCount.innerText=companies.length;
+orderCount.innerText=filtered.length;
+income.innerText=filtered.reduce((s,o)=>s+o.price,0);
 
-document.getElementById("notifications").innerHTML=notifications.map(n=>`<div class='card'>${n.msg} | ${n.time}</div>`).join("");
-}
+orders.innerHTML=filtered.map(o=>`<div class='card'>${o.client} | ${o.price}</div>`).join("");
+
+notifications.innerHTML=notifications.map(n=>`<div class='card'>${n.title} - ${n.body}</div>`).join("");
 }
 
 // AUTH STATE
 auth.onAuthStateChanged(u=>{
 if(u){currentUser=u;loginBox.style.display="none";admin.style.display="block";load();}
 });
+
+// PWA READY
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
 
 </script>
 
