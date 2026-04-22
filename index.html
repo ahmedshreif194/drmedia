@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia Pro | نظام إدارة القاعات المتعددة</title>
+    <title>Drmedia Pro | Ahmed Shreif </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -994,8 +994,6 @@
     // -------------------- تسجيل الدخول --------------------
     function showLogin() {
         const html = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات المتعددة</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><div id="loginError" class="text-red-500 text-sm mb-2 hidden"></div><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl">دخول</button></div></div>`;
-  </form>
-  <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t"><p>© 2025 Drmedia | جميع الحقوق محفوظة</p></div>
         document.getElementById('app').innerHTML = html;
     }
     function doLogin() {
