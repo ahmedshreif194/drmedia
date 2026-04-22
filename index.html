@@ -3,13 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP SaaS v8 Enterprise | Ahmed Shreif</title>
+<title>Dr Media ERP SaaS v8.1 Stable | Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
 
 <style>
 body{font-family:Tahoma;background:#0b1220;color:#e5e7eb}
@@ -19,14 +18,14 @@ header{background:#0f172a;padding:12px;display:flex;justify-content:space-betwee
 input,select{width:100%;padding:10px;margin:5px 0;border-radius:10px;background:#0b1220;color:#fff;border:1px solid #374151}
 button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
-.badge{padding:3px 8px;border-radius:999px;background:#1f2937;font-size:12px}
+.hidden{display:none}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media ERP SaaS v8 Enterprise</h3>
-<div>AI + Billing + Push System</div>
+<h3>Dr Media ERP SaaS v8.1</h3>
+<div>Stable Production Build</div>
 </header>
 
 <div class="container">
@@ -40,26 +39,26 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <button onclick="register()" style="background:#2563eb;color:#fff;width:100%;margin-top:5px">Register</button>
 </div>
 
-<!-- DASHBOARD -->
-<div id="admin" style="display:none">
-
-<div class="row">
-<div class="card">Companies <h2 id="companyCount"></h2></div>
-<div class="card">Orders <h2 id="orderCount"></h2></div>
-<div class="card">Revenue <h2 id="income"></h2></div>
-<div class="card">AI Optimizer <h2 id="aiScore">0%</h2></div>
-</div>
+<!-- APP -->
+<div id="admin" class="hidden">
 
 <div class="card">
-<h3>🏢 Company</h3>
+<label>🏢 Company</label>
 <select id="companySelect" onchange="switchCompany()"></select>
 </div>
 
+<div class="row">
+<div class="card">Companies <h2 id="companyCount">0</h2></div>
+<div class="card">Orders <h2 id="orderCount">0</h2></div>
+<div class="card">Revenue <h2 id="income">0</h2></div>
+<div class="card">AI Score <h2 id="aiScore">0%</h2></div>
+</div>
+
 <div class="card">
-<h3>➕ Add Order</h3>
-<input id="client">
+<h3>Add Order</h3>
+<input id="client" placeholder="Client">
 <input id="date" type="date">
-<input id="price">
+<input id="price" placeholder="Price">
 <select id="hall">
 <option value="closed">Closed</option>
 <option value="open">Open</option>
@@ -69,28 +68,13 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 </div>
 
 <div class="card">
-<h3>💳 Billing System</h3>
-<select id="plan">
-<option value="free">Free</option>
-<option value="pro">Pro $29</option>
-<option value="enterprise">Enterprise $99</option>
-</select>
-<button onclick="upgradePlan()" style="background:#f59e0b;color:#000;width:100%">Upgrade</button>
-</div>
-
-<div class="card">
-<h3>🤖 AI Engine</h3>
-<button onclick="runAI()" style="background:#9333ea;color:#fff;width:100%">Run AI Optimization</button>
-</div>
-
-<div class="card">
-<h3>📦 Orders</h3>
+<h3>Orders</h3>
 <div id="orders"></div>
 </div>
 
 <div class="card">
-<h3>🔔 Notifications</h3>
-<div id="notifications"></div>
+<h3>Notifications</h3>
+<div id="notifBox"></div>
 </div>
 
 </div>
@@ -110,7 +94,6 @@ projectId:"drmedia-vpms"
 firebase.initializeApp(firebaseConfig);
 const db=firebase.database();
 const auth=firebase.auth();
-const messaging=firebase.messaging();
 
 // STATE
 let orders=[];
@@ -119,106 +102,109 @@ let notifications=[];
 let currentUser=null;
 let currentCompany=null;
 
-// BILLING
-let subscriptions={};
+// SAFE GET
+function el(id){return document.getElementById(id);}
 
-// NOTIFICATIONS (PUSH MOCK)
-function push(title,body){
-let n={title,body,time:new Date().toLocaleString()};
-notifications.unshift(n);
-db.ref("notifications").set(notifications);
-console.log("PUSH:",title,body);
-}
-
-// AI ENGINE (ADVANCED SCORE)
-function runAI(){
-let filtered=orders.filter(o=>o.companyId===currentCompany);
-let score=Math.min(100,filtered.length*15);
-document.getElementById("aiScore").innerText=score+"%";
-push("AI Optimized","System rebalanced workload");
-}
-
-// BILLING SYSTEM
-function upgradePlan(){
-let plan=document.getElementById("plan").value;
-subscriptions[currentCompany]=plan;
-db.ref("billing").set(subscriptions);
-push("Billing Update","Plan changed to "+plan);
-alert("Plan Updated");
-}
-
-// COMPANY SWITCH
-function switchCompany(){
-currentCompany=document.getElementById("companySelect").value;
-render();
-}
-
-// AUTH
-function register(){
-let email=document.getElementById("email").value;
-let pass=document.getElementById("pass").value;
-auth.createUserWithEmailAndPassword(email,pass);
-}
-
+// LOGIN
 function login(){
-let email=document.getElementById("email").value;
-let pass=document.getElementById("pass").value;
+const email=el("email").value;
+const pass=el("pass").value;
 auth.signInWithEmailAndPassword(email,pass)
 .then(u=>{currentUser=u.user;load();});
 }
 
+function register(){
+const email=el("email").value;
+const pass=el("pass").value;
+auth.createUserWithEmailAndPassword(email,pass);
+}
+
+// SWITCH COMPANY
+function switchCompany(){
+currentCompany=el("companySelect").value;
+render();
+}
+
 // ADD ORDER
 function addOrder(){
-let o={
+const o={
 id:Date.now(),
-client:client.value,
-date:date.value,
-price:+price.value,
-hall:hall.value,
+client:el("client").value,
+date:el("date").value,
+price:+el("price").value||0,
+hall:el("hall").value,
 companyId:currentCompany
 };
 orders.push(o);
 db.ref("orders").set(orders);
-push("New Order","Added by system");
 render();
 }
 
 // LOAD
 function load(){
-db.ref("orders").on("value",s=>{orders=[];s.forEach(x=>orders.push(x.val()));render();});
-db.ref("companies").on("value",s=>{companies=[];s.forEach(x=>companies.push(x.val()));updateCompanies();});
-db.ref("notifications").on("value",s=>{notifications=[];s.forEach(x=>notifications.push(x.val()));render();});
+const uid=currentUser.uid;
+
+db.ref("companies").on("value",s=>{
+companies=[];
+s.forEach(x=>companies.push(x.val()));
+if(companies.length===0){
+companies=[{id:"c1",name:"Dr Media Production"}];
+db.ref("companies").set(companies);
+}
+updateCompanies();
+});
+
+db.ref("orders").on("value",s=>{
+orders=[];
+s.forEach(x=>orders.push(x.val()));
+render();
+});
+
+db.ref("notifications").on("value",s=>{
+notifications=[];
+s.forEach(x=>notifications.push(x.val()));
+render();
+});
 }
 
+// COMPANIES
 function updateCompanies(){
-if(companies.length===0){companies=[{id:"c1",name:"Dr Media Production"}];db.ref("companies").set(companies);}
-let sel=document.getElementById("companySelect");
+const sel=el("companySelect");
 sel.innerHTML="";
-companies.forEach(c=>sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`);
+companies.forEach(c=>{
+sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`;
+});
 currentCompany=companies[0].id;
+render();
 }
 
-// RENDER
+// RENDER SAFE
 function render(){
 if(!currentUser)return;
-let filtered=orders.filter(o=>o.companyId===currentCompany);
 
-companyCount.innerText=companies.length;
-orderCount.innerText=filtered.length;
-income.innerText=filtered.reduce((s,o)=>s+o.price,0);
+const filtered=orders.filter(o=>o.companyId===currentCompany);
 
-orders.innerHTML=filtered.map(o=>`<div class='card'>${o.client} | ${o.price}</div>`).join("");
+el("companyCount").innerText=companies.length;
+el("orderCount").innerText=filtered.length;
+el("income").innerText=filtered.reduce((s,o)=>s+(o.price||0),0);
+el("aiScore").innerText=Math.min(100,filtered.length*10)+"%";
 
-notifications.innerHTML=notifications.map(n=>`<div class='card'>${n.title} - ${n.body}</div>`).join("");
+el("orders").innerHTML=filtered.map(o=>
+`<div class='card'>${o.client||"-"} | ${o.price||0} | ${o.hall}</div>`
+).join("");
+
+el("notifBox").innerHTML=notifications.map(n=>
+`<div class='card'>${n.msg||n.title||"Update"}</div>`
+).join("");
+
+el("loginBox").classList.add("hidden");
+el("admin").classList.remove("hidden");
 }
 
 // AUTH STATE
 auth.onAuthStateChanged(u=>{
-if(u){currentUser=u;loginBox.style.display="none";admin.style.display="block";load();}
+if(u){currentUser=u;load();}
 });
-
-// PWA READY
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
 
 </script>
 
