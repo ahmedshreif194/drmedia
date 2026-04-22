@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media Pro System - Developed by Ahmed Shreif</title>
+<title>Dr Media Pro MAX - Smart System by Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 
@@ -21,7 +21,7 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 <body>
 
 <header>
-<h2>Dr Media Pro</h2>
+<h2>Dr Media Pro MAX</h2>
 <div>Developed by Ahmed Shreif</div>
 </header>
 
@@ -45,7 +45,7 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 </div>
 
 <div class="card">
-<h3>إضافة أوردر</h3>
+<h3>إضافة أوردر (Smart System)</h3>
 <input id="cname" placeholder="اسم العميل">
 <input id="date" type="date">
 <input id="price" placeholder="السعر">
@@ -54,7 +54,7 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 <option>أوبن</option>
 <option>كافيه</option>
 </select>
-<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">إضافة</button>
+<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">إضافة + توزيع تلقائي</button>
 </div>
 
 <div class="card">
@@ -75,40 +75,41 @@ input,select{padding:10px;width:100%;margin:5px 0;border-radius:8px;border:1px s
 <h3>أوردراتي</h3>
 <div id="myOrders"></div>
 </div>
-
-<div class="card">
-<h3>الإشعارات</h3>
-<div id="noti"></div>
-</div>
 </div>
 
 </div>
 
 <script>
 
-// ================= DATA =================
+// ================= USERS =================
 let users = [
 {u:"admin",p:"123",role:"admin"},
 {u:"zakawa",p:"123",role:"emp"},
-{u:"titi",p:"123",role:"emp"}
+{u:"titi",p:"123",role:"emp"},
+{u:"khaled",p:"123",role:"emp"},
+{u:"abo",p:"123",role:"emp"},
+{u:"islam",p:"123",role:"emp"},
+{u:"hani",p:"123",role:"emp"},
+{u:"yasser",p:"123",role:"emp"},
+{u:"mahmoud",p:"123",role:"emp"}
 ];
 
-let employees = ["zakawa","titi"];
+// ================= EMPLOYEES SMART =================
+let employees = users.filter(u=>u.role=="emp").map(u=>({
+name:u.u,
+load:0
+}));
 
 let orders = [];
-let notifications = [];
 let currentUser = null;
 
-// ================= SAVE =================
-function save(){
-localStorage.setItem("orders",JSON.stringify(orders));
-localStorage.setItem("noti",JSON.stringify(notifications));
+// ================= SMART ASSIGN =================
+function assignEmployee(){
+employees.sort((a,b)=>a.load-b.load);
+let emp = employees[0];
+emp.load++;
+return emp.name;
 }
-function load(){
-orders = JSON.parse(localStorage.getItem("orders")||"[]");
-notifications = JSON.parse(localStorage.getItem("noti")||"[]");
-}
-load();
 
 // ================= LOGIN =================
 function login(){
@@ -126,17 +127,30 @@ else document.getElementById("employee").style.display="block";
 render();
 }
 
-// ================= ADD ORDER =================
+// ================= ADD ORDER SMART =================
 function addOrder(){
+let emp = assignEmployee();
+
 orders.push({
 client:cname.value,
 date:date.value,
-price:price.value,
+price:Number(price.value),
 hall:hall.value,
-emp:"zakawa"
+emp:emp
 });
+
 save();render();
 }
+
+// ================= SAVE =================
+function save(){
+localStorage.setItem("orders",JSON.stringify(orders));
+}
+
+function load(){
+orders=JSON.parse(localStorage.getItem("orders")||"[]");
+}
+load();
 
 // ================= RENDER =================
 function render(){
@@ -149,25 +163,21 @@ let sum=orders.reduce((s,o)=>s+Number(o.price),0);
 document.getElementById("income").innerText=sum;
 
 let html="";
-orders.forEach((o,i)=>{
-html+=`<div class='card'>${o.client} - ${o.date} - ${o.price}</div>`;
+orders.forEach(o=>{
+html+=`<div class='card'>${o.client} - ${o.date} - ${o.price} - 👤 ${o.emp}</div>`;
 });
 document.getElementById("orders").innerHTML=html;
 
 let ehtml="";
 employees.forEach(e=>{
-ehtml+=`<div class='card'>${e}</div>`;
+ehtml+=`<div class='card'>${e.name} | Load: ${e.load}</div>`;
 });
 document.getElementById("emps").innerHTML=ehtml;
 }
 
 else{
 let my=orders.filter(o=>o.emp==currentUser.u);
-
 document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} - ${o.date} - ${o.price}</div>`).join("");
-
-let n=notifications.filter(n=>n.to==currentUser.u);
-document.getElementById("noti").innerHTML=n.map(n=>`<div class='card'>${n.msg}</div>`).join("");
 }
 }
 
