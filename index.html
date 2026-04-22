@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP SaaS v8.1 Stable | Ahmed Shreif</title>
+<title>Dr Media ERP SaaS v9 AI Enterprise | Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -19,13 +19,14 @@ input,select{width:100%;padding:10px;margin:5px 0;border-radius:10px;background:
 button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
 .hidden{display:none}
+.badge{padding:3px 8px;border-radius:999px;background:#1f2937;font-size:12px}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media ERP SaaS v8.1</h3>
-<div>Stable Production Build</div>
+<h3>Dr Media ERP v9 Enterprise AI</h3>
+<div class="badge">Built by Ahmed Shreif</div>
 </header>
 
 <div class="container">
@@ -43,7 +44,7 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <div id="admin" class="hidden">
 
 <div class="card">
-<label>🏢 Company</label>
+<h3>Company</h3>
 <select id="companySelect" onchange="switchCompany()"></select>
 </div>
 
@@ -51,7 +52,7 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <div class="card">Companies <h2 id="companyCount">0</h2></div>
 <div class="card">Orders <h2 id="orderCount">0</h2></div>
 <div class="card">Revenue <h2 id="income">0</h2></div>
-<div class="card">AI Score <h2 id="aiScore">0%</h2></div>
+<div class="card">AI Load <h2 id="aiScore">0%</h2></div>
 </div>
 
 <div class="card">
@@ -64,17 +65,17 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <option value="open">Open</option>
 <option value="cafe">Cafe</option>
 </select>
-<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">Add Order</button>
-</div>
-
-<div class="card">
-<h3>Orders</h3>
-<div id="orders"></div>
+<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">Add</button>
 </div>
 
 <div class="card">
 <h3>Notifications</h3>
 <div id="notifBox"></div>
+</div>
+
+<div class="card">
+<h3>Swap Requests</h3>
+<div id="swapBox"></div>
 </div>
 
 </div>
@@ -83,7 +84,6 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 
 <script>
 
-// FIREBASE
 const firebaseConfig={
 apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
@@ -95,22 +95,21 @@ firebase.initializeApp(firebaseConfig);
 const db=firebase.database();
 const auth=firebase.auth();
 
-// STATE
 let orders=[];
 let companies=[];
 let notifications=[];
+let swaps=[];
 let currentUser=null;
 let currentCompany=null;
 
-// SAFE GET
 function el(id){return document.getElementById(id);}
 
-// LOGIN
+// LOGIN SAFE FIX
 function login(){
 const email=el("email").value;
 const pass=el("pass").value;
 auth.signInWithEmailAndPassword(email,pass)
-.then(u=>{currentUser=u.user;load();});
+.catch(e=>alert(e.message));
 }
 
 function register(){
@@ -119,30 +118,41 @@ const pass=el("pass").value;
 auth.createUserWithEmailAndPassword(email,pass);
 }
 
-// SWITCH COMPANY
 function switchCompany(){
 currentCompany=el("companySelect").value;
 render();
 }
 
-// ADD ORDER
 function addOrder(){
-const o={
+orders.push({
 id:Date.now(),
 client:el("client").value,
 date:el("date").value,
 price:+el("price").value||0,
 hall:el("hall").value,
 companyId:currentCompany
-};
-orders.push(o);
+});
 db.ref("orders").set(orders);
 render();
 }
 
-// LOAD
+// SWAP SYSTEM
+function requestSwap(orderId){
+swaps.push({id:Date.now(),orderId,user:currentUser.email,status:"pending"});
+db.ref("swaps").set(swaps);
+render();
+}
+
+function approveSwap(id){
+let s=swaps.find(x=>x.id==id);
+if(s) s.status="approved";
+db.ref("swaps").set(swaps);
+render();
+}
+
 function load(){
-const uid=currentUser.uid;
+
+let uid=currentUser.uid;
 
 db.ref("companies").on("value",s=>{
 companies=[];
@@ -151,7 +161,7 @@ if(companies.length===0){
 companies=[{id:"c1",name:"Dr Media Production"}];
 db.ref("companies").set(companies);
 }
-updateCompanies();
+render();
 });
 
 db.ref("orders").on("value",s=>{
@@ -165,43 +175,37 @@ notifications=[];
 s.forEach(x=>notifications.push(x.val()));
 render();
 });
-}
 
-// COMPANIES
-function updateCompanies(){
-const sel=el("companySelect");
-sel.innerHTML="";
-companies.forEach(c=>{
-sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`;
-});
-currentCompany=companies[0].id;
+db.ref("swaps").on("value",s=>{
+swaps=[];
+s.forEach(x=>swaps.push(x.val()));
 render();
+});
 }
 
-// RENDER SAFE
 function render(){
 if(!currentUser)return;
+
+el("loginBox").classList.add("hidden");
+el("admin").classList.remove("hidden");
 
 const filtered=orders.filter(o=>o.companyId===currentCompany);
 
 el("companyCount").innerText=companies.length;
 el("orderCount").innerText=filtered.length;
 el("income").innerText=filtered.reduce((s,o)=>s+(o.price||0),0);
-el("aiScore").innerText=Math.min(100,filtered.length*10)+"%";
+el("aiScore").innerText=Math.min(100,filtered.length*12)+"%";
 
-el("orders").innerHTML=filtered.map(o=>
-`<div class='card'>${o.client||"-"} | ${o.price||0} | ${o.hall}</div>`
-).join("");
+el("notifBox").innerHTML=notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");
 
-el("notifBox").innerHTML=notifications.map(n=>
-`<div class='card'>${n.msg||n.title||"Update"}</div>`
-).join("");
-
-el("loginBox").classList.add("hidden");
-el("admin").classList.remove("hidden");
+el("swapBox").innerHTML=swaps.map(s=>`
+<div class='card'>
+Swap Request - ${s.status}
+<button onclick="approveSwap(${s.id})">Approve</button>
+</div>
+`).join("");
 }
 
-// AUTH STATE
 auth.onAuthStateChanged(u=>{
 if(u){currentUser=u;load();}
 });
