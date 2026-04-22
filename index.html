@@ -1,127 +1,213 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia Pro | نظام إدارة القاعات المتعددة</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<meta charset="UTF-8">
+<title>Drmedia Pro - Production</title>
 
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); }
-        .tab-btn { cursor: pointer; padding: 10px 16px; border-radius: 16px 16px 0 0; display: inline-block; background: #e5e7eb; margin-left: 4px; transition: 0.2s; font-weight: 500; }
-        .tab-btn.active { background: #065f46; color: white; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 8px 16px; border-radius: 40px; z-index: 1000; font-size: 14px; }
-    </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{font-family:Arial;background:#f4f6f8;margin:0}
+.hidden{display:none}
+#app{min-height:100vh}
+.tab-btn{padding:10px;cursor:pointer}
+.tab-btn.active{background:#10b981;color:white;border-radius:10px}
+table{width:100%;border-collapse:collapse;background:white}
+th,td{padding:8px;border-bottom:1px solid #eee}
+.dashboard-card{background:white;padding:15px;border-radius:12px}
+.stat-number{font-size:20px;font-weight:bold}
+button{cursor:pointer}
+</style>
+
 </head>
 
 <body>
 
 <div id="app"></div>
-<div id="toast" class="toast hidden"></div>
+
+<div id="modal" class="hidden" style="position:fixed;inset:0;background:#00000088">
+<div id="modalContent" style="background:white;width:420px;margin:8% auto;padding:20px;border-radius:12px"></div>
+</div>
 
 <script>
-/* ================= FIREBASE ================= */
-const firebaseConfig = {
-    apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
-    authDomain: "drmedia-vpms.firebaseapp.com",
-    databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
-    projectId: "drmedia-vpms",
-    storageBucket: "drmedia-vpms.firebasestorage.app",
-    messagingSenderId: "681162512380",
-    appId: "1:681162512380:web:ab2482f3234d8b59fc4479"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
 
-/* ================= DATA ================= */
-let bookings = [];
-let employees = [];
-let halls = [];
+// ================== DATA ==================
+let bookings=[], employees=[], halls=[], users=[];
+let currentUser=null;
+let currentTab="dashboardTab";
 
-/* ================= AUTO DISTRIBUTE ================= */
-function autoDistribute() {
-    bookings.forEach(b => b.assignedEmployees = []);
-
-    bookings.forEach(b => {
-        const hall = halls.find(h => h.id === b.hallId);
-        const type = hall?.type;
-
-        if(type === "cafe"){
-            const photo = employees.find(e => e.role === "مصور" && e.active);
-            if(photo) b.assignedEmployees.push(photo.id);
-        } else {
-            const director = employees.find(e => e.role === "مخرج" && e.active);
-            const photo = employees.filter(e => e.role === "مصور" && e.active).slice(0,2);
-            const crane = employees.find(e => e.role === "كرين" && e.active);
-
-            if(director) b.assignedEmployees.push(director.id);
-            photo.forEach(p => b.assignedEmployees.push(p.id));
-            if(crane) b.assignedEmployees.push(crane.id);
-        }
-    });
-
-    showMsg("✅ تم التوزيع");
+// ================== STORAGE ==================
+function saveAll(){
+localStorage.setItem("bookings",JSON.stringify(bookings));
+localStorage.setItem("employees",JSON.stringify(employees));
+localStorage.setItem("halls",JSON.stringify(halls));
+localStorage.setItem("users",JSON.stringify(users));
 }
 
-/* ================= NEW RESET BUTTON FUNCTION ================= */
-function resetAndRedistribute() {
-    if(!confirm("⚠️ هل تريد مسح التوزيع وإعادة التوزيع؟")) return;
-
-    bookings.forEach(b => b.assignedEmployees = []);
-    autoDistribute();
-
-    renderBookingsContent();
-    renderDistributionContent();
-
-    showMsg("🔄 تم إعادة التوزيع بنجاح");
+function loadAll(){
+bookings=JSON.parse(localStorage.getItem("bookings")||"[]");
+employees=JSON.parse(localStorage.getItem("employees")||"[]");
+halls=JSON.parse(localStorage.getItem("halls")||"[]");
+users=JSON.parse(localStorage.getItem("users")||"[]");
 }
 
-/* ================= UI ================= */
-function renderBookingsContent(){
-    const html = `
-        <div class="p-4">
+// ================== CORE ==================
+function showMsg(m){alert(m);}
+function closeModal(){document.getElementById("modal").classList.add("hidden");}
 
-            <div class="flex gap-2 mb-4">
-                <button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" 
-                class="bg-purple-700 text-white px-4 py-2 rounded-xl">
-                إعادة توزيع
-                </button>
+// ================== DASHBOARD ==================
+function renderDashboard(){
+let rev = bookings.reduce((s,b)=>s+(b.price||0),0);
 
-                <!-- 🔥 NEW BUTTON -->
-                <button onclick="resetAndRedistribute()" 
-                class="bg-red-600 text-white px-4 py-2 rounded-xl">
-                🔄 Reset Distribution
-                </button>
-            </div>
-
-            <div class="bg-white p-4 rounded-xl">
-                ${bookings.map(b=>`
-                    <div class="border-b p-2">
-                        ${b.clientName} - ${b.date}
-                    </div>
-                `).join('')}
-            </div>
-
-        </div>
-    `;
-    document.getElementById("bookingsTab").innerHTML = html;
+document.getElementById("dashboardTab").innerHTML = `
+<div class="dashboard-card">
+<h2>📊 Dashboard</h2>
+<p>الحجوزات: ${bookings.length}</p>
+<p>الإيرادات: ${rev}</p>
+<p>الموظفين: ${employees.length}</p>
+</div>`;
 }
 
-/* ================= MSG ================= */
-function showMsg(msg){
-    let t = document.getElementById("toast");
-    t.innerText = msg;
-    t.classList.remove("hidden");
-    setTimeout(()=>t.classList.add("hidden"),2000);
+// ================== BOOKINGS ==================
+function renderBookings(){
+
+let html=`<div class="p-4">
+<h2>📅 الحجوزات</h2>
+<button onclick="addBooking()">+ إضافة</button>
+
+<table>
+<tr><th>العميل</th><th>التاريخ</th><th>السعر</th><th></th></tr>
+`;
+
+bookings.forEach(b=>{
+html+=`
+<tr>
+<td>${b.clientName}</td>
+<td>${b.date}</td>
+<td>${b.price}</td>
+<td>
+<button onclick="editBooking('${b.id}')">✏️</button>
+<button onclick="delBooking('${b.id}')">🗑️</button>
+</td>
+</tr>`;
+});
+
+html+=`</table></div>`;
+
+document.getElementById("bookingsTab").innerHTML=html;
 }
+
+function addBooking(){
+document.getElementById("modalContent").innerHTML=`
+<h3>حجز جديد</h3>
+<input id="cname" placeholder="اسم العميل"><br><br>
+<input id="date" type="date"><br><br>
+<input id="price" placeholder="السعر"><br><br>
+<button onclick="saveBooking()">حفظ</button>
+`;
+document.getElementById("modal").classList.remove("hidden");
+}
+
+function saveBooking(){
+bookings.push({
+id:Date.now().toString(),
+clientName:document.getElementById("cname").value,
+date:document.getElementById("date").value,
+price:+document.getElementById("price").value
+});
+saveAll();
+closeModal();
+renderBookings();
+renderDashboard();
+}
+
+function delBooking(id){
+bookings=bookings.filter(b=>b.id!==id);
+saveAll();
+renderBookings();
+renderDashboard();
+}
+
+// ================== EMPLOYEES ==================
+function renderEmployees(){
+
+let html=`<div class="p-4">
+<h2>👥 الموظفين</h2>
+<button onclick="addEmp()">+ موظف</button>
+
+<table>
+<tr><th>الاسم</th><th>الدور</th></tr>
+`;
+
+employees.forEach(e=>{
+html+=`<tr><td>${e.name}</td><td>${e.role}</td></tr>`;
+});
+
+html+=`</table></div>`;
+
+document.getElementById("employeesTab").innerHTML=html;
+}
+
+function addEmp(){
+employees.push({
+id:Date.now().toString(),
+name:"موظف جديد",
+role:"مصور"
+});
+saveAll();
+renderEmployees();
+renderDashboard();
+}
+
+// ================== LOGIN ==================
+function showLogin(){
+document.getElementById("app").innerHTML=`
+<div style="text-align:center;padding-top:100px">
+<h2>Drmedia Pro</h2>
+<button onclick="login()">دخول</button>
+</div>`;
+}
+
+function login(){
+currentUser={username:"admin",role:"admin"};
+renderApp();
+}
+
+// ================== APP ==================
+function renderApp(){
+
+document.getElementById("app").innerHTML=`
+<div>
+
+<div style="display:flex;gap:10px;padding:10px;background:#fff">
+<button onclick="switchTab('dashboardTab')">Dashboard</button>
+<button onclick="switchTab('bookingsTab')">Bookings</button>
+<button onclick="switchTab('employeesTab')">Employees</button>
+</div>
+
+<div id="dashboardTab" class="tab-content"></div>
+<div id="bookingsTab" class="tab-content hidden"></div>
+<div id="employeesTab" class="tab-content hidden"></div>
+
+</div>`;
+
+renderDashboard();
+renderBookings();
+renderEmployees();
+
+}
+
+function switchTab(tab){
+
+document.querySelectorAll(".tab-content").forEach(t=>t.classList.add("hidden"));
+document.getElementById(tab).classList.remove("hidden");
+
+}
+
+// ================== INIT ==================
+loadAll();
+showLogin();
 
 </script>
 
