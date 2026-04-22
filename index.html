@@ -3,11 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP PRO v3 | By Ahmed Shreif</title>
+<title>Dr Media ERP SaaS v6 Ultimate | Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
 
 <style>
 body{font-family:Tahoma;background:#0b1220;color:#e5e7eb}
@@ -17,218 +19,160 @@ header{background:#0f172a;padding:12px;display:flex;justify-content:space-betwee
 input,select{width:100%;padding:10px;margin:5px 0;border-radius:10px;background:#0b1220;color:#fff;border:1px solid #374151}
 button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
-.small{font-size:12px;opacity:0.8}
 .badge{padding:3px 8px;border-radius:999px;background:#1f2937;font-size:12px}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media ERP PRO v3</h3>
-<div class="small">System by Ahmed Shreif</div>
+<h3>Dr Media ERP SaaS v6</h3>
+<div>Enterprise System by Ahmed Shreif</div>
 </header>
 
 <div class="container">
 
 <!-- LOGIN -->
 <div id="loginBox" class="card">
-<h3>تسجيل الدخول</h3>
-<input id="user" placeholder="username">
+<h3>Login</h3>
+<input id="email" placeholder="email">
 <input id="pass" type="password" placeholder="password">
-<button onclick="login()" style="background:#16a34a;color:#fff;width:100%">دخول</button>
+<button onclick="login()" style="background:#16a34a;color:#fff;width:100%">Login</button>
+<button onclick="register()" style="background:#2563eb;color:#fff;width:100%;margin-top:5px">Register</button>
 </div>
 
-<!-- ADMIN -->
+<!-- DASHBOARD -->
 <div id="admin" style="display:none">
 
 <div class="row">
-<div class="card">👥 موظفين <h2 id="empCount"></h2></div>
-<div class="card">📦 أوردرات <h2 id="orderCount"></h2></div>
-<div class="card">💰 إجمالي <h2 id="income"></h2></div>
-<div class="card">🔔 إشعارات <h2 id="notifCount"></h2></div>
+<div class="card">Users <h2 id="userCount"></h2></div>
+<div class="card">Orders <h2 id="orderCount"></h2></div>
+<div class="card">Revenue <h2 id="income"></h2></div>
+<div class="card">Notifications <h2 id="notifCount">0</h2></div>
 </div>
 
 <div class="card">
-<h3>➕ إضافة أوردر</h3>
-<input id="client" placeholder="العميل">
+<h3>Add Order</h3>
+<input id="client" placeholder="Client">
 <input id="date" type="date">
-<input id="price" placeholder="السعر">
+<input id="price" placeholder="Price">
 <select id="hall">
-<option value="closed">مغلقة</option>
-<option value="open">أوبن</option>
-<option value="cafe">كافيه</option>
+<option value="closed">Closed</option>
+<option value="open">Open</option>
+<option value="cafe">Cafe</option>
 </select>
-<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">إضافة</button>
+<button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">Add</button>
 </div>
 
 <div class="card">
-<h3>📦 الأوردرات</h3>
+<h3>Orders</h3>
 <div id="orders"></div>
 </div>
 
 <div class="card">
-<h3>🔁 Swap Requests</h3>
-<div id="swaps"></div>
-</div>
-
-<div class="card">
-<h3>🔔 Notifications</h3>
+<h3>System Notifications</h3>
 <div id="notifications"></div>
 </div>
 
-<div class="card">
-<h3>📊 Reports</h3>
-<div id="reports"></div>
-</div>
-
-</div>
-
-<!-- EMPLOYEE -->
-<div id="employee" style="display:none">
-<div class="card">
-<h3>📋 أوردراتي</h3>
-<div id="myOrders"></div>
-</div>
-
-<div class="card">
-<h3>🔁 طلب تبديل</h3>
-<input id="swapWith" placeholder="الموظف">
-<input id="swapOrder" placeholder="ID الأوردر">
-<button onclick="requestSwap()" style="background:#f59e0b;color:#fff;width:100%">طلب</button>
-</div>
 </div>
 
 </div>
 
 <script>
-const db=firebase.initializeApp({
+
+// FIREBASE
+const firebaseConfig={
 apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
 databaseURL:"https://drmedia-vpms-default-rtdb.firebaseio.com",
 projectId:"drmedia-vpms"
-}).database();
+};
 
-let users=[{u:"admin",p:"123",role:"admin"},{u:"emp1",p:"123",role:"emp"},{u:"emp2",p:"123",role:"emp"}];
-let employees=[{name:"emp1",role:"مخرج",load:0},{name:"emp2",role:"مصور",load:0}];
-let orders=[],swaps=[],notifications=[],currentUser=null;
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+const auth=firebase.auth();
+const messaging=firebase.messaging();
 
-// ===== CONFLICT SAFE ASSIGN =====
-function canAssign(emp,date){
-return !orders.some(o=>o.date===date && (o.emp||[]).includes(emp));
+// STATE
+let orders=[];
+let notifications=[];
+let currentUser=null;
+
+// ROLES SYSTEM (EXPANDABLE)
+function role(){
+if(!currentUser) return "guest";
+if(currentUser.email=="admin@drmedia.com") return "admin";
+return "employee";
 }
 
-function getRoles(h){return h=="cafe"?["مصور"]:["مخرج","مصور","مصور"]}
-
-function assign(role,date){
-let pool=employees.filter(e=>e.role==role && canAssign(e.name,date));
-pool.sort((a,b)=>a.load-b.load);
-if(!pool.length)return null;
-pool[0].load++;
-return pool[0].name;
-}
-
-function autoAssign(o){
-return getRoles(o.hall).map(r=>assign(r,o.date));
-}
-
-// ===== CORE =====
-function addOrder(){
-let o={id:Date.now(),client:client.value,date:date.value,price:+price.value,hall:hall.value};
-o.emp=autoAssign(o);
-orders.push(o);
-db.ref("orders").set(orders);
-notify("Order assigned");
-render();
-}
-
-// ===== SWAP SYSTEM v2 (approval) =====
-function requestSwap(){
-let s={id:Date.now(),from:currentUser.u,with:swapWith.value,order:swapOrder.value,status:"pending"};
-swaps.push(s);
-db.ref("swaps").set(swaps);
-notify("Swap request");
-render();
-}
-
-function approveSwap(id){
-let s=swaps.find(x=>x.id==id);
-if(!s)return;
-s.status="approved";
-notify("Swap approved");
-db.ref("swaps").set(swaps);
-render();
-}
-
-function rejectSwap(id){
-let s=swaps.find(x=>x.id==id);
-if(!s)return;
-s.status="rejected";
-notify("Swap rejected");
-db.ref("swaps").set(swaps);
-render();
-}
-
-// ===== NOTIFICATIONS =====
+// LOGIC AUDIT
 function notify(msg){
-notifications.unshift({msg,t:new Date().toLocaleString()});
+let n={msg,time:new Date().toLocaleString()};
+notifications.unshift(n);
 db.ref("notifications").set(notifications);
 }
 
-// ===== LOGIN =====
+// AUTH
+function register(){
+let email=email.value;
+let pass=pass.value;
+auth.createUserWithEmailAndPassword(email,pass).then(()=>notify("New User Registered"));
+}
+
 function login(){
-let f=users.find(x=>x.u==user.value&&x.p==pass.value);
-if(!f)return alert("error");
-currentUser=f;
-sessionStorage.setItem("user",JSON.stringify(f));
-loginBox.style.display="none";
-admin.style.display=f.role=="admin"?"block":"none";
-employee.style.display=f.role=="emp"?"block":"none";
-listen();
+let email=document.getElementById("email").value;
+let pass=document.getElementById("pass").value;
+auth.signInWithEmailAndPassword(email,pass)
+.then(u=>{currentUser=u.user;load();notify("Login Success");});
 }
 
-// ===== LISTEN =====
-function listen(){
-db.ref("orders").on("value",s=>{orders=[];s.forEach(c=>orders.push(c.val()));render();});
-db.ref("swaps").on("value",s=>{swaps=[];s.forEach(c=>swaps.push(c.val()));render();});
-db.ref("notifications").on("value",s=>{notifications=[];s.forEach(c=>notifications.push(c.val()));render();});
+// ORDERS
+function addOrder(){
+let o={
+id:Date.now(),
+client:client.value,
+date:date.value,
+price:+price.value,
+hall:hall.value,
+createdBy:currentUser.email
+};
+orders.push(o);
+db.ref("orders").set(orders);
+notify("Order Added by " + currentUser.email);
+render();
 }
 
-// ===== REPORTS =====
-function buildReports(){
-let rev=orders.reduce((s,o)=>s+o.price,0);
-return `💰 ${rev} ج.م`;
+// PUSH (FCM READY)
+function sendPush(title,body){
+console.log("FCM PUSH:",title,body);
+notify(title+" - "+body);
 }
 
-// ===== RENDER =====
+// LOAD REALTIME
+function load(){
+db.ref("orders").on("value",s=>{orders=[];s.forEach(x=>orders.push(x.val()));render();});
+db.ref("notifications").on("value",s=>{notifications=[];s.forEach(x=>notifications.push(x.val()));render();});
+}
+
+// RENDER
 function render(){
-if(currentUser.role=="admin"){
-empCount.innerText=employees.length;
+if(role()=="admin"){
+userCount.innerText="1+";
 orderCount.innerText=orders.length;
 income.innerText=orders.reduce((s,o)=>s+o.price,0);
 notifCount.innerText=notifications.length;
 
-ordersHTML=orders.map(o=>`<div class='card'>${o.client} | ${(o.emp||[]).join(",")}</div>`).join("");
+ordersHTML=orders.map(o=>`<div class='card'>${o.client} - ${o.price} - ${o.hall}</div>`).join("");
 document.getElementById("orders").innerHTML=ordersHTML;
 
-document.getElementById("swaps").innerHTML=swaps.map(s=>`
-<div class='card'>${s.from} → ${s.with} (${s.status})
-${s.status=="pending"?`
-<button onclick="approveSwap(${s.id})">✔</button>
-<button onclick="rejectSwap(${s.id})">✖</button>`:``}
-</div>`).join("");
-
-document.getElementById("notifications").innerHTML=notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");
-
-document.getElementById("reports").innerHTML=buildReports();
-}else{
-let my=orders.filter(o=>(o.emp||[]).includes(currentUser.u));
-document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} | ${o.date}</div>`).join("");
+document.getElementById("notifications").innerHTML=notifications.map(n=>`<div class='card'>${n.msg} | ${n.time}</div>`).join("");
 }
 }
 
-// restore session
-let s=sessionStorage.getItem("user");
-if(s){currentUser=JSON.parse(s);loginBox.style.display="none";}
+// AUTH STATE
+auth.onAuthStateChanged(u=>{
+if(u){currentUser=u;loginBox.style.display="none";admin.style.display="block";load();}
+});
+
 </script>
 
 </body>
