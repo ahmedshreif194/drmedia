@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media Pro MAX CLOUD v2 | By Ahmed Shreif</title>
+<title>Dr Media Pro MAX AI FORECAST v6 | By Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -18,13 +18,12 @@ input,select{width:100%;padding:10px;margin:5px 0;border-radius:10px;background:
 button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 18px;border-radius:999px;display:none}
-.badge{background:#2563eb;padding:3px 8px;border-radius:999px;font-size:12px}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media Pro MAX CLOUD</h3>
+<h3>Dr Media Pro MAX AI FORECAST</h3>
 <div>Ahmed Shreif</div>
 </header>
 
@@ -32,7 +31,6 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 
 <div class="container">
 
-<!-- LOGIN -->
 <div id="loginBox" class="card">
 <h3>تسجيل الدخول</h3>
 <input id="user" placeholder="username">
@@ -40,13 +38,18 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <button onclick="login()" style="background:#16a34a;color:white;width:100%">دخول</button>
 </div>
 
-<!-- ADMIN -->
 <div id="admin" style="display:none">
 
 <div class="row">
 <div class="card">👥 موظفين <h2 id="empCount"></h2></div>
 <div class="card">📦 أوردرات <h2 id="orderCount"></h2></div>
 <div class="card">💰 إيرادات <h2 id="income"></h2></div>
+<div class="card">📈 AI Forecast <h2 id="forecast"></h2></div>
+</div>
+
+<div class="card">
+<h3>📈 AI Forecasting Engine</h3>
+<button onclick="runForecast()" style="background:#7c3aed;color:#fff;width:100%">تشغيل التوقعات الذكية</button>
 </div>
 
 <div class="card">
@@ -62,150 +65,94 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 <button onclick="addOrder()" style="background:#2563eb;color:#fff;width:100%">إضافة</button>
 </div>
 
-<div class="card">
-<h3>📦 الأوردرات</h3>
-<div id="orders"></div>
-</div>
-
-<div class="card">
-<h3>🔔 إشعارات</h3>
-<div id="notifications"></div>
-</div>
+<div class="card"><h3>📦 الأوردرات</h3><div id="orders"></div></div>
+<div class="card"><h3>🔔 إشعارات</h3><div id="notifications"></div></div>
+<div class="card"><h3>🔄 Swaps</h3><div id="swaps"></div></div>
+<div class="card"><h3>📜 Activity Log</h3><div id="logs"></div></div>
 
 </div>
 
-<!-- EMPLOYEE -->
 <div id="employee" style="display:none">
-<div class="card">
-<h3>📋 أوردراتي</h3>
-<div id="myOrders"></div>
-</div>
-
-<div class="card">
-<h3>🔄 طلب تبديل أوردر</h3>
-<input id="swapOrderId" placeholder="ID الأوردر">
-<input id="swapWith" placeholder="تبديل مع (اسم موظف)">
-<button onclick="requestSwap()" style="background:#f59e0b;color:#000;width:100%">طلب تبديل</button>
-</div>
-
+<div class="card"><h3>📋 أوردراتي</h3><div id="myOrders"></div></div>
 </div>
 
 </div>
 
 <script>
-
-// FIREBASE
-const firebaseConfig={
+const db=firebase.initializeApp({
 apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
 databaseURL:"https://drmedia-vpms-default-rtdb.firebaseio.com",
 projectId:"drmedia-vpms"
-};
-firebase.initializeApp(firebaseConfig);
-const db=firebase.database();
+}).database();
 
-let users=[
-{u:"admin",p:"123",role:"admin"},
-{u:"zakawa",p:"123",role:"emp"},
-{u:"titi",p:"123",role:"emp"},
-{u:"khaled",p:"123",role:"emp"}
-];
-
+let users=[{u:"admin",p:"123",role:"admin"},{u:"zakawa",p:"123",role:"emp"},{u:"titi",p:"123",role:"emp"}];
 let employees=users.filter(u=>u.role=="emp").map(u=>({name:u.u,load:0}));
-let orders=[];
-let notifications=[];
+let orders=[],notifications=[],swaps=[],logs=[];
 let currentUser=null;
 
-// SMART
-function assignEmp(){
-employees.sort((a,b)=>a.load-b.load);
-let e=employees[0];e.load++;return e.name;
+function toast(m){let t=document.getElementById("toast");t.innerText=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000);}
+
+function log(a,d){logs.unshift({a,d,t:new Date().toLocaleString()});if(logs.length>50)logs.pop();db.ref("logs").set(logs);}
+
+function assign(){employees.sort((a,b)=>a.load-b.load);let e=employees[0];e.load++;return e.name;}
+
+// 🧠 AI FORECAST ENGINE
+function runForecast(){
+let today=new Date();
+let next7=orders.filter(o=>new Date(o.date)-today<7*86400000);
+let revenue=orders.reduce((s,o)=>s+o.price,0);
+let avg=orders.length?revenue/orders.length:0;
+let prediction=Math.round(avg*(orders.length+next7.length));
+
+document.getElementById("forecast").innerText=prediction+" ج.م";
+log("AI_FORECAST",{prediction});
+toast("📈 Forecast Updated");
 }
 
-// LOGIN
 function login(){
-let u=user.value,p=pass.value;
-let f=users.find(x=>x.u==u&&x.p==p);
-if(!f)return alert("error");
-currentUser=f;
+let f=users.find(x=>x.u==user.value&&x.p==pass.value);
+if(!f)return alert("error");currentUser=f;
 loginBox.style.display="none";
 if(f.role=="admin")admin.style.display="block";
 else employee.style.display="block";
-listen();
-}
+listen();}
 
-// ADD ORDER + NOTIFICATION
 function addOrder(){
-let o={
-id:Date.now(),
-client:client.value,
-date:date.value,
-price:Number(price.value),
-hall:hall.value,
-emp:assignEmp()
-};
+let o={id:Date.now(),client:client.value,date:date.value,price:Number(price.value),hall:hall.value,emp:assign()};
 db.ref("orders").push(o);
-
-// notification
-notifications.push({msg:"📦 أوردر جديد: "+o.client+" -> "+o.emp});
-db.ref("notifications").set(notifications);
-
-toast("تم الإضافة");
+notifications.unshift({msg:`📦 ${o.client} -> ${o.emp}`});db.ref("notifications").set(notifications);
+log("ADD",o);
+toast("تم + AI");render();
 }
 
-// SWAP REQUEST
-function requestSwap(){
-let req={
-from:currentUser.u,
-orderId:swapOrderId.value,
-with:swapWith.value,
-status:"pending"
-};
-db.ref("swaps").push(req);
-toast("تم إرسال طلب التبديل");
-}
-
-// LISTEN
 function listen(){
-db.ref("orders").on("value",s=>{
-orders=[];
-s.forEach(c=>orders.push(c.val()));
-render();
-});
-
-db.ref("notifications").on("value",s=>{
-notifications=[];
-s.forEach(c=>notifications.push(c.val()));
-render();
-});
+ db.ref("orders").on("value",s=>{orders=[];s.forEach(c=>orders.push(c.val()));render();});
+ db.ref("notifications").on("value",s=>{notifications=[];s.forEach(c=>notifications.push(c.val()));render();});
+ db.ref("swaps").on("value",s=>{swaps=[];s.forEach(c=>swaps.push(c.val()));render();});
+ db.ref("logs").on("value",s=>{logs=[];s.forEach(c=>logs.push(c.val()));render();});
 }
 
-// RENDER
 function render(){
 if(currentUser.role=="admin"){
 empCount.innerText=employees.length;
 orderCount.innerText=orders.length;
 income.innerText=orders.reduce((s,o)=>s+o.price,0);
 
-ordersHTML="";
-orders.forEach(o=>{
-ordersHTML+=`<div class='card'>${o.client} | ${o.emp} | ${o.price}</div>`;
-});
+ordersHTML=orders.map(o=>`<div class='card'>${o.client} | ${o.emp} | ${o.price}</div>`).join("");
 document.getElementById("orders").innerHTML=ordersHTML;
 
-document.getElementById("notifications").innerHTML=
-notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");
-}
-else{
+notificationsHTML=notifications.map(n=>`<div class='card'>${n.msg}</div>`).join("");document.getElementById("notifications").innerHTML=notificationsHTML;
+
+swapsHTML=swaps.map(s=>`<div class='card'>${s.from||''} -> ${s.with||''}<br>${s.status||''}</div>`).join("");document.getElementById("swaps").innerHTML=swapsHTML;
+
+logsHTML=logs.map(l=>`<div class='card'>${l.t} - ${l.a}</div>`).join("");document.getElementById("logs").innerHTML=logsHTML;
+
+}else{
 let my=orders.filter(o=>o.emp==currentUser.u);
-document.getElementById("myOrders").innerHTML=
-my.map(o=>`<div class='card'>${o.client} | ${o.date} | ${o.price}</div>`).join("");
+document.getElementById("myOrders").innerHTML=my.map(o=>`<div class='card'>${o.client} | ${o.date} | ${o.price}</div>`).join("");
 }
 }
-
-function toast(m){let t=document.getElementById("toast");t.innerText=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000);}
-
 </script>
-
 </body>
 </html>
