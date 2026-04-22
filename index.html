@@ -36,7 +36,6 @@
         .employee-checkbox-list label { display: block; padding: 8px; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
         .employee-checkbox-list input { margin-left: 10px; }
         .checkbox-col { width: 40px; text-align: center; }
-        .lang-switch { display: flex; gap: 10px; align-items: center; }
     </style>
 </head>
 <body>
@@ -76,7 +75,8 @@
     let selectedBookings = new Set();
     let selectedEmployees = new Set();
     let isDataLoaded = false;
-    let currentLang = 'ar'; // ar or en
+    let currentLang = 'ar';
+    let holidays = [];
 
     // -------------------- دوال الترجمة --------------------
     const translations = {
@@ -85,15 +85,15 @@
             distribution: "⚙️ التوزيع", payroll: "💰 المرتبات", calendar: "📆 التقويم",
             reports: "📊 التقارير", users: "👥 المستخدمين", settings: "⚙️ الإعدادات",
             totalBookings: "إجمالي الحجوزات", totalRevenue: "إجمالي الإيرادات",
-            totalEmployees: "الموظفين النشطين", topEmployee: "أكثر موظف شغل",
+            totalEmployees: "الموظفين النشطين", topEmployee: "الأكثر شغل",
             monthlyRevenue: "الإيرادات الشهرية", employeePerformance: "أداء الموظفين",
             upcomingBookings: "أقرب الحجوزات", client: "العميل", date: "التاريخ",
-            hall: "القاعة", price: "السعر", actions: "الإجراءات", add: "إضافة",
+            hall: "القاعة", price: "السعر", actions: "إجراءات", add: "إضافة",
             delete: "حذف", edit: "تعديل", save: "حفظ", cancel: "إلغاء",
             importExcel: "استيراد من Excel", importPDF: "استيراد من PDF",
             changeLanguage: "تغيير اللغة", arabic: "العربية", english: "English",
             holidays: "أيام الإجازة", manageHolidays: "إدارة الإجازات",
-            saveAll: "حفظ جميع البيانات يدوياً"
+            saveAll: "حفظ جميع البيانات يدوياً", close: "إغلاق"
         },
         en: {
             dashboard: "📊 Dashboard", bookings: "📅 Bookings", employees: "👥 Employees",
@@ -108,10 +108,9 @@
             importExcel: "Import from Excel", importPDF: "Import from PDF",
             changeLanguage: "Change Language", arabic: "Arabic", english: "English",
             holidays: "Holidays", manageHolidays: "Manage Holidays",
-            saveAll: "Save All Data Manually"
+            saveAll: "Save All Data Manually", close: "Close"
         }
     };
-
     function t(key) { return translations[currentLang][key] || key; }
 
     function setLanguage(lang) {
@@ -119,17 +118,18 @@
         document.documentElement.lang = lang === 'ar' ? 'ar' : 'en';
         document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
         renderApp();
-        showMsg(`✅ تم تغيير اللغة إلى ${lang === 'ar' ? 'العربية' : 'English'}`);
+        showMsg(`✅ ${lang === 'ar' ? 'تم تغيير اللغة إلى العربية' : 'Language changed to English'}`);
     }
 
-    // -------------------- دالة الحفظ الموحدة --------------------
+    // -------------------- دالة الحفظ --------------------
     function saveAllData() {
         const indicator = document.getElementById('saveIndicator');
         indicator.classList.remove('hidden');
         Promise.all([
             db.ref('bookings').set(bookings),
             db.ref('employees').set(employees),
-            db.ref('users').set(users)
+            db.ref('users').set(users),
+            db.ref('holidays').set(holidays)
         ]).then(() => {
             setTimeout(() => indicator.classList.add('hidden'), 500);
             showMsg("✅ " + (currentLang === 'ar' ? 'تم حفظ البيانات' : 'Data saved'));
@@ -145,31 +145,16 @@
         let loadedCount = 0;
         function checkAllLoaded() {
             loadedCount++;
-            if(loadedCount === 3) {
+            if(loadedCount === 4) {
                 isDataLoaded = true;
-                if(bookings.length === 0 && employees.length === 0) {
-                    initDefaultData();
-                } else {
-                    if(currentUser) renderApp();
-                }
+                if(bookings.length === 0 && employees.length === 0) initDefaultData();
+                else if(currentUser) renderApp();
             }
         }
-        db.ref('bookings').on('value', (snapshot) => {
-            if(snapshot.val()) bookings = snapshot.val();
-            checkAllLoaded();
-            if(isDataLoaded && currentUser) renderApp();
-        });
-        db.ref('employees').on('value', (snapshot) => {
-            if(snapshot.val()) employees = snapshot.val();
-            checkAllLoaded();
-            if(isDataLoaded && currentUser) renderApp();
-        });
-        db.ref('users').on('value', (snapshot) => {
-            if(snapshot.val()) users = snapshot.val();
-            checkAllLoaded();
-            if(!currentUser && isDataLoaded) showLogin();
-            else if(isDataLoaded && currentUser) renderApp();
-        });
+        db.ref('bookings').on('value', (snapshot) => { bookings = snapshot.val() || []; checkAllLoaded(); if(isDataLoaded && currentUser) renderApp(); });
+        db.ref('employees').on('value', (snapshot) => { employees = snapshot.val() || []; checkAllLoaded(); if(isDataLoaded && currentUser) renderApp(); });
+        db.ref('users').on('value', (snapshot) => { users = snapshot.val() || []; checkAllLoaded(); if(!currentUser && isDataLoaded) showLogin(); else if(isDataLoaded && currentUser) renderApp(); });
+        db.ref('holidays').on('value', (snapshot) => { holidays = snapshot.val() || []; checkAllLoaded(); });
     }
 
     function showMsg(msg) { 
@@ -270,19 +255,12 @@
     }
 
     // -------------------- دوال استيراد Excel و PDF --------------------
-    function showImportExcelModal() {
-        const html = `
-            <h3 class="text-xl font-bold mb-3">📂 ${t('importExcel')}</h3>
-            <p class="text-sm text-gray-500 mb-2">${currentLang === 'ar' ? 'اختر ملف Excel (الصف الأول: التاريخ، العميل، القاعة، السعر)' : 'Select Excel file (first row: date, client, hall, price)'}</p>
-            <input type="file" id="excelFile" accept=".xlsx,.xls" class="mb-3">
-            <select id="importHallType" class="mb-3"><option value="closed">${currentLang === 'ar' ? 'مغلقة' : 'Closed'}</option><option value="open">${currentLang === 'ar' ? 'أوبن' : 'Open'}</option><option value="cafe">${currentLang === 'ar' ? 'كافيه' : 'Cafe'}</option></select>
-            <button onclick="importExcelData()" class="bg-green-700 text-white w-full py-2 rounded-xl mt-2">${t('importExcel')}</button>
-        `;
+    window.showImportExcelModal = function() {
+        const html = `<h3 class="text-xl font-bold mb-3">📂 ${t('importExcel')}</h3><p class="text-sm text-gray-500 mb-2">${currentLang === 'ar' ? 'اختر ملف Excel (التاريخ، العميل، القاعة، السعر)' : 'Select Excel file (date, client, hall, price)'}</p><input type="file" id="excelFile" accept=".xlsx,.xls" class="mb-3"><select id="importHallType" class="mb-3"><option value="closed">${currentLang === 'ar' ? 'مغلقة' : 'Closed'}</option><option value="open">${currentLang === 'ar' ? 'أوبن' : 'Open'}</option><option value="cafe">${currentLang === 'ar' ? 'كافيه' : 'Cafe'}</option></select><button onclick="importExcelData()" class="bg-green-700 text-white w-full py-2 rounded-xl mt-2">${t('importExcel')}</button>`;
         document.getElementById('modalContent').innerHTML = html;
         document.getElementById('modal').classList.remove('hidden');
-    }
-
-    async function importExcelData() {
+    };
+    window.importExcelData = async function() {
         const file = document.getElementById('excelFile').files[0];
         if(!file){ alert(currentLang === 'ar' ? "اختر ملف" : "Select a file"); return; }
         const hallType = document.getElementById('importHallType').value;
@@ -309,23 +287,15 @@
             bookings.push({ id: Date.now()+Math.random().toString(36)+added, clientName:client, phone:"", hallName, date:formatted, hallType, price, assignedEmployees:[] });
             added++;
         }
-        if(added===0) alert(currentLang === 'ar' ? "لا توجد تواريخ صالحة" : "No valid dates found");
+        if(added===0) alert(currentLang === 'ar' ? "لا توجد تواريخ صالحة" : "No valid dates");
         else{ saveAllData(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); closeModal(); showMsg(`✅ ${currentLang === 'ar' ? 'تم استيراد' : 'Imported'} ${added} ${currentLang === 'ar' ? 'حجز' : 'bookings'}`); }
-    }
-
-    function showImportPdfModal() {
-        const html = `
-            <h3 class="text-xl font-bold mb-3">📄 ${t('importPDF')}</h3>
-            <p class="text-sm text-gray-500 mb-2">${currentLang === 'ar' ? 'اختر ملف PDF لاستخراج التواريخ' : 'Select PDF to extract dates'}</p>
-            <input type="file" id="pdfFile" accept="application/pdf" class="mb-3">
-            <select id="pdfHallType" class="mb-3"><option value="closed">${currentLang === 'ar' ? 'مغلقة' : 'Closed'}</option><option value="open">${currentLang === 'ar' ? 'أوبن' : 'Open'}</option><option value="cafe">${currentLang === 'ar' ? 'كافيه' : 'Cafe'}</option></select>
-            <button onclick="importPdfData()" class="bg-red-700 text-white w-full py-2 rounded-xl mt-2">${t('importPDF')}</button>
-        `;
+    };
+    window.showImportPdfModal = function() {
+        const html = `<h3 class="text-xl font-bold mb-3">📄 ${t('importPDF')}</h3><p class="text-sm text-gray-500 mb-2">${currentLang === 'ar' ? 'اختر ملف PDF لاستخراج التواريخ' : 'Select PDF to extract dates'}</p><input type="file" id="pdfFile" accept="application/pdf" class="mb-3"><select id="pdfHallType" class="mb-3"><option value="closed">${currentLang === 'ar' ? 'مغلقة' : 'Closed'}</option><option value="open">${currentLang === 'ar' ? 'أوبن' : 'Open'}</option><option value="cafe">${currentLang === 'ar' ? 'كافيه' : 'Cafe'}</option></select><button onclick="importPdfData()" class="bg-red-700 text-white w-full py-2 rounded-xl mt-2">${t('importPDF')}</button>`;
         document.getElementById('modalContent').innerHTML = html;
         document.getElementById('modal').classList.remove('hidden');
-    }
-
-    async function importPdfData() {
+    };
+    window.importPdfData = async function() {
         const file = document.getElementById('pdfFile').files[0];
         if(!file){ alert(currentLang === 'ar' ? "اختر ملف" : "Select a file"); return; }
         const hallType = document.getElementById('pdfHallType').value;
@@ -346,146 +316,374 @@
             if(added===0) alert(currentLang === 'ar' ? "لا توجد تواريخ" : "No dates found");
             else{ saveAllData(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); closeModal(); showMsg(`✅ ${currentLang === 'ar' ? 'تم استيراد' : 'Imported'} ${added} ${currentLang === 'ar' ? 'حجز' : 'bookings'}`); }
         }catch(e){ alert(currentLang === 'ar' ? "فشل استيراد PDF" : "PDF import failed"); }
-    }
+    };
 
     // -------------------- دوال أيام الإجازة --------------------
-    let holidays = [];
-    function showHolidaysModal() {
+    window.showHolidaysModal = function() {
         const list = holidays.map(h=>`<div class="flex justify-between items-center p-2 border-b"><span>${h}</span><button onclick="removeHoliday('${h}')" class="text-red-500 text-sm">${t('delete')}</button></div>`).join('');
-        const html = `
-            <h3 class="text-xl font-bold mb-3">📅 ${t('manageHolidays')}</h3>
-            <div class="flex gap-2 mb-3"><input type="date" id="newHoliday" class="flex-1"><button onclick="addHoliday()" class="bg-amber-600 text-white px-3 py-2 rounded-xl">+ ${t('add')}</button></div>
-            <div class="max-h-48 overflow-y-auto border rounded-lg">${list||'<p class="p-2 text-gray-500">'+ (currentLang === 'ar' ? 'لا توجد أيام إجازة' : 'No holidays') +'</p>'}</div>
-            <button onclick="closeModal(); renderSettingsContent();" class="mt-3 bg-gray-600 text-white w-full py-2 rounded-xl">${t('close')}</button>
-        `;
+        const html = `<h3 class="text-xl font-bold mb-3">📅 ${t('manageHolidays')}</h3><div class="flex gap-2 mb-3"><input type="date" id="newHoliday" class="flex-1"><button onclick="addHoliday()" class="bg-amber-600 text-white px-3 py-2 rounded-xl">+ ${t('add')}</button></div><div class="max-h-48 overflow-y-auto border rounded-lg">${list||'<p class="p-2 text-gray-500">'+ (currentLang === 'ar' ? 'لا توجد أيام إجازة' : 'No holidays') +'</p>'}</div><button onclick="closeModal(); renderSettingsContent();" class="mt-3 bg-gray-600 text-white w-full py-2 rounded-xl">${t('close')}</button>`;
         document.getElementById('modalContent').innerHTML = html;
         document.getElementById('modal').classList.remove('hidden');
+    };
+    window.addHoliday = function(){ let d=document.getElementById('newHoliday').value; if(d && !holidays.includes(d)){ holidays.push(d); saveAllData(); showHolidaysModal(); showMsg(`✅ ${currentLang === 'ar' ? 'تم إضافة' : 'Added'} ${d}`); } };
+    window.removeHoliday = function(d){ holidays=holidays.filter(h=>h!==d); saveAllData(); showHolidaysModal(); showMsg(`🗑️ ${currentLang === 'ar' ? 'تم حذف' : 'Removed'} ${d}`); };
+
+    // -------------------- دوال العرض لكل تبويب --------------------
+    function renderDashboardContent() {
+        const totalBookings = bookings.length;
+        const totalRevenue = bookings.reduce((s,b)=>s+b.price,0);
+        const totalEmployees = employees.filter(e=>e.active).length;
+        const upcoming = bookings.filter(b=>new Date(b.date)>=new Date()).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,5);
+        const hallStats = {closed:0,open:0,cafe:0};
+        bookings.forEach(b=>hallStats[b.hallType]++);
+        const months = [], revenues = [];
+        for(let i=5;i>=0;i--){
+            let d = new Date(); d.setMonth(d.getMonth()-i);
+            months.push(d.toLocaleString('ar',{month:'short'}));
+            let mb = bookings.filter(b=>{let bd=new Date(b.date); return bd.getMonth()===d.getMonth() && bd.getFullYear()===d.getFullYear();});
+            revenues.push(mb.reduce((s,b)=>s+b.price,0));
+        }
+        const top5 = [...employees].sort((a,b)=>b.totalOrders-a.totalOrders).slice(0,5);
+        const html = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${totalBookings}</div><div>${t('totalBookings')}</div></div>
+                <div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${totalRevenue.toLocaleString()} ج.م</div><div>${t('totalRevenue')}</div></div>
+                <div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${totalEmployees}</div><div>${t('totalEmployees')}</div></div>
+                <div class="dashboard-card"><i class="fas fa-trophy text-2xl text-emerald-600"></i><div class="stat-number">${Math.max(...employees.map(e=>e.totalOrders||0),0)}</div><div>${t('topEmployee')}</div></div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-chart-line ml-1"></i>${t('monthlyRevenue')}</h3><canvas id="revenueChartCanvas"></canvas></div>
+                <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-chart-bar ml-1"></i>${t('employeePerformance')}</h3><canvas id="empChartCanvas"></canvas></div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-calendar-alt ml-1"></i>${t('upcomingBookings')}</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>${t('client')}</th><th>${t('date')}</th><th>${t('hall')}</th><th>${t('price')}</th></tr></thead><tbody>${upcoming.map(b=>`<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</span></span></td>`).join('')||'}<tr<td colspan="4">${currentLang === 'ar' ? 'لا توجد حجوزات' : 'No bookings'}</td></tr>'}</tbody></table></div></div>
+        `;
+        document.getElementById('dashboardTab').innerHTML = html;
+        setTimeout(()=>{
+            const revCtx = document.getElementById('revenueChartCanvas')?.getContext('2d');
+            if(revCtx && revenueChart) revenueChart.destroy();
+            if(revCtx) revenueChart = new Chart(revCtx, { type:'line', data:{ labels:months, datasets:[{ label: t('monthlyRevenue'), data:revenues, borderColor:'#10b981', fill:false }] } });
+            const empCtx = document.getElementById('empChartCanvas')?.getContext('2d');
+            if(empCtx) new Chart(empCtx, { type:'bar', data:{ labels:top5.map(e=>e.name), datasets:[{ label: t('employeePerformance'), data:top5.map(e=>e.totalOrders||0), backgroundColor:'#f59e0b' }] } });
+        }, 100);
     }
-    function addHoliday(){ let d=document.getElementById('newHoliday').value; if(d && !holidays.includes(d)){ holidays.push(d); saveAllData(); showHolidaysModal(); showMsg(`✅ ${currentLang === 'ar' ? 'تم إضافة' : 'Added'} ${d}`); } }
-    function removeHoliday(d){ holidays=holidays.filter(h=>h!==d); saveAllData(); showHolidaysModal(); showMsg(`🗑️ ${currentLang === 'ar' ? 'تم حذف' : 'Removed'} ${d}`); }
 
-    // -------------------- باقي دوال العرض (حجوزات، موظفين، توزيع، مرتبات، تقويم، تقارير، مستخدمين) --------------------
-    // تم تضمينها كاملة في الكود النهائي، ولكن للاختصار سيتم إعادة استخدام نفس الدوال من الكود السابق مع إضافة الترجمة
-    // (لن يتم تكرارها هنا للحفاظ على طول معقول، لكن الكود النهائي يحتوي عليها كاملة)
-
-    // -------------------- إعدادات اللغة --------------------
-    function renderSettingsContent() {
+    function renderBookingsContent() {
         const html = `
             <div class="p-4">
-                <h2 class="text-xl font-bold mb-4">⚙️ ${t('settings')}</h2>
-                <div class="grid md:grid-cols-2 gap-4">
-                    <div class="border rounded-2xl p-4">
-                        <h3 class="font-bold mb-2"><i class="fas fa-file-excel text-green-600 ml-2"></i>${t('importExcel')}</h3>
-                        <button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">${t('importExcel')}</button>
-                    </div>
-                    <div class="border rounded-2xl p-4">
-                        <h3 class="font-bold mb-2"><i class="fas fa-file-pdf text-red-600 ml-2"></i>${t('importPDF')}</h3>
-                        <button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">${t('importPDF')}</button>
-                    </div>
-                    <div class="border rounded-2xl p-4">
-                        <h3 class="font-bold mb-2"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>${t('holidays')}</h3>
-                        <button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">${t('manageHolidays')}</button>
-                    </div>
-                    <div class="border rounded-2xl p-4">
-                        <h3 class="font-bold mb-2"><i class="fas fa-language text-blue-600 ml-2"></i>${t('changeLanguage')}</h3>
-                        <div class="flex gap-2 mt-2">
-                            <button onclick="setLanguage('ar')" class="bg-emerald-700 text-white px-4 py-2 rounded-xl flex-1">${t('arabic')}</button>
-                            <button onclick="setLanguage('en')" class="bg-emerald-700 text-white px-4 py-2 rounded-xl flex-1">${t('english')}</button>
-                        </div>
+                <div class="flex justify-between items-center flex-wrap gap-2 mb-4">
+                    <h2 class="text-xl font-bold">📅 ${t('bookings')} (${bookings.length})</h2>
+                    <div class="flex gap-2">
+                        <button onclick="selectAllBookings()" class="bg-gray-600 text-white px-3 py-2 rounded-xl">${t('selectAll')}</button>
+                        <button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-2 rounded-xl">${t('delete')} ${t('selected')}</button>
+                        <button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl">+ ${t('add')}</button>
+                        <button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl">${t('redistribute')}</button>
                     </div>
                 </div>
-                <div class="mt-4 bg-yellow-50 p-3 rounded-xl text-center">
-                    <button onclick="saveAllData()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-save ml-2"></i> ${t('saveAll')}</button>
-                </div>
+                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead class="bg-gray-100"><tr><th class="checkbox-col"><input type="checkbox" id="selectAllBookingsCheckbox" onchange="toggleSelectAllBookings()"></th><th>${t('client')}</th><th>${t('date')}</th><th>${t('hall')}</th><th>${t('type')}</th><th>${t('price')}</th><th>${t('employees')}</th><th></th></tr></thead><tbody>
+                ${bookings.map(b=>`<tr><td class="checkbox-col text-center"><input type="checkbox" class="booking-checkbox" value="${b.id}" ${selectedBookings.has(b.id)?'checked':''} onchange="toggleBookingSelection('${b.id}', this.checked)"></td><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.hallType==='closed'?'مغلقة':b.hallType==='open'?'أوبن':'كافيه'}</td><td class="p-2">${b.price} ج.م</td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||'-'}</td><td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}
+                ${bookings.length===0?'<tr><td colspan="8" class="text-center p-4">'+ (currentLang === 'ar' ? 'لا توجد حجوزات' : 'No bookings') +'</td></tr>':''}
+                </tbody></table></div>
             </div>
+        `;
+        document.getElementById('bookingsTab').innerHTML = html;
+        const allCheckbox = document.getElementById('selectAllBookingsCheckbox');
+        if(allCheckbox) allCheckbox.checked = selectedBookings.size === bookings.length && bookings.length > 0;
+    }
+
+    function renderEmployeesContent() {
+        updateEmployeeOrders();
+        const html = `
+            <div class="p-4">
+                <div class="flex justify-between items-center flex-wrap gap-2 mb-4">
+                    <h2 class="text-xl font-bold">👥 ${t('employees')} (${employees.length})</h2>
+                    <div class="flex gap-2">
+                        <button onclick="selectAllEmployees()" class="bg-gray-600 text-white px-3 py-2 rounded-xl">${t('selectAll')}</button>
+                        <button onclick="bulkDeleteEmployees()" class="bg-red-600 text-white px-3 py-2 rounded-xl">${t('delete')} ${t('selected')}</button>
+                        <button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ ${t('add')}</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead class="bg-gray-100"><tr><th class="checkbox-col"><input type="checkbox" id="selectAllEmployeesCheckbox" onchange="toggleSelectAllEmployees()"></th><th>${t('name')}</th><th>${t('role')}</th><th>${t('phone')}</th><th>${t('salaryPerOrder')}</th><th>${t('ordersCount')}</th><th>${t('totalDue')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
+                ${employees.map(e=>{ const salary = (e.totalOrders||0)*e.salaryPerOrder; return `<tr><td class="checkbox-col text-center"><input type="checkbox" class="employee-checkbox" value="${e.id}" ${selectedEmployees.has(e.id)?'checked':''} onchange="toggleEmployeeSelection('${e.id}', this.checked)"></td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${salary} ج.م</td><td class="p-2">${e.active?'🟢 '+(currentLang === 'ar' ? 'نشط' : 'Active'):'🔴 '+(currentLang === 'ar' ? 'غير نشط' : 'Inactive')}</td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`}).join('')}
+                </tbody></table></div>
+            </div>
+        `;
+        document.getElementById('employeesTab').innerHTML = html;
+        const allCheckbox = document.getElementById('selectAllEmployeesCheckbox');
+        if(allCheckbox) allCheckbox.checked = selectedEmployees.size === employees.length && employees.length > 0;
+    }
+
+    function renderDistributionContent() {
+        const html = `
+            <div class="p-4">
+                <div class="bg-purple-50 p-4 rounded-2xl mb-4"><h2 class="text-xl font-bold">🔄 ${t('distribution')}</h2><button onclick="autoDistribute(); renderDistributionContent(); renderBookingsContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl mt-2">${t('autoDistribute')}</button></div>
+                <div class="space-y-3">${[...bookings].sort((a,b)=>new Date(a.date)-new Date(b.date)).map(b=>`<div class="border p-3 rounded-xl bg-white"><div class="font-bold">${b.clientName} - ${b.date}</div><div>${t('employees')}: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')||(currentLang === 'ar' ? 'غير معين' : 'Not assigned')}</div><button onclick="showManualAssignModal('${b.id}')" class="mt-2 text-sm bg-amber-100 px-3 py-1 rounded-lg">${t('manualEdit')}</button></div>`).join('')}</div>
+            </div>
+        `;
+        document.getElementById('distributionTab').innerHTML = html;
+    }
+
+    function renderPayrollContent() {
+        updateEmployeeOrders();
+        const totalRevenue = bookings.reduce((s,b)=>s+b.price,0);
+        const totalSalaries = employees.reduce((s,e)=>s+((e.totalOrders||0)*e.salaryPerOrder),0);
+        const html = `
+            <div class="p-4">
+                <div class="grid grid-cols-3 gap-3 mb-4"><div class="bg-green-100 p-3 rounded-xl text-center"><p>${t('revenue')}</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
+                <div class="bg-amber-100 p-3 rounded-xl text-center"><p>${t('salaries')}</p><p class="text-2xl font-bold">${totalSalaries.toLocaleString()} ج.م</p></div>
+                <div class="bg-purple-100 p-3 rounded-xl text-center"><p>${t('netProfit')}</p><p class="text-2xl font-bold">${(totalRevenue-totalSalaries).toLocaleString()} ج.م</p></div></div>
+                <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>${t('employee')}</th><th>${t('role')}</th><th>${t('ordersCount')}</th><th>${t('salaryPerOrder')}</th><th>${t('totalDue')}</th></tr></thead><tbody>${employees.map(e=>`<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.totalOrders||0}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>
+            </div>
+        `;
+        document.getElementById('payrollTab').innerHTML = html;
+    }
+
+    function renderCalendarContent() {
+        const today = new Date();
+        const year = today.getFullYear(), month = today.getMonth();
+        const firstDay = new Date(year,month,1).getDay();
+        const daysCount = new Date(year,month+1,0).getDate();
+        const monthNames = ['يناير','فبراير','مارس','إبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+        let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📆 ${monthNames[month]} ${year}</h2><div class="calendar-grid">`;
+        ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'].forEach(d=>html+=`<div class="text-center font-bold py-2">${d}</div>`);
+        for(let i=0;i<firstDay;i++) html+=`<div></div>`;
+        for(let d=1;d<=daysCount;d++){
+            const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const has = bookings.some(b=>b.date===dateStr);
+            html += `<div class="calendar-day ${has?'booked':''}" onclick="showDayBookings('${dateStr}')">${d}</div>`;
+        }
+        html += `</div><div id="calendarInfo" class="mt-3 text-sm text-gray-600"></div></div>`;
+        document.getElementById('calendarTab').innerHTML = html;
+    }
+
+    window.showDayBookings = function(date){
+        const filtered = bookings.filter(b=>b.date===date);
+        const info = document.getElementById('calendarInfo');
+        if(filtered.length===0) info.innerHTML = `<div class="p-3 bg-gray-100 rounded">📭 ${currentLang === 'ar' ? 'لا توجد حجوزات في' : 'No bookings on'} ${date}</div>`;
+        else info.innerHTML = `<div class="p-3 bg-emerald-50 rounded"><strong>📅 ${currentLang === 'ar' ? 'حجوزات يوم' : 'Bookings on'} ${date}</strong><ul>${filtered.map(b=>`<li>${b.clientName} - ${b.hallName} (${b.price} ج.م)</li>`).join('')}</ul></div>`;
+    };
+
+    function renderReportsContent() {
+        updateEmployeeOrders();
+        const top = [...employees].sort((a,b)=>b.totalOrders-a.totalOrders)[0];
+        const bottom = [...employees].sort((a,b)=>a.totalOrders-b.totalOrders)[0];
+        const totalRev = bookings.reduce((s,b)=>s+b.price,0);
+        const html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📊 ${t('reports')}</h2><div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><div class="bg-emerald-100 p-3 rounded-xl"><p>${t('mostActive')}</p><p class="font-bold">${top?.name||'-'}</p><p>${top?.totalOrders||0} ${t('orders')}</p></div><div class="bg-amber-100 p-3 rounded-xl"><p>${t('leastActive')}</p><p class="font-bold">${bottom?.name||'-'}</p><p>${bottom?.totalOrders||0} ${t('orders')}</p></div><div class="bg-blue-100 p-3 rounded-xl"><p>${t('totalBookings')}</p><p class="font-bold text-2xl">${bookings.length}</p></div><div class="bg-purple-100 p-3 rounded-xl"><p>${t('totalRevenue')}</p><p class="font-bold text-2xl">${totalRev.toLocaleString()} ج.م</p></div></div><div class="flex gap-3"><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl">Excel</button><button onclick="exportToPDF()" class="bg-red-700 text-white px-4 py-2 rounded-xl">PDF</button></div></div>`;
+        document.getElementById('reportsTab').innerHTML = html;
+    }
+
+    function renderUsersContent() {
+        const html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">🔐 ${t('users')}</h2><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>${t('username')}</th><th>${t('role')}</th><th>${t('actions')}</th></tr></thead><tbody>${users.map(u=>`<tr><td class="p-2">${u.username}</td><td class="p-2"><span class="px-2 py-1 rounded-full text-xs ${u.role==='admin'?'bg-red-100':'bg-blue-100'}">${u.role}</span></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div><button onclick="addUser()" class="mt-3 bg-gray-700 text-white px-4 py-2 rounded-xl">+ ${t('add')}</button></div>`;
+        document.getElementById('usersTab').innerHTML = html;
+    }
+
+    function renderSettingsContent() {
+        const html = `
+            <div class="p-4"><h2 class="text-xl font-bold mb-4">⚙️ ${t('settings')}</h2>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-file-excel text-green-600 ml-2"></i>${t('importExcel')}</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mt-2">${t('importExcel')}</button></div>
+                <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-file-pdf text-red-600 ml-2"></i>${t('importPDF')}</h3><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full mt-2">${t('importPDF')}</button></div>
+                <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-calendar-times text-amber-600 ml-2"></i>${t('holidays')}</h3><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl w-full mt-2">${t('manageHolidays')}</button></div>
+                <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-language text-blue-600 ml-2"></i>${t('changeLanguage')}</h3><div class="flex gap-2 mt-2"><button onclick="setLanguage('ar')" class="bg-emerald-700 text-white px-4 py-2 rounded-xl flex-1">${t('arabic')}</button><button onclick="setLanguage('en')" class="bg-emerald-700 text-white px-4 py-2 rounded-xl flex-1">${t('english')}</button></div></div>
+            </div>
+            <div class="mt-4 bg-yellow-50 p-3 rounded-xl text-center"><button onclick="saveAllData()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-save ml-2"></i> ${t('saveAll')}</button></div></div>
         `;
         document.getElementById('settingsTab').innerHTML = html;
     }
 
-    // -------------------- بقية الدوال (يتم إعادة استخدامها من الكود السابق) --------------------
-    // نظراً للطول، سيتم إدراج الدوال المتبقية كاملة في الكود النهائي المرفق.
-    // هذا الكود مكتمل ويحتوي على جميع الأجزاء، وسيتم إرساله كاملاً.
-    
-    // -------------------- دوال العرض الأساسية --------------------
-    function renderAdminDashboard() { /* كامل من الكود السابق */ }
-    function renderCurrentTab() { /* كامل */ }
-    function renderBookingsContent() { /* كامل */ }
-    function renderEmployeesContent() { /* كامل */ }
-    function renderDistributionContent() { /* كامل */ }
-    function renderPayrollContent() { /* كامل */ }
-    function renderCalendarContent() { /* كامل */ }
-    function renderReportsContent() { /* كامل */ }
-    function renderUsersContent() { /* كامل */ }
-    function showAddBookingModal() { /* كامل */ }
-    function saveNewBooking() { /* كامل */ }
-    function deleteBooking(id) { /* كامل */ }
-    function showAddEmployeeModal() { /* كامل */ }
-    function saveNewEmployee() { /* كامل */ }
-    function showEditEmployeeModal(id) { /* كامل */ }
-    function saveEditEmployee(id) { /* كامل */ }
-    function deleteEmployee(id) { /* كامل */ }
-    function showManualAssignModal(bookingId) { /* كامل */ }
-    function saveManualAssign(bookingId) { /* كامل */ }
-    function showEditUserModal(username) { /* كامل */ }
-    function saveEditUser(oldUsername) { /* كامل */ }
-    function deleteUser(username) { /* كامل */ }
-    function addUser() { /* كامل */ }
-    function exportToExcel() { /* كامل */ }
-    function exportToPDF() { /* كامل */ }
-    function selectAllBookings() { /* كامل */ }
-    function toggleSelectAllBookings() { /* كامل */ }
-    function toggleBookingSelection(id, checked) { /* كامل */ }
-    function bulkDeleteBookings() { /* كامل */ }
-    function selectAllEmployees() { /* كامل */ }
-    function toggleSelectAllEmployees() { /* كامل */ }
-    function toggleEmployeeSelection(id, checked) { /* كامل */ }
-    function bulkDeleteEmployees() { /* كامل */ }
+    function renderCurrentTab() {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+        if(currentTab === 'dashboardTab') renderDashboardContent();
+        else if(currentTab === 'bookingsTab') renderBookingsContent();
+        else if(currentTab === 'employeesTab') renderEmployeesContent();
+        else if(currentTab === 'distributionTab') renderDistributionContent();
+        else if(currentTab === 'payrollTab') renderPayrollContent();
+        else if(currentTab === 'calendarTab') renderCalendarContent();
+        else if(currentTab === 'reportsTab') renderReportsContent();
+        else if(currentTab === 'usersTab') renderUsersContent();
+        else if(currentTab === 'settingsTab') renderSettingsContent();
+        const activeTab = document.getElementById(currentTab);
+        if(activeTab) activeTab.classList.remove('hidden');
+    }
+
+    // -------------------- دوال العمليات المساعدة --------------------
     function updateEmployeeOrders() { employees.forEach(e=>e.totalOrders = bookings.filter(b=>b.assignedEmployees?.includes(e.id)).length); }
-    function renderEmployeeDashboard() { /* كامل */ }
-    function showLogin() { /* كامل */ }
-    function doLogin() { /* كامل */ }
-    function logout() { /* كامل */ }
-    function renderApp() { /* كامل */ }
+    window.showAddBookingModal = function() {
+        const html = `<h3 class="text-xl font-bold mb-3">➕ ${t('add')} ${t('booking')}</h3><input id="clientName" placeholder="${t('client')}"><input id="phone" placeholder="${t('phone')}"><input id="hallName" placeholder="${t('hall')}"><input id="date" type="date"><select id="hallType"><option value="closed">${t('closed')}</option><option value="open">${t('open')}</option><option value="cafe">${t('cafe')}</option></select><input id="price" type="number" placeholder="${t('price')}" value="2500"><button onclick="saveNewBooking()" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-2">${t('save')}</button>`;
+        document.getElementById('modalContent').innerHTML = html;
+        document.getElementById('modal').classList.remove('hidden');
+    };
+    window.saveNewBooking = function() {
+        const newBooking = { id: Date.now().toString(), clientName: document.getElementById('clientName').value || (currentLang === 'ar' ? 'عميل جديد' : 'New Client'), phone: document.getElementById('phone').value || "", hallName: document.getElementById('hallName').value || (currentLang === 'ar' ? 'قاعة جديدة' : 'New Hall'), date: document.getElementById('date').value, hallType: document.getElementById('hallType').value, price: parseInt(document.getElementById('price').value) || 2500, assignedEmployees: [] };
+        if(!newBooking.date){ alert(currentLang === 'ar' ? "⚠️ أدخل التاريخ" : "Enter date"); return; }
+        bookings.push(newBooking); saveAllData(); closeModal(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); showMsg("✅ " + (currentLang === 'ar' ? 'تم إضافة الحجز' : 'Booking added'));
+    };
+    window.deleteBooking = function(id) { if(confirm(currentLang === 'ar' ? "حذف الحجز؟" : "Delete booking?")){ bookings = bookings.filter(b=>b.id!==id); selectedBookings.delete(id); saveAllData(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); showMsg("🗑️ " + (currentLang === 'ar' ? 'تم الحذف' : 'Deleted')); } };
+    window.showAddEmployeeModal = function() {
+        const html = `<h3 class="text-xl font-bold mb-3">➕ ${t('add')} ${t('employee')}</h3><input id="empName" placeholder="${t('name')}"><select id="empRole"><option value="مخرج">${t('director')}</option><option value="مصور">${t('photographer')}</option><option value="كرين">${t('crane')}</option></select><input id="empPhone" placeholder="${t('phone')}"><input id="empSalary" placeholder="${t('salaryPerOrder')}" value="200" type="number"><button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">${t('save')}</button>`;
+        document.getElementById('modalContent').innerHTML = html;
+        document.getElementById('modal').classList.remove('hidden');
+    };
+    window.saveNewEmployee = function() {
+        const name = document.getElementById('empName').value; if(!name){ alert(currentLang === 'ar' ? "⚠️ أدخل الاسم" : "Enter name"); return; }
+        const newEmp = { id:'emp'+Date.now(), name, role:document.getElementById('empRole').value, phone:document.getElementById('empPhone').value, salaryPerOrder:parseInt(document.getElementById('empSalary').value)||200, active:true, totalOrders:0 };
+        employees.push(newEmp); saveAllData(); closeModal(); renderEmployeesContent(); showMsg(`✅ ${currentLang === 'ar' ? 'تم إضافة' : 'Added'} ${name}`);
+    };
+    window.showEditEmployeeModal = function(id){
+        const e = employees.find(em=>em.id===id);
+        const html = `<h3 class="text-xl font-bold mb-3">✏️ ${t('edit')} ${t('employee')}</h3><input id="empName" value="${e.name}"><select id="empRole"><option ${e.role==='مخرج'?'selected':''}>${t('director')}</option><option ${e.role==='مصور'?'selected':''}>${t('photographer')}</option><option ${e.role==='كرين'?'selected':''}>${t('crane')}</option></select><input id="empPhone" value="${e.phone}"><input id="empSalary" value="${e.salaryPerOrder}" type="number"><div class="flex gap-2 my-2"><label><input type="checkbox" id="empActive" ${e.active?'checked':''}> ${t('active')}</label></div><button onclick="saveEditEmployee('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">${t('save')}</button>`;
+        document.getElementById('modalContent').innerHTML = html;
+        document.getElementById('modal').classList.remove('hidden');
+    };
+    window.saveEditEmployee = function(id){
+        const e = employees.find(em=>em.id===id);
+        if(e){
+            e.name = document.getElementById('empName').value;
+            e.role = document.getElementById('empRole').value;
+            e.phone = document.getElementById('empPhone').value;
+            e.salaryPerOrder = parseInt(document.getElementById('empSalary').value)||200;
+            e.active = document.getElementById('empActive').checked;
+            saveAllData(); closeModal(); autoDistribute(); renderEmployeesContent(); renderDistributionContent(); showMsg("✅ " + (currentLang === 'ar' ? 'تم التحديث' : 'Updated'));
+        }
+    };
+    window.deleteEmployee = function(id){
+        if(confirm(currentLang === 'ar' ? "حذف الموظف؟" : "Delete employee?")){
+            employees = employees.filter(e=>e.id!==id); selectedEmployees.delete(id); saveAllData(); autoDistribute(); renderEmployeesContent(); renderDistributionContent(); showMsg("🗑️ " + (currentLang === 'ar' ? 'تم الحذف' : 'Deleted'));
+        }
+    };
+    window.showManualAssignModal = function(bookingId) {
+        const booking = bookings.find(b=>b.id===bookingId);
+        const activeEmps = employees.filter(e=>e.active);
+        const current = booking.assignedEmployees||[];
+        let empHtml = '<div class="employee-checkbox-list">';
+        activeEmps.forEach(emp=>{ empHtml += `<label><input type="checkbox" value="${emp.id}" ${current.includes(emp.id)?'checked':''}> <strong>${emp.name}</strong> (${emp.role})</label>`; });
+        empHtml += '</div>';
+        const html = `<h3 class="text-xl font-bold mb-3">✏️ ${t('manualEdit')}</h3><p>${t('booking')}: ${booking.clientName} - ${booking.date}</p>${empHtml}<button onclick="saveManualAssign('${bookingId}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-2">${t('save')}</button>`;
+        document.getElementById('modalContent').innerHTML = html;
+        document.getElementById('modal').classList.remove('hidden');
+    };
+    window.saveManualAssign = function(bookingId) {
+        const booking = bookings.find(b=>b.id===bookingId);
+        const checkboxes = document.querySelectorAll('#modalContent input[type="checkbox"]');
+        const selected = [];
+        checkboxes.forEach(cb=>{ if(cb.checked) selected.push(cb.value); });
+        booking.assignedEmployees = selected;
+        saveAllData(); closeModal(); renderDistributionContent(); renderBookingsContent(); showMsg("✅ " + (currentLang === 'ar' ? 'تم تعديل التوزيع' : 'Distribution updated'));
+    };
+    window.showEditUserModal = function(username) {
+        const user = users.find(u=>u.username===username);
+        const html = `<h3 class="text-xl font-bold mb-3">✏️ ${t('edit')} ${t('user')}</h3><input id="editUsername" value="${user.username}" placeholder="${t('username')}"><input id="editPassword" value="${user.password}" placeholder="${t('password')}"><select id="editRole"><option value="admin" ${user.role==='admin'?'selected':''}>admin</option><option value="employee" ${user.role==='employee'?'selected':''}>employee</option></select><button onclick="saveEditUser('${username}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-3">${t('save')}</button>`;
+        document.getElementById('modalContent').innerHTML = html;
+        document.getElementById('modal').classList.remove('hidden');
+    };
+    window.saveEditUser = function(oldUsername) {
+        const user = users.find(u=>u.username===oldUsername);
+        if(!user) return;
+        const newUsername = document.getElementById('editUsername').value.trim();
+        const newPassword = document.getElementById('editPassword').value;
+        const newRole = document.getElementById('editRole').value;
+        if(newUsername !== oldUsername && users.some(u=>u.username===newUsername)) { alert(currentLang === 'ar' ? "⚠️ اسم المستخدم موجود" : "Username exists"); return; }
+        user.username = newUsername; user.password = newPassword; user.role = newRole;
+        saveAllData();
+        if(currentUser && currentUser.username === oldUsername) { currentUser.username = newUsername; sessionStorage.setItem('vpms_user', JSON.stringify(currentUser)); }
+        closeModal(); renderUsersContent(); showMsg("✅ " + (currentLang === 'ar' ? 'تم تحديث المستخدم' : 'User updated'));
+    };
+    window.deleteUser = function(username){ if(confirm(currentLang === 'ar' ? `حذف المستخدم "${username}"؟` : `Delete user "${username}"?`)){ users=users.filter(u=>u.username!==username); saveAllData(); renderUsersContent(); showMsg("🗑️ " + (currentLang === 'ar' ? 'تم الحذف' : 'Deleted')); } };
+    window.addUser = function(){ let un=prompt(currentLang === 'ar' ? "اسم المستخدم:" : "Username:"); let pw=prompt(currentLang === 'ar' ? "كلمة المرور:" : "Password:"); let role=prompt(currentLang === 'ar' ? "الدور (admin/employee):" : "Role (admin/employee):","employee"); if(un&&pw){ if(users.some(u=>u.username===un)){ alert(currentLang === 'ar' ? "⚠️ اسم المستخدم موجود" : "Username exists"); return; } users.push({username:un,password:pw,role:role||'employee'}); saveAllData(); renderUsersContent(); showMsg("✅ " + (currentLang === 'ar' ? 'تمت الإضافة' : 'Added')); } };
+    window.exportToExcel = function(){ const ws = XLSX.utils.json_to_sheet(bookings.map(b=>({ [t('client')]:b.clientName, [t('date')]:b.date, [t('hall')]:b.hallName, [t('price')]:b.price }))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Bookings"); XLSX.writeFile(wb,"Drmedia_Bookings.xlsx"); showMsg("✅ " + (currentLang === 'ar' ? 'تم التصدير' : 'Exported')); };
+    window.exportToPDF = function(){ const win = window.open(); win.document.write(`<html><head><title>Drmedia Report</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;}</style></head><body><h2>Drmedia ${t('reports')}</h2><p>${t('totalBookings')}: ${bookings.length}</p><table><thead><tr><th>${t('client')}</th><th>${t('date')}</th><th>${t('hall')}</th><th>${t('price')}</th></tr></thead><tbody>${bookings.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')}</tbody></table></body></html>`); win.print(); };
+
+    // -------------------- دوال التحديد المتعدد --------------------
+    window.toggleBookingSelection = function(id, checked) { if(checked) selectedBookings.add(id); else selectedBookings.delete(id); const allCheckbox = document.getElementById('selectAllBookingsCheckbox'); if(allCheckbox) allCheckbox.checked = selectedBookings.size === bookings.length && bookings.length > 0; };
+    window.selectAllBookings = function() { if(selectedBookings.size === bookings.length) selectedBookings.clear(); else bookings.forEach(b => selectedBookings.add(b.id)); renderBookingsContent(); };
+    window.toggleSelectAllBookings = function() { const selectAll = document.getElementById('selectAllBookingsCheckbox').checked; if(selectAll) bookings.forEach(b => selectedBookings.add(b.id)); else selectedBookings.clear(); renderBookingsContent(); };
+    window.bulkDeleteBookings = function() { if(selectedBookings.size === 0){ alert(currentLang === 'ar' ? "⚠️ لم تختر أي حجز" : "No bookings selected"); return; } if(confirm((currentLang === 'ar' ? `⚠️ حذف ${selectedBookings.size} حجز؟` : `Delete ${selectedBookings.size} bookings?`))){ bookings = bookings.filter(b => !selectedBookings.has(b.id)); selectedBookings.clear(); saveAllData(); autoDistribute(); renderBookingsContent(); renderDistributionContent(); showMsg(`✅ ${currentLang === 'ar' ? 'تم حذف الحجوزات المحددة' : 'Selected bookings deleted'}`); } };
+    window.toggleEmployeeSelection = function(id, checked) { if(checked) selectedEmployees.add(id); else selectedEmployees.delete(id); const allCheckbox = document.getElementById('selectAllEmployeesCheckbox'); if(allCheckbox) allCheckbox.checked = selectedEmployees.size === employees.length && employees.length > 0; };
+    window.selectAllEmployees = function() { if(selectedEmployees.size === employees.length) selectedEmployees.clear(); else employees.forEach(e => selectedEmployees.add(e.id)); renderEmployeesContent(); };
+    window.toggleSelectAllEmployees = function() { const selectAll = document.getElementById('selectAllEmployeesCheckbox').checked; if(selectAll) employees.forEach(e => selectedEmployees.add(e.id)); else selectedEmployees.clear(); renderEmployeesContent(); };
+    window.bulkDeleteEmployees = function() { if(selectedEmployees.size === 0){ alert(currentLang === 'ar' ? "⚠️ لم تختر أي موظف" : "No employees selected"); return; } if(confirm((currentLang === 'ar' ? `⚠️ حذف ${selectedEmployees.size} موظف؟` : `Delete ${selectedEmployees.size} employees?`))){ employees = employees.filter(e => !selectedEmployees.has(e.id)); selectedEmployees.clear(); saveAllData(); autoDistribute(); renderEmployeesContent(); renderDistributionContent(); showMsg(`✅ ${currentLang === 'ar' ? 'تم حذف الموظفين المحددين' : 'Selected employees deleted'}`); } };
+
+    // -------------------- واجهة المدير الرئيسية --------------------
+    function renderAdminDashboard() {
+        const html = `
+            <div class="p-4 max-w-7xl mx-auto">
+                <div class="flex justify-between items-center mb-4"><h1 class="text-2xl font-bold text-emerald-800"><i class="fas fa-chart-line ml-2"></i>Drmedia Pro - ${t('dashboard')}</h1><div><span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full ml-2">${currentUser?.username}</span><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">${t('logout')}</button></div></div>
+                <div class="flex flex-wrap gap-1 border-b" id="tabsContainer">
+                    <button data-tab="dashboardTab" class="tab-btn active">${t('dashboard')}</button>
+                    <button data-tab="bookingsTab" class="tab-btn">${t('bookings')}</button>
+                    <button data-tab="employeesTab" class="tab-btn">${t('employees')}</button>
+                    <button data-tab="distributionTab" class="tab-btn">${t('distribution')}</button>
+                    <button data-tab="payrollTab" class="tab-btn">${t('payroll')}</button>
+                    <button data-tab="calendarTab" class="tab-btn">${t('calendar')}</button>
+                    <button data-tab="reportsTab" class="tab-btn">${t('reports')}</button>
+                    <button data-tab="usersTab" class="tab-btn">${t('users')}</button>
+                    <button data-tab="settingsTab" class="tab-btn">${t('settings')}</button>
+                </div>
+                <div class="mt-4">
+                    <div id="dashboardTab" class="tab-content"></div>
+                    <div id="bookingsTab" class="tab-content hidden"></div>
+                    <div id="employeesTab" class="tab-content hidden"></div>
+                    <div id="distributionTab" class="tab-content hidden"></div>
+                    <div id="payrollTab" class="tab-content hidden"></div>
+                    <div id="calendarTab" class="tab-content hidden"></div>
+                    <div id="reportsTab" class="tab-content hidden"></div>
+                    <div id="usersTab" class="tab-content hidden"></div>
+                    <div id="settingsTab" class="tab-content hidden"></div>
+                </div>
+            </div>
+        `;
+        document.getElementById('app').innerHTML = html;
+        document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('#tabsContainer .tab-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentTab = this.dataset.tab;
+                renderCurrentTab();
+            });
+        });
+        renderDashboardContent();
+        renderBookingsContent();
+        renderEmployeesContent();
+        renderDistributionContent();
+        renderPayrollContent();
+        renderCalendarContent();
+        renderReportsContent();
+        renderUsersContent();
+        renderSettingsContent();
+        document.getElementById('dashboardTab').classList.remove('hidden');
+    }
+
+    function renderEmployeeDashboard() {
+        const emp = employees.find(e=>e.id===currentUser.employeeId);
+        if(!emp){ document.getElementById('app').innerHTML='<div class="p-8 text-center text-red-500">⚠️ '+(currentLang === 'ar' ? 'لم يتم ربط حسابك بموظف' : 'Account not linked to employee')+'</div>'; return; }
+        const myOrders = bookings.filter(b=>b.assignedEmployees?.includes(emp.id));
+        const total = myOrders.length;
+        const salary = total * emp.salaryPerOrder;
+        const html = `
+            <div class="p-4 max-w-4xl mx-auto"><div class="flex justify-between items-center mb-4"><h1 class="text-2xl font-bold text-emerald-800">Drmedia Pro</h1><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">${t('logout')}</button></div>
+            <div class="bg-emerald-700 text-white p-6 rounded-2xl mb-6"><h2 class="text-2xl font-bold">${t('welcome')} ${emp.name}</h2><p class="opacity-90">${emp.role}</p></div>
+            <div class="grid grid-cols-2 gap-4 mb-6"><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${total}</div><div>${t('ordersCount')}</div></div><div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${salary.toLocaleString()} ج.م</div><div>${t('totalDue')}</div></div></div>
+            <div class="bg-white rounded-xl shadow overflow-hidden"><div class="bg-gray-100 p-3 font-bold">📋 ${t('myOrders')}</div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>#</th><th>${t('date')}</th><th>${t('client')}</th><th>${t('hall')}</th></tr></thead><tbody>${myOrders.map((o,i)=>`<tr><td class="p-2">${i+1}</td><td class="p-2">${o.date}</td><td class="p-2">${o.clientName}</td><td class="p-2">${o.hallName}</td></tr>`).join('')||'<tr><td colspan="4" class="text-center">'+ (currentLang === 'ar' ? 'لا توجد أوردرات' : 'No orders') +'</td></tr>'}</tbody></table></div></div></div>
+        `;
+        document.getElementById('app').innerHTML = html;
+    }
+
+    // -------------------- تسجيل الدخول --------------------
+    function showLogin() {
+        const html = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">${currentLang === 'ar' ? 'نظام إدارة متقدم' : 'Advanced Management System'}</p><input type="text" id="loginUser" placeholder="${t('username')}" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="${t('password')}" class="w-full border p-3 rounded-xl mb-4"><div id="loginError" class="text-red-500 text-sm mb-2 hidden"></div><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl">${t('login')}</button></div></div>`;
+        document.getElementById('app').innerHTML = html;
+    }
+    function doLogin() {
+        const un = document.getElementById('loginUser').value;
+        const pw = document.getElementById('loginPass').value;
+        const user = users.find(u=>u.username===un && u.password===pw);
+        if(user){ currentUser = user; sessionStorage.setItem('vpms_user', JSON.stringify(user)); renderApp(); showMsg(`✅ ${t('welcome')} ${user.name || user.username}`); }
+        else { document.getElementById('loginError').innerText = currentLang === 'ar' ? 'بيانات غير صحيحة' : 'Invalid credentials'; document.getElementById('loginError').classList.remove('hidden'); }
+    }
+    function logout() { sessionStorage.removeItem('vpms_user'); currentUser = null; showLogin(); }
+    function renderApp() { if(!currentUser) showLogin(); else if(currentUser.role === 'employee') renderEmployeeDashboard(); else renderAdminDashboard(); }
     function closeModal() { document.getElementById('modal').classList.add('hidden'); }
 
-    // ربط الدوال العامة
-    window.closeModal = closeModal;
-    window.showManualAssignModal = showManualAssignModal;
-    window.saveManualAssign = saveManualAssign;
-    window.showAddBookingModal = showAddBookingModal;
-    window.saveNewBooking = saveNewBooking;
-    window.deleteBooking = deleteBooking;
-    window.showAddEmployeeModal = showAddEmployeeModal;
-    window.saveNewEmployee = saveNewEmployee;
-    window.showEditEmployeeModal = showEditEmployeeModal;
-    window.saveEditEmployee = saveEditEmployee;
-    window.deleteEmployee = deleteEmployee;
-    window.showEditUserModal = showEditUserModal;
-    window.saveEditUser = saveEditUser;
-    window.deleteUser = deleteUser;
-    window.addUser = addUser;
-    window.exportToExcel = exportToExcel;
-    window.exportToPDF = exportToPDF;
-    window.autoDistribute = autoDistribute;
-    window.selectAllBookings = selectAllBookings;
-    window.toggleSelectAllBookings = toggleSelectAllBookings;
-    window.toggleBookingSelection = toggleBookingSelection;
-    window.bulkDeleteBookings = bulkDeleteBookings;
-    window.selectAllEmployees = selectAllEmployees;
-    window.toggleSelectAllEmployees = toggleSelectAllEmployees;
-    window.toggleEmployeeSelection = toggleEmployeeSelection;
-    window.bulkDeleteEmployees = bulkDeleteEmployees;
-    window.saveAllData = saveAllData;
-    window.showImportExcelModal = showImportExcelModal;
-    window.importExcelData = importExcelData;
-    window.showImportPdfModal = showImportPdfModal;
-    window.importPdfData = importPdfData;
-    window.showHolidaysModal = showHolidaysModal;
-    window.addHoliday = addHoliday;
-    window.removeHoliday = removeHoliday;
-    window.setLanguage = setLanguage;
-
-    // بدء التطبيق
+    // -------------------- بدء التطبيق --------------------
     loadData();
     const saved = sessionStorage.getItem('vpms_user');
     if(saved) currentUser = JSON.parse(saved);
