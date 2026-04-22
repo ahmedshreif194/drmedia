@@ -1,169 +1,330 @@
-<div id="app"></div>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Drmedia Pro | النسخة المبسطة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <style>
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 8px 16px; border-radius: 40px; z-index: 1000; font-size: 14px; }
+        .save-indicator { position: fixed; top: 10px; right: 10px; background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; z-index: 1000; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="p-4"></div>
+<div id="toast" class="toast hidden"></div>
+<div id="saveIndicator" class="save-indicator hidden">💾 جاري الحفظ...</div>
 
 <script>
-let currentUser = null;
+    // -------------------- إعدادات Firebase --------------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
+        authDomain: "drmedia-vpms.firebaseapp.com",
+        databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
+        projectId: "drmedia-vpms",
+        storageBucket: "drmedia-vpms.firebasestorage.app",
+        messagingSenderId: "681162512380",
+        appId: "1:681162512380:web:ab2482f3234d8b59fc4479"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-// ================= DATA بسيطة =================
-let employees = [
-  {id:"e1", name:"Ahmed", role:"Photographer"},
-  {id:"e2", name:"Ali", role:"Director"}
-];
+    // -------------------- البيانات الأساسية --------------------
+    let bookings = [];
+    let employees = [];
+    let users = [];
+    let currentUser = null;
 
-let bookings = [
-  {id:"b1", client:"Mohamed", date:"2026-04-22", price:2000}
-];
+    // -------------------- دالة الحفظ الموحدة --------------------
+    function saveAllData() {
+        const indicator = document.getElementById('saveIndicator');
+        indicator.classList.remove('hidden');
+        
+        Promise.all([
+            db.ref('bookings').set(bookings),
+            db.ref('employees').set(employees),
+            db.ref('users').set(users)
+        ]).then(() => {
+            setTimeout(() => indicator.classList.add('hidden'), 500);
+            showMsg("✅ تم حفظ البيانات");
+        }).catch(err => {
+            indicator.classList.add('hidden');
+            showMsg("❌ خطأ: " + err.message);
+            console.error(err);
+        });
+    }
 
-// ================= LOGIN =================
-function loginPage(){
-document.getElementById("app").innerHTML = `
-<div class="h-screen flex items-center justify-center bg-gray-100">
-<div class="bg-white p-6 rounded-xl w-80 shadow">
+    function showMsg(msg) { 
+        let t = document.getElementById('toast'); 
+        t.innerText = msg; 
+        t.classList.remove('hidden'); 
+        setTimeout(()=>t.classList.add('hidden'), 2000); 
+    }
 
-<h2 class="text-xl font-bold mb-3">Drmedia Login</h2>
+    // -------------------- البيانات الافتراضية --------------------
+    function initDefaultData() {
+        if(employees.length === 0) {
+            employees = [
+                { id: 'emp1', name: 'أحمد علي', role: 'مخرج', salaryPerOrder: 300, active: true, totalOrders: 0 },
+                { id: 'emp2', name: 'محمود حسن', role: 'مصور', salaryPerOrder: 200, active: true, totalOrders: 0 },
+                { id: 'emp3', name: 'سامر خالد', role: 'مصور', salaryPerOrder: 200, active: true, totalOrders: 0 },
+                { id: 'emp4', name: 'طارق رشاد', role: 'كرين', salaryPerOrder: 250, active: true, totalOrders: 0 }
+            ];
+        }
+        if(users.length === 0) {
+            users = [
+                { username: 'admin', password: 'admin123', role: 'admin', name: 'مدير النظام' }
+            ];
+        }
+        if(bookings.length === 0) {
+            const fd = (d) => { let x = new Date(); x.setDate(x.getDate()+d); return x.toISOString().slice(0,10); };
+            bookings = [
+                { id: 'b1', clientName: 'محمد عبدالله', hallName: 'قاعة الأندلس', date: fd(5), hallType: 'closed', price: 5000, assignedEmployees: [] },
+                { id: 'b2', clientName: 'سارة خالد', hallName: 'قاعة البحر', date: fd(7), hallType: 'open', price: 4500, assignedEmployees: [] }
+            ];
+        }
+        saveAllData();
+    }
 
-<input id="u" class="border p-2 w-full mb-2" placeholder="User">
-<input id="p" type="password" class="border p-2 w-full mb-3" placeholder="Pass">
+    // -------------------- تحميل البيانات --------------------
+    function loadData() {
+        db.ref('bookings').on('value', (snapshot) => {
+            if(snapshot.val()) bookings = snapshot.val();
+            renderApp();
+        });
+        db.ref('employees').on('value', (snapshot) => {
+            if(snapshot.val()) employees = snapshot.val();
+            renderApp();
+        });
+        db.ref('users').on('value', (snapshot) => {
+            if(snapshot.val()) users = snapshot.val();
+            if(!currentUser) showLogin();
+            else renderApp();
+        });
+    }
 
-<button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">
-Login
-</button>
+    // -------------------- إدارة الحجوزات --------------------
+    function addBooking() {
+        const clientName = prompt("اسم العميل:");
+        if(!clientName) return;
+        const hallName = prompt("اسم القاعة:");
+        const price = parseInt(prompt("السعر:", "2500")) || 2500;
+        const newBooking = {
+            id: Date.now().toString(),
+            clientName: clientName,
+            hallName: hallName || "قاعة جديدة",
+            date: new Date().toISOString().slice(0,10),
+            hallType: 'closed',
+            price: price,
+            assignedEmployees: []
+        };
+        bookings.push(newBooking);
+        saveAllData();
+        renderBookingsList();
+        showMsg("✅ تم إضافة الحجز");
+    }
 
-</div>
-</div>`;
-}
+    function deleteBooking(id) {
+        if(confirm("حذف الحجز؟")){
+            bookings = bookings.filter(b => b.id !== id);
+            saveAllData();
+            renderBookingsList();
+            showMsg("🗑️ تم الحذف");
+        }
+    }
 
-function login(){
-currentUser = {name:"Admin", role:"admin"};
-renderDashboard();
-}
+    function renderBookingsList() {
+        const container = document.getElementById('bookingsList');
+        if(!container) return;
+        if(bookings.length === 0) {
+            container.innerHTML = '<div class="text-center p-4 text-gray-500">لا توجد حجوزات</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="w-full bg-white rounded-xl border">
+                <thead class="bg-gray-100"><tr><th class="p-2">العميل</th><th class="p-2">التاريخ</th><th class="p-2">القاعة</th><th class="p-2">السعر</th><th class="p-2"></th></tr></thead>
+                <tbody>
+                    ${bookings.map(b => `
+                        <tr class="border-b">
+                            <td class="p-2">${b.clientName}</td>
+                            <td class="p-2">${b.date}</td>
+                            <td class="p-2">${b.hallName}</td>
+                            <td class="p-2">${b.price} ج.م</td>
+                            <td class="p-2"><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
 
-// ================= DASHBOARD LAYOUT =================
-function layout(content){
+    // -------------------- إدارة الموظفين --------------------
+    function addEmployee() {
+        const name = prompt("اسم الموظف:");
+        if(!name) return;
+        const role = prompt("الوظيفة (مخرج/مصور/كرين):", "مصور");
+        const salary = parseInt(prompt("المرتب لكل أوردر:", "200")) || 200;
+        const newEmp = {
+            id: 'emp' + Date.now(),
+            name: name,
+            role: role,
+            salaryPerOrder: salary,
+            active: true,
+            totalOrders: 0
+        };
+        employees.push(newEmp);
+        saveAllData();
+        renderEmployeesList();
+        showMsg(`✅ تم إضافة ${name}`);
+    }
 
-document.getElementById("app").innerHTML = `
-<div class="flex h-screen">
+    function deleteEmployee(id) {
+        if(confirm("حذف الموظف؟")){
+            employees = employees.filter(e => e.id !== id);
+            saveAllData();
+            renderEmployeesList();
+            showMsg("🗑️ تم الحذف");
+        }
+    }
 
-<!-- SIDEBAR -->
-<div class="w-64 bg-gray-900 text-white p-4">
+    function renderEmployeesList() {
+        const container = document.getElementById('employeesList');
+        if(!container) return;
+        if(employees.length === 0) {
+            container.innerHTML = '<div class="text-center p-4 text-gray-500">لا توجد موظفين</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="w-full bg-white rounded-xl border">
+                <thead class="bg-gray-100"><tr><th class="p-2">الاسم</th><th class="p-2">الوظيفة</th><th class="p-2">المرتب/أوردر</th><th class="p-2"></th></tr></thead>
+                <tbody>
+                    ${employees.map(e => `
+                        <tr class="border-b">
+                            <td class="p-2">${e.name}</td>
+                            <td class="p-2">${e.role}</td>
+                            <td class="p-2">${e.salaryPerOrder} ج.م</td>
+                            <td class="p-2"><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
 
-<h1 class="text-lg font-bold mb-4">Drmedia Pro</h1>
+    // -------------------- عرض الإحصائيات --------------------
+    function renderStats() {
+        const container = document.getElementById('stats');
+        if(!container) return;
+        const totalBookings = bookings.length;
+        const totalRevenue = bookings.reduce((s,b)=>s+b.price,0);
+        const totalEmployees = employees.filter(e=>e.active).length;
+        container.innerHTML = `
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${totalBookings}</div><div>الحجوزات</div></div>
+                <div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${totalRevenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div>
+                <div class="bg-white p-4 rounded-xl shadow text-center"><div class="text-3xl font-bold text-emerald-700">${totalEmployees}</div><div>الموظفين</div></div>
+            </div>
+        `;
+    }
 
-<button onclick="renderDashboard()" class="block w-full text-right p-2 hover:bg-gray-700">📊 Dashboard</button>
-<button onclick="renderEmployees()" class="block w-full text-right p-2 hover:bg-gray-700">👥 Employees</button>
-<button onclick="renderBookings()" class="block w-full text-right p-2 hover:bg-gray-700">📅 Bookings</button>
-<button onclick="renderDistribution()" class="block w-full text-right p-2 hover:bg-gray-700">⚙️ Distribution</button>
-<button onclick="renderPayroll()" class="block w-full text-right p-2 hover:bg-gray-700">💰 Payroll</button>
+    // -------------------- واجهة المستخدم الرئيسية --------------------
+    function renderMainDashboard() {
+        const html = `
+            <div class="max-w-6xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-2xl font-bold text-emerald-800">Drmedia Pro</h1>
+                    <div><span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">${currentUser?.username}</span>
+                    <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mr-2">خروج</button></div>
+                </div>
+                
+                <div id="stats" class="mb-6"></div>
+                
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-2xl shadow p-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-xl font-bold">📅 الحجوزات (${bookings.length})</h2>
+                            <button onclick="addBooking()" class="bg-emerald-700 text-white px-3 py-1 rounded-xl text-sm">+ حجز</button>
+                        </div>
+                        <div id="bookingsList"></div>
+                    </div>
+                    
+                    <div class="bg-white rounded-2xl shadow p-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-xl font-bold">👥 الموظفين (${employees.length})</h2>
+                            <button onclick="addEmployee()" class="bg-blue-700 text-white px-3 py-1 rounded-xl text-sm">+ موظف</button>
+                        </div>
+                        <div id="employeesList"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 text-center text-gray-400 text-sm">
+                    <button onclick="saveAllData()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl">💾 حفظ جميع البيانات يدوياً</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('app').innerHTML = html;
+        
+        renderStats();
+        renderBookingsList();
+        renderEmployeesList();
+    }
 
-<hr class="my-3">
+    // -------------------- تسجيل الدخول --------------------
+    function showLogin() {
+        const html = `
+            <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700">
+                <div class="bg-white p-8 rounded-2xl w-96 text-center">
+                    <i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i>
+                    <h1 class="text-2xl font-bold">Drmedia Pro</h1>
+                    <p class="text-gray-500 mb-6">نظام إدارة متقدم</p>
+                    <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3">
+                    <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4">
+                    <div id="loginError" class="text-red-500 text-sm mb-2 hidden"></div>
+                    <button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl">دخول</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('app').innerHTML = html;
+    }
 
-<button onclick="logout()" class="block w-full text-right p-2 bg-red-600 rounded">
-🚪 Logout
-</button>
+    function doLogin() {
+        const un = document.getElementById('loginUser').value;
+        const pw = document.getElementById('loginPass').value;
+        const user = users.find(u => u.username === un && u.password === pw);
+        if(user){
+            currentUser = user;
+            sessionStorage.setItem('vpms_user', JSON.stringify(user));
+            renderApp();
+            showMsg(`مرحباً ${user.name || user.username}`);
+        } else {
+            document.getElementById('loginError').innerText = 'بيانات غير صحيحة';
+            document.getElementById('loginError').classList.remove('hidden');
+        }
+    }
 
-</div>
+    function logout() {
+        sessionStorage.removeItem('vpms_user');
+        currentUser = null;
+        showLogin();
+    }
 
-<!-- CONTENT -->
-<div class="flex-1 p-5 bg-gray-100 overflow-auto">
-${content}
-</div>
+    function renderApp() {
+        if(!currentUser) showLogin();
+        else renderMainDashboard();
+    }
 
-</div>
-`;
-}
-
-// ================= DASHBOARD =================
-function renderDashboard(){
-
-layout(`
-<h1 class="text-2xl font-bold mb-4">📊 Dashboard</h1>
-
-<div class="grid grid-cols-3 gap-4">
-
-<div class="bg-white p-4 rounded shadow">
-<h2>Total Employees</h2>
-<p class="text-2xl font-bold">${employees.length}</p>
-</div>
-
-<div class="bg-white p-4 rounded shadow">
-<h2>Total Bookings</h2>
-<p class="text-2xl font-bold">${bookings.length}</p>
-</div>
-
-<div class="bg-white p-4 rounded shadow">
-<h2>Revenue</h2>
-<p class="text-2xl font-bold">${bookings.reduce((a,b)=>a+b.price,0)}</p>
-</div>
-
-</div>
-`);
-}
-
-// ================= EMPLOYEES =================
-function renderEmployees(){
-
-layout(`
-<h1 class="text-2xl font-bold mb-4">👥 Employees</h1>
-
-<div class="bg-white p-4 rounded shadow">
-
-${employees.map(e=>`
-<div class="border p-2 mb-2 rounded">
-<b>${e.name}</b> - ${e.role}
-</div>
-`).join("")}
-
-</div>
-`);
-}
-
-// ================= BOOKINGS =================
-function renderBookings(){
-
-layout(`
-<h1 class="text-2xl font-bold mb-4">📅 Bookings</h1>
-
-<div class="bg-white p-4 rounded shadow">
-
-${bookings.map(b=>`
-<div class="border p-2 mb-2 rounded">
-<b>${b.client}</b> - ${b.date} - ${b.price} EGP
-</div>
-`).join("")}
-
-</div>
-`);
-}
-
-// ================= DISTRIBUTION =================
-function renderDistribution(){
-
-layout(`
-<h1 class="text-2xl font-bold mb-4">⚙️ Distribution</h1>
-
-<div class="bg-white p-4 rounded shadow">
-<p>Auto Distribution Engine (coming upgrade)</p>
-</div>
-`);
-}
-
-// ================= PAYROLL =================
-function renderPayroll(){
-
-layout(`
-<h1 class="text-2xl font-bold mb-4">💰 Payroll</h1>
-
-<div class="bg-white p-4 rounded shadow">
-<p>Total Payroll System</p>
-</div>
-`);
-}
-
-// ================= LOGOUT =================
-function logout(){
-currentUser = null;
-loginPage();
-}
-
-// ================= START =================
-loginPage();
+    // -------------------- بدء التطبيق --------------------
+    loadData();
+    const saved = sessionStorage.getItem('vpms_user');
+    if(saved) currentUser = JSON.parse(saved);
+    setTimeout(() => {
+        if(bookings.length === 0) initDefaultData();
+        renderApp();
+    }, 500);
 </script>
+</body>
+</html>
