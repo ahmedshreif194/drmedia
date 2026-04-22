@@ -2,10 +2,11 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>Drmedia Pro FIXED</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DrMedia Pro V2</title>
+
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"></script>
 
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -17,9 +18,10 @@
 <div id="app"></div>
 
 <script>
+
 // ================= FIREBASE =================
 const firebaseConfig = {
-    apiKey: "PUT-YOUR-REAL-KEY",
+    apiKey: "PUT-YOUR-KEY-HERE",
     authDomain: "drmedia-vpms.firebaseapp.com",
     databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
     projectId: "drmedia-vpms"
@@ -32,14 +34,15 @@ const db = firebase.database();
 let bookings = [];
 let employees = [];
 let users = [];
+let notifications = [];
 let currentUser = null;
 
 // ================= SAFE INIT =================
-function initDefaultData() {
+function initDefaults(){
 
     if(users.length === 0){
         users = [
-            {username:"admin", password:"admin123", role:"admin", name:"Admin"}
+            {username:"admin", password:"admin123", role:"admin"}
         ];
     }
 
@@ -58,108 +61,162 @@ function initDefaultData() {
     }
 }
 
-// ================= LOAD =================
-function loadData(){
-    db.ref('users').on('value',s=>{ users = s.val() || []; render(); });
-    db.ref('employees').on('value',s=>{ employees = s.val() || []; render(); });
-    db.ref('bookings').on('value',s=>{ bookings = s.val() || []; render(); });
+// ================= NOTIFICATIONS =================
+function sendNotification(userId,title,msg){
+    notifications.push({
+        id:Date.now(),
+        userId,
+        title,
+        msg,
+        read:false,
+        time:new Date().toLocaleString()
+    });
+}
+
+function notifyEmployees(booking){
+    (booking.assignedEmployees||[]).forEach(id=>{
+        sendNotification(id,"📅 أوردر جديد",
+        `عندك شغل يوم ${booking.date} في ${booking.hallName}`);
+    });
 }
 
 // ================= SAVE =================
 function save(){
-    db.ref('users').set(users);
-    db.ref('employees').set(employees);
-    db.ref('bookings').set(bookings);
+    db.ref("bookings").set(bookings);
+    db.ref("employees").set(employees);
+    db.ref("users").set(users);
+}
+
+// ================= LOAD =================
+function load(){
+    db.ref("bookings").on("value",s=>{ bookings=s.val()||[]; render(); });
+    db.ref("employees").on("value",s=>{ employees=s.val()||[]; render(); });
+    db.ref("users").on("value",s=>{ users=s.val()||[]; render(); });
 }
 
 // ================= LOGIN =================
 function login(){
-    const u = document.getElementById("u").value;
-    const p = document.getElementById("p").value;
+    const u=document.getElementById("u").value;
+    const p=document.getElementById("p").value;
 
     const user = users.find(x=>x.username===u && x.password===p);
 
     if(user){
-        currentUser = user;
+        currentUser=user;
         render();
-    } else {
-        alert("خطأ في البيانات");
+    }else{
+        alert("بيانات غلط");
     }
 }
 
-// ================= UI =================
-function render(){
-
-    if(!currentUser){
-        document.getElementById("app").innerHTML = `
-        <div class="h-screen flex items-center justify-center">
-            <div class="bg-white p-6 rounded-xl w-80">
-                <h2 class="text-xl mb-3">DrMedia Login</h2>
-                <input id="u" class="border p-2 w-full mb-2" placeholder="username">
-                <input id="p" type="password" class="border p-2 w-full mb-2" placeholder="password">
-                <button onclick="login()" class="bg-green-600 text-white w-full p-2">Login</button>
-            </div>
-        </div>`;
-        return;
-    }
-
-    document.getElementById("app").innerHTML = `
-    <div class="p-4">
-        <h1 class="text-2xl mb-3">DrMedia Dashboard</h1>
-
-        <button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">Logout</button>
-
-        <div class="grid grid-cols-3 gap-3 mt-4">
-
-            <div class="bg-white p-3 rounded">
-                <h3>Bookings</h3>
-                <p>${bookings.length}</p>
-            </div>
-
-            <div class="bg-white p-3 rounded">
-                <h3>Employees</h3>
-                <p>${employees.length}</p>
-            </div>
-
-            <div class="bg-white p-3 rounded">
-                <h3>Users</h3>
-                <p>${users.length}</p>
-            </div>
-
-        </div>
-
-        <div class="mt-4 bg-white p-3 rounded">
-            <h2>Bookings</h2>
-
-            <table class="w-full mt-2 border">
-                <tr>
-                    <th>Client</th>
-                    <th>Date</th>
-                    <th>Price</th>
-                </tr>
-
-                ${bookings.map(b=>`
-                    <tr>
-                        <td>${b.clientName}</td>
-                        <td>${b.date}</td>
-                        <td>${b.price}</td>
-                    </tr>
-                `).join("")}
-            </table>
-
-        </div>
-    </div>`;
-}
-
-// ================= LOGOUT =================
 function logout(){
-    currentUser = null;
+    currentUser=null;
     render();
 }
 
+// ================= AUTO DISTRIBUTE =================
+function autoDistribute(){
+
+    bookings.forEach(b=>b.assignedEmployees=[]);
+
+    let dirs = employees.filter(e=>e.role==="مخرج" && e.active);
+    let photos = employees.filter(e=>e.role==="مصور" && e.active);
+    let cranes = employees.filter(e=>e.role==="كرين" && e.active);
+
+    bookings.forEach(b=>{
+
+        let assigned = [];
+
+        if(b.hallType==="cafe"){
+            if(photos[0]) assigned.push(photos[0].id);
+        }else{
+            if(dirs[0]) assigned.push(dirs[0].id);
+            if(photos[0]) assigned.push(photos[0].id);
+            if(photos[1]) assigned.push(photos[1].id);
+            if(cranes[0]) assigned.push(cranes[0].id);
+        }
+
+        b.assignedEmployees = assigned;
+        notifyEmployees(b);
+    });
+
+    save();
+    alert("تم التوزيع");
+}
+
+// ================= RENDER =================
+function render(){
+
+if(!currentUser){
+document.getElementById("app").innerHTML=`
+<div class="h-screen flex items-center justify-center">
+<div class="bg-white p-6 rounded w-80">
+<h2>DrMedia Login</h2>
+<input id="u" class="border p-2 w-full mb-2" placeholder="user">
+<input id="p" type="password" class="border p-2 w-full mb-2" placeholder="pass">
+<button onclick="login()" class="bg-green-600 text-white w-full p-2">Login</button>
+</div>
+</div>`;
+return;
+}
+
+document.getElementById("app").innerHTML=`
+<div class="p-4">
+
+<div class="flex justify-between">
+<h1 class="text-xl">DrMedia V2</h1>
+<button onclick="logout()" class="bg-red-600 text-white px-3 py-1">Logout</button>
+</div>
+
+<div class="grid grid-cols-3 gap-3 mt-4">
+
+<div class="bg-white p-3 rounded">
+Bookings<br>${bookings.length}
+</div>
+
+<div class="bg-white p-3 rounded">
+Employees<br>${employees.length}
+</div>
+
+<div class="bg-white p-3 rounded">
+Notifications<br>${notifications.length}
+</div>
+
+</div>
+
+<button onclick="autoDistribute()" class="bg-purple-700 text-white px-4 py-2 mt-4 rounded">
+Auto Distribute
+</button>
+
+<div class="bg-white p-3 mt-4 rounded">
+
+<h3>Bookings</h3>
+
+<table class="w-full mt-2 border">
+<tr>
+<th>Client</th>
+<th>Date</th>
+<th>Employees</th>
+</tr>
+
+${bookings.map(b=>`
+<tr>
+<td>${b.clientName}</td>
+<td>${b.date}</td>
+<td>${(b.assignedEmployees||[]).join(",")}</td>
+</tr>
+`).join("")}
+
+</table>
+
+</div>
+
+</div>`;
+}
+
 // ================= START =================
-initDefaultData();
-loadData();
+initDefaults();
+load();
 setTimeout(render,500);
 
 </script>
