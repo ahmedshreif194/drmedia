@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dr Media ERP SaaS v9 Stable FIX | Ahmed Shreif</title>
+<title>Dr Media ERP SaaS v10 Stable FIX | Ahmed Shreif</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -20,16 +20,19 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
 .hidden{display:none}
 .badge{padding:3px 8px;border-radius:999px;background:#1f2937;font-size:12px}
+.error{background:#7f1d1d;color:#fff;padding:10px;border-radius:10px;margin-top:10px}
 </style>
 </head>
 <body>
 
 <header>
-<h3>Dr Media ERP v9 Stable FIX</h3>
+<h3>Dr Media ERP v10 Enterprise FIX</h3>
 <div class="badge">Built by Ahmed Shreif</div>
 </header>
 
 <div class="container">
+
+<div id="errorBox" class="error hidden"></div>
 
 <!-- LOGIN -->
 <div id="loginBox" class="card">
@@ -78,17 +81,34 @@ button{padding:10px;border-radius:10px;cursor:pointer}
 </div>
 
 <script>
-const firebaseConfig={
+
+// FIREBASE SAFE INIT (FIX API KEY ERROR HANDLING)
+const firebaseConfig = {
 apiKey:"AIzaSyApb4Nl_ktkVCkuz7DsT9uhmQ",
 authDomain:"drmedia-vpms.firebaseapp.com",
 databaseURL:"https://drmedia-vpms-default-rtdb.firebaseio.com",
 projectId:"drmedia-vpms"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db=firebase.database();
-const auth=firebase.auth();
+let app, db, auth;
+let firebaseReady = true;
 
+try {
+app = firebase.initializeApp(firebaseConfig);
+db = firebase.database();
+auth = firebase.auth();
+} catch (e) {
+firebaseReady = false;
+showError("Firebase Init Failed: " + e.message);
+}
+
+function showError(msg){
+const box=document.getElementById("errorBox");
+box.classList.remove("hidden");
+box.innerText=msg;
+}
+
+// DATA
 let orders=[];
 let companies=[];
 let notifications=[];
@@ -97,19 +117,22 @@ let currentCompany=null;
 
 function el(id){return document.getElementById(id);}
 
-// LOGIN FIXED
+// LOGIN FIXED + ERROR HANDLING
 function login(){
+if(!firebaseReady) return showError("Firebase not ready - check API KEY");
 const email=el("email").value;
 const pass=el("pass").value;
+
 auth.signInWithEmailAndPassword(email,pass)
-.catch(e=>alert(e.message));
+.catch(e=>showError(e.message));
 }
 
 function register(){
+if(!firebaseReady) return showError("Firebase not ready");
 const email=el("email").value;
 const pass=el("pass").value;
 auth.createUserWithEmailAndPassword(email,pass)
-.catch(e=>alert(e.message));
+.catch(e=>showError(e.message));
 }
 
 function switchCompany(){
@@ -118,7 +141,7 @@ render();
 }
 
 function addOrder(){
-if(!currentCompany) return alert("اختار شركة");
+if(!currentCompany) return showError("Select company first");
 orders.push({
 id:Date.now(),
 client:el("client").value||"",
@@ -127,11 +150,13 @@ price:+el("price").value||0,
 hall:el("hall").value,
 companyId:currentCompany
 });
-db.ref("orders").set(orders);
+if(db) db.ref("orders").set(orders);
 render();
 }
 
+// LOAD SAFE
 function load(){
+if(!db) return;
 
 db.ref("companies").on("value",s=>{
 companies=[];
@@ -140,11 +165,9 @@ if(companies.length===0){
 companies=[{id:"c1",name:"Dr Media Production"}];
 db.ref("companies").set(companies);
 }
-setTimeout(()=>{
-if(!currentCompany){currentCompany=companies[0].id;}
+currentCompany=companies[0].id;
 updateCompanySelect();
 render();
-},200);
 });
 
 db.ref("orders").on("value",s=>{
@@ -164,9 +187,7 @@ function updateCompanySelect(){
 const sel=el("companySelect");
 if(!sel) return;
 sel.innerHTML="";
-companies.forEach(c=>{
-sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`;
-});
+companies.forEach(c=>sel.innerHTML+=`<option value="${c.id}">${c.name}</option>`);
 sel.value=currentCompany;
 }
 
@@ -186,12 +207,9 @@ el("aiScore").innerText=Math.min(100,filtered.length*10)+"%";
 el("notifBox").innerHTML=notifications.map(n=>`<div class='card'>${n.msg||"update"}</div>`).join("");
 }
 
-// AUTH SAFE FIX
+// AUTH SAFE
 auth.onAuthStateChanged(u=>{
-if(u){
-currentUser=u;
-load();
-}
+if(u){currentUser=u;load();}
 });
 
 </script>
