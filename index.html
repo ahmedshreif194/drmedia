@@ -1,215 +1,154 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<title>Drmedia Pro - Production</title>
+// ================ ملف واحد كامل: app.js ================
+// يتطلب تثبيت: npm install express mongoose cors jsonwebtoken dotenv
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 
-<style>
-body{font-family:Arial;background:#f4f6f8;margin:0}
-.hidden{display:none}
-#app{min-height:100vh}
-.tab-btn{padding:10px;cursor:pointer}
-.tab-btn.active{background:#10b981;color:white;border-radius:10px}
-table{width:100%;border-collapse:collapse;background:white}
-th,td{padding:8px;border-bottom:1px solid #eee}
-.dashboard-card{background:white;padding:15px;border-radius:12px}
-.stat-number{font-size:20px;font-weight:bold}
-button{cursor:pointer}
-</style>
+// ======================== إعدادات السيرفر ========================
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-</head>
+// ======================== الاتصال بقاعدة البيانات ========================
+const connectDB = async () => {
+    try {
+        await mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/drmedia");
+        console.log("MongoDB Connected");
+    } catch (err) {
+        console.error("DB connection error:", err);
+        process.exit(1);
+    }
+};
+connectDB();
 
-<body>
+// ======================== النماذج (Models) ========================
+// نموذج الشركة
+const companySchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    plan: { type: String, default: "free" },
+    createdAt: { type: Date, default: Date.now }
+});
+const Company = mongoose.model("Company", companySchema);
 
-<div id="app"></div>
+// نموذج المستخدم
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    role: { type: String, default: "employee" },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" }
+});
+const User = mongoose.model("User", userSchema);
 
-<div id="modal" class="hidden" style="position:fixed;inset:0;background:#00000088">
-<div id="modalContent" style="background:white;width:420px;margin:8% auto;padding:20px;border-radius:12px"></div>
-</div>
+// نموذج الحجز
+const bookingSchema = new mongoose.Schema({
+    title: String,
+    date: Date,
+    hallId: { type: mongoose.Schema.Types.ObjectId, ref: "Hall" },
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }
+});
+const Booking = mongoose.model("Booking", bookingSchema);
 
-<script>
+// نموذج الموظف
+const employeeSchema = new mongoose.Schema({
+    name: String,
+    email: String,
+    phone: String,
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }
+});
+const Employee = mongoose.model("Employee", employeeSchema);
 
-// ================== DATA ==================
-let bookings=[], employees=[], halls=[], users=[];
-let currentUser=null;
-let currentTab="dashboardTab";
+// نموذج القاعة
+const hallSchema = new mongoose.Schema({
+    name: String,
+    capacity: Number,
+    price: Number,
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true }
+});
+const Hall = mongoose.model("Hall", hallSchema);
 
-// ================== STORAGE ==================
-function saveAll(){
-localStorage.setItem("bookings",JSON.stringify(bookings));
-localStorage.setItem("employees",JSON.stringify(employees));
-localStorage.setItem("halls",JSON.stringify(halls));
-localStorage.setItem("users",JSON.stringify(users));
-}
+// ======================== ميدلوير المصادقة (JWT) ========================
+const auth = (req, res, next) => {
+    const token = req.header("Authorization");
+    if (!token) return res.status(401).json({ msg: "No token, authorization denied" });
 
-function loadAll(){
-bookings=JSON.parse(localStorage.getItem("bookings")||"[]");
-employees=JSON.parse(localStorage.getItem("employees")||"[]");
-halls=JSON.parse(localStorage.getItem("halls")||"[]");
-users=JSON.parse(localStorage.getItem("users")||"[]");
-}
+    try {
+        const decoded = jwt.verify(token.replace("Bearer ", ""), process.env.JWT_SECRET || "SECRET_KEY");
+        req.user = decoded;
+        next();
+    } catch (e) {
+        res.status(401).json({ msg: "Invalid token" });
+    }
+};
 
-// ================== CORE ==================
-function showMsg(m){alert(m);}
-function closeModal(){document.getElementById("modal").classList.add("hidden");}
+// ======================== المسارات (Routes) ========================
+// 1) مسارات المصادقة
+app.post("/api/auth/login", async (req, res) => {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username, password });
+    if (!user) return res.status(400).json({ msg: "Invalid credentials" });
 
-// ================== DASHBOARD ==================
-function renderDashboard(){
-let rev = bookings.reduce((s,b)=>s+(b.price||0),0);
-
-document.getElementById("dashboardTab").innerHTML = `
-<div class="dashboard-card">
-<h2>📊 Dashboard</h2>
-<p>الحجوزات: ${bookings.length}</p>
-<p>الإيرادات: ${rev}</p>
-<p>الموظفين: ${employees.length}</p>
-</div>`;
-}
-
-// ================== BOOKINGS ==================
-function renderBookings(){
-
-let html=`<div class="p-4">
-<h2>📅 الحجوزات</h2>
-<button onclick="addBooking()">+ إضافة</button>
-
-<table>
-<tr><th>العميل</th><th>التاريخ</th><th>السعر</th><th></th></tr>
-`;
-
-bookings.forEach(b=>{
-html+=`
-<tr>
-<td>${b.clientName}</td>
-<td>${b.date}</td>
-<td>${b.price}</td>
-<td>
-<button onclick="editBooking('${b.id}')">✏️</button>
-<button onclick="delBooking('${b.id}')">🗑️</button>
-</td>
-</tr>`;
+    const token = jwt.sign(
+        { id: user._id, role: user.role, companyId: user.companyId },
+        process.env.JWT_SECRET || "SECRET_KEY"
+    );
+    res.json({ token, user: { id: user._id, username, role: user.role, companyId: user.companyId } });
 });
 
-html+=`</table></div>`;
+app.post("/api/auth/register", async (req, res) => {
+    const { username, password, role, companyId, employeeId } = req.body;
+    const existing = await User.findOne({ username });
+    if (existing) return res.status(400).json({ msg: "Username exists" });
 
-document.getElementById("bookingsTab").innerHTML=html;
-}
-
-function addBooking(){
-document.getElementById("modalContent").innerHTML=`
-<h3>حجز جديد</h3>
-<input id="cname" placeholder="اسم العميل"><br><br>
-<input id="date" type="date"><br><br>
-<input id="price" placeholder="السعر"><br><br>
-<button onclick="saveBooking()">حفظ</button>
-`;
-document.getElementById("modal").classList.remove("hidden");
-}
-
-function saveBooking(){
-bookings.push({
-id:Date.now().toString(),
-clientName:document.getElementById("cname").value,
-date:document.getElementById("date").value,
-price:+document.getElementById("price").value
-});
-saveAll();
-closeModal();
-renderBookings();
-renderDashboard();
-}
-
-function delBooking(id){
-bookings=bookings.filter(b=>b.id!==id);
-saveAll();
-renderBookings();
-renderDashboard();
-}
-
-// ================== EMPLOYEES ==================
-function renderEmployees(){
-
-let html=`<div class="p-4">
-<h2>👥 الموظفين</h2>
-<button onclick="addEmp()">+ موظف</button>
-
-<table>
-<tr><th>الاسم</th><th>الدور</th></tr>
-`;
-
-employees.forEach(e=>{
-html+=`<tr><td>${e.name}</td><td>${e.role}</td></tr>`;
+    const user = new User({ username, password, role, companyId, employeeId });
+    await user.save();
+    res.json({ msg: "User created", user });
 });
 
-html+=`</table></div>`;
-
-document.getElementById("employeesTab").innerHTML=html;
-}
-
-function addEmp(){
-employees.push({
-id:Date.now().toString(),
-name:"موظف جديد",
-role:"مصور"
+// 2) مسارات الحجوزات (محمية)
+app.get("/api/bookings", auth, async (req, res) => {
+    const bookings = await Booking.find({ companyId: req.user.companyId }).populate("hallId employeeId");
+    res.json(bookings);
 });
-saveAll();
-renderEmployees();
-renderDashboard();
-}
+app.post("/api/bookings", auth, async (req, res) => {
+    const booking = new Booking({ ...req.body, companyId: req.user.companyId });
+    await booking.save();
+    res.json(booking);
+});
+app.delete("/api/bookings/:id", auth, async (req, res) => {
+    await Booking.findOneAndDelete({ _id: req.params.id, companyId: req.user.companyId });
+    res.json({ ok: true });
+});
 
-// ================== LOGIN ==================
-function showLogin(){
-document.getElementById("app").innerHTML=`
-<div style="text-align:center;padding-top:100px">
-<h2>Drmedia Pro</h2>
-<button onclick="login()">دخول</button>
-</div>`;
-}
+// 3) مسارات الموظفين (محمية)
+app.get("/api/employees", auth, async (req, res) => {
+    const employees = await Employee.find({ companyId: req.user.companyId });
+    res.json(employees);
+});
+app.post("/api/employees", auth, async (req, res) => {
+    const employee = new Employee({ ...req.body, companyId: req.user.companyId });
+    await employee.save();
+    res.json(employee);
+});
 
-function login(){
-currentUser={username:"admin",role:"admin"};
-renderApp();
-}
+// 4) مسارات القاعات (محمية)
+app.get("/api/halls", auth, async (req, res) => {
+    const halls = await Hall.find({ companyId: req.user.companyId });
+    res.json(halls);
+});
+app.post("/api/halls", auth, async (req, res) => {
+    const hall = new Hall({ ...req.body, companyId: req.user.companyId });
+    await hall.save();
+    res.json(hall);
+});
 
-// ================== APP ==================
-function renderApp(){
+// مسار اختبار
+app.get("/", (req, res) => res.send("Drmedia SaaS API Running"));
 
-document.getElementById("app").innerHTML=`
-<div>
-
-<div style="display:flex;gap:10px;padding:10px;background:#fff">
-<button onclick="switchTab('dashboardTab')">Dashboard</button>
-<button onclick="switchTab('bookingsTab')">Bookings</button>
-<button onclick="switchTab('employeesTab')">Employees</button>
-</div>
-
-<div id="dashboardTab" class="tab-content"></div>
-<div id="bookingsTab" class="tab-content hidden"></div>
-<div id="employeesTab" class="tab-content hidden"></div>
-
-</div>`;
-
-renderDashboard();
-renderBookings();
-renderEmployees();
-
-}
-
-function switchTab(tab){
-
-document.querySelectorAll(".tab-content").forEach(t=>t.classList.add("hidden"));
-document.getElementById(tab).classList.remove("hidden");
-
-}
-
-// ================== INIT ==================
-loadAll();
-showLogin();
-
-</script>
-
-</body>
-</html>
+// ======================== تشغيل السيرفر ========================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
