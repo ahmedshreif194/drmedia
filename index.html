@@ -774,20 +774,22 @@ function resetAndSmartDistribute() {
     updateEmployeeOrders();
 
     const employeesByRole = {
-        "مخرج": [],
-        "مصور": [],
-        "كرين": []
+        "مخرج": employees.filter(e => e.role==="مخرج" && e.active),
+        "مصور": employees.filter(e => e.role==="مصور" && e.active),
+        "كرين": employees.filter(e => e.role==="كرين" && e.active)
     };
 
-    employees.forEach(e => {
-        if(e.active) {
-            employeesByRole[e.role]?.push(e);
-        }
-    });
-
+    // ترتيب حسب الأقل شغل
     Object.keys(employeesByRole).forEach(role => {
         employeesByRole[role].sort((a,b)=> (a.totalOrders||0) - (b.totalOrders||0));
     });
+
+    // index لكل نوع
+    const roleIndex = {
+        "مخرج": 0,
+        "مصور": 0,
+        "كرين": 0
+    };
 
     bookings.forEach(b => {
         const hall = halls.find(h => h.id === b.hallId);
@@ -805,10 +807,15 @@ function resetAndSmartDistribute() {
 
         needed.forEach(role => {
             const list = employeesByRole[role];
+
             if(list && list.length > 0){
-                const emp = list.shift();
+                const index = roleIndex[role] % list.length;
+                const emp = list[index];
+
                 b.assignedEmployees.push(emp.id);
-                list.push(emp);
+
+                roleIndex[role]++; // rotation
+
                 emp.totalOrders = (emp.totalOrders || 0) + 1;
             }
         });
@@ -818,8 +825,8 @@ function resetAndSmartDistribute() {
     renderBookingsContent();
     renderDistributionContent();
 
-    showMsg("🔥 تم إعادة التوزيع الذكي بنجاح");
-}    
+    showMsg("🔥 تم التوزيع الذكي بدون أخطاء");
+}
     window.showAddBookingModal = function() {
         const hallOptions = halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
         const html = `<h3 class="text-xl font-bold mb-3">➕ حجز جديد</h3><input id="clientName" placeholder="اسم العميل"><input id="phone" placeholder="الهاتف"><select id="hallId">${hallOptions}</select><input id="date" type="date"><input id="price" type="number" placeholder="السعر" value="2500"><button onclick="saveNewBooking()" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`;
