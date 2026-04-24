@@ -96,7 +96,7 @@
   let expandedBookings = new Set();
   let pendingPdfBookings = [], pendingExcelData = [];
 
-  // ---------- إشعارات ----------
+  // ---------- الإشعارات ----------
   function playNotificationSound() { try { new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3').play().catch(()=>{}); } catch(e) {} }
   function addNotification(userId, title, message) { const n = { id: Date.now(), userId, title, message, read: false, date: new Date().toLocaleString() }; notifications.push(n); saveAllData(); if (currentUser && currentUser.employeeId === userId) { renderNotificationBadge(); playNotificationSound(); } }
   function renderNotificationBadge() { const unread = notifications.filter(n => n.userId === currentUser?.employeeId && !n.read).length; const bell = document.getElementById('notificationBell'); if (bell) { let badge = bell.querySelector('.notification-badge'); if (unread > 0) { if (!badge) { badge = document.createElement('span'); badge.className = 'notification-badge'; bell.appendChild(badge); } badge.innerText = unread; } else if (badge) badge.remove(); } }
@@ -104,11 +104,10 @@
   function markNotificationRead(id) { const n = notifications.find(x => x.id == id); if (n) n.read = true; saveAllData(); renderNotificationBadge(); showNotificationPanel(); }
   function markAllNotificationsRead() { notifications.forEach(n => { if (n.userId === currentUser?.employeeId) n.read = true; }); saveAllData(); renderNotificationBadge(); showNotificationPanel(); showMsg("✅ تم تحديد جميع الإشعارات كمقروءة"); }
 
-  // ---------- حفظ ----------
+  // ---------- الحفظ والتحميل ----------
   function saveAllData() { const ind = document.getElementById('saveIndicator'); if (ind) ind.classList.remove('hidden'); Promise.all([db.ref('bookings').set(bookings), db.ref('employees').set(employees), db.ref('users').set(users), db.ref('halls').set(halls), db.ref('holidays').set(holidays), db.ref('notifications').set(notifications)]).then(() => { if (ind) setTimeout(() => ind.classList.add('hidden'), 500); }).catch(err => { if (ind) ind.classList.add('hidden'); showMsg("❌ خطأ في الحفظ: " + err.message); console.error(err); }); }
   function showMsg(msg) { const t = document.getElementById('toast'); t.innerText = msg; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 2500); }
 
-  // ---------- تحميل ----------
   function loadData() { let c = 0; function r() { c++; if (c === 6) { if (bookings.length === 0 && employees.length === 0 && halls.length === 0) initDefaultData(); normalizeBookings(); if (!currentUser) showLogin(); else renderApp(); } }
     db.ref('bookings').on('value', s => { bookings = s.val() || []; r(); });
     db.ref('employees').on('value', s => { employees = s.val() || []; r(); });
@@ -120,11 +119,11 @@
 
   function normalizeBookings() { bookings.forEach(b => { if (!b.status) b.status = 'pending'; if (b.deposit === undefined) b.deposit = 0; if (!b.notes) b.notes = ''; if (!b.assignedEmployees) b.assignedEmployees = []; }); }
 
-  // ---------- تحديث تلقائي للحالة ----------
+  // ---------- تحديث الحالة تلقائياً ----------
   function updateBookingStatuses() { const today = new Date(); today.setHours(0,0,0,0); let changed = false; bookings.forEach(b => { if (b.status === 'pending') { const bd = new Date(b.date); bd.setHours(0,0,0,0); if (bd < today) { b.status = 'completed'; changed = true; } } }); if (changed) { saveAllData(); updateEmployeeOrders(); } }
   setInterval(updateBookingStatuses, 60000);
 
-  // ---------- بيانات افتراضية ----------
+  // ---------- البيانات الافتراضية ----------
   function initDefaultData() {
     if (!halls.length) halls = [{ id: 'hall1', name: 'المغلقة', type: 'closed', active: true }, { id: 'hall2', name: 'الأوبن', type: 'open', active: true }, { id: 'hall3', name: 'الكافيه', type: 'cafe', active: true }];
     if (!employees.length) employees = [{ id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 }, { id: 'emp2', name: 'محمود حسن', role: 'مخرج', phone: '01002345678', salaryPerOrder: 300, active: true, totalOrders: 0 }, { id: 'emp3', name: 'سامر خالد', role: 'مصور', phone: '01003456789', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp4', name: 'نور الدين', role: 'مصور', phone: '01004567890', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp5', name: 'ياسر محمد', role: 'مصور', phone: '01005678901', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp6', name: 'كريم وائل', role: 'مصور', phone: '01006789012', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp7', name: 'طارق رشاد', role: 'كرين', phone: '01007890123', salaryPerOrder: 250, active: true, totalOrders: 0 }, { id: 'emp8', name: 'هاني سعيد', role: 'كرين', phone: '01008901234', salaryPerOrder: 250, active: true, totalOrders: 0 }];
@@ -133,117 +132,31 @@
     saveAllData(); setTimeout(autoDistribute, 600);
   }
 
-  // ---------- توزيع ----------
+  // ---------- التوزيع ----------
   function autoDistribute() { updateBookingStatuses(); const active = bookings.filter(b => b.status === 'pending'); active.forEach(b => b.assignedEmployees = []); const sorted = [...active].sort((a, b) => new Date(a.date) - new Date(b.date)); let dirO = 0, phO = 0, crO = 0; sorted.forEach(b => { const h = halls.find(x => x.id === b.hallId); const t = h ? h.type : 'closed'; if (t === 'cafe') phO++; else { dirO++; phO += 2; crO++; } }); const dirs = employees.filter(e => e.role === 'مخرج' && e.active).map(e => ({ ...e, temp: e.totalOrders || 0, target: dirO ? Math.ceil(dirO / (employees.filter(x => x.role === 'مخرج' && x.active).length || 1)) : 0 })); const phs = employees.filter(e => e.role === 'مصور' && e.active).map(e => ({ ...e, temp: e.totalOrders || 0, target: phO ? Math.ceil(phO / (employees.filter(x => x.role === 'مصور' && x.active).length || 1)) : 0 })); const crs = employees.filter(e => e.role === 'كرين' && e.active).map(e => ({ ...e, temp: e.totalOrders || 0, target: crO ? Math.ceil(crO / (employees.filter(x => x.role === 'كرين' && x.active).length || 1)) : 0 })); const map = new Map(); sorted.forEach(b => { const h = halls.find(x => x.id === b.hallId); const t = h ? h.type : 'closed'; let busy = map.get(b.date) || new Set(); let assigned = []; if (t === 'cafe') { const avail = phs.filter(p => !busy.has(p.id)).sort((a, b) => (a.temp - a.target) - (b.temp - b.target) || a.temp - b.temp); if (avail.length) { const c = avail[0]; assigned.push(c.id); c.temp++; busy.add(c.id); } } else { const aDir = dirs.filter(d => !busy.has(d.id)).sort((a, b) => (a.temp - a.target) - (b.temp - b.target) || a.temp - b.temp); if (aDir.length) { const c = aDir[0]; assigned.push(c.id); c.temp++; busy.add(c.id); } let aPh = phs.filter(p => !busy.has(p.id)); for (let i = 0; i < 2; i++) { if (aPh.length) { aPh.sort((a, b) => (a.temp - a.target) - (b.temp - b.target) || a.temp - b.temp); const c = aPh[0]; assigned.push(c.id); c.temp++; busy.add(c.id); aPh = aPh.filter(x => x.id !== c.id); } } const aCr = crs.filter(c => !busy.has(c.id)).sort((a, b) => (a.temp - a.target) - (b.temp - b.target) || a.temp - b.temp); if (aCr.length) { const c = aCr[0]; assigned.push(c.id); c.temp++; busy.add(c.id); } } b.assignedEmployees = assigned; map.set(b.date, busy); }); updateEmployeeOrders(); saveAllData(); showMsg(`✅ تم التوزيع العادل`); }
   function resetAndSmartDistribute() { normalizeBookings(); const active = bookings.filter(b => b.status === 'pending'); active.forEach(b => b.assignedEmployees = []); updateEmployeeOrders(); const byRole = { "مخرج": employees.filter(e => e.role === "مخرج" && e.active), "مصور": employees.filter(e => e.role === "مصور" && e.active), "كرين": employees.filter(e => e.role === "كرين" && e.active) }; Object.keys(byRole).forEach(role => byRole[role].sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0))); let idx = { "مخرج": 0, "مصور": 0, "كرين": 0 }; active.forEach(b => { const h = halls.find(x => x.id === b.hallId); if (!h || !h.active) return; let needed = []; if (h.type === 'closed' || h.type === 'open') needed = ["مخرج", "مصور", "مصور", "كرين"]; else if (h.type === 'cafe') needed = ["مصور"]; b.assignedEmployees = []; needed.forEach(role => { const list = byRole[role]; if (list && list.length > 0) { const i = idx[role] % list.length; const emp = list[i]; b.assignedEmployees.push(emp.id); idx[role]++; emp.totalOrders = (emp.totalOrders || 0) + 1; } }); }); updateEmployeeOrders(); saveAllData(); renderBookingsContent(); renderDistributionContent(); showMsg("🔥 تم التوزيع الذكي"); }
   function updateEmployeeOrders() { const act = bookings.filter(b => b.status !== 'cancelled'); employees.forEach(e => e.totalOrders = act.filter(b => b.assignedEmployees?.includes(e.id)).length); }
 
-  // ---------- عرض ----------
+  // ---------- عرض الصفحات ----------
   function getFilteredBookings() { let f = [...bookings]; if (currentHallFilter !== 'all') f = f.filter(b => b.hallId === currentHallFilter); if (currentStatusFilter !== 'all') f = f.filter(b => b.status === currentStatusFilter); else f = f.filter(b => b.status !== 'cancelled'); return f.sort((a, b) => new Date(a.date) - new Date(b.date)); }
   function toggleExpandBooking(id) { expandedBookings.has(id) ? expandedBookings.delete(id) : expandedBookings.add(id); renderBookingsContent(); }
 
-  function renderDashboardContent() {
-    updateBookingStatuses(); updateEmployeeOrders();
-    const active = bookings.filter(b => b.status !== 'cancelled');
-    const totalRev = active.reduce((s, b) => s + b.price, 0);
-    const totalDep = active.reduce((s, b) => s + (b.deposit || 0), 0);
-    const completed = bookings.filter(b => b.status === 'completed').length;
-    const months = [], revenues = [];
-    for (let i = 5; i >= 0; i--) { let d = new Date(); d.setMonth(d.getMonth() - i); months.push(d.toLocaleString('ar', { month: 'short' })); const mb = active.filter(b => { let bd = new Date(b.date); return bd.getMonth() === d.getMonth() && bd.getFullYear() === d.getFullYear(); }); revenues.push(mb.reduce((s, b) => s + b.price, 0)); }
-    const top5 = [...employees].sort((a, b) => b.totalOrders - a.totalOrders).slice(0, 5);
-    document.getElementById('dashboardTab').innerHTML = `
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>إجمالي الحجوزات</div></div>
-        <div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${totalRev.toLocaleString()} ج.م</div><div>الإيرادات</div></div>
-        <div class="dashboard-card"><i class="fas fa-wallet text-2xl text-amber-600"></i><div class="stat-number">${totalDep.toLocaleString()} ج.م</div><div>العربون</div></div>
-        <div class="dashboard-card"><i class="fas fa-check-circle text-2xl text-indigo-600"></i><div class="stat-number">${completed}</div><div>مكتمل</div></div>
-        <div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين نشطين</div></div>
-      </div>
-      <div class="grid md:grid-cols-2 gap-4 mb-6">
-        <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-chart-line ml-1"></i>الإيرادات الشهرية</h3><canvas id="revenueChartCanvas"></canvas></div>
-        <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-chart-bar ml-1"></i>أداء الموظفين</h3><canvas id="empChartCanvas"></canvas></div>
-      </div>
-      <div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th></tr></thead><tbody>${active.filter(b => new Date(b.date) >= new Date()).slice(0, 5).map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':b.status==='cancelled'?'status-cancelled':'status-pending'}">${b.status==='completed'?'مكتمل':b.status==='cancelled'?'ملغي':'معلق'}</span></td></tr>`).join('') || '<tr><td colspan="5">لا توجد حجوزات</td></tr>'}</tbody></table></div>`;
-    setTimeout(() => {
-      const revCtx = document.getElementById('revenueChartCanvas')?.getContext('2d'); if (revCtx && revenueChart) revenueChart.destroy();
-      if (revCtx) revenueChart = new Chart(revCtx, { type: 'line', data: { labels: months, datasets: [{ label: 'الإيرادات (ج.م)', data: revenues, borderColor: '#10b981', fill: false, tension: 0.3 }] } });
-      const empCtx = document.getElementById('empChartCanvas')?.getContext('2d'); if (empCtx) new Chart(empCtx, { type: 'bar', data: { labels: top5.map(e => e.name), datasets: [{ label: 'عدد الأوردرات', data: top5.map(e => e.totalOrders || 0), backgroundColor: '#f59e0b' }] } });
-    }, 150);
-  }
+  function renderDashboardContent() { updateBookingStatuses(); updateEmployeeOrders(); const active = bookings.filter(b => b.status !== 'cancelled'); const totalRev = active.reduce((s, b) => s + b.price, 0); const totalDep = active.reduce((s, b) => s + (b.deposit || 0), 0); const completed = bookings.filter(b => b.status === 'completed').length; const months = [], revenues = []; for (let i = 5; i >= 0; i--) { let d = new Date(); d.setMonth(d.getMonth() - i); months.push(d.toLocaleString('ar', { month: 'short' })); const mb = active.filter(b => { let bd = new Date(b.date); return bd.getMonth() === d.getMonth() && bd.getFullYear() === d.getFullYear(); }); revenues.push(mb.reduce((s, b) => s + b.price, 0)); } const top5 = [...employees].sort((a, b) => b.totalOrders - a.totalOrders).slice(0, 5); document.getElementById('dashboardTab').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>إجمالي الحجوزات</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${totalRev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-wallet text-2xl text-amber-600"></i><div class="stat-number">${totalDep.toLocaleString()} ج.م</div><div>العربون</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-2xl text-indigo-600"></i><div class="stat-number">${completed}</div><div>مكتمل</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين نشطين</div></div></div><div class="grid md:grid-cols-2 gap-4 mb-6"><div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-chart-line ml-1"></i>الإيرادات الشهرية</h3><canvas id="revenueChartCanvas"></canvas></div><div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-chart-bar ml-1"></i>أداء الموظفين</h3><canvas id="empChartCanvas"></canvas></div></div><div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th></tr></thead><tbody>${active.filter(b => new Date(b.date) >= new Date()).slice(0, 5).map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':b.status==='cancelled'?'status-cancelled':'status-pending'}">${b.status==='completed'?'مكتمل':b.status==='cancelled'?'ملغي':'معلق'}</span></td></tr>`).join('') || '<tr><td colspan="5">لا توجد حجوزات</td></tr>'}</tbody></table></div>`; setTimeout(() => { const revCtx = document.getElementById('revenueChartCanvas')?.getContext('2d'); if (revCtx && revenueChart) revenueChart.destroy(); if (revCtx) revenueChart = new Chart(revCtx, { type: 'line', data: { labels: months, datasets: [{ label: 'الإيرادات (ج.م)', data: revenues, borderColor: '#10b981', fill: false, tension: 0.3 }] } }); const empCtx = document.getElementById('empChartCanvas')?.getContext('2d'); if (empCtx) new Chart(empCtx, { type: 'bar', data: { labels: top5.map(e => e.name), datasets: [{ label: 'عدد الأوردرات', data: top5.map(e => e.totalOrders || 0), backgroundColor: '#f59e0b' }] } }); }, 150); }
 
-  function renderBookingsContent() {
-    updateBookingStatuses();
-    const fb = getFilteredBookings();
-    const hallOpt = halls.map(h => `<option value="${h.id}" ${currentHallFilter === h.id ? 'selected' : ''}>${h.name}</option>`).join('');
-    const statusOpt = `<option value="all" ${currentStatusFilter === 'all' ? 'selected' : ''}>كل الحالات (ماعدا الملغية)</option><option value="pending" ${currentStatusFilter === 'pending' ? 'selected' : ''}>معلق</option><option value="completed" ${currentStatusFilter === 'completed' ? 'selected' : ''}>مكتمل</option><option value="cancelled" ${currentStatusFilter === 'cancelled' ? 'selected' : ''}>ملغي</option>`;
-    document.getElementById('bookingsTab').innerHTML = `
-      <div class="p-4">
-        <div class="flex justify-between items-center flex-wrap gap-2 mb-4">
-          <h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2>
-          <div class="flex gap-2 flex-wrap">
-            <select id="hallFilter" class="border rounded-xl px-2 py-2 text-sm">${hallOpt}</select>
-            <select id="statusFilter" class="border rounded-xl px-2 py-2 text-sm">${statusOpt}</select>
-            <button onclick="applyFilters()" class="bg-gray-600 text-white px-3 py-2 rounded-xl text-sm">فلترة</button>
-            <button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-2 rounded-xl text-sm">تحديد الكل</button>
-            <button onclick="bulkCompleteBookings()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm">إكمال المحددين</button>
-            <button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-2 rounded-xl text-sm">حذف</button>
-            <button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm">+ حجز</button>
-            <button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl text-sm">إعادة توزيع</button>
-            <button onclick="resetAndSmartDistribute()" class="bg-red-700 text-white px-4 py-2 rounded-xl text-sm">🔄 توزيع ذكي</button>
-          </div>
-        </div>
-        <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead class="bg-gray-100"><tr><th class="w-10"></th><th class="checkbox-col"><input type="checkbox" id="selectAllBookingsCheckbox" onchange="toggleSelectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
-        ${fb.map(b => `<tr class="clickable-row" onclick="toggleExpandBooking('${b.id}')"><td class="text-center"><i class="fas fa-chevron-${expandedBookings.has(b.id) ? 'down' : 'left'} text-gray-400"></i></td><td class="checkbox-col text-center" onclick="event.stopPropagation()"><input type="checkbox" class="booking-checkbox" value="${b.id}" ${selectedBookings.has(b.id) ? 'checked' : ''} onchange="toggleBookingSelection('${b.id}', this.checked)"></td><td class="font-medium">${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':b.status==='cancelled'?'status-cancelled':'status-pending'}">${b.status==='completed'?'مكتمل':b.status==='cancelled'?'ملغي':'معلق'}</span></td><td><div class="flex gap-1"><button onclick="event.stopPropagation(); markBookingCompleted('${b.id}')" class="text-indigo-600"><i class="fas fa-check-circle"></i></button><button onclick="event.stopPropagation(); showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button><button onclick="event.stopPropagation(); cancelBooking('${b.id}')" class="text-orange-600"><i class="fas fa-ban"></i></button><button onclick="event.stopPropagation(); deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></div></td></tr>
-        ${expandedBookings.has(b.id) ? `<tr class="booking-details-row"><td colspan="8"><div class="p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"><div><strong>الهاتف:</strong> ${b.phone || '-'}</div><div><strong>العربون:</strong> ${b.deposit || 0} ج.م</div><div><strong>المتبقي:</strong> ${(b.price - (b.deposit || 0))} ج.م</div><div><strong>الموظفون:</strong> ${(b.assignedEmployees || []).map(id => employees.find(e => e.id === id)?.name).filter(Boolean).join(', ') || '-'}</div><div class="col-span-2"><strong>ملاحظات:</strong> ${b.notes || 'لا يوجد'}</div></div></td></tr>` : ''}`).join('')}
-        ${fb.length === 0 ? '<tr><td colspan="8" class="text-center p-4 text-gray-500">لا توجد حجوزات</td></tr>' : ''}
-        </tbody></table></div>
-      </div>`;
-  }
+  function renderBookingsContent() { updateBookingStatuses(); const fb = getFilteredBookings(); const hallOpt = halls.map(h => `<option value="${h.id}" ${currentHallFilter === h.id ? 'selected' : ''}>${h.name}</option>`).join(''); const statusOpt = `<option value="all" ${currentStatusFilter === 'all' ? 'selected' : ''}>كل الحالات (ماعدا الملغية)</option><option value="pending" ${currentStatusFilter === 'pending' ? 'selected' : ''}>معلق</option><option value="completed" ${currentStatusFilter === 'completed' ? 'selected' : ''}>مكتمل</option><option value="cancelled" ${currentStatusFilter === 'cancelled' ? 'selected' : ''}>ملغي</option>`; document.getElementById('bookingsTab').innerHTML = `<div class="p-4"><div class="flex justify-between items-center flex-wrap gap-2 mb-4"><h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2><div class="flex gap-2 flex-wrap"><select id="hallFilter" class="border rounded-xl px-2 py-2 text-sm">${hallOpt}</select><select id="statusFilter" class="border rounded-xl px-2 py-2 text-sm">${statusOpt}</select><button onclick="applyFilters()" class="bg-gray-600 text-white px-3 py-2 rounded-xl text-sm">فلترة</button><button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-2 rounded-xl text-sm">تحديد الكل</button><button onclick="bulkCompleteBookings()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm">إكمال المحددين</button><button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-2 rounded-xl text-sm">حذف</button><button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm">+ حجز</button><button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl text-sm">إعادة توزيع</button><button onclick="resetAndSmartDistribute()" class="bg-red-700 text-white px-4 py-2 rounded-xl text-sm">🔄 توزيع ذكي</button></div></div><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead class="bg-gray-100"><tr><th class="w-10"></th><th class="checkbox-col"><input type="checkbox" id="selectAllBookingsCheckbox" onchange="toggleSelectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>${fb.map(b => `<tr class="clickable-row" onclick="toggleExpandBooking('${b.id}')"><td class="text-center"><i class="fas fa-chevron-${expandedBookings.has(b.id) ? 'down' : 'left'} text-gray-400"></i></td><td class="checkbox-col text-center" onclick="event.stopPropagation()"><input type="checkbox" class="booking-checkbox" value="${b.id}" ${selectedBookings.has(b.id) ? 'checked' : ''} onchange="toggleBookingSelection('${b.id}', this.checked)"></td><td class="font-medium">${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':b.status==='cancelled'?'status-cancelled':'status-pending'}">${b.status==='completed'?'مكتمل':b.status==='cancelled'?'ملغي':'معلق'}</span></td><td><div class="flex gap-1"><button onclick="event.stopPropagation(); markBookingCompleted('${b.id}')" class="text-indigo-600"><i class="fas fa-check-circle"></i></button><button onclick="event.stopPropagation(); showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button><button onclick="event.stopPropagation(); cancelBooking('${b.id}')" class="text-orange-600"><i class="fas fa-ban"></i></button><button onclick="event.stopPropagation(); deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></div></td></tr>${expandedBookings.has(b.id) ? `<tr class="booking-details-row"><td colspan="8"><div class="p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"><div><strong>الهاتف:</strong> ${b.phone || '-'}</div><div><strong>العربون:</strong> ${b.deposit || 0} ج.م</div><div><strong>المتبقي:</strong> ${(b.price - (b.deposit || 0))} ج.م</div><div><strong>الموظفون:</strong> ${(b.assignedEmployees || []).map(id => employees.find(e => e.id === id)?.name).filter(Boolean).join(', ') || '-'}</div><div class="col-span-2"><strong>ملاحظات:</strong> ${b.notes || 'لا يوجد'}</div></div></td></tr>` : ''}`).join('')}${fb.length === 0 ? '<tr><td colspan="8" class="text-center p-4 text-gray-500">لا توجد حجوزات</td></tr>' : ''}</tbody></table></div></div>`; }
   function applyFilters() { currentHallFilter = document.getElementById('hallFilter')?.value || 'all'; currentStatusFilter = document.getElementById('statusFilter')?.value || 'all'; selectedBookings.clear(); renderBookingsContent(); }
 
-  function renderArchiveContent() {
-    const comp = bookings.filter(b => b.status === 'completed').sort((a, b) => new Date(b.date) - new Date(a.date));
-    document.getElementById('archiveTab').innerHTML = `
-      <div class="p-4">
-        <div class="flex justify-between mb-3"><h2 class="text-xl font-bold">📁 الأرشيف (${comp.length})</h2><div class="flex gap-2"><button onclick="exportArchiveToExcel()" class="bg-green-700 text-white px-3 py-2 rounded-xl text-sm">Excel</button><button onclick="exportArchiveToPDF()" class="bg-red-700 text-white px-3 py-2 rounded-xl text-sm">PDF</button><button onclick="restoreAllCompleted()" class="bg-amber-600 text-white px-3 py-2 rounded-xl text-sm">استعادة الكل</button></div></div>
-        <div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>إجراء</th></tr></thead><tbody>${comp.map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><button onclick="restoreBooking('${b.id}')" class="text-indigo-600"><i class="fas fa-undo"></i> استعادة</button></td></tr>`).join('') || '<tr><td colspan="5" class="text-center p-4">الأرشيف فارغ</td></tr>'}</tbody></table></div>
-      </div>`;
-  }
+  function renderArchiveContent() { const comp = bookings.filter(b => b.status === 'completed').sort((a, b) => new Date(b.date) - new Date(a.date)); document.getElementById('archiveTab').innerHTML = `<div class="p-4"><div class="flex justify-between mb-3"><h2 class="text-xl font-bold">📁 الأرشيف (${comp.length})</h2><div class="flex gap-2"><button onclick="exportArchiveToExcel()" class="bg-green-700 text-white px-3 py-2 rounded-xl text-sm">Excel</button><button onclick="exportArchiveToPDF()" class="bg-red-700 text-white px-3 py-2 rounded-xl text-sm">PDF</button><button onclick="restoreAllCompleted()" class="bg-amber-600 text-white px-3 py-2 rounded-xl text-sm">استعادة الكل</button></div></div><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>إجراء</th></tr></thead><tbody>${comp.map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><button onclick="restoreBooking('${b.id}')" class="text-indigo-600"><i class="fas fa-undo"></i> استعادة</button></td></tr>`).join('') || '<tr><td colspan="5" class="text-center p-4">الأرشيف فارغ</td></tr>'}</tbody></table></div></div>`; }
   function restoreBooking(id) { const b = bookings.find(x => x.id === id); if (b) { b.status = 'pending'; saveAllData(); renderArchiveContent(); renderBookingsContent(); showMsg("🔄 تم الاستعادة"); } }
   function restoreAllCompleted() { if (confirm("⚠️ استعادة جميع المكتملة؟")) { bookings.forEach(b => { if (b.status === 'completed') b.status = 'pending'; }); saveAllData(); renderArchiveContent(); renderBookingsContent(); } }
 
-  function renderEmployeesContent() {
-    updateEmployeeOrders();
-    document.getElementById('employeesTab').innerHTML = `
-    <div class="p-4">
-      <h2 class="text-xl font-bold mb-3">👥 الموظفين</h2>
-      <div class="flex gap-2 mb-3"><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة موظف</button></div>
-      <table class="w-full bg-white rounded-xl"><thead><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${employees.map(e => `<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.salaryPerOrder} ج.م</td><td>${e.totalOrders || 0}</td><td>${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td><td>${e.active ? '🟢 نشط' : '🔴 غير نشط'}</td><td><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table>
-    </div>`;
-  }
-  function showEditEmployeeModal(id) { const e = employees.find(x => x.id === id); if (!e) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل موظف</h3><input id="empName" value="${e.name}"><select id="empRole"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select><input id="empPhone" value="${e.phone}"><input id="empSalary" value="${e.salaryPerOrder}" type="number"><div class="flex gap-2 my-2"><label><input type="checkbox" id="empActive" ${e.active?'checked':''}> نشط</label></div><button onclick="saveEditEmployee('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
-  function saveEditEmployee(id) { const e = employees.find(x => x.id === id); if (!e) return; e.name = document.getElementById('empName').value; e.role = document.getElementById('empRole').value; e.phone = document.getElementById('empPhone').value; e.salaryPerOrder = parseInt(document.getElementById('empSalary').value) || 200; e.active = document.getElementById('empActive').checked; saveAllData(); closeModal(); renderEmployeesContent(); showMsg("✅ تم التحديث"); }
-  function deleteEmployee(id) { if (confirm("حذف الموظف؟")) { employees = employees.filter(e => e.id !== id); users = users.filter(u => u.employeeId !== id); saveAllData(); renderEmployeesContent(); } }
+  function renderEmployeesContent() { updateEmployeeOrders(); document.getElementById('employeesTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">👥 الموظفين</h2><div class="flex gap-2 mb-3"><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة موظف</button></div><table class="w-full bg-white rounded-xl"><thead><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>المرتب/أوردر</th><th>عدد الأوردرات</th><th>المستحق</th><th>الحالة</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${employees.map(e => `<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.salaryPerOrder} ج.م</td><td>${e.totalOrders || 0}</td><td>${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td><td>${e.active ? '🟢 نشط' : '🔴 غير نشط'}</td><td><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div>`; }
 
-  function renderHallsContent() {
-    document.getElementById('hallsTab').innerHTML = `
-    <div class="p-4">
-      <h2 class="text-xl font-bold mb-3">🏛️ القاعات</h2>
-      <div class="flex gap-2 mb-3"><button onclick="showAddHallModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة قاعة</button></div>
-      <table class="w-full bg-white rounded-xl"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${halls.map(h => { const cnt = bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length; return `<tr><td>${h.name}</td><td>${h.type === 'closed' ? 'مغلقة' : h.type === 'open' ? 'أوبن' : 'كافيه'}</td><td>${h.active ? '🟢 نشطة' : '🔴 غير نشطة'}</td><td>${cnt}</td><td><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`; }).join('')}</tbody></table>
-    </div>`;
-  }
-  function showEditHallModal(id) { const h = halls.find(x => x.id === id); if (!h) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل قاعة</h3><input id="hallName" value="${h.name}"><select id="hallType"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>أوبن</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select><div class="flex gap-2 my-2"><label><input type="checkbox" id="hallActive" ${h.active?'checked':''}> نشطة</label></div><button onclick="saveEditHall('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
-  function saveEditHall(id) { const h = halls.find(x => x.id === id); if (!h) return; h.name = document.getElementById('hallName').value; h.type = document.getElementById('hallType').value; h.active = document.getElementById('hallActive').checked; saveAllData(); closeModal(); renderHallsContent(); showMsg("✅ تم التحديث"); }
-  function deleteHall(id) { if (confirm("حذف القاعة؟")) { halls = halls.filter(h => h.id !== id); bookings = bookings.filter(b => b.hallId !== id); saveAllData(); renderHallsContent(); renderBookingsContent(); } }
+  function renderHallsContent() { document.getElementById('hallsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">🏛️ القاعات</h2><div class="flex gap-2 mb-3"><button onclick="showAddHallModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة قاعة</button></div><table class="w-full bg-white rounded-xl"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${halls.map(h => { const cnt = bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length; return `<tr><td>${h.name}</td><td>${h.type === 'closed' ? 'مغلقة' : h.type === 'open' ? 'أوبن' : 'كافيه'}</td><td>${h.active ? '🟢 نشطة' : '🔴 غير نشطة'}</td><td>${cnt}</td><td><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`; }).join('')}</tbody></table></div>`; }
 
-  function renderDistributionContent() {
-    const grouped = {};
-    bookings.filter(b => b.status === 'pending').sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(b => { if (!grouped[b.date]) grouped[b.date] = []; grouped[b.date].push(b); });
-    let html = `<div class="p-4"><div class="bg-purple-50 p-4 rounded-2xl mb-4"><h2 class="text-xl font-bold">🔄 توزيع الموظفين</h2><button onclick="autoDistribute(); renderDistributionContent(); renderBookingsContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl mt-2">توزيع تلقائي</button></div>`;
-    for (let date in grouped) { html += `<div class="date-group"><div class="date-header">📅 ${date} (${grouped[date].length})</div><div class="p-3 space-y-2">`; grouped[date].forEach(b => { const h = halls.find(x => x.id === b.hallId); const t = h ? h.type : 'closed'; html += `<div class="border p-2 rounded-xl bg-white"><div class="font-bold">${b.clientName} - ${t === 'closed' ? 'مغلقة' : t === 'open' ? 'أوبن' : 'كافيه'}</div><div>الموظفون: ${(b.assignedEmployees || []).map(id => employees.find(e => e.id === id)?.name).filter(Boolean).join(', ') || 'غير معين'}</div><button onclick="showManualAssignModal('${b.id}')" class="mt-1 text-sm bg-amber-100 px-2 py-1 rounded-lg">تعديل يدوي</button></div>`; }); html += `</div></div>`; }
-    html += `</div>`; document.getElementById('distributionTab').innerHTML = html;
-  }
+  function renderUsersContent() { document.getElementById('usersTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><button onclick="addUser()" class="bg-gray-700 text-white px-4 py-2 rounded-xl mb-3">+ إضافة مستخدم</button><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الدور</th><th>الموظف المرتبط</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u => `<tr><td>${u.username}</td><td>${u.role}</td><td>${u.employeeId ? employees.find(e => e.id === u.employeeId)?.name || '-' : '-'}</td><td><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div>`; }
+
+  function renderDistributionContent() { const grouped = {}; bookings.filter(b => b.status === 'pending').sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(b => { if (!grouped[b.date]) grouped[b.date] = []; grouped[b.date].push(b); }); let html = `<div class="p-4"><div class="bg-purple-50 p-4 rounded-2xl mb-4"><h2 class="text-xl font-bold">🔄 توزيع الموظفين</h2><button onclick="autoDistribute(); renderDistributionContent(); renderBookingsContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl mt-2">توزيع تلقائي</button></div>`; for (let date in grouped) { html += `<div class="date-group"><div class="date-header">📅 ${date} (${grouped[date].length})</div><div class="p-3 space-y-2">`; grouped[date].forEach(b => { const h = halls.find(x => x.id === b.hallId); const t = h ? h.type : 'closed'; html += `<div class="border p-2 rounded-xl bg-white"><div class="font-bold">${b.clientName} - ${t === 'closed' ? 'مغلقة' : t === 'open' ? 'أوبن' : 'كافيه'}</div><div>الموظفون: ${(b.assignedEmployees || []).map(id => employees.find(e => e.id === id)?.name).filter(Boolean).join(', ') || 'غير معين'}</div><button onclick="showManualAssignModal('${b.id}')" class="mt-1 text-sm bg-amber-100 px-2 py-1 rounded-lg">تعديل يدوي</button></div>`; }); html += `</div></div>`; } html += `</div>`; document.getElementById('distributionTab').innerHTML = html; }
 
   function renderPayrollContent() { updateEmployeeOrders(); const totalSal = employees.reduce((s, e) => s + ((e.totalOrders || 0) * e.salaryPerOrder), 0); document.getElementById('payrollTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">💰 المرتبات</h2><p class="text-lg">إجمالي المرتبات: <strong>${totalSal.toLocaleString()} ج.م</strong></p><table class="w-full bg-white rounded-xl mt-3"><thead><tr><th>الموظف</th><th>عدد الأوردرات</th><th>المستحق</th></tr></thead><tbody>${employees.map(e => `<tr><td>${e.name}</td><td>${e.totalOrders || 0}</td><td>${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>`; }
 
@@ -252,11 +165,6 @@
 
   function renderReportsContent() { updateEmployeeOrders(); const totalRev = bookings.filter(b => b.status !== 'cancelled').reduce((s, b) => s + b.price, 0); document.getElementById('reportsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📊 التقارير</h2><div class="grid grid-cols-2 gap-3 mb-4"><div class="bg-white p-4 rounded-xl shadow"><p>إجمالي الإيرادات</p><p class="text-2xl font-bold">${totalRev.toLocaleString()} ج.م</p></div><div class="bg-white p-4 rounded-xl shadow"><p>عدد الحجوزات النشطة</p><p class="text-2xl font-bold">${bookings.filter(b => b.status !== 'cancelled').length}</p></div></div><div class="flex gap-3"><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl">Excel</button><button onclick="exportToPDF()" class="bg-red-700 text-white px-4 py-2 rounded-xl">PDF</button></div></div>`; }
 
-  function renderUsersContent() { document.getElementById('usersTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><button onclick="addUser()" class="bg-gray-700 text-white px-4 py-2 rounded-xl mb-3">+ إضافة مستخدم</button><table class="w-full bg-white rounded-xl"><thead><tr><th>المستخدم</th><th>الدور</th><th>الموظف المرتبط</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${users.map(u => `<tr><td>${u.username}</td><td>${u.role}</td><td>${u.employeeId ? employees.find(e => e.id === u.employeeId)?.name || '-' : '-'}</td><td><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div>`; }
-  function showEditUserModal(username) { const u = users.find(x => x.username === username); if (!u) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل مستخدم</h3><input id="editUsername" value="${u.username}"><input id="editPassword" value="${u.password}"><select id="editRole"><option value="admin" ${u.role==='admin'?'selected':''}>admin</option><option value="manager" ${u.role==='manager'?'selected':''}>manager</option><option value="employee" ${u.role==='employee'?'selected':''}>employee</option></select><button onclick="saveEditUser('${username}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-3">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
-  function saveEditUser(oldUsername) { const u = users.find(x => x.username === oldUsername); if (!u) return; const newUsername = document.getElementById('editUsername').value.trim(); u.password = document.getElementById('editPassword').value; u.role = document.getElementById('editRole').value; if (newUsername !== oldUsername && users.some(x => x.username === newUsername)) return alert("⚠️ اسم المستخدم موجود"); u.username = newUsername; saveAllData(); closeModal(); renderUsersContent(); showMsg("✅ تم تحديث المستخدم"); }
-  function deleteUser(username) { if (confirm(`حذف المستخدم "${username}"؟`)) { users = users.filter(u => u.username !== username); saveAllData(); renderUsersContent(); } }
-
   function renderSettingsContent() { document.getElementById('settingsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-4">⚙️ الإعدادات</h2><div class="flex flex-wrap gap-3"><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl">استيراد Excel</button><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl">استيراد PDF</button><button onclick="showHolidaysModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl">إدارة الإجازات</button></div></div>`; }
 
   // ---------- استيراد Excel ----------
@@ -264,93 +172,121 @@
   function handleExcelFile(file) { if (!file) return; const preview = document.getElementById('excelPreview'), importBtn = document.getElementById('excelImportBtn'); preview.innerHTML = '⏳ جاري التحليل...'; const reader = new FileReader(); reader.onload = function(e) { try { const data = new Uint8Array(e.target.result), wb = XLSX.read(data, { type: 'array' }), ws = wb.Sheets[wb.SheetNames[0]], rows = XLSX.utils.sheet_to_json(ws, { header: 1 }); pendingExcelData = []; const headers = rows[0] || []; const colMap = {}; headers.forEach((h, i) => { const n = String(h).trim().toLowerCase(); if (n.includes('عميل') || n.includes('client')) colMap.clientName = i; if (n.includes('هاتف') || n.includes('phone')) colMap.phone = i; if (n.includes('تاريخ') || n.includes('date')) colMap.date = i; if (n.includes('قاعة') || n.includes('hall')) colMap.hallName = i; if (n.includes('سعر') || n.includes('price')) colMap.price = i; if (n.includes('عربون') || n.includes('deposit')) colMap.deposit = i; if (n.includes('ملاحظ') || n.includes('notes')) colMap.notes = i; }); for (let i = 1; i < rows.length; i++) { const row = rows[i]; if (!row || !row.some(c => c)) continue; const clientName = colMap.clientName !== undefined ? String(row[colMap.clientName] || '').trim() : ''; if (!clientName) continue; const dateRaw = colMap.date !== undefined ? row[colMap.date] : ''; let dateStr = ''; if (dateRaw) { if (typeof dateRaw === 'number') { const d = XLSX.SSF.parse_date_code(dateRaw); dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`; } else dateStr = String(dateRaw).trim(); } const hallName = colMap.hallName !== undefined ? String(row[colMap.hallName] || '').trim() : ''; const price = colMap.price !== undefined ? parseInt(row[colMap.price]) || 2500 : 2500; const phone = colMap.phone !== undefined ? String(row[colMap.phone] || '').trim() : ''; const deposit = colMap.deposit !== undefined ? parseInt(row[colMap.deposit]) || 0 : 0; const notes = colMap.notes !== undefined ? String(row[colMap.notes] || '').trim() : ''; let hall = halls.find(h => h.name.toLowerCase() === hallName.toLowerCase()); if (!hall && hallName) hall = halls.find(h => h.name.includes(hallName) || hallName.includes(h.name)); const hallId = hall ? hall.id : (halls.length > 0 ? halls[0].id : 'hall1'); const finalHallName = hall ? hall.name : (hallName || (halls.length > 0 ? halls[0].name : 'قاعة')); pendingExcelData.push({ id: 'imp_' + Date.now() + '_' + i, clientName, phone, hallId, hallName: finalHallName, date: dateStr, price, deposit, notes, assignedEmployees: [], status: 'pending' }); } if (pendingExcelData.length > 0) { preview.innerHTML = `<div class="bg-green-50 p-3 rounded-xl">✅ تم تحليل ${pendingExcelData.length} حجز</div>`; importBtn.classList.remove('hidden'); } else { preview.innerHTML = '<div class="bg-red-50 p-3 rounded-xl">❌ لا توجد بيانات</div>'; importBtn.classList.add('hidden'); } } catch (err) { preview.innerHTML = '<div class="bg-red-50 p-3 rounded-xl">❌ خطأ في قراءة الملف</div>'; } }; reader.readAsArrayBuffer(file); }
   function confirmExcelImport() { if (!pendingExcelData.length) return showMsg("⚠️ لا توجد بيانات"); bookings.push(...pendingExcelData); pendingExcelData = []; saveAllData(); closeModal(); autoDistribute(); renderBookingsContent(); renderDashboardContent(); showMsg(`✅ تم الاستيراد`); }
 
-  // ---------- استيراد PDF مصحح ----------
-  function showImportPdfModal() { const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join(''); document.getElementById('modalContent').innerHTML = `<h3 class="text-xl font-bold mb-3"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد PDF (جدول شهري)</h3><p class="text-sm text-gray-600 mb-3">اختر القاعة ثم ارفع الملف. تلقائياً يستخرج: اليوم، التاريخ، العميل، الباكدج، عدد الأفراد</p><select id="pdfHallSelect" class="mb-3"><option value="">اختر القاعة...</option>${hallOpts}</select><input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3"><div class="file-drop-zone" id="pdfDropZone" onclick="document.getElementById('pdfFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-red-600 mb-2 block"></i><p>اسحب ملف PDF هنا</p></div><input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])"><div id="pdfPreview" class="mt-3 text-sm max-h-40 overflow-y-auto"></div><button id="pdfImportBtn" class="bg-red-700 text-white w-full py-2 rounded-xl mt-3 hidden" onclick="confirmPdfDayImport()">✅ استيراد الحجوزات</button>`; document.getElementById('modal').classList.remove('hidden'); setTimeout(() => { const dz = document.getElementById('pdfDropZone'); if (dz) { dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('bg-green-50'); }); dz.addEventListener('dragleave', () => dz.classList.remove('bg-green-50')); dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('bg-green-50'); const f = e.dataTransfer.files[0]; if (f) handlePdfFile(f); }); } }, 200); }
+  // ---------- استيراد PDF (معالجة كل صف كحجز منفصل) ----------
+  function showImportPdfModal() { const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join(''); document.getElementById('modalContent').innerHTML = `<h3 class="text-xl font-bold mb-3"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد PDF (جدول شهري)</h3><p class="text-sm text-gray-600 mb-3">اختر القاعة ثم ارفع الملف. كل صف بالجدول سيصبح حجزاً مستقلاً</p><select id="pdfHallSelect" class="mb-3"><option value="">اختر القاعة...</option>${hallOpts}</select><input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3"><div class="file-drop-zone" id="pdfDropZone" onclick="document.getElementById('pdfFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-red-600 mb-2 block"></i><p>اسحب ملف PDF هنا</p></div><input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])"><div id="pdfPreview" class="mt-3 text-sm max-h-40 overflow-y-auto"></div><button id="pdfImportBtn" class="bg-red-700 text-white w-full py-2 rounded-xl mt-3 hidden" onclick="confirmPdfDayImport()">✅ استيراد الحجوزات</button>`; document.getElementById('modal').classList.remove('hidden'); setTimeout(() => { const dz = document.getElementById('pdfDropZone'); if (dz) { dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('bg-green-50'); }); dz.addEventListener('dragleave', () => dz.classList.remove('bg-green-50')); dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('bg-green-50'); const f = e.dataTransfer.files[0]; if (f) handlePdfFile(f); }); } }, 200); }
 
   function handlePdfFile(file) {
     if (!file) return;
-    const preview = document.getElementById('pdfPreview'); preview.innerHTML = '<p class="text-blue-600">⏳ جاري استخراج النص من PDF...</p>';
+    const preview = document.getElementById('pdfPreview'); 
+    preview.innerHTML = '<p class="text-blue-600">⏳ جاري استخراج النص من PDF...</p>';
     const reader = new FileReader();
     reader.onload = function(e) {
       const typedarray = new Uint8Array(e.target.result);
       pdfjsLib.getDocument({ data: typedarray }).promise.then(pdf => {
-        let allText = ''; const promises = [];
-        for (let i = 1; i <= pdf.numPages; i++) promises.push(pdf.getPage(i).then(page => page.getTextContent().then(tc => { allText += tc.items.map(it => it.str).join(' ') + '\n'; })));
+        let allText = ''; 
+        const promises = [];
+        for (let i = 1; i <= pdf.numPages; i++) 
+          promises.push(pdf.getPage(i).then(page => 
+            page.getTextContent().then(tc => { 
+              allText += tc.items.map(it => it.str).join(' ') + '\n'; 
+            })
+          ));
         Promise.all(promises).then(() => {
-          // استخراج السنة والشهر
           const yearMatch = allText.match(/20\d{2}/);
           const year = yearMatch ? parseInt(yearMatch[0]) : new Date().getFullYear();
-          const monthsAr = { 'يناير': 1, 'فبراير': 2, 'مارس': 3, 'إبريل': 4, 'ابريل': 4, 'أبريل': 4, 'مايو': 5, 'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'سبتمبر': 9, 'أكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12 };
+          const monthsAr = { 'يناير':1,'فبراير':2,'مارس':3,'إبريل':4,'ابريل':4,'أبريل':4,'مايو':5,'يونيو':6,'يوليو':7,'أغسطس':8,'سبتمبر':9,'أكتوبر':10,'نوفمبر':11,'ديسمبر':12 };
           let cM = new Date().getMonth();
-          for (let m in monthsAr) { if (allText.includes(m)) { cM = monthsAr[m] - 1; break; } }
+          for (let m in monthsAr) if (allText.includes(m)) { cM = monthsAr[m]-1; break; }
 
           const lines = allText.split('\n').map(l => l.trim()).filter(l => l);
           const found = [];
-          const datePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
-
-          // تجميع الأسطر في مجموعات (كل مجموعة = صف جدول)
-          let currentRow = '';
-          const rows = [];
+          const datePatternGlobal = /(\d{1,2})\s*[\/\-]\s*(\d{1,2})\s*[\/\-]\s*(\d{2,4})/g;
+          
+          let currentEntry = null;
+          
           for (let line of lines) {
-            if (/^(الخميس|الجمعة|السبت|الأحد|الإثنين|الثلاثاء|الأربعاء)/.test(line) || datePattern.test(line)) {
-              if (currentRow) rows.push(currentRow);
-              currentRow = line;
-            } else {
-              currentRow += ' ' + line;
+            const dateMatch = line.match(datePatternGlobal);
+            if (dateMatch) {
+              // حفظ الصف السابق إذا وجد
+              if (currentEntry) {
+                const parts = currentEntry.trim().split(/\s+/);
+                const datePart = parts[0];
+                const dateParts = datePart.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                if (dateParts) {
+                  const day = parseInt(dateParts[1]);
+                  const month = parseInt(dateParts[2]);
+                  const yr = dateParts[3].length === 2 ? 2000+parseInt(dateParts[3]) : parseInt(dateParts[3]);
+                  const dateStr = `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                  let rest = parts.slice(1).join(' ');
+                  const nums = rest.match(/\d+/g);
+                  let count = 0;
+                  if (nums && nums.length > 0) {
+                    count = parseInt(nums[nums.length-1]);
+                    rest = rest.replace(new RegExp(`${count}\\s*$`), '').trim();
+                  }
+                  const pkgKeywords = ['عشاء 1','عشاء 2','عشاء','سواريه','سوارية','غداء','فطار','إفطار','بوفيه','حفل','زفاف'];
+                  let clientName = '', packageType = '';
+                  for (let kw of pkgKeywords) {
+                    const idx = rest.indexOf(kw);
+                    if (idx !== -1) {
+                      clientName = rest.substring(0, idx).trim();
+                      packageType = rest.substring(idx).replace(/\d+$/, '').trim();
+                      break;
+                    }
+                  }
+                  if (!packageType) clientName = rest;
+                  clientName = clientName.replace(/[\/\-\.]/g, '').trim();
+                  if (clientName && clientName !== '-' && clientName.length > 1) {
+                    found.push({ clientName, date: dateStr, packageType, guestCount: count });
+                  }
+                }
+                currentEntry = null;
+              }
+              // بداية صف جديد
+              currentEntry = line;
+            } else if (currentEntry) {
+              // إضافة السطر الحالي إلى الصف الحالي
+              currentEntry += ' ' + line;
             }
           }
-          if (currentRow) rows.push(currentRow);
-
-          for (let row of rows) {
-            const dateMatch = row.match(datePattern);
-            if (!dateMatch) continue;
-            const day = parseInt(dateMatch[1]);
-            const month = parseInt(dateMatch[2]);
-            const yr = dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3]);
-            if (month < 1 || month > 12 || day < 1 || day > 31) continue;
-            const dateStr = `${yr}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-            // إزالة التاريخ ورقم الصف واليوم من النص
-            let rest = row.replace(dateMatch[0], '').replace(/^\s*\d+\s*/, '');
-            for (let dName of Object.keys({ 'الخميس': 4, 'الجمعة': 5, 'السبت': 6, 'الأحد': 0, 'الإثنين': 1, 'الثلاثاء': 2, 'الأربعاء': 3 })) {
-              rest = rest.replace(new RegExp(dName, 'g'), '');
-            }
-            rest = rest.trim();
-
-            // استخراج عدد الأفراد (آخر رقم)
-            const nums = rest.match(/\d+/g);
-            let count = 0;
-            if (nums && nums.length > 0) {
-              count = parseInt(nums[nums.length - 1]);
-              rest = rest.replace(new RegExp(`${count}\\s*$`), '').trim();
-            }
-
-            // استخراج نوع الباكدج
-            const pkgKeywords = ['عشاء 1', 'عشاء 2', 'عشاء', 'سواريه', 'سوارية', 'غداء', 'فطار', 'إفطار', 'بوفيه', 'حفل', 'زفاف'];
-            let clientName = '';
-            let packageType = '';
-            let foundPkg = '';
-            for (let kw of pkgKeywords) {
-              const idx = rest.indexOf(kw);
-              if (idx !== -1) {
-                foundPkg = kw;
-                clientName = rest.substring(0, idx).trim();
-                packageType = rest.substring(idx).replace(/\d+$/, '').trim();
-                break;
+          // معالجة آخر صف
+          if (currentEntry) {
+            const parts = currentEntry.trim().split(/\s+/);
+            const datePart = parts[0];
+            const dateParts = datePart.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+            if (dateParts) {
+              const day = parseInt(dateParts[1]);
+              const month = parseInt(dateParts[2]);
+              const yr = dateParts[3].length === 2 ? 2000+parseInt(dateParts[3]) : parseInt(dateParts[3]);
+              const dateStr = `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+              let rest = parts.slice(1).join(' ');
+              const nums = rest.match(/\d+/g);
+              let count = 0;
+              if (nums && nums.length > 0) {
+                count = parseInt(nums[nums.length-1]);
+                rest = rest.replace(new RegExp(`${count}\\s*$`), '').trim();
               }
-            }
-            if (!foundPkg) {
-              clientName = rest.replace(/\s*\d+\s*$/, '').trim();
-            }
-            clientName = clientName.replace(/[\/\-\.]/g, '').trim();
-            if (clientName && clientName !== '-' && clientName.length > 2) {
-              found.push({ clientName, date: dateStr, packageType: packageType || '', guestCount: count || 0 });
+              const pkgKeywords = ['عشاء 1','عشاء 2','عشاء','سواريه','سوارية','غداء','فطار','إفطار','بوفيه','حفل','زفاف'];
+              let clientName = '', packageType = '';
+              for (let kw of pkgKeywords) {
+                const idx = rest.indexOf(kw);
+                if (idx !== -1) {
+                  clientName = rest.substring(0, idx).trim();
+                  packageType = rest.substring(idx).replace(/\d+$/, '').trim();
+                  break;
+                }
+              }
+              if (!packageType) clientName = rest;
+              clientName = clientName.replace(/[\/\-\.]/g, '').trim();
+              if (clientName && clientName !== '-' && clientName.length > 1) {
+                found.push({ clientName, date: dateStr, packageType, guestCount: count });
+              }
             }
           }
 
           if (found.length > 0) {
             pendingPdfBookings = found;
-            preview.innerHTML = `<div class="bg-green-50 p-2 rounded">✅ تم التعرف على ${found.length} حجز</div><ul class="list-disc pr-4 text-xs">${found.map(b => `<li><b>${b.clientName}</b> - ${b.date} - ${b.packageType} - ${b.guestCount} فرد</li>`).join('')}</ul>`;
+            preview.innerHTML = `<div class="bg-green-50 p-2 rounded">✅ تم التعرف على ${found.length} حجز منفصل</div><ul class="list-disc pr-4 text-xs">${found.map(b => `<li><b>${b.clientName}</b> - ${b.date} - ${b.packageType} - ${b.guestCount} فرد</li>`).join('')}</ul>`;
             document.getElementById('pdfImportBtn').classList.remove('hidden');
           } else {
             preview.innerHTML = '<div class="bg-red-50 p-2 rounded">❌ لم يتم استخراج أي حجز. تأكد من وجود تواريخ بصيغة 16/04/2026</div>';
@@ -376,28 +312,34 @@
   function showManualAssignModal(bookingId) { const b = bookings.find(x => x.id === bookingId); const empList = employees.filter(e => e.active).map(e => `<label><input type="checkbox" value="${e.id}" ${(b.assignedEmployees || []).includes(e.id) ? 'checked' : ''}> ${e.name} (${e.role})</label>`).join(''); document.getElementById('modalContent').innerHTML = `<h3 class="text-xl font-bold mb-3">✏️ تعديل توزيع</h3><p>${b.clientName} - ${b.date}</p><div class="employee-checkbox-list">${empList}</div><button onclick="saveManualAssign('${bookingId}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
   function saveManualAssign(bookingId) { const b = bookings.find(x => x.id === bookingId); const cbs = document.querySelectorAll('#modalContent input[type="checkbox"]'); const sel = []; cbs.forEach(cb => { if (cb.checked) sel.push(cb.value); }); b.assignedEmployees = sel; saveAllData(); closeModal(); updateEmployeeOrders(); renderDistributionContent(); renderBookingsContent(); showMsg("✅ تم تعديل التوزيع"); }
 
-  // ---------- تحديد متعدد ----------
+  // ---------- دوال الموظفين / القاعات / المستخدمين ----------
+  function showAddEmployeeModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ موظف جديد</h3><input id="empName" placeholder="الاسم"><select id="empRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select><input id="empPhone" placeholder="الهاتف"><input id="empSalary" placeholder="المرتب" value="200" type="number"><button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveNewEmployee() { const name = document.getElementById('empName').value.trim(); if (!name) return alert("⚠️ أدخل الاسم"); employees.push({ id: 'emp' + Date.now(), name, role: document.getElementById('empRole').value, phone: document.getElementById('empPhone').value, salaryPerOrder: parseInt(document.getElementById('empSalary').value) || 200, active: true, totalOrders: 0 }); saveAllData(); closeModal(); renderEmployeesContent(); }
+  function showEditEmployeeModal(id) { const e = employees.find(x => x.id === id); if (!e) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل موظف</h3><input id="empName" value="${e.name}"><select id="empRole"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select><input id="empPhone" value="${e.phone}"><input id="empSalary" value="${e.salaryPerOrder}" type="number"><div class="flex gap-2 my-2"><label><input type="checkbox" id="empActive" ${e.active?'checked':''}> نشط</label></div><button onclick="saveEditEmployee('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditEmployee(id) { const e = employees.find(x => x.id === id); if (!e) return; e.name = document.getElementById('empName').value; e.role = document.getElementById('empRole').value; e.phone = document.getElementById('empPhone').value; e.salaryPerOrder = parseInt(document.getElementById('empSalary').value) || 200; e.active = document.getElementById('empActive').checked; saveAllData(); closeModal(); renderEmployeesContent(); showMsg("✅ تم التحديث"); }
+  function deleteEmployee(id) { if (confirm("حذف الموظف؟")) { employees = employees.filter(e => e.id !== id); users = users.filter(u => u.employeeId !== id); saveAllData(); renderEmployeesContent(); } }
+  function showAddHallModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ قاعة جديدة</h3><input id="hallName" placeholder="اسم القاعة"><select id="hallType"><option>closed</option><option>open</option><option>cafe</option></select><button onclick="saveNewHall()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveNewHall() { const name = document.getElementById('hallName').value.trim(); if (!name) return alert("⚠️ أدخل الاسم"); halls.push({ id: 'hall' + Date.now(), name, type: document.getElementById('hallType').value, active: true }); saveAllData(); closeModal(); renderHallsContent(); }
+  function showEditHallModal(id) { const h = halls.find(x => x.id === id); if (!h) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل قاعة</h3><input id="hallName" value="${h.name}"><select id="hallType"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>أوبن</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select><div class="flex gap-2 my-2"><label><input type="checkbox" id="hallActive" ${h.active?'checked':''}> نشطة</label></div><button onclick="saveEditHall('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditHall(id) { const h = halls.find(x => x.id === id); if (!h) return; h.name = document.getElementById('hallName').value; h.type = document.getElementById('hallType').value; h.active = document.getElementById('hallActive').checked; saveAllData(); closeModal(); renderHallsContent(); showMsg("✅ تم التحديث"); }
+  function deleteHall(id) { if (confirm("حذف القاعة؟")) { halls = halls.filter(h => h.id !== id); bookings = bookings.filter(b => b.hallId !== id); saveAllData(); renderHallsContent(); renderBookingsContent(); } }
+  function addUser() { const un = prompt("المستخدم"), pw = prompt("كلمة المرور"), role = prompt("الدور", "employee"); if (un && pw) { if (users.some(u => u.username === un)) return alert("⚠️ موجود"); users.push({ username: un, password: pw, role: role || 'employee', employeeId: null }); saveAllData(); renderUsersContent(); } }
+  function showEditUserModal(username) { const u = users.find(x => x.username === username); if (!u) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل مستخدم</h3><input id="editUsername" value="${u.username}"><input id="editPassword" value="${u.password}"><select id="editRole"><option value="admin" ${u.role==='admin'?'selected':''}>admin</option><option value="manager" ${u.role==='manager'?'selected':''}>manager</option><option value="employee" ${u.role==='employee'?'selected':''}>employee</option></select><button onclick="saveEditUser('${username}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-3">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditUser(oldUsername) { const u = users.find(x => x.username === oldUsername); if (!u) return; const newUsername = document.getElementById('editUsername').value.trim(); u.password = document.getElementById('editPassword').value; u.role = document.getElementById('editRole').value; if (newUsername !== oldUsername && users.some(x => x.username === newUsername)) return alert("⚠️ اسم المستخدم موجود"); u.username = newUsername; saveAllData(); closeModal(); renderUsersContent(); showMsg("✅ تم تحديث المستخدم"); }
+  function deleteUser(username) { if (confirm(`حذف المستخدم "${username}"؟`)) { users = users.filter(u => u.username !== username); saveAllData(); renderUsersContent(); } }
+
+  // ---------- تحديد متعدد وتصدير وإجازات ----------
   function toggleBookingSelection(id, checked) { if (checked) selectedBookings.add(id); else selectedBookings.delete(id); }
   function selectAllBookings() { const fb = getFilteredBookings(); if (selectedBookings.size === fb.length) selectedBookings.clear(); else fb.forEach(b => selectedBookings.add(b.id)); renderBookingsContent(); }
   function toggleSelectAllBookings() { const ck = document.getElementById('selectAllBookingsCheckbox')?.checked; const fb = getFilteredBookings(); if (ck) fb.forEach(b => selectedBookings.add(b.id)); else selectedBookings.clear(); renderBookingsContent(); }
   function bulkDeleteBookings() { if (!selectedBookings.size) return showMsg("⚠️ لم تختر شيئاً"); if (confirm(`حذف ${selectedBookings.size} حجز؟`)) { bookings = bookings.filter(b => !selectedBookings.has(b.id)); selectedBookings.clear(); saveAllData(); updateEmployeeOrders(); renderBookingsContent(); renderArchiveContent(); } }
-
-  // ---------- تصدير ----------
   function exportToExcel() { const ws = XLSX.utils.json_to_sheet(bookings.filter(b => b.status !== 'cancelled').map(b => ({ 'العميل': b.clientName, 'التاريخ': b.date, 'القاعة': b.hallName, 'السعر': b.price, 'العربون': b.deposit, 'الحالة': b.status }))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "الحجوزات"); XLSX.writeFile(wb, "Drmedia_Bookings.xlsx"); }
   function exportToPDF() { const win = window.open(); const act = bookings.filter(b => b.status !== 'cancelled'); win.document.write(`<html><head><title>تقرير</title></head><body><h2>تقرير Drmedia</h2><table border="1"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr>${act.map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price}</td></tr>`).join('')}</table></body></html>`); win.print(); }
   function exportArchiveToExcel() { const comp = bookings.filter(b => b.status === 'completed'); const ws = XLSX.utils.json_to_sheet(comp.map(b => ({ 'العميل': b.clientName, 'التاريخ': b.date, 'القاعة': b.hallName, 'السعر': b.price }))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "الأرشيف"); XLSX.writeFile(wb, "Drmedia_Archive.xlsx"); }
   function exportArchiveToPDF() { const comp = bookings.filter(b => b.status === 'completed'); const win = window.open(); win.document.write(`<html><head><title>أرشيف</title></head><body><h2>الأرشيف</h2><table border="1"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr>${comp.map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price}</td></tr>`).join('')}</table></body></html>`); win.print(); }
-
-  // ---------- إجازات ----------
   function showHolidaysModal() { const list = holidays.map(h => `<div class="flex justify-between bg-gray-50 p-2 rounded mb-1"><span>📅 ${h.date} - ${h.name}</span><button onclick="removeHoliday('${h.id}')" class="text-red-600 text-sm"><i class="fas fa-trash-alt"></i></button></div>`).join(''); document.getElementById('modalContent').innerHTML = `<h3 class="text-xl font-bold mb-3">إدارة الإجازات</h3><div class="flex gap-2 mb-3"><input type="date" id="holidayDate"><input type="text" id="holidayName" placeholder="اسم الإجازة"></div><button onclick="addHoliday()" class="bg-amber-600 text-white w-full py-2 rounded-xl mb-3">+ إضافة</button><div class="max-h-60 overflow-y-auto">${list || '<p class="text-gray-400 text-center">لا توجد إجازات</p>'}</div>`; document.getElementById('modal').classList.remove('hidden'); }
   function addHoliday() { const d = document.getElementById('holidayDate')?.value, n = document.getElementById('holidayName')?.value || 'إجازة'; if (!d) return showMsg("⚠️ اختر تاريخ"); if (holidays.some(h => h.date === d)) return showMsg("⚠️ موجود بالفعل"); holidays.push({ id: 'h_' + Date.now(), date: d, name: n }); saveAllData(); showHolidaysModal(); showMsg("✅ تمت الإضافة"); }
   function removeHoliday(id) { holidays = holidays.filter(h => h.id !== id); saveAllData(); showHolidaysModal(); showMsg("🗑️ تم الحذف"); }
-
-  function showAddEmployeeModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ موظف جديد</h3><input id="empName" placeholder="الاسم"><select id="empRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select><input id="empPhone" placeholder="الهاتف"><input id="empSalary" placeholder="المرتب" value="200" type="number"><button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
-  function saveNewEmployee() { const name = document.getElementById('empName').value.trim(); if (!name) return alert("⚠️ أدخل الاسم"); employees.push({ id: 'emp' + Date.now(), name, role: document.getElementById('empRole').value, phone: document.getElementById('empPhone').value, salaryPerOrder: parseInt(document.getElementById('empSalary').value) || 200, active: true, totalOrders: 0 }); saveAllData(); closeModal(); renderEmployeesContent(); }
-  function showAddHallModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ قاعة جديدة</h3><input id="hallName" placeholder="اسم القاعة"><select id="hallType"><option>closed</option><option>open</option><option>cafe</option></select><button onclick="saveNewHall()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
-  function saveNewHall() { const name = document.getElementById('hallName').value.trim(); if (!name) return alert("⚠️ أدخل الاسم"); halls.push({ id: 'hall' + Date.now(), name, type: document.getElementById('hallType').value, active: true }); saveAllData(); closeModal(); renderHallsContent(); }
-  function addUser() { const un = prompt("المستخدم"), pw = prompt("كلمة المرور"), role = prompt("الدور", "employee"); if (un && pw) { if (users.some(u => u.username === un)) return alert("⚠️ موجود"); users.push({ username: un, password: pw, role: role || 'employee', employeeId: null }); saveAllData(); renderUsersContent(); } }
 
   // ---------- عرض التطبيق ----------
   function renderCurrentTab() {
@@ -461,7 +403,7 @@
     document.addEventListener('click', function(e) { const p = document.getElementById('notificationPanel'), b = document.getElementById('notificationBell'); if (p && b && !b.contains(e.target) && !p.contains(e.target)) p.style.display = 'none'; });
   }
 
-  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center shadow-2xl"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><p class="text-xs text-gray-400 mt-3">جميع الحقوق محفوظة©Ahmed Shreif✨</p></div></div>`; }
+  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center shadow-2xl"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><p class="text-xs text-gray-400 mt-3">جميع الحقوق محفوظه © Ahmed Shreif ✨</p></div></div>`; }
   function doLogin() { const un = document.getElementById('loginUser').value.trim(), pw = document.getElementById('loginPass').value; const user = users.find(u => u.username === un && u.password === pw); if (user) { currentUser = user; sessionStorage.setItem('vpms_user', JSON.stringify(user)); renderApp(); showMsg(`مرحباً ${user.name || user.username}`); } else alert("بيانات غير صحيحة"); }
   function logout() { sessionStorage.removeItem('vpms_user'); currentUser = null; showLogin(); }
   function renderApp() { if (!currentUser) showLogin(); else if (currentUser.role === 'employee') renderEmployeeDashboard(); else renderAdminDashboard(); }
