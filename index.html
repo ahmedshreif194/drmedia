@@ -172,8 +172,8 @@
   function handleExcelFile(file) { if (!file) return; const preview = document.getElementById('excelPreview'), importBtn = document.getElementById('excelImportBtn'); preview.innerHTML = '⏳ جاري التحليل...'; const reader = new FileReader(); reader.onload = function(e) { try { const data = new Uint8Array(e.target.result), wb = XLSX.read(data, { type: 'array' }), ws = wb.Sheets[wb.SheetNames[0]], rows = XLSX.utils.sheet_to_json(ws, { header: 1 }); pendingExcelData = []; const headers = rows[0] || []; const colMap = {}; headers.forEach((h, i) => { const n = String(h).trim().toLowerCase(); if (n.includes('عميل') || n.includes('client')) colMap.clientName = i; if (n.includes('هاتف') || n.includes('phone')) colMap.phone = i; if (n.includes('تاريخ') || n.includes('date')) colMap.date = i; if (n.includes('قاعة') || n.includes('hall')) colMap.hallName = i; if (n.includes('سعر') || n.includes('price')) colMap.price = i; if (n.includes('عربون') || n.includes('deposit')) colMap.deposit = i; if (n.includes('ملاحظ') || n.includes('notes')) colMap.notes = i; }); for (let i = 1; i < rows.length; i++) { const row = rows[i]; if (!row || !row.some(c => c)) continue; const clientName = colMap.clientName !== undefined ? String(row[colMap.clientName] || '').trim() : ''; if (!clientName) continue; const dateRaw = colMap.date !== undefined ? row[colMap.date] : ''; let dateStr = ''; if (dateRaw) { if (typeof dateRaw === 'number') { const d = XLSX.SSF.parse_date_code(dateRaw); dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`; } else dateStr = String(dateRaw).trim(); } const hallName = colMap.hallName !== undefined ? String(row[colMap.hallName] || '').trim() : ''; const price = colMap.price !== undefined ? parseInt(row[colMap.price]) || 2500 : 2500; const phone = colMap.phone !== undefined ? String(row[colMap.phone] || '').trim() : ''; const deposit = colMap.deposit !== undefined ? parseInt(row[colMap.deposit]) || 0 : 0; const notes = colMap.notes !== undefined ? String(row[colMap.notes] || '').trim() : ''; let hall = halls.find(h => h.name.toLowerCase() === hallName.toLowerCase()); if (!hall && hallName) hall = halls.find(h => h.name.includes(hallName) || hallName.includes(h.name)); const hallId = hall ? hall.id : (halls.length > 0 ? halls[0].id : 'hall1'); const finalHallName = hall ? hall.name : (hallName || (halls.length > 0 ? halls[0].name : 'قاعة')); pendingExcelData.push({ id: 'imp_' + Date.now() + '_' + i, clientName, phone, hallId, hallName: finalHallName, date: dateStr, price, deposit, notes, assignedEmployees: [], status: 'pending' }); } if (pendingExcelData.length > 0) { preview.innerHTML = `<div class="bg-green-50 p-3 rounded-xl">✅ تم تحليل ${pendingExcelData.length} حجز</div>`; importBtn.classList.remove('hidden'); } else { preview.innerHTML = '<div class="bg-red-50 p-3 rounded-xl">❌ لا توجد بيانات</div>'; importBtn.classList.add('hidden'); } } catch (err) { preview.innerHTML = '<div class="bg-red-50 p-3 rounded-xl">❌ خطأ في قراءة الملف</div>'; } }; reader.readAsArrayBuffer(file); }
   function confirmExcelImport() { if (!pendingExcelData.length) return showMsg("⚠️ لا توجد بيانات"); bookings.push(...pendingExcelData); pendingExcelData = []; saveAllData(); closeModal(); autoDistribute(); renderBookingsContent(); renderDashboardContent(); showMsg(`✅ تم الاستيراد`); }
 
-  // ---------- استيراد PDF (معالجة كل صف كحجز منفصل) ----------
-  function showImportPdfModal() { const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join(''); document.getElementById('modalContent').innerHTML = `<h3 class="text-xl font-bold mb-3"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد PDF (جدول شهري)</h3><p class="text-sm text-gray-600 mb-3">اختر القاعة ثم ارفع الملف. كل صف بالجدول سيصبح حجزاً مستقلاً</p><select id="pdfHallSelect" class="mb-3"><option value="">اختر القاعة...</option>${hallOpts}</select><input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3"><div class="file-drop-zone" id="pdfDropZone" onclick="document.getElementById('pdfFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-red-600 mb-2 block"></i><p>اسحب ملف PDF هنا</p></div><input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])"><div id="pdfPreview" class="mt-3 text-sm max-h-40 overflow-y-auto"></div><button id="pdfImportBtn" class="bg-red-700 text-white w-full py-2 rounded-xl mt-3 hidden" onclick="confirmPdfDayImport()">✅ استيراد الحجوزات</button>`; document.getElementById('modal').classList.remove('hidden'); setTimeout(() => { const dz = document.getElementById('pdfDropZone'); if (dz) { dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('bg-green-50'); }); dz.addEventListener('dragleave', () => dz.classList.remove('bg-green-50')); dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('bg-green-50'); const f = e.dataTransfer.files[0]; if (f) handlePdfFile(f); }); } }, 200); }
+  // ---------- استيراد PDF (يدعم الأعمدة: م، اليوم، التاريخ) ----------
+  function showImportPdfModal() { const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join(''); document.getElementById('modalContent').innerHTML = `<h3 class="text-xl font-bold mb-3"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد PDF (جدول شهري)</h3><p class="text-sm text-gray-600 mb-3">اختر القاعة ثم ارفع الملف. يدعم الأعمدة: م، اليوم، التاريخ، العميل، الباكدج، العدد</p><select id="pdfHallSelect" class="mb-3"><option value="">اختر القاعة...</option>${hallOpts}</select><input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3"><div class="file-drop-zone" id="pdfDropZone" onclick="document.getElementById('pdfFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-red-600 mb-2 block"></i><p>اسحب ملف PDF هنا</p></div><input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])"><div id="pdfPreview" class="mt-3 text-sm max-h-40 overflow-y-auto"></div><button id="pdfImportBtn" class="bg-red-700 text-white w-full py-2 rounded-xl mt-3 hidden" onclick="confirmPdfDayImport()">✅ استيراد الحجوزات</button>`; document.getElementById('modal').classList.remove('hidden'); setTimeout(() => { const dz = document.getElementById('pdfDropZone'); if (dz) { dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('bg-green-50'); }); dz.addEventListener('dragleave', () => dz.classList.remove('bg-green-50')); dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('bg-green-50'); const f = e.dataTransfer.files[0]; if (f) handlePdfFile(f); }); } }, 200); }
 
   function handlePdfFile(file) {
     if (!file) return;
@@ -207,17 +207,20 @@
           for (let line of lines) {
             const dateMatch = line.match(datePatternGlobal);
             if (dateMatch) {
-              // حفظ الصف السابق إذا وجد
               if (currentEntry) {
                 const parts = currentEntry.trim().split(/\s+/);
-                const datePart = parts[0];
-                const dateParts = datePart.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                let startIdx = 0;
+                if (/^\d+$/.test(parts[0])) startIdx = 1; // تخطي الرقم المسلسل
+                if (startIdx < parts.length && /^(الخميس|الجمعة|السبت|الأحد|الإثنين|الثلاثاء|الأربعاء)$/.test(parts[startIdx])) startIdx++; // تخطي اليوم
+                
+                const datePart = parts[startIdx];
+                const dateParts = datePart?.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
                 if (dateParts) {
                   const day = parseInt(dateParts[1]);
                   const month = parseInt(dateParts[2]);
                   const yr = dateParts[3].length === 2 ? 2000+parseInt(dateParts[3]) : parseInt(dateParts[3]);
                   const dateStr = `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                  let rest = parts.slice(1).join(' ');
+                  let rest = parts.slice(startIdx + 1).join(' ');
                   const nums = rest.match(/\d+/g);
                   let count = 0;
                   if (nums && nums.length > 0) {
@@ -242,24 +245,24 @@
                 }
                 currentEntry = null;
               }
-              // بداية صف جديد
               currentEntry = line;
             } else if (currentEntry) {
-              // إضافة السطر الحالي إلى الصف الحالي
               currentEntry += ' ' + line;
             }
           }
-          // معالجة آخر صف
           if (currentEntry) {
             const parts = currentEntry.trim().split(/\s+/);
-            const datePart = parts[0];
-            const dateParts = datePart.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+            let startIdx = 0;
+            if (/^\d+$/.test(parts[0])) startIdx = 1;
+            if (startIdx < parts.length && /^(الخميس|الجمعة|السبت|الأحد|الإثنين|الثلاثاء|الأربعاء)$/.test(parts[startIdx])) startIdx++;
+            const datePart = parts[startIdx];
+            const dateParts = datePart?.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
             if (dateParts) {
               const day = parseInt(dateParts[1]);
               const month = parseInt(dateParts[2]);
               const yr = dateParts[3].length === 2 ? 2000+parseInt(dateParts[3]) : parseInt(dateParts[3]);
               const dateStr = `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-              let rest = parts.slice(1).join(' ');
+              let rest = parts.slice(startIdx + 1).join(' ');
               const nums = rest.match(/\d+/g);
               let count = 0;
               if (nums && nums.length > 0) {
@@ -403,7 +406,7 @@
     document.addEventListener('click', function(e) { const p = document.getElementById('notificationPanel'), b = document.getElementById('notificationBell'); if (p && b && !b.contains(e.target) && !p.contains(e.target)) p.style.display = 'none'; });
   }
 
-  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center shadow-2xl"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><p class="text-xs text-gray-400 mt-3">جميع الحقوق محفوظه © Ahmed Shreif ✨</p></div></div>`; }
+  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center shadow-2xl"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><p class="text-xs text-gray-400 mt-3">admin / admin123</p></div></div>`; }
   function doLogin() { const un = document.getElementById('loginUser').value.trim(), pw = document.getElementById('loginPass').value; const user = users.find(u => u.username === un && u.password === pw); if (user) { currentUser = user; sessionStorage.setItem('vpms_user', JSON.stringify(user)); renderApp(); showMsg(`مرحباً ${user.name || user.username}`); } else alert("بيانات غير صحيحة"); }
   function logout() { sessionStorage.removeItem('vpms_user'); currentUser = null; showLogin(); }
   function renderApp() { if (!currentUser) showLogin(); else if (currentUser.role === 'employee') renderEmployeeDashboard(); else renderAdminDashboard(); }
