@@ -94,8 +94,7 @@
   let selectedBookings = new Set(), selectedEmployees = new Set();
   let currentHallFilter = 'all', currentStatusFilter = 'all';
   let expandedBookings = new Set();
-  let pendingPdfBookings = [];
-  let pendingExcelData = [];
+  let pendingPdfBookings = [], pendingExcelData = [];
 
   // ---------- إشعارات ----------
   function playNotificationSound() { try { new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3').play().catch(()=>{}); } catch(e) {} }
@@ -305,12 +304,12 @@
   }
   function confirmExcelImport() { if (!pendingExcelData.length) return showMsg("⚠️ لا توجد بيانات"); bookings.push(...pendingExcelData); pendingExcelData = []; saveAllData(); closeModal(); autoDistribute(); renderBookingsContent(); renderDashboardContent(); showMsg(`✅ تم الاستيراد`); }
 
-  // ---------- استيراد PDF محسن (يقرأ التاريخ، العميل، الباكدج، عدد الأفراد) ----------
+  // ---------- استيراد PDF (يستخرج كل صف كحجز مستقل) ----------
   function showImportPdfModal() {
     const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
     document.getElementById('modalContent').innerHTML = `
-      <h3 class="text-xl font-bold mb-3"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد PDF (جدول حجوزات)</h3>
-      <p class="text-sm text-gray-600 mb-3">اختر القاعة ثم ارفع ملف PDF. سيتم استخراج: التاريخ، اسم العميل، نوع الباكدج، عدد الأفراد</p>
+      <h3 class="text-xl font-bold mb-3"><i class="fas fa-file-pdf text-red-600 ml-2"></i>استيراد PDF (جدول شهري)</h3>
+      <p class="text-sm text-gray-600 mb-3">اختر القاعة، ثم ارفع ملف PDF. كل صف في الجدول سيصبح حجزاً مستقلاً</p>
       <select id="pdfHallSelect" class="mb-3"><option value="">اختر القاعة...</option>${hallOpts}</select>
       <input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3">
       <div class="file-drop-zone" id="pdfDropZone" onclick="document.getElementById('pdfFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-red-600 mb-2 block"></i><p>اسحب ملف PDF هنا</p></div>
@@ -323,7 +322,7 @@
 
   function handlePdfFile(file) {
     if (!file) return;
-    const preview = document.getElementById('pdfPreview'); preview.innerHTML = '<p class="text-blue-600">⏳ جاري استخراج النص...</p>';
+    const preview = document.getElementById('pdfPreview'); preview.innerHTML = '<p class="text-blue-600">⏳ جاري استخراج النص من PDF...</p>';
     const reader = new FileReader();
     reader.onload = function(e) {
       const typedarray = new Uint8Array(e.target.result);
@@ -331,128 +330,117 @@
         let allText = ''; const promises = [];
         for (let i = 1; i <= pdf.numPages; i++) promises.push(pdf.getPage(i).then(page => page.getTextContent().then(tc => { allText += tc.items.map(it => it.str).join(' ') + '\n'; })));
         Promise.all(promises).then(() => {
-          // تنظيف النص
-          const cleanText = allText.replace(/\s+/g, ' ').trim();
-          const found = [];
-
-          // محاولة التعرف على السنة من النص (مثلاً: 2026)
-          const yearMatch = cleanText.match(/20\d{2}/);
+          // استخراج السنة من النص
+          const yearMatch = allText.match(/20\d{2}/);
           const year = yearMatch ? parseInt(yearMatch[0]) : new Date().getFullYear();
-
-          // استخراج اسم الشهر
+          // استخراج الشهر - ابحث عن "باقي شهر ابريل" مثلاً
           const monthsAr = { 'يناير': 1, 'فبراير': 2, 'مارس': 3, 'إبريل': 4, 'ابريل': 4, 'أبريل': 4, 'مايو': 5, 'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'سبتمبر': 9, 'أكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12 };
-          let currentMonth = new Date().getMonth(); // افتراضي
+          let currentMonth = new Date().getMonth();
           for (let m in monthsAr) {
-            if (cleanText.includes(m)) { currentMonth = monthsAr[m] - 1; break; }
+            if (allText.includes(m)) { currentMonth = monthsAr[m] - 1; break; }
           }
 
-          // تقسيم النص إلى أسطر ومحاولة استخراج البيانات
-          const lines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+          // تقسيم النص لأسطر
+          const rawLines = allText.split('\n').map(l => l.trim()).filter(l => l.length > 5);
+          const foundBookings = [];
 
-          // أنماط التاريخ: 16/04/2026 أو 2026-04-16 أو 16-04-2026 أو 16/4/2026
+          // الأنماط المعروفة للتاريخ
           const datePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
+          const daysMap = { 'الخميس': 4, 'الجمعة': 5, 'السبت': 6, 'الأحد': 0, 'الإثنين': 1, 'الثلاثاء': 2, 'الأربعاء': 3 };
 
-          lines.forEach(line => {
-            // تجاهل العناوين
-            if (line.includes('القاعة') || line.includes('باقي') || line.includes('شهر') || line.includes('اليوم') || line.includes('التاريخ') || line.includes('اسم العميل') || line.includes('نوع الباكدج')) return;
+          rawLines.forEach(line => {
+            // نتخطى السطر إذا كان عنوان جدول
+            if (line.includes('القاعة') || line.includes('باقي شهر') || line.includes('اليوم') || line.includes('التاريخ') || line.includes('اسم العميل') || line.includes('نوع الباكدج') || line.includes('ملاحظات')) return;
 
+            let dateStr = null;
+            let clientName = '';
+            let packageType = '';
+            let guestCount = 0;
+
+            // 1) محاولة استخراج التاريخ من الصيغة الرقمية
             const dateMatch = line.match(datePattern);
             if (dateMatch) {
-              let day = parseInt(dateMatch[1]);
-              let month = parseInt(dateMatch[2]);
-              let yr = dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3]);
+              const day = parseInt(dateMatch[1]);
+              const month = parseInt(dateMatch[2]);
+              const yr = dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3]);
               if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-                const dateStr = `${yr}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                dateStr = `${yr}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              }
+            }
 
-                // استخراج اسم العميل: النص بعد التاريخ وقبل الأرقام
-                let afterDate = line.substring(dateMatch.index + dateMatch[0].length).trim();
-
-                // إزالة رقم الصف (مثل "1" أو "2") إذا وجد في البداية
-                afterDate = afterDate.replace(/^\d+\s*/, '');
-
-                // استخراج عدد الأفراد (آخر رقم كبير في السطر)
-                const numbers = afterDate.match(/\d+/g);
-                let count = 0;
-                if (numbers && numbers.length > 0) {
-                  // آخر رقم في السطر غالباً هو عدد الأفراد
-                  count = parseInt(numbers[numbers.length - 1]);
+            // 2) إذا لم نجد تاريخاً رقمياً، نبحث عن يوم من أيام الأسبوع
+            if (!dateStr) {
+              for (let dayName in daysMap) {
+                if (line.includes(dayName)) {
+                  const dIdx = daysMap[dayName];
+                  const d = new Date(year, currentMonth, 1);
+                  while (d.getDay() !== dIdx) d.setDate(d.getDate() + 1);
+                  // نحتاج لمعرفة الأسبوع المناسب (قد يكون فيه عدة أيام خميس مثلاً) – نأخذ أول واحد
+                  dateStr = d.toISOString().slice(0, 10);
+                  break;
                 }
+              }
+            }
 
-                // استخراج اسم العميل ونوع الباكدج
-                let remaining = afterDate;
-                // إزالة عدد الأفراد من النهاية
-                if (count > 0) {
-                  remaining = remaining.replace(new RegExp(`${count}\\s*$`), '').trim();
+            // 3) استخراج البيانات الأخرى (اسم العميل، نوع الباكدج، العدد)
+            if (dateStr) {
+              // إزالة التاريخ من النص لتسهيل الاستخراج
+              let rest = line;
+              if (dateMatch) {
+                rest = rest.replace(dateMatch[0], '');
+              } else {
+                // إزالة اسم اليوم
+                for (let dayName in daysMap) {
+                  rest = rest.replace(new RegExp(dayName, 'g'), '');
                 }
+              }
+              rest = rest.replace(/^\s*\d+\s*/, '').trim(); // إزالة رقم الصف
 
-                let clientName = '';
-                let packageType = '';
+              // استخراج عدد الأفراد – آخر رقم كبير
+              const allNums = rest.match(/\d+/g);
+              if (allNums && allNums.length > 0) {
+                guestCount = parseInt(allNums[allNums.length - 1]);
+                // إزالة العدد من النهاية
+                rest = rest.replace(new RegExp(`${guestCount}\\s*$`), '').trim();
+              }
 
-                // الكلمات المفتاحية لأنواع الباكدج
-                const packageKeywords = ['عشاء', 'سواريه', 'سوارية', 'غداء', 'فطار', 'إفطار', 'عشاء 1', 'عشاء 2', 'بوفيه', 'حفل', 'زفاف'];
-
-                // البحث عن نوع الباكدج
-                let foundPkg = '';
-                for (let kw of packageKeywords) {
-                  const idx = remaining.indexOf(kw);
-                  if (idx !== -1) {
-                    foundPkg = kw;
-                    // كل ما قبل الباكدج هو اسم العميل
-                    clientName = remaining.substring(0, idx).trim();
-                    // الباكدج
-                    packageType = remaining.substring(idx).replace(/\d+$/, '').trim();
-                    break;
-                  }
+              // استخراج نوع الباكدج (كلمات مفتاحية)
+              const pkgKeywords = ['عشاء 1', 'عشاء 2', 'عشاء', 'سواريه', 'سوارية', 'غداء', 'فطار', 'إفطار', 'بوفيه', 'حفل', 'زفاف'];
+              let foundPkg = '';
+              for (let kw of pkgKeywords) {
+                const idx = rest.indexOf(kw);
+                if (idx !== -1) {
+                  foundPkg = kw;
+                  clientName = rest.substring(0, idx).trim();
+                  packageType = rest.substring(idx).replace(/\d+$/, '').trim();
+                  break;
                 }
+              }
+              if (!foundPkg) {
+                // إذا لم نجد نوع الباكدج، النص المتبقي كله اسم العميل
+                clientName = rest.replace(/\s*\d+\s*$/, '').trim();
+              }
+              // تنظيف اسم العميل
+              clientName = clientName.replace(/[\/\-\.]/g, '').trim();
+              clientName = clientName.replace(/\s*\d+\s*$/, '').trim();
 
-                if (!foundPkg) {
-                  // إذا لم يتم العثور على نوع الباكدج، اعتبر النص كله اسم العميل
-                  clientName = remaining.replace(/\d+$/, '').trim();
-                }
-
-                // تنظيف اسم العميل
-                clientName = clientName.replace(/[\/\-\.]/g, '').trim();
-                // إزالة أي أرقام متبقية في نهاية الاسم
-                clientName = clientName.replace(/\s*\d+\s*$/, '').trim();
-
-                if (clientName && clientName !== '-' && clientName.length > 2) {
-                  found.push({
-                    clientName,
-                    date: dateStr,
-                    packageType: packageType || 'غير محدد',
-                    count: count || 0
-                  });
-                }
+              if (clientName && clientName !== '-' && clientName.length > 2) {
+                foundBookings.push({
+                  clientName,
+                  date: dateStr,
+                  packageType: packageType || '',
+                  guestCount: guestCount || 0
+                });
               }
             }
           });
 
-          // إذا لم يتم العثور على شيء بالتاريخ، جرب البحث بأيام الأسبوع
-          if (found.length === 0) {
-            const daysMap = { 'الخميس': 4, 'الجمعة': 5, 'السبت': 6, 'الأحد': 0, 'الإثنين': 1, 'الثلاثاء': 2, 'الأربعاء': 3 };
-            lines.forEach(line => {
-              const parts = line.split(/\s+/);
-              let dayName = '', count = 0, client = '';
-              for (let p of parts) {
-                if (daysMap[p] !== undefined) dayName = p;
-                else if (/^\d+$/.test(p) && dayName && !count) count = parseInt(p);
-                else if (dayName && p !== '-' && !/^\d+$/.test(p)) client += p + ' ';
-              }
-              if (dayName && count > 0 && client.trim()) {
-                const dIdx = daysMap[dayName];
-                const d = new Date(year, currentMonth, 1);
-                while (d.getDay() !== dIdx) d.setDate(d.getDate() + 1);
-                found.push({ clientName: client.trim(), date: d.toISOString().slice(0, 10), packageType: '', count });
-              }
-            });
-          }
-
-          if (found.length > 0) {
-            pendingPdfBookings = found;
-            preview.innerHTML = `<div class="bg-green-50 p-2 rounded">✅ تم التعرف على ${found.length} حجز</div><ul class="list-disc pr-4 text-xs">${found.map(b => `<li><b>${b.clientName}</b> - ${b.date} - ${b.packageType} - ${b.count} فرد</li>`).join('')}</ul>`;
+          if (foundBookings.length > 0) {
+            pendingPdfBookings = foundBookings;
+            preview.innerHTML = `<div class="bg-green-50 p-2 rounded">✅ تم التعرف على ${foundBookings.length} حجز منفصل</div><ul class="list-disc pr-4 text-xs">${foundBookings.map(b => `<li><b>${b.clientName}</b> - ${b.date} - ${b.packageType} - ${b.guestCount} فرد</li>`).join('')}</ul>`;
             document.getElementById('pdfImportBtn').classList.remove('hidden');
           } else {
-            preview.innerHTML = '<div class="bg-red-50 p-2 rounded">❌ لم يتم التعرف على بيانات. تأكد من أن الملف يحتوي على تواريخ بصيغة 16/04/2026</div>';
+            preview.innerHTML = '<div class="bg-red-50 p-2 rounded">❌ لم يتم استخراج أي حجز. تأكد من وجود تواريخ أو أيام أسبوع في الملف.</div>';
             document.getElementById('pdfImportBtn').classList.add('hidden');
           }
         });
@@ -477,7 +465,7 @@
         date: b.date,
         price,
         deposit: 0,
-        notes: `${b.packageType} - ${b.count} فرد`,
+        notes: `${b.packageType} - ${b.guestCount} فرد`,
         assignedEmployees: [],
         status: 'pending'
       });
@@ -587,7 +575,7 @@
     document.addEventListener('click', function(e) { const p = document.getElementById('notificationPanel'), b = document.getElementById('notificationBell'); if (p && b && !b.contains(e.target) && !p.contains(e.target)) p.style.display = 'none'; });
   }
 
-  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center shadow-2xl"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><p class="text-xs text-gray-400 mt-3">Ahmed✨✨Shreif</p></div></div>`; }
+  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-96 text-center shadow-2xl"><i class="fas fa-camera-retro text-5xl text-emerald-600 mb-4"></i><h1 class="text-2xl font-bold">Drmedia Pro</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><p class="text-xs text-gray-400 mt-3">Ahmed Shreif ✨✨جميع الحقوق محفوظة 2026©</p></div></div>`; }
   function doLogin() { const un = document.getElementById('loginUser').value.trim(), pw = document.getElementById('loginPass').value; const user = users.find(u => u.username === un && u.password === pw); if (user) { currentUser = user; sessionStorage.setItem('vpms_user', JSON.stringify(user)); renderApp(); showMsg(`مرحباً ${user.name || user.username}`); } else alert("بيانات غير صحيحة"); }
   function logout() { sessionStorage.removeItem('vpms_user'); currentUser = null; showLogin(); }
   function renderApp() { if (!currentUser) showLogin(); else if (currentUser.role === 'employee') renderEmployeeDashboard(); else renderAdminDashboard(); }
