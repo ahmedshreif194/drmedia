@@ -84,13 +84,22 @@
     saveAllData();setTimeout(autoDistribute,600);
   }
 
-  // ====== التوزيع الذكي مع التدوير اليومي ======
+  // ====== التوزيع الذكي مع خلط عشوائي لضمان تغيير الموظفين كل مرة ======
   function autoDistribute(){
-    let active=bookings.filter(b=>b.status==='pending');active.forEach(b=>b.assignedEmployees=[]);
+    let active=bookings.filter(b=>b.status==='pending');
+    active.forEach(b=>b.assignedEmployees=[]);
     let sorted=[...active].sort((a,b)=>new Date(a.date)-new Date(b.date));
+
     let dirs=employees.filter(e=>e.role==='مخرج'&&e.active);
     let phs=employees.filter(e=>e.role==='مصور'&&e.active);
     let crs=employees.filter(e=>e.role==='كرين'&&e.active);
+
+    // ✅ خلط عشوائي لضمان تغيير التوزيع في كل مرة
+    function shuffle(arr){for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
+    dirs=shuffle([...dirs]);
+    phs=shuffle([...phs]);
+    crs=shuffle([...crs]);
+
     let dPtr=0,pPtr=0,cPtr=0;
     let grouped={};sorted.forEach(b=>{if(!grouped[b.date])grouped[b.date]=[];grouped[b.date].push(b);});
     for(let date in grouped){let dayB=grouped[date];let busy=new Set();
@@ -104,28 +113,10 @@
         b.assignedEmployees=assigned;
       }
     }
-    updateEmployeeOrders();saveAllData();showMsg('✅ تم التوزيع الذكي العادل مع تدوير يومي');
+    updateEmployeeOrders();saveAllData();showMsg('✅ تم التوزيع الذكي مع تدوير عشوائي');
   }
 
-  // ====== تبديل الموظفين على القاعات (تدوير بين القاعات) ======
-  function rotateEmployeesOnHalls(){
-    let pending=bookings.filter(b=>b.status==='pending');
-    if(!pending.length){showMsg("⚠️ لا توجد حجوزات معلقة");return;}
-    // نجمع كل الموظفين المعينين حالياً
-    let allAssigned=new Map(); // empId -> [bookingIds]
-    pending.forEach(b=>{
-      (b.assignedEmployees||[]).forEach(eid=>{
-        if(!allAssigned.has(eid))allAssigned.set(eid,[]);
-        allAssigned.get(eid).push(b.id);
-      });
-    });
-    if(allAssigned.size===0){showMsg("⚠️ لا يوجد موظفين معينين");return;}
-    // نفك تعيين الكل أولاً
-    pending.forEach(b=>b.assignedEmployees=[]);
-    // نعيد التوزيع الذكي
-    autoDistribute();
-    showMsg('🔄 تم تبديل الموظفين على القاعات وإعادة التوزيع');
-  }
+  function rotateEmployeesOnHalls(){autoDistribute();renderBookingsContent();renderDistributionContent();showMsg('🔀 تم تبديل الموظفين على القاعات');}
 
   function updateEmployeeOrders(){let act=bookings.filter(b=>b.status!=='cancelled');employees.forEach(e=>e.totalOrders=act.filter(b=>(b.assignedEmployees||[]).includes(e.id)).length);}
   function getEmployeeOrdersInPeriod(empId,start,end){return bookings.filter(b=>b.status!=='cancelled'&&(b.assignedEmployees||[]).includes(empId)&&new Date(b.date)>=start&&new Date(b.date)<=end).length;}
@@ -133,8 +124,8 @@
   // ====== عرض الصفحات ======
   function getFilteredBookings(){let f=[...bookings];if(currentHallFilter!=='all')f=f.filter(b=>b.hallId===currentHallFilter);if(currentStatusFilter!=='all')f=f.filter(b=>b.status===currentStatusFilter);else f=f.filter(b=>b.status!=='cancelled');return f.sort((a,b)=>new Date(a.date)-new Date(b.date));}
   function renderDashboardContent(){updateEmployeeOrders();let active=bookings.filter(b=>b.status!=='cancelled');let rev=active.reduce((s,b)=>s+b.price,0);document.getElementById('dashboardTab').innerHTML=`<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>حجوزات</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${rev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-2xl text-indigo-600"></i><div class="stat-number">${bookings.filter(b=>b.status==='completed').length}</div><div>مكتمل</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين</div></div></div><div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2">أقرب الحجوزات</h3><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${active.slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">لا توجد</td></tr>'}</tbody></table></div>`;}
-  
-  // ====== الحجوزات مع تحديد متعدد + زر تبديل الموظفين ======
+
+  // ====== الحجوزات ======
   function renderBookingsContent(){
     let fb=getFilteredBookings();
     document.getElementById('bookingsTab').innerHTML=`
@@ -183,7 +174,7 @@
   function toggleSelectAllEmployees(){let ck=document.getElementById('selectAllEmployeesCheckbox')?.checked;if(ck)employees.forEach(e=>selectedEmployees.add(e.id));else selectedEmployees.clear();renderEmployeesContent();}
   function bulkDeleteEmployees(){if(!selectedEmployees.size)return showMsg("⚠️ لم تختر أي موظف");if(confirm(`حذف ${selectedEmployees.size} موظف؟`)){employees=employees.filter(e=>!selectedEmployees.has(e.id));users=users.filter(u=>!selectedEmployees.has(u.employeeId));selectedEmployees.clear();saveAllData();updateEmployeeOrders();renderEmployeesContent();renderDistributionContent();showMsg("🗑️ تم الحذف");}}
 
-  // ====== التوزيع اليدوي + زر تبديل الموظفين ======
+  // ====== التوزيع اليدوي ======
   function renderDistributionContent(){
     let pending=bookings.filter(b=>b.status==='pending').sort((a,b)=>new Date(a.date)-new Date(b.date));
     let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">⚙️ التوزيع اليدوي</h2>
@@ -285,9 +276,7 @@
     if(!emp)return;
     let myBookings=bookings.filter(b=>b.status==='pending'&&(b.assignedEmployees||[]).includes(emp.id));
     if(!myBookings.length){showMsg("⚠️ ليس لديك أوردرات للتبديل");return;}
-    // الأوردرات الخاصة بالموظف الحالي
     let myOpts=myBookings.map(b=>`<option value="${b.id}">${b.date} - ${b.clientName} - ${b.hallName}</option>`).join('');
-    // الموظفين البديلين (نفس الدور)
     let otherEmps=employees.filter(e=>e.id!==emp.id&&e.active&&e.role===emp.role);
     let empOpts=otherEmps.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
     document.getElementById('modalContent').innerHTML=`
@@ -301,15 +290,12 @@
       <button onclick="submitSwapRequest()" class="bg-indigo-700 text-white w-full py-2 rounded-xl mt-2">📩 إرسال طلب التبديل</button>`;
     document.getElementById('modal').classList.remove('hidden');
   }
-  
-  // تحميل أوردرات الموظف البديل
   window.loadTargetEmpBookings=function(){
     let tid=document.getElementById('swapTargetEmp')?.value;
     let targetBookings=bookings.filter(b=>b.status==='pending'&&(b.assignedEmployees||[]).includes(tid));
     let opts=targetBookings.map(b=>`<option value="${b.id}">${b.date} - ${b.clientName} - ${b.hallName}</option>`).join('');
     document.getElementById('swapTargetBooking').innerHTML=opts||'<option value="">لا توجد أوردرات</option>';
   };
-
   function submitSwapRequest(){
     let myBid=document.getElementById('swapMyBooking')?.value;
     let tid=document.getElementById('swapTargetEmp')?.value;
@@ -330,7 +316,6 @@
     if(targetUser)addNotification(targetUser.username,'طلب تبديل',`${fromEmp?.name} يريد تبديل أوردر معك`);
     showMsg("✅ تم إرسال طلب التبديل للإدارة وللموظف البديل");
   }
-  
   function renderSwapRequestsContent(){
     let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">🔄 طلبات تبديل الأوردرات</h2><div class="space-y-3">`;
     if(swapRequests.length===0){html+='<p class="text-gray-500 text-center">لا توجد طلبات تبديل حالياً</p>';}
@@ -367,7 +352,6 @@
     let myBooking=bookings.find(b=>b.id===sr.bookingId);
     let targetBooking=bookings.find(b=>b.id===sr.targetBookingId);
     if(myBooking&&targetBooking){
-      // تبديل الموظفين في الأوردرين
       myBooking.assignedEmployees=myBooking.assignedEmployees.map(eid=>eid===sr.fromEmpId?sr.toEmpId:eid);
       targetBooking.assignedEmployees=targetBooking.assignedEmployees.map(eid=>eid===sr.toEmpId?sr.fromEmpId:eid);
     }
@@ -452,7 +436,6 @@
     requestBrowserNotificationPermission();
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
-  
   function renderEmployeeDashboard(){
     if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){
         document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
@@ -498,7 +481,6 @@
     requestBrowserNotificationPermission();
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
-  
   function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`;}
   function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`مرحباً ${user.name||user.username}`);}else alert("بيانات غير صحيحة");}
   function logout(){sessionStorage.removeItem('vpms_user');currentUser=null;showLogin();}
