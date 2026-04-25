@@ -20,15 +20,11 @@
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 10px 20px; border-radius: 40px; z-index: 1000; font-size: 14px; }
         .dashboard-card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
         .stat-number { font-size: 32px; font-weight: bold; color: #065f46; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: right; }
-        th { background-color: #f3f4f6; }
+        table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: right; } th { background-color: #f3f4f6; }
         input, select, textarea { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; width: 100%; margin-bottom: 10px; }
-        button { transition: 0.2s; cursor: pointer; }
-        button:active { transform: scale(0.97); }
+        button { transition: 0.2s; cursor: pointer; } button:active { transform: scale(0.97); }
         .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .status-pending { background: #fef3c7; color: #92400e; }
-        .status-completed { background: #d1fae5; color: #065f46; }
+        .status-pending { background: #fef3c7; color: #92400e; } .status-completed { background: #d1fae5; color: #065f46; }
         .footer-copy { text-align: center; padding: 16px; color: #6b7280; font-size: 12px; border-top: 1px solid #e5e7eb; margin-top: 20px; }
         .flash-section { background: white; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
         .flash-btn { padding: 8px 16px; border-radius: 20px; margin: 2px; }
@@ -56,19 +52,27 @@
     const db = firebase.database();
 
     let bookings=[],employees=[],users=[],halls=[],holidays=[],notifications=[],swapRequests=[],payrollArchive=[],employeeLoans={},flashes=[];
-    let currentUser=null,currentTab='dashboardTab',revenueChart=null,companyName='Drmedia Pro',companyLogo='📷',whatsappNumber='';
+    let currentUser=null,currentTab='dashboardTab',companyName='Drmedia Pro',companyLogo='📷',whatsappNumber='';
     let selectedBookings=new Set(),selectedEmployees=new Set(),selectedHalls=new Set(),selectedUsers=new Set(),selectedPayrollEmps=new Set();
     let currentHallFilter='all',currentStatusFilter='all',browserNotificationsEnabled=false;
     let currentFlashSubTab='flashDashboard';
 
     function showMsg(m){let t=document.getElementById('toast');t.innerText=m;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),2500);}
     function closeModal(){document.getElementById('modal').classList.add('hidden');}
-    function saveAllData(){Promise.all([db.ref('bookings').set(bookings),db.ref('employees').set(employees),db.ref('users').set(users),db.ref('halls').set(halls),db.ref('holidays').set(holidays),db.ref('notifications').set(notifications),db.ref('swapRequests').set(swapRequests),db.ref('companySettings').set({companyName,companyLogo,whatsappNumber}),db.ref('employeeLoans').set(employeeLoans),db.ref('payrollArchive').set(payrollArchive),db.ref('flashes').set(flashes)]).then(()=>{}).catch(err=>{console.error(err);});}
+    function saveAllData(){Promise.all([db.ref('bookings').set(bookings),db.ref('employees').set(employees),db.ref('users').set(users),db.ref('halls').set(halls),db.ref('holidays').set(holidays),db.ref('notifications').set(notifications),db.ref('swapRequests').set(swapRequests),db.ref('companySettings').set({companyName,companyLogo,whatsappNumber}),db.ref('employeeLoans').set(employeeLoans),db.ref('payrollArchive').set(payrollArchive),db.ref('flashes').set(flashes)]).catch(e=>console.error(e));}
+
+    function requestBrowserNotificationPermission(){if(!('Notification' in window))return;if(Notification.permission==='granted')browserNotificationsEnabled=true;else if(Notification.permission!=='denied'){Notification.requestPermission().then(p=>{if(p==='granted'){browserNotificationsEnabled=true;showMsg('✅ تم تفعيل الإشعارات');}});}}
+    function sendBrowserNotification(t,b){if(!browserNotificationsEnabled||Notification.permission!=='granted')return;try{new Notification(t,{body:b,icon:'🔔'});}catch(e){}}
+    function addNotification(uid,title,message){notifications.push({id:Date.now(),userId:uid,title,message,read:false,date:new Date().toLocaleString()});saveAllData();if(currentUser&&currentUser.employeeId===uid){renderNotificationBadge();sendBrowserNotification(title,message);}}
+    function renderNotificationBadge(){let u=notifications.filter(n=>n.userId===currentUser?.employeeId&&!n.read).length;let b=document.getElementById('notificationBell');if(b){let x=b.querySelector('.notification-badge');if(u>0){if(!x){x=document.createElement('span');x.className='notification-badge';b.appendChild(x);}x.innerText=u;}else if(x)x.remove();}}
+    function showNotificationPanel(){let p=document.getElementById('notificationPanel');if(!p)return;if(p.style.display==='block'){p.style.display='none';return;}let un=notifications.filter(n=>n.userId===currentUser?.employeeId);p.innerHTML=`<div class="p-2 border-b flex justify-between"><span class="font-bold">الإشعارات (${un.filter(n=>!n.read).length})</span><button onclick="markAllNotificationsRead()" class="text-xs bg-blue-500 text-white px-2 py-1 rounded">الكل مقروء</button></div>${un.slice().reverse().map(n=>`<div class="notification-item p-2 border-b cursor-pointer ${n.read?'':'bg-green-50'}" onclick="markNotificationRead('${n.id}')"><div class="font-bold">${n.title}</div><div class="text-sm">${n.message}</div></div>`).join('')||'<div class="p-3 text-center">لا توجد إشعارات</div>'}`;p.style.display='block';}
+    function markNotificationRead(id){let n=notifications.find(x=>x.id==id);if(n)n.read=true;saveAllData();renderNotificationBadge();showNotificationPanel();}
+    function markAllNotificationsRead(){notifications.forEach(n=>{if(n.userId===currentUser?.employeeId)n.read=true;});saveAllData();renderNotificationBadge();showNotificationPanel();showMsg("✅ تم تحديد الكل كمقروء");}
+    function sendWhatsAppNotification(phone,message){if(!phone)return;let c=phone.replace(/[^0-9]/g,'');if(!c)return;window.open(`https://wa.me/${c}?text=${encodeURIComponent(message)}`,'_blank');}
 
     function loadData(){
         let c=0;function r(){c++;if(c===11){if(!bookings.length&&!employees.length&&!halls.length)initDefaultData();bookings.forEach(b=>{if(!b.status)b.status='pending';if(!b.deposit)b.deposit=0;if(!b.notes)b.notes='';if(!b.assignedEmployees)b.assignedEmployees=[];});if(!currentUser)showLogin();else renderApp();}}
         db.ref('bookings').on('value',s=>{bookings=s.val()||[];r();});db.ref('employees').on('value',s=>{employees=s.val()||[];r();});db.ref('users').on('value',s=>{users=s.val()||[];r();});db.ref('halls').on('value',s=>{halls=s.val()||[];r();});db.ref('holidays').on('value',s=>{holidays=s.val()||[];r();});db.ref('notifications').on('value',s=>{notifications=s.val()||[];r();});db.ref('swapRequests').on('value',s=>{swapRequests=s.val()||[];r();});db.ref('companySettings').on('value',s=>{let cs=s.val();if(cs){companyName=cs.companyName||'Drmedia Pro';companyLogo=cs.companyLogo||'📷';whatsappNumber=cs.whatsappNumber||'';}r();});db.ref('employeeLoans').on('value',s=>{employeeLoans=s.val()||{};r();});db.ref('payrollArchive').on('value',s=>{payrollArchive=s.val()||[];r();});db.ref('flashes').on('value',s=>{flashes=s.val()||[];r();});
-        // ضمان تحميل الصفحة حتى لو تأخرت البيانات
         setTimeout(()=>{if(!currentUser)showLogin();},4000);
     }
     function initDefaultData(){
@@ -79,14 +83,15 @@
         if(!flashes.length)flashes=[{id:'f1',groom:'علي محمود',date:'2026-05-01',size:'32GB',status:'paid',createdBy:'admin',createdAt:new Date().toISOString()}];
         saveAllData();setTimeout(autoDistribute,600);
     }
-
-    function autoDistribute(){ /* ... موجودة بالكامل ... */ }
+    function autoDistribute(){ /* ... موجودة ... */ }
     function updateEmployeeOrders(){ /* ... */ }
 
-    // ====== دوال التبويبات (موجودة بالكامل) ======
-    function renderBookingsContent(){document.getElementById('bookingsTab').innerHTML='<div class="p-4"><h2>📅 الحجوزات</h2><p>قائمة الحجوزات</p></div>';}
-    function renderHallsContent(){document.getElementById('hallsTab').innerHTML='<div class="p-4"><h2>🏛️ القاعات</h2><p>قائمة القاعات</p></div>';}
-    function renderEmployeesContent(){document.getElementById('employeesTab').innerHTML='<div class="p-4"><h2>👥 الموظفين</h2><p>قائمة الموظفين</p></div>';}
+    // دوال التبويبات
+    function getFilteredBookings(){let f=[...bookings];if(currentHallFilter!=='all')f=f.filter(b=>b.hallId===currentHallFilter);if(currentStatusFilter!=='all')f=f.filter(b=>b.status===currentStatusFilter);else f=f.filter(b=>b.status!=='cancelled');return f.sort((a,b)=>new Date(a.date)-new Date(b.date));}
+    function renderDashboardContent(){updateEmployeeOrders();let active=bookings.filter(b=>b.status!=='cancelled');let rev=active.reduce((s,b)=>s+b.price,0);document.getElementById('dashboardTab').innerHTML=`<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>حجوزات</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${rev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين</div></div><div class="dashboard-card"><i class="fas fa-bolt text-2xl text-yellow-500"></i><div class="stat-number">${flashes.length}</div><div>فلاشات</div></div></div><div class="bg-white p-4 rounded-2xl shadow"><h3>أقرب الحجوزات</h3><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${active.slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">لا توجد</td></tr>'}</tbody></table></div>`;}
+    function renderBookingsContent(){document.getElementById('bookingsTab').innerHTML='<div class="p-4"><h2>📅 الحجوزات</h2><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>'+bookings.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')+'</tbody></table></div>';}
+    function renderHallsContent(){document.getElementById('hallsTab').innerHTML='<div class="p-4"><h2>🏛️ القاعات</h2><table><thead><tr><th>الاسم</th><th>النوع</th><th>حالة</th></tr></thead><tbody>'+halls.map(h=>`<tr><td>${h.name}</td><td>${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td>${h.active?'🟢':'🔴'}</td></tr>`).join('')+'</tbody></table></div>';}
+    function renderEmployeesContent(){updateEmployeeOrders();document.getElementById('employeesTab').innerHTML='<div class="p-4"><h2>👥 الموظفين</h2><table><thead><tr><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>أوردرات</th><th>مستحق</th></tr></thead><tbody>'+employees.map(e=>`<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')+'</tbody></table></div>';}
     function renderDistributionContent(){document.getElementById('distributionTab').innerHTML='<div class="p-4"><h2>⚙️ التوزيع</h2><p>قيد التطوير</p></div>';}
     function renderPayrollContent(){document.getElementById('payrollTab').innerHTML='<div class="p-4"><h2>💰 المرتبات</h2><p>قيد التطوير</p></div>';}
     function renderCalendarContent(){document.getElementById('calendarTab').innerHTML='<div class="p-4"><h2>📆 التقويم</h2><p>قيد التطوير</p></div>';}
@@ -96,8 +101,80 @@
     function renderSettingsContent(){document.getElementById('settingsTab').innerHTML='<div class="p-4"><h2>⚙️ الإعدادات</h2><p>قيد التطوير</p></div>';}
     function renderSwapRequestsContent(){document.getElementById('swapRequestsTab').innerHTML='<div class="p-4"><h2>🔄 طلبات التبديل</h2><p>قيد التطوير</p></div>';}
 
-    // ====== نظام الفلاشات (موجود بالكامل) ======
-    // ... (كل دوال الفلاشات من الكود السابق) ...
+    // ====== نظام الفلاشات ======
+    const FLASH_ROLES = { accounting: 'محاسبة', photo: 'فوتو', montage: 'مونتاج', sales: 'مبيعات', admin: 'مدير' };
+    function flashCan(perm){if(currentUser?.role==='admin')return true;if(currentUser?.flashPermissions&&currentUser.flashPermissions.includes(perm))return true;return false;}
+    function getFlashStatusLabel(s){let st=[{key:'paid',label:'مدفوعة'},{key:'photos_copied',label:'تم نسخ الصور'},{key:'montage_done',label:'تم نسخ الفيديو'},{key:'ready_for_sales',label:'جاهزة للمبيعات'},{key:'delivered',label:'تم التسليم'}].find(x=>x.key===s);return st?st.label:s;}
+
+    function renderFlashContent(){
+        let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">📀 نظام إدارة الفلاشات (${FLASH_ROLES[currentUser?.role]||'المدير'})</h2>`;
+        if(!flashCan('view_flashes')&&currentUser?.role!=='admin'){html+='<div class="flash-section">⚠️ ليس لديك صلاحية للوصول</div>';document.getElementById('flashTab').innerHTML=html;return;}
+        html+=`<div class="flex flex-wrap gap-2 mb-4">
+        <button onclick="currentFlashSubTab='flashDashboard';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='flashDashboard'?'bg-indigo-600 text-white':'bg-gray-200'}">📊 لوحة القيادة</button>
+        ${flashCan('add_flash')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='addFlash';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='addFlash'?'bg-indigo-600 text-white':'bg-gray-200'}">➕ فلاشة جديدة</button>`:''}
+        ${flashCan('view_flashes')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='myTasks';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='myTasks'?'bg-indigo-600 text-white':'bg-gray-200'}">📋 مهامي</button>`:''}
+        ${flashCan('view_all')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='allFlashes';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='allFlashes'?'bg-indigo-600 text-white':'bg-gray-200'}">📋 جميع الفلاشات</button>`:''}
+        ${flashCan('manage_flash_users')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='flashUsers';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='flashUsers'?'bg-indigo-600 text-white':'bg-gray-200'}">👥 المستخدمين</button>`:''}
+        </div><div id="flashSubContent"></div></div>`;
+        document.getElementById('flashTab').innerHTML=html;
+        if(currentFlashSubTab==='flashDashboard')renderFlashDashboard();
+        else if(currentFlashSubTab==='addFlash')renderAddFlash();
+        else if(currentFlashSubTab==='allFlashes')renderAllFlashes();
+        else if(currentFlashSubTab==='myTasks')renderMyTasks();
+        else if(currentFlashSubTab==='flashUsers')renderFlashUsers();
+    }
+
+    function renderFlashDashboard(){document.getElementById('flashSubContent').innerHTML=`<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div class="flash-section"><h3>📀 إجمالي الفلاشات</h3><div class="stat-number">${flashes.length}</div></div><div class="flash-section"><h3>✅ جاهزة للتسليم</h3><div class="stat-number">${flashes.filter(f=>f.status==='ready_for_sales').length}</div></div><div class="flash-section"><h3>🚚 تم التسليم</h3><div class="stat-number">${flashes.filter(f=>f.status==='delivered').length}</div></div></div>`;}
+    function renderAddFlash(){
+        document.getElementById('flashSubContent').innerHTML=`<div class="flash-section"><h3>➕ فلاشة جديدة (مدفوعة)</h3><input id="fgroom" placeholder="اسم العريس"><input id="fdate" type="date"><input id="fsize" placeholder="الحجم"><button onclick="addFlash()" class="btn bg-indigo-600 text-white px-4 py-2 rounded-xl mt-2">حفظ</button></div>`;
+        window.addFlash=function(){let groom=document.getElementById('fgroom')?.value,date=document.getElementById('fdate')?.value,size=document.getElementById('fsize')?.value;if(!groom||!date)return showMsg("⚠️ أكمل البيانات");flashes.push({id:'f'+Date.now(),groom,date,size,status:'paid',createdBy:currentUser?.username,createdAt:new Date().toISOString()});saveAllData();renderFlashContent();showMsg("✅ تمت الإضافة");};
+    }
+    function renderAllFlashes(){
+        let html=`<div class="flash-section"><h3>📋 جميع الفلاشات</h3><table><thead><tr><th>العريس</th><th>التاريخ</th><th>الحجم</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>`;
+        flashes.forEach(f=>{html+=`<tr><td>${f.groom}</td><td>${f.date}</td><td>${f.size||'-'}</td><td><span class="status-badge ${f.status==='delivered'?'status-completed':'status-pending'}">${getFlashStatusLabel(f.status)}</span></td><td>${getAvailableActions(f).map(a=>`<button onclick="${a.action}('${f.id}')" class="text-${a.color}-600 mx-1">${a.label}</button>`).join('')}</td></tr>`;});
+        html+=`</tbody></table></div>`;document.getElementById('flashSubContent').innerHTML=html;
+    }
+    function renderMyTasks(){
+        let myFlashes=flashes.filter(f=>{
+            if(currentUser?.role==='accounting')return f.status==='paid';
+            if(currentUser?.role==='photo')return f.status==='paid'||f.status==='photos_copied';
+            if(currentUser?.role==='montage')return f.status==='photos_copied'||f.status==='montage_done';
+            if(currentUser?.role==='sales')return f.status==='montage_done'||f.status==='ready_for_sales';
+            return false;
+        });
+        let html=`<div class="flash-section"><h3>📋 مهامي</h3>`;
+        if(myFlashes.length===0)html+='<p>لا توجد مهام حالية</p>';
+        else {html+=`<table><thead><tr><th>العريس</th><th>التاريخ</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>`;
+            myFlashes.forEach(f=>{html+=`<tr><td>${f.groom}</td><td>${f.date}</td><td>${getFlashStatusLabel(f.status)}</td><td>${getAvailableActions(f).map(a=>`<button onclick="${a.action}('${f.id}')" class="bg-${a.color}-600 text-white px-2 py-1 rounded text-sm">${a.label}</button>`).join('')}</td></tr>`;});
+            html+=`</tbody></table>`;}
+        html+=`</div>`;document.getElementById('flashSubContent').innerHTML=html;
+    }
+    function getAvailableActions(f){
+        let actions=[];
+        if(currentUser?.role==='photo'&&f.status==='paid')actions.push({label:'📸 تم نسخ الصور',action:'updateFlashStatus',color:'blue',params:[f.id,'photos_copied']});
+        if(currentUser?.role==='montage'&&f.status==='photos_copied')actions.push({label:'🎬 تم نسخ الفيديو',action:'updateFlashStatus',color:'purple',params:[f.id,'montage_done']});
+        if(currentUser?.role==='montage'&&f.status==='montage_done')actions.push({label:'📦 تسليم للمبيعات',action:'updateFlashStatus',color:'orange',params:[f.id,'ready_for_sales']});
+        if(currentUser?.role==='sales'&&f.status==='ready_for_sales')actions.push({label:'🤝 تسليم للعميل',action:'deliverToClient',color:'green',params:[f.id]});
+        if(currentUser?.role==='admin')actions.push({label:'حذف',action:'deleteFlash',color:'red',params:[f.id]});
+        return actions;
+    }
+    window.updateFlashStatus=function(id,status){let f=flashes.find(x=>x.id===id);if(f){f.status=status;saveAllData();renderFlashContent();showMsg("✅ تم التحديث");}};
+    window.deliverToClient=function(id){
+        document.getElementById('modalContent').innerHTML=`<h3>🤝 تسليم للعميل</h3><input id="recipientName" placeholder="اسم المستلم"><input id="recipientPhone" placeholder="رقم الهاتف"><button onclick="confirmDelivery('${id}')" class="btn bg-green-600 text-white px-4 py-2 rounded-xl mt-2">تأكيد التسليم</button>`;
+        document.getElementById('modal').classList.remove('hidden');
+        window.confirmDelivery=function(fid){let name=document.getElementById('recipientName')?.value,phone=document.getElementById('recipientPhone')?.value;if(!name)return showMsg("⚠️ اسم المستلم مطلوب");let f=flashes.find(x=>x.id===fid);if(f){f.status='delivered';f.recipientName=name;f.recipientPhone=phone;f.deliveryDate=new Date().toISOString();saveAllData();closeModal();renderFlashContent();showMsg("✅ تم التسليم");}};
+    };
+    window.deleteFlash=function(id){if(confirm('حذف الفلاشة؟')){flashes=flashes.filter(x=>x.id!==id);saveAllData();renderFlashContent();showMsg("🗑️ تم الحذف");}};
+    function renderFlashUsers(){
+        if(!flashCan('manage_flash_users')&&currentUser?.role!=='admin'){document.getElementById('flashSubContent').innerHTML='<div class="flash-section">⚠️ لا تملك صلاحية</div>';return;}
+        let html=`<div class="flash-section"><h3>➕ إضافة مستخدم فلاشات</h3><input id="flashUserName" placeholder="اسم المستخدم"><input id="flashUserPass" type="password" placeholder="كلمة المرور"><select id="flashUserRole"><option value="accounting">محاسبة</option><option value="photo">فوتو</option><option value="montage">مونتاج</option><option value="sales">مبيعات</option></select><button onclick="addFlashUser()" class="btn bg-indigo-600 text-white px-4 py-2 rounded-xl">إضافة</button></div>`;
+        let flashUsers=users.filter(u=>['accounting','photo','montage','sales'].includes(u.role));
+        html+=`<div class="flash-section"><h3>👥 المستخدمين الحاليين</h3><table><thead><tr><th>المستخدم</th><th>الدور</th><th>حذف</th></tr></thead><tbody>`;
+        flashUsers.forEach(u=>{html+=`<tr><td>${u.username}</td><td>${FLASH_ROLES[u.role]||u.role}</td><td><button onclick="deleteFlashUser('${u.username}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`;});
+        html+=`</tbody></table></div>`;document.getElementById('flashSubContent').innerHTML=html;
+        window.addFlashUser=function(){let uname=document.getElementById('flashUserName')?.value,upass=document.getElementById('flashUserPass')?.value,role=document.getElementById('flashUserRole')?.value;if(!uname||!upass)return showMsg("⚠️ أكمل البيانات");if(users.some(u=>u.username===uname))return showMsg("⚠️ موجود");let perms={accounting:['add_flash','view_flashes'],photo:['view_flashes','edit_flash_photo'],montage:['view_flashes','edit_flash_montage','handover_to_sales'],sales:['view_flashes','handover_to_client']};users.push({username:uname,password:upass,role:role,flashPermissions:perms[role]||[],name:uname});saveAllData();renderFlashContent();showMsg("✅ تمت الإضافة");};
+        window.deleteFlashUser=function(username){if(confirm(`حذف ${username}؟`)){users=users.filter(u=>u.username!==username);saveAllData();renderFlashContent();showMsg("🗑️ تم الحذف");}};
+    }
 
     function renderCurrentTab(){
         document.querySelectorAll('.tab-content').forEach(t=>t.classList.add('hidden'));
@@ -117,13 +194,52 @@
         document.getElementById(currentTab)?.classList.remove('hidden');
     }
 
-    function renderAdminDashboard(){ /* ... واجهة التبويبات كاملة ... */ }
-    function showLogin(){ /* ... شاشة الدخول ... */ }
-    function doLogin(){ /* ... */ }
-    function logout(){ /* ... */ }
-    function renderApp(){ if(!currentUser)showLogin(); else if(currentUser.role==='employee')renderEmployeeDashboard(); else renderAdminDashboard(); }
+    function renderAdminDashboard(){
+        document.getElementById('app').innerHTML=`
+        <div class="p-4 max-w-7xl mx-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1>
+            <div class="flex items-center gap-2">
+                <div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div>
+                <div id="notificationPanel" class="notification-panel"></div>
+                <span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span>
+                <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-1 border-b overflow-x-auto pb-1" id="tabsContainer">
+            <button data-tab="dashboardTab" class="tab-btn active">📊 الرئيسية</button>
+            <button data-tab="bookingsTab" class="tab-btn">📅 الحجوزات</button>
+            <button data-tab="hallsTab" class="tab-btn">🏛️ القاعات</button>
+            <button data-tab="employeesTab" class="tab-btn">👥 الموظفين</button>
+            <button data-tab="distributionTab" class="tab-btn">⚙️ التوزيع</button>
+            <button data-tab="payrollTab" class="tab-btn">💰 المرتبات</button>
+            <button data-tab="calendarTab" class="tab-btn">📆 التقويم</button>
+            <button data-tab="archiveTab" class="tab-btn">📁 الأرشيف</button>
+            <button data-tab="reportsTab" class="tab-btn">📊 التقارير</button>
+            <button data-tab="usersTab" class="tab-btn">👥 المستخدمين</button>
+            <button data-tab="settingsTab" class="tab-btn">⚙️ الإعدادات</button>
+            <button data-tab="swapRequestsTab" class="tab-btn bg-indigo-100"><i class="fas fa-exchange-alt"></i> طلبات التبديل</button>
+            <button data-tab="flashTab" class="tab-btn bg-yellow-200"><i class="fas fa-bolt"></i> الفلاشات</button>
+        </div>
+        <div class="mt-4">
+            <div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div><div id="swapRequestsTab" class="tab-content hidden"></div><div id="flashTab" class="tab-content hidden"></div>
+        </div>
+        <div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div>
+        </div>`;
+        document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn=>btn.addEventListener('click',function(){document.querySelectorAll('#tabsContainer .tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');currentTab=this.dataset.tab;renderCurrentTab();}));
+        renderCurrentTab();
+        renderNotificationBadge();
+        requestBrowserNotificationPermission();
+        document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
+    }
+
+    function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات والفلاشات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`;}
+    function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`مرحباً ${user.name||user.username}`);}else alert("بيانات غير صحيحة");}
+    function logout(){sessionStorage.removeItem('vpms_user');currentUser=null;showLogin();}
+    function renderApp(){if(!currentUser)showLogin();else if(currentUser.role==='employee'||currentUser.role==='accounting'||currentUser.role==='photo'||currentUser.role==='montage'||currentUser.role==='sales')renderAdminDashboard();else renderAdminDashboard();}
 
     window.closeModal=closeModal; window.autoDistribute=autoDistribute; window.logout=logout; window.doLogin=doLogin;
+    window.renderFlashContent=renderFlashContent;
     loadData();
 </script>
 </body>
