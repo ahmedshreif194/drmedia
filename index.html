@@ -409,14 +409,64 @@
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
   function renderEmployeeDashboard(){
-    if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;return;}
+    if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){
+        document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
+        return;
+    }
     let emp=employees.find(e=>e.id===currentUser.employeeId);
     updateEmployeeOrders();
     let my=bookings.filter(b=>(b.assignedEmployees||[]).includes(emp.id)&&b.status!=='cancelled');
-    document.getElementById('app').innerHTML=`<div class="p-4 max-w-4xl mx-auto"><h1 class="text-xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1><div class="bg-white p-4 rounded-xl shadow mt-4"><h2 class="font-bold">${emp.name} - ${emp.role}</h2><p>أوردرات: ${my.length} | مستحق: ${(my.length*emp.salaryPerOrder).toLocaleString()} ج.م</p><table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${my.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div><div class="flex gap-3 mt-4"><button onclick="showSwapModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-exchange-alt ml-1"></i> تبديل وردية</button><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div><div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div>`;
+
+    // ---- البحث عن طلبات التبديل الخاصة بهذا الموظف ----
+    let mySwaps = swapRequests.filter(sr => sr.fromEmpId === currentUser.employeeId || sr.toEmpId === currentUser.employeeId);
+    let swapResultHTML = '';
+    if(mySwaps.length > 0) {
+        swapResultHTML = `<div class="bg-white p-4 rounded-xl shadow mb-4">
+            <h3 class="font-bold mb-2"><i class="fas fa-exchange-alt ml-1"></i> نتائج طلبات التبديل</h3>
+            <div class="space-y-2">`;
+        mySwaps.slice().reverse().forEach(sr => {
+            let otherEmp = sr.fromEmpId === currentUser.employeeId ? employees.find(e=>e.id===sr.toEmpId) : employees.find(e=>e.id===sr.fromEmpId);
+            let bk = bookings.find(b=>b.id===sr.bookingId);
+            let statusIcon = '', statusText = '', statusColor = '';
+            if(sr.status === 'approved') {
+                statusIcon = '✅'; statusText = 'تمت الموافقة'; statusColor = 'text-green-700';
+            } else if(sr.status === 'rejected') {
+                statusIcon = '❌'; statusText = 'تم الرفض'; statusColor = 'text-red-600';
+            } else {
+                statusIcon = '⏳'; statusText = 'قيد الانتظار'; statusColor = 'text-yellow-600';
+            }
+            swapResultHTML += `<div class="flex justify-between items-center border-b pb-2">
+                <div>
+                    <span class="font-medium">${otherEmp?.name||'?'}</span>
+                    <span class="text-sm text-gray-500 mr-2">${bk?.date||''} - ${bk?.clientName||''}</span>
+                </div>
+                <span class="${statusColor} font-bold">${statusIcon} ${statusText}</span>
+            </div>`;
+        });
+        swapResultHTML += `</div></div>`;
+    }
+
+    document.getElementById('app').innerHTML=`
+        <div class="p-4 max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1>
+                <div class="flex gap-2">
+                    <button onclick="showSwapModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm"><i class="fas fa-exchange-alt ml-1"></i> تبديل وردية</button>
+                    <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button>
+                </div>
+            </div>
+            ${swapResultHTML}
+            <div class="bg-white p-4 rounded-xl shadow mt-4">
+                <h2 class="font-bold">${emp.name} - ${emp.role}</h2>
+                <p>أوردرات: ${my.length} | مستحق: ${(my.length*emp.salaryPerOrder).toLocaleString()} ج.م</p>
+                <table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${my.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table>
+            </div>
+            <div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div>
+        </div>`;
     renderNotificationBadge();
     requestBrowserNotificationPermission();
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
+} p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
   function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`;}
   function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`مرحباً ${user.name||user.username}`);}else alert("بيانات غير صحيحة");}
