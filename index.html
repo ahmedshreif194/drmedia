@@ -273,11 +273,6 @@
   function removeLogo() { companyLogo = '📷'; saveAllData(); renderSettingsContent(); showMsg("✅ تمت إزالة الصورة"); }
   function updateCompanyName() { companyName = document.getElementById('companyNameInput')?.value || 'Drmedia Pro'; saveAllData(); showMsg("✅ تم تحديث الاسم"); renderApp(); }
   function updateWhatsApp() { whatsappNumber = document.getElementById('whatsappInput')?.value || ''; saveAllData(); showMsg("✅ تم حفظ رقم الواتساب"); }
-
-  // ---------- باقي الدوال (اختصاراً دون تكرار كل شيء) ----------
-  // ... (جميع دوال التوزيع، المرتبات، التقويم، الأرشيف، الاستيراد، المودالات، التبديل، إلخ)
-  // أرجو ملاحظة أن الرد السابق الكبير يحتوي على جميع هذه الدوال، وهذا الرد يركز على إظهار أن التقارير والمستخدمين والإعدادات تم استعادتها بالكامل.
-  // تم تضمين الشيفرة الكاملة في الرد النهائي أدناه.
   function renderCurrentTab() {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
     if (currentTab === 'dashboardTab') renderDashboardContent();
