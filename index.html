@@ -28,12 +28,14 @@
     input, select, textarea { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; width: 100%; margin-bottom: 10px; }
     button { transition: 0.2s; cursor: pointer; }
     button:active { transform: scale(0.97); }
+    .save-indicator { position: fixed; top: 10px; right: 10px; background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; z-index: 1000; }
     .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .calendar-day { background: #f1f5f9; border-radius: 12px; padding: 10px 4px; text-align: center; cursor: pointer; transition: 0.2s; font-size: 14px; }
     .calendar-day.booked { background: #10b981; color: white; }
     .calendar-day.completed { background: #6366f1; color: white; }
     .calendar-day.cancelled { background: #ef4444; color: white; }
     .calendar-day:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .employee-checkbox-list { max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
     .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
     .status-pending { background: #fef3c7; color: #92400e; }
     .status-completed { background: #d1fae5; color: #065f46; }
@@ -49,9 +51,11 @@
   </style>
 </head>
 <body>
+
 <div id="app"></div>
 <div id="toast" class="toast hidden"></div>
 <div id="saveIndicator" class="save-indicator hidden">💾 جاري الحفظ...</div>
+
 <div id="modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50 p-3">
   <div class="bg-white rounded-2xl p-4 md:p-6 w-full max-w-md max-h-[90vh] overflow-auto modal-content">
     <div id="modalContent"></div>
@@ -81,7 +85,7 @@
   let companyName = 'Drmedia Pro', companyLogo = '📷', whatsappNumber = '';
   let employeeLoans = {}, payrollArchive = [];
 
-  // ---------- إشعارات ----------
+  // ---------- الإشعارات ----------
   function playNotificationSound() { try { new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3').play().catch(()=>{}); } catch(e) {} }
   function addNotification(userId, title, message) { const n = { id: Date.now(), userId, title, message, read: false, date: new Date().toLocaleString() }; notifications.push(n); saveAllData(); if (currentUser && currentUser.employeeId === userId) { renderNotificationBadge(); playNotificationSound(); } }
   function renderNotificationBadge() { const unread = notifications.filter(n => n.userId === currentUser?.employeeId && !n.read).length; const bell = document.getElementById('notificationBell'); if (bell) { let badge = bell.querySelector('.notification-badge'); if (unread > 0) { if (!badge) { badge = document.createElement('span'); badge.className = 'notification-badge'; bell.appendChild(badge); } badge.innerText = unread; } else if (badge) badge.remove(); } }
@@ -115,7 +119,7 @@
   function updateBookingStatuses() { const today = new Date(); today.setHours(0,0,0,0); let changed = false; bookings.forEach(b => { if (b.status === 'pending') { const bd = new Date(b.date); bd.setHours(0,0,0,0); if (bd < today) { b.status = 'completed'; changed = true; } } }); if (changed) { saveAllData(); updateEmployeeOrders(); } }
   setInterval(updateBookingStatuses, 60000);
 
-  // ---------- البيانات الافتراضية ----------
+  // ---------- بيانات افتراضية ----------
   function initDefaultData() {
     if (!halls.length) halls = [{ id: 'hall1', name: 'المغلقة', type: 'closed', active: true }, { id: 'hall2', name: 'الأوبن', type: 'open', active: true }, { id: 'hall3', name: 'الكافيه', type: 'cafe', active: true }];
     if (!employees.length) employees = [{ id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 }, { id: 'emp2', name: 'محمود حسن', role: 'مخرج', phone: '01002345678', salaryPerOrder: 300, active: true, totalOrders: 0 }, { id: 'emp3', name: 'سامر خالد', role: 'مصور', phone: '01003456789', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp4', name: 'نور الدين', role: 'مصور', phone: '01004567890', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp5', name: 'ياسر محمد', role: 'مصور', phone: '01005678901', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp6', name: 'كريم وائل', role: 'مصور', phone: '01006789012', salaryPerOrder: 200, active: true, totalOrders: 0 }, { id: 'emp7', name: 'طارق رشاد', role: 'كرين', phone: '01007890123', salaryPerOrder: 250, active: true, totalOrders: 0 }, { id: 'emp8', name: 'هاني سعيد', role: 'كرين', phone: '01008901234', salaryPerOrder: 250, active: true, totalOrders: 0 }];
@@ -124,7 +128,7 @@
     saveAllData(); setTimeout(autoDistribute, 600);
   }
 
-  // ---------- توزيع ذكي (بدون تكرار موظف في نفس اليوم) ----------
+  // ---------- توزيع ذكي ----------
   function autoDistribute() {
     updateBookingStatuses();
     const active = bookings.filter(b => b.status === 'pending');
@@ -175,12 +179,7 @@
 
   // ---------- حساب الأوردرات في فترة ----------
   function getEmployeeOrdersInPeriod(empId, start, end) {
-    return bookings.filter(b => {
-      if (b.status === 'cancelled') return false;
-      if (!b.assignedEmployees?.includes(empId)) return false;
-      const d = new Date(b.date);
-      return d >= start && d <= end;
-    }).length;
+    return bookings.filter(b => b.status !== 'cancelled' && b.assignedEmployees?.includes(empId) && new Date(b.date) >= start && new Date(b.date) <= end).length;
   }
 
   // ---------- عرض الصفحات ----------
@@ -188,24 +187,23 @@
 
   function renderDashboardContent() { updateBookingStatuses(); updateEmployeeOrders(); const active = bookings.filter(b => b.status !== 'cancelled'); const totalRev = active.reduce((s, b) => s + b.price, 0); document.getElementById('dashboardTab').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>إجمالي الحجوزات</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${totalRev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-2xl text-indigo-600"></i><div class="stat-number">${bookings.filter(b=>b.status==='completed').length}</div><div>مكتمل</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين</div></div></div><div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold"><i class="fas fa-calendar-alt ml-1"></i>أقرب الحجوزات</h3><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${active.slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">لا توجد حجوزات</td></tr>'}</tbody></table></div>`; }
 
-  function renderBookingsContent() { /* ... مع تحديد متعدد ... */ }
+  function renderBookingsContent() { updateBookingStatuses(); const fb = getFilteredBookings(); document.getElementById('bookingsTab').innerHTML = `<div class="p-4"><div class="flex justify-between items-center flex-wrap gap-2 mb-4"><h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2><div class="flex gap-2 flex-wrap"><select id="hallFilter" class="border rounded-xl px-2 py-2 text-sm">${halls.map(h=>`<option value="${h.id}" ${currentHallFilter===h.id?'selected':''}>${h.name}</option>`).join('')}<option value="all" ${currentHallFilter==='all'?'selected':''}>الكل</option></select><select id="statusFilter" class="border rounded-xl px-2 py-2 text-sm"><option value="all" ${currentStatusFilter==='all'?'selected':''}>الكل</option><option value="pending" ${currentStatusFilter==='pending'?'selected':''}>معلق</option><option value="completed" ${currentStatusFilter==='completed'?'selected':''}>مكتمل</option></select><button onclick="applyFilters()" class="bg-gray-600 text-white px-3 py-2 rounded-xl text-sm">فلترة</button><button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-2 rounded-xl text-sm">تحديد الكل</button><button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-2 rounded-xl text-sm">حذف المحدد</button><button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm">+ حجز</button><button onclick="autoDistribute(); renderBookingsContent(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl text-sm">توزيع</button></div></div><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead><tr><th class="w-10"><input type="checkbox" id="selectAllBookingsCheckbox" onchange="toggleSelectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>موظفون</th><th>إجراءات</th></tr></thead><tbody>${fb.map(b=>`<tr><td class="text-center"><input type="checkbox" class="booking-checkbox" value="${b.id}" ${selectedBookings.has(b.id)?'checked':''} onchange="toggleBookingSelection('${b.id}', this.checked)"></td><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':'status-pending'}">${b.status==='completed'?'مكتمل':'معلق'}</span></td><td class="text-sm">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).filter(Boolean).join(', ')||'-'}</td><td><div class="flex gap-1"><button onclick="markBookingCompleted('${b.id}')" class="text-indigo-600"><i class="fas fa-check-circle"></i></button><button onclick="showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></div></td></tr>`).join('')||'<tr><td colspan="7">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`; }
+  function applyFilters() { currentHallFilter = document.getElementById('hallFilter')?.value || 'all'; currentStatusFilter = document.getElementById('statusFilter')?.value || 'all'; renderBookingsContent(); }
 
-  function renderHallsContent() { /* ... مع تحديد متعدد ... */ }
+  function renderHallsContent() { document.getElementById('hallsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">🏛️ القاعات</h2><div class="flex gap-2 mb-3"><button onclick="showAddHallModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button><button onclick="selectAllHalls()" class="bg-gray-500 text-white px-3 py-2 rounded-xl text-sm">تحديد الكل</button><button onclick="bulkDeleteHalls()" class="bg-red-600 text-white px-3 py-2 rounded-xl text-sm">حذف المحدد</button></div><table class="w-full bg-white rounded-xl"><thead><tr><th class="w-10"><input type="checkbox" id="selectAllHallsCheckbox" onchange="toggleSelectAllHalls()"></th><th>الاسم</th><th>النوع</th><th>حالة</th><th>حجوزات</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${halls.map(h=>`<tr><td class="text-center"><input type="checkbox" class="hall-checkbox" value="${h.id}" ${selectedHalls.has(h.id)?'checked':''} onchange="toggleHallSelection('${h.id}', this.checked)"></td><td>${h.name}</td><td>${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td>${h.active?'🟢':'🔴'}</td><td>${bookings.filter(b=>b.hallId===h.id&&b.status!=='cancelled').length}</td><td><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div>`; }
 
-  function renderEmployeesContent() { /* ... مع تحديد متعدد ... */ }
+  function renderEmployeesContent() { updateEmployeeOrders(); document.getElementById('employeesTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">👥 الموظفين</h2><div class="flex gap-2 mb-3"><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button><button onclick="selectAllEmployees()" class="bg-gray-500 text-white px-3 py-2 rounded-xl text-sm">تحديد الكل</button><button onclick="bulkDeleteEmployees()" class="bg-red-600 text-white px-3 py-2 rounded-xl text-sm">حذف المحدد</button></div><table class="w-full bg-white rounded-xl"><thead><tr><th class="w-10"><input type="checkbox" id="selectAllEmployeesCheckbox" onchange="toggleSelectAllEmployees()"></th><th>الاسم</th><th>المهمة</th><th>الهاتف</th><th>أوردرات</th><th>مستحق</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${employees.map(e=>`<tr><td class="text-center"><input type="checkbox" class="employee-checkbox" value="${e.id}" ${selectedEmployees.has(e.id)?'checked':''} onchange="toggleEmployeeSelection('${e.id}', this.checked)"></td><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td><td><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div>`; }
 
+  // ---------- المرتبات ----------
   function renderPayrollContent() {
-    const now = new Date();
-    const year = now.getFullYear(), month = now.getMonth();
+    const now = new Date(); const year = now.getFullYear(), month = now.getMonth();
     const periods = [
       { label: '1 - 10', start: new Date(year, month, 1), end: new Date(year, month, 10) },
       { label: '11 - 20', start: new Date(year, month, 11), end: new Date(year, month, 20) },
       { label: `21 - ${new Date(year, month+1, 0).getDate()}`, start: new Date(year, month, 21), end: new Date(year, month+1, 0) }
     ];
     let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">💰 المرتبات - ${now.toLocaleString('ar',{month:'long',year:'numeric'})}</h2><div class="grid grid-cols-3 gap-3 mb-4">`;
-    periods.forEach((p, i) => {
-      html += `<button onclick="renderPayrollPeriod(${i})" class="bg-blue-600 text-white p-2 rounded-xl" id="periodBtn${i}">${p.label}</button>`;
-    });
+    periods.forEach((p, i) => html += `<button onclick="renderPayrollPeriod(${i})" class="bg-blue-600 text-white p-2 rounded-xl">${p.label}</button>`);
     html += `</div><div id="payrollPeriodDetail"></div><div class="mt-4"><h3 class="font-bold mb-2">📋 أرشيف الصرف</h3><div id="payrollArchive"></div></div><div class="mt-4"><h3 class="font-bold mb-2">💵 السلف</h3><button onclick="showAddLoanModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl mb-2">+ سلفة</button><div id="loansSection"></div></div></div>`;
     document.getElementById('payrollTab').innerHTML = html;
     renderPayrollPeriod(0);
@@ -214,8 +212,7 @@
   }
 
   function renderPayrollPeriod(periodIndex) {
-    const now = new Date();
-    const year = now.getFullYear(), month = now.getMonth();
+    const now = new Date(); const year = now.getFullYear(), month = now.getMonth();
     let start, end;
     if (periodIndex === 0) { start = new Date(year, month, 1); end = new Date(year, month, 10); }
     else if (periodIndex === 1) { start = new Date(year, month, 11); end = new Date(year, month, 20); }
@@ -235,8 +232,7 @@
   }
 
   function paySingleEmployee(empId, periodIndex) {
-    const now = new Date();
-    const year = now.getFullYear(), month = now.getMonth();
+    const now = new Date(); const year = now.getFullYear(), month = now.getMonth();
     let start, end, label;
     if (periodIndex === 0) { start = new Date(year, month, 1); end = new Date(year, month, 10); label = '1-10'; }
     else if (periodIndex === 1) { start = new Date(year, month, 11); end = new Date(year, month, 20); label = '11-20'; }
@@ -267,16 +263,34 @@
   }
 
   function renderLoansSection() {
-    let html = '';
-    employees.filter(e=>e.active).forEach(e => { const loans = employeeLoans[e.id] || []; const total = loans.reduce((s,l)=>s+l.amount,0); if (total > 0) html += `<div class="border p-2 rounded mb-1"><strong>${e.name}:</strong> ${total.toLocaleString()} ج.م</div>`; });
+    let html = ''; employees.filter(e=>e.active).forEach(e => { const loans = employeeLoans[e.id] || []; const total = loans.reduce((s,l)=>s+l.amount,0); if (total > 0) html += `<div class="border p-2 rounded mb-1"><strong>${e.name}:</strong> ${total.toLocaleString()} ج.م</div>`; });
     document.getElementById('loansSection').innerHTML = html || '<p class="text-gray-400">لا توجد سلف نشطة</p>';
   }
 
-  function showAddLoanModal() { /* ... */ }
-  function saveNewLoan() { /* ... */ }
+  function showAddLoanModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ سلفة</h3><select id="loanEmpId">${employees.filter(e=>e.active).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select><input type="number" id="loanAmount" placeholder="المبلغ"><input type="date" id="loanDate"><input id="loanReason" placeholder="السبب"><button onclick="saveNewLoan()" class="bg-amber-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveNewLoan() { const empId = document.getElementById('loanEmpId')?.value; const amount = parseInt(document.getElementById('loanAmount')?.value) || 0; const date = document.getElementById('loanDate')?.value; const reason = document.getElementById('loanReason')?.value; if (!empId || !amount) return showMsg("⚠️ أكمل البيانات"); if (!employeeLoans[empId]) employeeLoans[empId] = []; employeeLoans[empId].push({ id: Date.now(), amount, date, reason }); saveAllData(); closeModal(); renderPayrollContent(); showMsg("✅ تمت إضافة السلفة"); }
 
-  // ---------- التقويم الشهري ----------
-  function renderCalendarContent() { /* ... نفس الموجود ... */ }
+  // ---------- التقويم ----------
+  function renderCalendarContent() {
+    const now = new Date(); const year = now.getFullYear(), month = now.getMonth();
+    const firstDay = new Date(year, month, 1).getDay(); const daysCount = new Date(year, month+1, 0).getDate();
+    const monthNames = ['يناير','فبراير','مارس','إبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📆 ${monthNames[month]} ${year}</h2><div class="calendar-grid">`;
+    ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'].forEach(d => html += `<div class="text-center font-bold py-2 text-sm">${d}</div>`);
+    for (let i = 0; i < firstDay; i++) html += `<div></div>`;
+    for (let d = 1; d <= daysCount; d++) {
+      const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const dayBookings = bookings.filter(b => b.date === dateStr && b.status !== 'cancelled');
+      let cls = '';
+      if (dayBookings.some(b => b.status === 'completed')) cls = 'completed';
+      else if (dayBookings.some(b => b.status === 'pending')) cls = 'booked';
+      else if (dayBookings.some(b => b.status === 'cancelled')) cls = 'cancelled';
+      html += `<div class="calendar-day ${cls}" onclick="showDayBookings('${dateStr}')">${d}${dayBookings.length ? `<span class="block text-xs">${dayBookings.length}</span>` : ''}</div>`;
+    }
+    html += `</div><div id="calendarInfo" class="mt-3 text-sm"></div></div>`;
+    document.getElementById('calendarTab').innerHTML = html;
+  }
+  window.showDayBookings = function(date) { const f = bookings.filter(b => b.date === date); const info = document.getElementById('calendarInfo'); if (info) info.innerHTML = f.length ? `<div class="p-3 bg-emerald-50 rounded-xl"><strong>📅 ${date}</strong><ul>${f.map(b => `<li>${b.clientName} - ${b.hallName} (${b.price} ج.م)</li>`).join('')}</ul></div>` : `<div class="p-3 bg-gray-100 rounded-xl">📭 لا توجد حجوزات</div>`; };
 
   // ---------- تقارير شاملة ----------
   function renderReportsContent() {
@@ -284,34 +298,91 @@
     const totalBookings = bookings.filter(b => b.status !== 'cancelled').length;
     const totalRevenue = bookings.filter(b => b.status !== 'cancelled').reduce((s,b) => s + b.price, 0);
     const completed = bookings.filter(b => b.status === 'completed').length;
-    const activeEmps = employees.filter(e => e.active).length;
     const topEmp = [...employees].sort((a,b) => b.totalOrders - a.totalOrders)[0];
-    let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📊 التقارير الشاملة</h2><div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><div class="bg-white p-3 rounded-xl shadow"><p>إجمالي الحجوزات</p><p class="text-2xl font-bold">${totalBookings}</p></div><div class="bg-white p-3 rounded-xl shadow"><p>الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div><div class="bg-white p-3 rounded-xl shadow"><p>مكتمل</p><p class="text-2xl font-bold">${completed}</p></div><div class="bg-white p-3 rounded-xl shadow"><p>موظفون نشطون</p><p class="text-2xl font-bold">${activeEmps}</p></div></div><div class="bg-white p-4 rounded-xl shadow mb-4"><h3 class="font-bold">🏆 الأكثر عملاً</h3><p>${topEmp ? `${topEmp.name} (${topEmp.role}) - ${topEmp.totalOrders} أوردر` : 'لا يوجد'}</p></div><div class="bg-white p-4 rounded-xl shadow"><h3 class="font-bold mb-2">📋 ملخص الحجوزات حسب القاعة</h3><table class="w-full"><thead><tr><th>القاعة</th><th>عدد الحجوزات</th><th>الإيرادات</th></tr></thead><tbody>${halls.map(h => { const cnt = bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length; const rev = bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').reduce((s,b)=>s+b.price,0); return `<tr><td>${h.name}</td><td>${cnt}</td><td>${rev.toLocaleString()} ج.م</td></tr>`; }).join('')}</tbody></table></div><div class="mt-4 flex gap-2"><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl">Excel</button><button onclick="exportToPDF()" class="bg-red-700 text-white px-4 py-2 rounded-xl">PDF</button></div></div>`;
+    let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📊 التقارير الشاملة</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div class="bg-white p-3 rounded-xl shadow"><p>إجمالي الحجوزات</p><p class="text-2xl font-bold">${totalBookings}</p></div>
+      <div class="bg-white p-3 rounded-xl shadow"><p>الإيرادات</p><p class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</p></div>
+      <div class="bg-white p-3 rounded-xl shadow"><p>مكتمل</p><p class="text-2xl font-bold">${completed}</p></div>
+      <div class="bg-white p-3 rounded-xl shadow"><p>موظفون نشطون</p><p class="text-2xl font-bold">${employees.filter(e=>e.active).length}</p></div>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow mb-4">
+      <h3 class="font-bold">🏆 الأكثر عملاً</h3>
+      <p>${topEmp ? `${topEmp.name} (${topEmp.role}) - ${topEmp.totalOrders} أوردر` : 'لا يوجد'}</p>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow">
+      <h3 class="font-bold mb-2">📋 ملخص الحجوزات حسب القاعة</h3>
+      <table class="w-full"><thead><tr><th>القاعة</th><th>عدد الحجوزات</th><th>الإيرادات</th></tr></thead><tbody>
+      ${halls.map(h => { const cnt = bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length; const rev = bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').reduce((s,b)=>s+b.price,0); return `<tr><td>${h.name}</td><td>${cnt}</td><td>${rev.toLocaleString()} ج.م</td></tr>`; }).join('')}
+      </tbody></table>
+    </div>
+    <div class="mt-4 flex gap-2"><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl">Excel</button><button onclick="exportToPDF()" class="bg-red-700 text-white px-4 py-2 rounded-xl">PDF</button></div></div>`;
     document.getElementById('reportsTab').innerHTML = html;
   }
 
-  function exportToExcel() { /* ... */ }
+  // ---------- باقي الصفحات ----------
+  function renderUsersContent() { document.getElementById('usersTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><button onclick="addUser()" class="bg-gray-700 text-white px-4 py-2 rounded-xl mb-3">+ إضافة</button><button onclick="bulkDeleteUsers()" class="bg-red-600 text-white px-3 py-2 rounded-xl mb-3 text-sm">حذف المحدد</button><table class="w-full bg-white rounded-xl"><thead><tr><th class="w-10"><input type="checkbox" id="selectAllUsersCheckbox" onchange="toggleSelectAllUsers()"></th><th>المستخدم</th><th>الدور</th><th>الموظف المرتبط</th><th>تعديل</th></tr></thead><tbody>${users.map(u => `<tr><td class="text-center"><input type="checkbox" class="user-checkbox" value="${u.username}" ${selectedUsers.has(u.username)?'checked':''} onchange="toggleUserSelection('${u.username}', this.checked)"></td><td>${u.username}</td><td>${u.role}</td><td><select class="border rounded px-2 py-1 text-sm w-full" onchange="linkUserToEmployee('${u.username}', this.value)"><option value="">-- اختر --</option>${employees.map(e => `<option value="${e.id}" ${u.employeeId===e.id?'selected':''}>${e.name}</option>`).join('')}</select></td><td><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td></tr>`).join('')}</tbody></table></div>`; }
+  function linkUserToEmployee(username, employeeId) { const u = users.find(x => x.username === username); if (u) { u.employeeId = employeeId || null; saveAllData(); showMsg("✅ تم الربط"); } }
+  function renderSettingsContent() {
+    document.getElementById('settingsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-4">⚙️ الإعدادات</h2>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-image ml-1"></i>اللوجو</h3>
+        <input type="file" id="logoFileInput" accept="image/*" onchange="handleLogoUpload(event)" class="mb-2">
+        <div id="logoPreview" class="mt-2">${companyLogo.startsWith('data:') ? `<img src="${companyLogo}" class="w-16 h-16 object-cover rounded-full">` : `<span class="text-3xl">${companyLogo}</span>`}</div>
+        <button onclick="removeLogo()" class="bg-gray-500 text-white px-4 py-2 rounded-xl mt-2 text-sm">إزالة الصورة</button>
+      </div>
+      <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-building ml-1"></i>اسم الشركة</h3><input id="companyNameInput" value="${companyName}" class="mb-2"><button onclick="updateCompanyName()" class="bg-blue-600 text-white px-4 py-2 rounded-xl">حفظ</button></div>
+      <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fab fa-whatsapp ml-1"></i>واتساب</h3><input id="whatsappInput" value="${whatsappNumber}" placeholder="201000000000" class="mb-2"><button onclick="updateWhatsApp()" class="bg-green-600 text-white px-4 py-2 rounded-xl">حفظ</button></div>
+      <div class="border rounded-2xl p-4"><h3 class="font-bold mb-2"><i class="fas fa-file-import ml-1"></i>استيراد</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mb-2">Excel</button><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full">PDF</button></div>
+    </div></div>`;
+  }
+  function handleLogoUpload(event) { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { companyLogo = e.target.result; saveAllData(); renderSettingsContent(); showMsg("✅ تم تحديث اللوجو"); }; reader.readAsDataURL(file); }
+  function removeLogo() { companyLogo = '📷'; saveAllData(); renderSettingsContent(); showMsg("✅ تمت إزالة الصورة"); }
+  function updateCompanyName() { companyName = document.getElementById('companyNameInput')?.value || 'Drmedia Pro'; saveAllData(); showMsg("✅ تم تحديث الاسم"); renderApp(); }
+  function updateWhatsApp() { whatsappNumber = document.getElementById('whatsappInput')?.value || ''; saveAllData(); showMsg("✅ تم حفظ رقم الواتساب"); }
 
-  // ---------- دوال الفرز والحذف المتعدد ----------
+  // ---------- دوال الحجز والموظفين والقاعات ----------
+  function showAddBookingModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ حجز جديد</h3><input id="clientName" placeholder="اسم العميل"><select id="hallId">${halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select><input id="date" type="date"><input id="price" type="number" placeholder="السعر" value="2500"><button onclick="saveNewBooking()" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveNewBooking() { const hall = halls.find(h => h.id === document.getElementById('hallId').value); bookings.push({ id: Date.now().toString(), clientName: document.getElementById('clientName').value || 'عميل', phone: '', hallId: document.getElementById('hallId').value, hallName: hall?.name||'قاعة', date: document.getElementById('date').value, price: parseInt(document.getElementById('price').value)||2500, deposit:0, notes:'', assignedEmployees:[], status:'pending' }); saveAllData(); closeModal(); autoDistribute(); renderBookingsContent(); }
+  function showEditBookingModal(id) { const b = bookings.find(x=>x.id===id); if(!b)return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل</h3><input id="editClientName" value="${b.clientName}"><select id="editHallId">${halls.map(h=>`<option value="${h.id}" ${b.hallId===h.id?'selected':''}>${h.name}</option>`).join('')}</select><input id="editDate" type="date" value="${b.date}"><input id="editPrice" type="number" value="${b.price}"><button onclick="saveEditBooking('${id}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditBooking(id) { const b = bookings.find(x=>x.id===id); if(!b)return; b.clientName = document.getElementById('editClientName').value; b.hallId = document.getElementById('editHallId').value; const hall = halls.find(h=>h.id===b.hallId); b.hallName = hall?.name||b.hallName; b.date = document.getElementById('editDate').value; b.price = parseInt(document.getElementById('editPrice').value)||b.price; saveAllData(); closeModal(); renderBookingsContent(); }
+  function markBookingCompleted(id) { const b = bookings.find(x => x.id === id); if (b) { b.status = 'completed'; saveAllData(); renderBookingsContent(); renderArchiveContent(); } }
+  function deleteBooking(id) { if (confirm("حذف؟")) { bookings = bookings.filter(b => b.id !== id); selectedBookings.delete(id); saveAllData(); renderBookingsContent(); } }
+  function showAddEmployeeModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ موظف</h3><input id="empName" placeholder="الاسم"><select id="empRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select><input id="empPhone" placeholder="الهاتف"><input id="empSalary" placeholder="المرتب" value="200" type="number"><button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveNewEmployee() { const name = document.getElementById('empName').value.trim(); if (!name) return alert("⚠️ أدخل الاسم"); const newEmp = { id: 'emp' + Date.now(), name, role: document.getElementById('empRole').value, phone: document.getElementById('empPhone').value, salaryPerOrder: parseInt(document.getElementById('empSalary').value) || 200, active: true, totalOrders: 0 }; employees.push(newEmp); let un = name.replace(/\s/g, '').toLowerCase(); let final = un, c = 1; while (users.some(u => u.username === final)) final = un + (c++); users.push({ username: final, password: 'emp123', role: 'employee', employeeId: newEmp.id, name }); saveAllData(); closeModal(); renderEmployeesContent(); showMsg(`✅ تمت الإضافة - ${final} / emp123`); }
+  function showEditEmployeeModal(id) { const e = employees.find(x => x.id === id); if (!e) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل</h3><input id="empName" value="${e.name}"><select id="empRole"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select><input id="empPhone" value="${e.phone}"><input id="empSalary" value="${e.salaryPerOrder}" type="number"><button onclick="saveEditEmployee('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditEmployee(id) { const e = employees.find(x => x.id === id); if (!e) return; e.name = document.getElementById('empName').value; e.role = document.getElementById('empRole').value; e.phone = document.getElementById('empPhone').value; e.salaryPerOrder = parseInt(document.getElementById('empSalary').value) || 200; saveAllData(); closeModal(); renderEmployeesContent(); }
+  function deleteEmployee(id) { if (confirm("حذف الموظف؟")) { employees = employees.filter(e => e.id !== id); users = users.filter(u => u.employeeId !== id); saveAllData(); renderEmployeesContent(); } }
+  function showAddHallModal() { document.getElementById('modalContent').innerHTML = `<h3>➕ قاعة</h3><input id="hallName" placeholder="الاسم"><select id="hallType"><option>closed</option><option>open</option><option>cafe</option></select><button onclick="saveNewHall()" class="bg-blue-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveNewHall() { halls.push({ id: 'hall' + Date.now(), name: document.getElementById('hallName').value || 'قاعة', type: document.getElementById('hallType').value, active: true }); saveAllData(); closeModal(); renderHallsContent(); }
+  function showEditHallModal(id) { const h = halls.find(x=>x.id===id); if(!h)return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل قاعة</h3><input id="hallName" value="${h.name}"><select id="hallType"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>أوبن</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select><button onclick="saveEditHall('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditHall(id) { const h = halls.find(x=>x.id===id); if(!h)return; h.name = document.getElementById('hallName').value; h.type = document.getElementById('hallType').value; saveAllData(); closeModal(); renderHallsContent(); }
+  function deleteHall(id) { if (confirm("حذف القاعة؟")) { halls = halls.filter(h => h.id !== id); bookings = bookings.filter(b => b.hallId !== id); saveAllData(); renderHallsContent(); renderBookingsContent(); } }
+  function addUser() { const un = prompt("المستخدم"), pw = prompt("كلمة المرور"), role = prompt("الدور", "employee"); if (un && pw) { if (users.some(u => u.username === un)) return alert("⚠️ موجود"); users.push({ username: un, password: pw, role: role || 'employee', employeeId: null }); saveAllData(); renderUsersContent(); } }
+  function showEditUserModal(username) { const u = users.find(x => x.username === username); if (!u) return; document.getElementById('modalContent').innerHTML = `<h3>✏️ تعديل مستخدم</h3><input id="editUsername" value="${u.username}"><input id="editPassword" value="${u.password}"><select id="editRole"><option value="admin" ${u.role==='admin'?'selected':''}>admin</option><option value="employee" ${u.role==='employee'?'selected':''}>employee</option></select><button onclick="saveEditUser('${username}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-3">حفظ</button>`; document.getElementById('modal').classList.remove('hidden'); }
+  function saveEditUser(oldUsername) { const u = users.find(x => x.username === oldUsername); if (!u) return; const newUsername = document.getElementById('editUsername').value.trim(); u.password = document.getElementById('editPassword').value; u.role = document.getElementById('editRole').value; if (newUsername !== oldUsername && users.some(x => x.username === newUsername)) return alert("⚠️ موجود"); u.username = newUsername; saveAllData(); closeModal(); renderUsersContent(); }
+
+  // ---------- تحديد متعدد ----------
   function toggleBookingSelection(id, checked) { if (checked) selectedBookings.add(id); else selectedBookings.delete(id); }
   function selectAllBookings() { const fb = getFilteredBookings(); if (selectedBookings.size === fb.length) selectedBookings.clear(); else fb.forEach(b => selectedBookings.add(b.id)); renderBookingsContent(); }
   function toggleSelectAllBookings() { const ck = document.getElementById('selectAllBookingsCheckbox')?.checked; const fb = getFilteredBookings(); if (ck) fb.forEach(b => selectedBookings.add(b.id)); else selectedBookings.clear(); renderBookingsContent(); }
-  function bulkDeleteBookings() { if (!selectedBookings.size) return showMsg("⚠️ لم تختر شيئاً"); if (confirm(`حذف ${selectedBookings.size} حجز؟`)) { bookings = bookings.filter(b => !selectedBookings.has(b.id)); selectedBookings.clear(); saveAllData(); updateEmployeeOrders(); renderBookingsContent(); } }
-
+  function bulkDeleteBookings() { if (!selectedBookings.size) return showMsg("⚠️ لم تختر شيئاً"); if (confirm(`حذف ${selectedBookings.size} حجز؟`)) { bookings = bookings.filter(b => !selectedBookings.has(b.id)); selectedBookings.clear(); saveAllData(); renderBookingsContent(); } }
   function toggleHallSelection(id, checked) { if (checked) selectedHalls.add(id); else selectedHalls.delete(id); }
   function selectAllHalls() { if (selectedHalls.size === halls.length) selectedHalls.clear(); else halls.forEach(h => selectedHalls.add(h.id)); renderHallsContent(); }
   function toggleSelectAllHalls() { const ck = document.getElementById('selectAllHallsCheckbox')?.checked; if (ck) halls.forEach(h => selectedHalls.add(h.id)); else selectedHalls.clear(); renderHallsContent(); }
   function bulkDeleteHalls() { if (!selectedHalls.size) return showMsg("⚠️ لم تختر شيئاً"); if (confirm(`حذف ${selectedHalls.size} قاعة؟`)) { halls = halls.filter(h => !selectedHalls.has(h.id)); selectedHalls.clear(); saveAllData(); renderHallsContent(); renderBookingsContent(); } }
-
   function toggleEmployeeSelection(id, checked) { if (checked) selectedEmployees.add(id); else selectedEmployees.delete(id); }
   function selectAllEmployees() { if (selectedEmployees.size === employees.length) selectedEmployees.clear(); else employees.forEach(e => selectedEmployees.add(e.id)); renderEmployeesContent(); }
   function toggleSelectAllEmployees() { const ck = document.getElementById('selectAllEmployeesCheckbox')?.checked; if (ck) employees.forEach(e => selectedEmployees.add(e.id)); else selectedEmployees.clear(); renderEmployeesContent(); }
   function bulkDeleteEmployees() { if (!selectedEmployees.size) return showMsg("⚠️ لم تختر شيئاً"); if (confirm(`حذف ${selectedEmployees.size} موظف؟`)) { employees = employees.filter(e => !selectedEmployees.has(e.id)); users = users.filter(u => !selectedEmployees.has(u.employeeId)); selectedEmployees.clear(); saveAllData(); renderEmployeesContent(); } }
-
   function toggleUserSelection(username, checked) { if (checked) selectedUsers.add(username); else selectedUsers.delete(username); }
   function selectAllUsers() { if (selectedUsers.size === users.length) selectedUsers.clear(); else users.forEach(u => selectedUsers.add(u.username)); renderUsersContent(); }
   function toggleSelectAllUsers() { const ck = document.getElementById('selectAllUsersCheckbox')?.checked; if (ck) users.forEach(u => selectedUsers.add(u.username)); else selectedUsers.clear(); renderUsersContent(); }
   function bulkDeleteUsers() { if (!selectedUsers.size) return showMsg("⚠️ لم تختر شيئاً"); if (confirm(`حذف ${selectedUsers.size} مستخدم؟`)) { users = users.filter(u => !selectedUsers.has(u.username) && u.role !== 'admin'); selectedUsers.clear(); saveAllData(); renderUsersContent(); } }
+
+  function renderArchiveContent() { const comp = bookings.filter(b => b.status === 'completed').slice(-50); document.getElementById('archiveTab').innerHTML = `<div class="p-4"><h2>📁 الأرشيف</h2><table class="w-full bg-white rounded-xl"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${comp.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">فارغ</td></tr>'}</tbody></table></div>`; }
+  function renderDistributionContent() { const grouped = {}; bookings.filter(b => b.status === 'pending').sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(b => { if (!grouped[b.date]) grouped[b.date] = []; grouped[b.date].push(b); }); let html = `<div class="p-4"><h2>⚙️ التوزيع</h2><button onclick="autoDistribute(); renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl mb-4">توزيع تلقائي</button>`; for (let date in grouped) { html += `<div class="date-group"><div class="date-header">📅 ${date} (${grouped[date].length})</div><div class="p-3">${grouped[date].map(b=>`<div class="border p-2 rounded-xl bg-white mb-1"><strong>${b.clientName}</strong> - ${b.hallName}<br><small>${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).filter(Boolean).join(', ')||'غير معين'}</small></div>`).join('')}</div></div>`; } html += `</div>`; document.getElementById('distributionTab').innerHTML = html; }
+  function exportToExcel() { const ws = XLSX.utils.json_to_sheet(bookings.filter(b => b.status !== 'cancelled').map(b => ({ 'العميل': b.clientName, 'التاريخ': b.date, 'القاعة': b.hallName, 'السعر': b.price }))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "الحجوزات"); XLSX.writeFile(wb, "Drmedia_Bookings.xlsx"); }
 
   // ---------- عرض التطبيق ----------
   function renderCurrentTab() {
@@ -366,42 +437,57 @@
     document.addEventListener('click', function(e) { const p = document.getElementById('notificationPanel'), b = document.getElementById('notificationBell'); if (p && b && !b.contains(e.target) && !p.contains(e.target)) p.style.display = 'none'; });
   }
 
-  function renderEmployeeDashboard() { /* ... */ }
-  function showLogin() { /* ... */ }
-  function doLogin() { /* ... */ }
+  function renderEmployeeDashboard() {
+    if (!currentUser || !currentUser.employeeId || !employees.some(e => e.id === currentUser.employeeId)) {
+      document.getElementById('app').innerHTML = `<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
+      return;
+    }
+    const emp = employees.find(e => e.id === currentUser.employeeId);
+    updateEmployeeOrders();
+    const my = bookings.filter(b => b.assignedEmployees?.includes(emp.id) && b.status !== 'cancelled');
+    document.getElementById('app').innerHTML = `<div class="p-4 max-w-4xl mx-auto"><h1 class="text-xl font-bold text-emerald-800">${companyLogo.startsWith('data:') ? `<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">` : companyLogo} ${companyName}</h1><div class="bg-white p-4 rounded-xl shadow mt-4"><h2 class="font-bold">${emp.name} - ${emp.role}</h2><p>أوردرات: ${my.length} | مستحق: ${(my.length*emp.salaryPerOrder).toLocaleString()} ج.م</p><table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${my.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button><div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div>`;
+    renderNotificationBadge();
+    document.addEventListener('click', function(e) { const p = document.getElementById('notificationPanel'), b = document.getElementById('notificationBell'); if (p && b && !b.contains(e.target) && !p.contains(e.target)) p.style.display = 'none'; });
+  }
+
+  function showLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:') ? `<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">` : companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`; }
+  function doLogin() { const un = document.getElementById('loginUser').value.trim(), pw = document.getElementById('loginPass').value; const user = users.find(u => u.username === un && u.password === pw); if (user) { currentUser = user; sessionStorage.setItem('vpms_user', JSON.stringify(user)); renderApp(); showMsg(`مرحباً ${user.name || user.username}`); } else alert("بيانات غير صحيحة"); }
   function logout() { sessionStorage.removeItem('vpms_user'); currentUser = null; showLogin(); }
   function renderApp() { if (!currentUser) showLogin(); else if (currentUser.role === 'employee') renderEmployeeDashboard(); else renderAdminDashboard(); }
   function closeModal() { document.getElementById('modal').classList.add('hidden'); }
 
   // تعريض الدوال
   window.closeModal = closeModal; window.showNotificationPanel = showNotificationPanel;
-  window.autoDistribute = autoDistribute; window.markAllNotificationsRead = markAllNotificationsRead;
-  window.applyFilters = applyFilters; window.markBookingCompleted = markBookingCompleted;
-  window.deleteBooking = deleteBooking; window.showAddBookingModal = showAddBookingModal;
+  window.autoDistribute = autoDistribute; window.applyFilters = applyFilters;
+  window.selectAllBookings = selectAllBookings; window.toggleSelectAllBookings = toggleSelectAllBookings;
+  window.toggleBookingSelection = toggleBookingSelection; window.bulkDeleteBookings = bulkDeleteBookings;
+  window.showAddBookingModal = showAddBookingModal; window.saveNewBooking = saveNewBooking;
   window.showEditBookingModal = showEditBookingModal; window.saveEditBooking = saveEditBooking;
-  window.toggleBookingSelection = toggleBookingSelection; window.selectAllBookings = selectAllBookings;
-  window.toggleSelectAllBookings = toggleSelectAllBookings; window.bulkDeleteBookings = bulkDeleteBookings;
-  window.toggleHallSelection = toggleHallSelection; window.selectAllHalls = selectAllHalls;
-  window.toggleSelectAllHalls = toggleSelectAllHalls; window.bulkDeleteHalls = bulkDeleteHalls;
-  window.toggleEmployeeSelection = toggleEmployeeSelection; window.selectAllEmployees = selectAllEmployees;
-  window.toggleSelectAllEmployees = toggleSelectAllEmployees; window.bulkDeleteEmployees = bulkDeleteEmployees;
-  window.toggleUserSelection = toggleUserSelection; window.selectAllUsers = selectAllUsers;
-  window.toggleSelectAllUsers = toggleSelectAllUsers; window.bulkDeleteUsers = bulkDeleteUsers;
+  window.markBookingCompleted = markBookingCompleted; window.deleteBooking = deleteBooking;
   window.showAddEmployeeModal = showAddEmployeeModal; window.saveNewEmployee = saveNewEmployee;
   window.showEditEmployeeModal = showEditEmployeeModal; window.saveEditEmployee = saveEditEmployee;
-  window.deleteEmployee = deleteEmployee; window.showAddHallModal = showAddHallModal;
-  window.saveNewHall = saveNewHall; window.showEditHallModal = showEditHallModal;
-  window.saveEditHall = saveEditHall; window.deleteHall = deleteHall;
+  window.deleteEmployee = deleteEmployee; window.selectAllEmployees = selectAllEmployees;
+  window.toggleSelectAllEmployees = toggleSelectAllEmployees; window.toggleEmployeeSelection = toggleEmployeeSelection;
+  window.bulkDeleteEmployees = bulkDeleteEmployees;
+  window.showAddHallModal = showAddHallModal; window.saveNewHall = saveNewHall;
+  window.showEditHallModal = showEditHallModal; window.saveEditHall = saveEditHall;
+  window.deleteHall = deleteHall; window.selectAllHalls = selectAllHalls;
+  window.toggleSelectAllHalls = toggleSelectAllHalls; window.toggleHallSelection = toggleHallSelection;
+  window.bulkDeleteHalls = bulkDeleteHalls;
   window.addUser = addUser; window.showEditUserModal = showEditUserModal;
   window.saveEditUser = saveEditUser; window.linkUserToEmployee = linkUserToEmployee;
+  window.toggleUserSelection = toggleUserSelection; window.selectAllUsers = selectAllUsers;
+  window.toggleSelectAllUsers = toggleSelectAllUsers; window.bulkDeleteUsers = bulkDeleteUsers;
   window.showAddLoanModal = showAddLoanModal; window.saveNewLoan = saveNewLoan;
-  window.paySingleEmployee = paySingleEmployee; window.processPayroll = processPayroll;
-  window.renderPayrollPeriod = renderPayrollPeriod;
+  window.paySingleEmployee = paySingleEmployee; window.renderPayrollPeriod = renderPayrollPeriod;
   window.handleLogoUpload = handleLogoUpload; window.removeLogo = removeLogo;
   window.updateCompanyName = updateCompanyName; window.updateWhatsApp = updateWhatsApp;
-  window.exportToExcel = exportToExcel;
+  window.exportToExcel = exportToExcel; window.showDayBookings = showDayBookings;
+  window.showImportExcelModal = function(){ showMsg("قيد التطوير"); };
+  window.showImportPdfModal = function(){ showMsg("قيد التطوير"); };
 
   loadData();
   const saved = sessionStorage.getItem('vpms_user'); if (saved) currentUser = JSON.parse(saved);
 </script>
 </body>
+</html>
