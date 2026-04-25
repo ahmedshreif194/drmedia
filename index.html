@@ -284,10 +284,8 @@
     swapRequests.push(sr);
     saveAllData();
     closeModal();
-    // إشعار للإدارة
     if(whatsappNumber)sendWhatsAppNotification(whatsappNumber,`🔔 طلب تبديل جديد:\n${fromEmp?.name} يريد التبديل مع ${toEmp?.name}\nعلى حجز: ${booking.clientName} - ${booking.date}`);
     addNotification('admin','طلب تبديل جديد',`${fromEmp?.name} طلب تبديل مع ${toEmp?.name}`);
-    // إشعار للموظف البديل
     let targetUser=users.find(u=>u.employeeId===tid);
     if(targetUser)addNotification(targetUser.username,'طلب تبديل',`${fromEmp?.name} يريد التبديل معك`);
     showMsg("✅ تم إرسال طلب التبديل للإدارة وللموظف البديل");
@@ -330,7 +328,6 @@
     renderSwapRequestsContent();
     renderBookingsContent();
     renderDistributionContent();
-    // إشعار للموظفين
     let fromEmp=employees.find(e=>e.id===sr.fromEmpId);
     let toEmp=employees.find(e=>e.id===sr.toEmpId);
     let fromUser=users.find(u=>u.employeeId===sr.fromEmpId);
@@ -408,6 +405,8 @@
     requestBrowserNotificationPermission();
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
+  
+  // ====== صفحة الموظف (تم التعديل هنا) ======
   function renderEmployeeDashboard(){
     if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){
         document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
@@ -466,8 +465,8 @@
     renderNotificationBadge();
     requestBrowserNotificationPermission();
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
-} p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
+  
   function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`;}
   function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`مرحباً ${user.name||user.username}`);}else alert("بيانات غير صحيحة");}
   function logout(){sessionStorage.removeItem('vpms_user');currentUser=null;showLogin();}
