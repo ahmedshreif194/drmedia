@@ -97,6 +97,10 @@
 
   // ------------------- تسجيل الدخول والخروج -------------------
   function showLogin() {
+    // إزالة أي مستمع سابق لتجنب التكرار
+    const oldForm = document.getElementById('loginForm');
+    if(oldForm) oldForm.removeEventListener('submit', handleLogin);
+    
     document.getElementById('app').innerHTML = `
       <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
         <div class="bg-white rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md">
@@ -123,7 +127,8 @@
         </div>
       </div>
     `;
-    document.getElementById('loginForm').addEventListener('submit', (e) => {
+    
+    function handleLogin(e) {
       e.preventDefault();
       const username = document.getElementById('loginUsername').value.trim();
       const password = document.getElementById('loginPassword').value.trim();
@@ -136,7 +141,9 @@
       } else {
         showMsg('❌ اسم المستخدم أو كلمة المرور غير صحيحة');
       }
-    });
+    }
+    
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
   }
 
   function logout() {
@@ -215,7 +222,7 @@
     document.getElementById('attendanceTab').innerHTML = html;
   }
 
-  // ------------------- باقي الدوال الأساسية (مبسطة لتشغيل النظام) -------------------
+  // ------------------- دوال الإشعارات -------------------
   function renderNotificationBadge(){ 
     let unread = notifications.filter(n=>n.userId===currentUser?.employeeId && !n.read).length;
     let bell = document.getElementById('notificationBell');
@@ -241,6 +248,14 @@
       </div>`;
     renderNotificationBadge();
   }
+
+  // دوال إضافية وهمية لتجنب الأخطاء (لأنها قد تستدعى من الأزرار)
+  function renderDistributionContent(){ document.getElementById('distributionTab').innerHTML = '<div class="p-4">محتوى توزيع الأوردرات قيد التطوير</div>'; }
+  function renderCalendarContent(){ document.getElementById('calendarTab').innerHTML = '<div class="p-4">التقويم قيد التطوير</div>'; }
+  function renderArchiveContent(){ document.getElementById('archiveTab').innerHTML = '<div class="p-4">الأرشيف قيد التطوير</div>'; }
+  function renderReportsContent(){ document.getElementById('reportsTab').innerHTML = '<div class="p-4">التقارير قيد التطوير</div>'; }
+  function renderUsersContent(){ document.getElementById('usersTab').innerHTML = '<div class="p-4">إدارة المستخدمين قيد التطوير</div>'; }
+  function renderSwapRequestsContent(){ document.getElementById('swapRequestsTab').innerHTML = '<div class="p-4">طلبات التبديل قيد التطوير</div>'; }
 
   // Dashboard الأدمن مع تبويبات مختصرة (لضمان عمل النظام)
   function renderAdminDashboard() {
@@ -276,6 +291,12 @@
     else if(currentTab==='payrollTab') renderPayrollSimple();
     else if(currentTab==='attendanceTab') renderAttendanceContent();
     else if(currentTab==='settingsTab') renderSettingsSimple();
+    else if(currentTab==='distributionTab') renderDistributionContent();
+    else if(currentTab==='calendarTab') renderCalendarContent();
+    else if(currentTab==='archiveTab') renderArchiveContent();
+    else if(currentTab==='reportsTab') renderReportsContent();
+    else if(currentTab==='usersTab') renderUsersContent();
+    else if(currentTab==='swapRequestsTab') renderSwapRequestsContent();
     document.getElementById(currentTab)?.classList.remove('hidden');
   }
 
@@ -338,7 +359,19 @@
   }
 
   let dataLoadCount = 0;
-  function dataLoaded() { dataLoadCount++; if(dataLoadCount===10){ if(!bookings.length&&!employees.length&&!halls.length) initDefaultData(); bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; }); let savedUser = sessionStorage.getItem('vpms_user'); if(savedUser) currentUser = JSON.parse(savedUser); if(currentUser) renderApp(); else showLogin(); } }
+  function dataLoaded() { 
+    dataLoadCount++; 
+    if(dataLoadCount===10){ 
+      if(!bookings.length && !employees.length && !halls.length) initDefaultData(); 
+      bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; }); 
+      let savedUser = sessionStorage.getItem('vpms_user'); 
+      if(savedUser) {
+        try { currentUser = JSON.parse(savedUser); } catch(e) { currentUser = null; }
+      }
+      if(currentUser && (currentUser.role === 'admin' || currentUser.role === 'employee')) renderApp(); 
+      else showLogin(); 
+    } 
+  }
 
   db.ref('bookings').on('value',s=>{ bookings=s.val()||[]; dataLoaded(); });
   db.ref('employees').on('value',s=>{ employees=s.val()||[]; dataLoaded(); });
@@ -351,7 +384,18 @@
   db.ref('attendance').on('value',s=>{ attendance=s.val()||[]; dataLoaded(); });
   db.ref('companySettings').on('value',s=>{ let cs=s.val(); if(cs){ companyName=cs.companyName||'Drmedia Pro'; companyLogo=cs.companyLogo||'📷'; whatsappNumber=cs.whatsappNumber||''; } dataLoaded(); });
 
-  window.showQRScanner = showQRScanner; window.stopQRScanner = stopQRScanner; window.renderAttendanceContent = renderAttendanceContent; window.exportAttendanceToExcel = exportAttendanceToExcel; window.saveSettings = saveSettings; window.closeModal = closeModal; window.logout = logout; window.markNotificationRead = markNotificationRead; window.markAllNotificationsRead = markAllNotificationsRead; window.showNotificationPanel = showNotificationPanel;
+  window.showQRScanner = showQRScanner; window.stopQRScanner = stopQRScanner; 
+  window.renderAttendanceContent = renderAttendanceContent; window.exportAttendanceToExcel = exportAttendanceToExcel; 
+  window.saveSettings = saveSettings; window.closeModal = closeModal; window.logout = logout; 
+  window.markNotificationRead = markNotificationRead; window.markAllNotificationsRead = markAllNotificationsRead; 
+  window.showNotificationPanel = showNotificationPanel;
+  // تعريف دوال التبويبات الإضافية للنوافذ
+  window.renderDistributionContent = renderDistributionContent;
+  window.renderCalendarContent = renderCalendarContent;
+  window.renderArchiveContent = renderArchiveContent;
+  window.renderReportsContent = renderReportsContent;
+  window.renderUsersContent = renderUsersContent;
+  window.renderSwapRequestsContent = renderSwapRequestsContent;
 </script>
 </body>
 </html>
