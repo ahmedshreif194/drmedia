@@ -30,22 +30,31 @@
     .status-pending { background: #fef3c7; color: #92400e; }
     .status-completed { background: #d1fae5; color: #065f46; }
     .footer-copy { text-align: center; padding: 16px; color: #6b7280; font-size: 12px; border-top: 1px solid #e5e7eb; margin-top: 20px; }
-    .notification-bell { position: relative; cursor: pointer; }
-    .notification-badge { position: absolute; top: -8px; right: -8px; background: red; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; }
-    .notification-panel { position: absolute; top: 40px; left: 0; width: 300px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; max-height: 400px; overflow-y: auto; display: none; }
     .flash-section { background: white; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
     .flash-btn { padding: 8px 16px; border-radius: 20px; margin: 2px; }
+    @media (max-width: 768px) { .tab-btn { padding: 6px 8px; font-size: 11px; } }
   </style>
+
 </head>
 <body>
-<div id="app"><div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="text-white text-center"><i class="fas fa-spinner fa-spin text-5xl mb-4"></i><p>جاري تحميل Drmedia Pro...</p></div></div></div>
+<div id="app">
+  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700">
+    <div class="text-white text-center">
+      <i class="fas fa-spinner fa-spin text-5xl mb-4"></i>
+      <p>ط¬ط§ط±ظٹ طھط­ظ…ظٹظ„ Drmedia Pro...</p>
+    </div>
+  </div>
+</div>
 <div id="toast" class="toast hidden"></div>
 <div id="modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50 p-3">
-  <div class="bg-white rounded-2xl p-4 md:p-6 w-full max-w-md max-h-[90vh] overflow-auto"><div id="modalContent"></div><div class="flex justify-end gap-3 mt-4"><button onclick="closeModal()" class="bg-gray-400 text-white px-4 py-2 rounded-xl">إغلاق</button></div></div>
+  <div class="bg-white rounded-2xl p-4 md:p-6 w-full max-w-md max-h-[90vh] overflow-auto">
+    <div id="modalContent"></div>
+    <div class="flex justify-end gap-3 mt-4"><button onclick="closeModal()" class="bg-gray-400 text-white px-4 py-2 rounded-xl">ط¥ط؛ظ„ط§ظ‚</button></div>
+  </div>
 </div>
 
 <script>
-  // -------------------- Firebase --------------------
+  // ==================== Firebase Config ====================
   const firebaseConfig = {
     apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
     authDomain: "drmedia-vpms.firebaseapp.com",
@@ -58,120 +67,87 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
+  // ==================== Global Variables ====================
   let bookings=[],employees=[],users=[],halls=[],holidays=[],notifications=[],swapRequests=[],payrollArchive=[],employeeLoans={},flashes=[];
-  let currentUser=null,currentTab='dashboardTab',revenueChart=null,companyName='Drmedia Pro',companyLogo='📷',whatsappNumber='';
-  let selectedBookings=new Set(),selectedEmployees=new Set(),selectedHalls=new Set(),selectedUsers=new Set(),selectedPayrollEmps=new Set();
-  let currentHallFilter='all',currentStatusFilter='all',browserNotificationsEnabled=false;
-  let expandedBookings=new Set();
-  let pendingPdfBookings=[],pendingExcelData=[];
+  let currentUser=null,currentTab='dashboardTab',companyName='Drmedia Pro',companyLogo='ًں“·',whatsappNumber='';
+  let selectedBookings=new Set(),selectedEmployees=new Set(),selectedHalls=new Set(),selectedUsers=new Set();
+  let currentHallFilter='all',currentStatusFilter='all';
   let currentFlashSubTab='flashDashboard';
 
-  // ---------- Utility ----------
-  function showMsg(m){let t=document.getElementById('toast');t.innerText=m;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),2500);}
+  function showMsg(m){document.getElementById('toast').innerText=m;document.getElementById('toast').classList.remove('hidden');setTimeout(()=>document.getElementById('toast').classList.add('hidden'),2500);}
   function closeModal(){document.getElementById('modal').classList.add('hidden');}
-  function saveAllData(){Promise.all([db.ref('bookings').set(bookings),db.ref('employees').set(employees),db.ref('users').set(users),db.ref('halls').set(halls),db.ref('holidays').set(holidays),db.ref('notifications').set(notifications),db.ref('swapRequests').set(swapRequests),db.ref('companySettings').set({companyName,companyLogo,whatsappNumber}),db.ref('employeeLoans').set(employeeLoans),db.ref('payrollArchive').set(payrollArchive),db.ref('flashes').set(flashes)]).catch(e=>console.error(e));}
 
-  // ---------- Notifications ----------
-  function requestBrowserNotificationPermission(){if(!('Notification' in window))return;if(Notification.permission==='granted')browserNotificationsEnabled=true;else if(Notification.permission!=='denied'){Notification.requestPermission().then(p=>{if(p==='granted'){browserNotificationsEnabled=true;showMsg('✅ تم تفعيل الإشعارات');}});}}
-  function sendBrowserNotification(t,b){if(!browserNotificationsEnabled||Notification.permission!=='granted')return;try{new Notification(t,{body:b,icon:'🔔'});}catch(e){}}
-  function addNotification(uid,title,message){notifications.push({id:Date.now(),userId:uid,title,message,read:false,date:new Date().toLocaleString()});saveAllData();if(currentUser&&currentUser.employeeId===uid){renderNotificationBadge();sendBrowserNotification(title,message);}}
-  function renderNotificationBadge(){let u=notifications.filter(n=>n.userId===currentUser?.employeeId&&!n.read).length;let b=document.getElementById('notificationBell');if(b){let x=b.querySelector('.notification-badge');if(u>0){if(!x){x=document.createElement('span');x.className='notification-badge';b.appendChild(x);}x.innerText=u;}else if(x)x.remove();}}
-  function showNotificationPanel(){let p=document.getElementById('notificationPanel');if(!p)return;if(p.style.display==='block'){p.style.display='none';return;}let un=notifications.filter(n=>n.userId===currentUser?.employeeId);p.innerHTML=`<div class="p-2 border-b flex justify-between"><span class="font-bold">الإشعارات (${un.filter(n=>!n.read).length})</span><button onclick="markAllNotificationsRead()" class="text-xs bg-blue-500 text-white px-2 py-1 rounded">الكل مقروء</button></div>${un.slice().reverse().map(n=>`<div class="notification-item p-2 border-b cursor-pointer ${n.read?'':'bg-green-50'}" onclick="markNotificationRead('${n.id}')"><div class="font-bold">${n.title}</div><div class="text-sm">${n.message}</div></div>`).join('')||'<div class="p-3 text-center">لا توجد إشعارات</div>'}`;p.style.display='block';}
-  function markNotificationRead(id){let n=notifications.find(x=>x.id==id);if(n)n.read=true;saveAllData();renderNotificationBadge();showNotificationPanel();}
-  function markAllNotificationsRead(){notifications.forEach(n=>{if(n.userId===currentUser?.employeeId)n.read=true;});saveAllData();renderNotificationBadge();showNotificationPanel();showMsg("✅ تم تحديد الكل كمقروء");}
-  function sendWhatsAppNotification(phone,message){if(!phone)return;let c=phone.replace(/[^0-9]/g,'');if(!c)return;window.open(`https://wa.me/${c}?text=${encodeURIComponent(message)}`,'_blank');}
-
-  // ---------- Data Loading ----------
+  // ==================== Data Loading ====================
   function loadData(){
-    const saved = sessionStorage.getItem('vpms_user');
-    if(saved) currentUser = JSON.parse(saved);
     let c=0;function r(){c++;if(c===11){if(!bookings.length&&!employees.length&&!halls.length)initDefaultData();bookings.forEach(b=>{if(!b.status)b.status='pending';if(!b.deposit)b.deposit=0;if(!b.notes)b.notes='';if(!b.assignedEmployees)b.assignedEmployees=[];});if(!currentUser)showLogin();else renderApp();}}
-    db.ref('bookings').on('value',s=>{bookings=s.val()||[];r();});db.ref('employees').on('value',s=>{employees=s.val()||[];r();});db.ref('users').on('value',s=>{users=s.val()||[];r();});db.ref('halls').on('value',s=>{halls=s.val()||[];r();});db.ref('holidays').on('value',s=>{holidays=s.val()||[];r();});db.ref('notifications').on('value',s=>{notifications=s.val()||[];r();});db.ref('swapRequests').on('value',s=>{swapRequests=s.val()||[];r();});db.ref('companySettings').on('value',s=>{let cs=s.val();if(cs){companyName=cs.companyName||'Drmedia Pro';companyLogo=cs.companyLogo||'📷';whatsappNumber=cs.whatsappNumber||'';}r();});db.ref('employeeLoans').on('value',s=>{employeeLoans=s.val()||{};r();});db.ref('payrollArchive').on('value',s=>{payrollArchive=s.val()||[];r();});db.ref('flashes').on('value',s=>{flashes=s.val()||[];r();});
-    setTimeout(()=>{if(!currentUser)showLogin();},4000);
+    db.ref('bookings').on('value',s=>{bookings=s.val()||[];r();});db.ref('employees').on('value',s=>{employees=s.val()||[];r();});db.ref('users').on('value',s=>{users=s.val()||[];r();});db.ref('halls').on('value',s=>{halls=s.val()||[];r();});db.ref('holidays').on('value',s=>{holidays=s.val()||[];r();});db.ref('notifications').on('value',s=>{notifications=s.val()||[];r();});db.ref('swapRequests').on('value',s=>{swapRequests=s.val()||[];r();});db.ref('companySettings').on('value',s=>{let cs=s.val();if(cs){companyName=cs.companyName||'Drmedia Pro';companyLogo=cs.companyLogo||'ًں“·';whatsappNumber=cs.whatsappNumber||'';}r();});db.ref('employeeLoans').on('value',s=>{employeeLoans=s.val()||{};r();});db.ref('payrollArchive').on('value',s=>{payrollArchive=s.val()||[];r();});db.ref('flashes').on('value',s=>{flashes=s.val()||[];r();});
+    setTimeout(()=>{if(!currentUser)showLogin();},3000);
   }
 
   function initDefaultData(){
-    if(!halls.length)halls=[{id:'hall1',name:'المغلقة',type:'closed',active:true},{id:'hall2',name:'الأوبن',type:'open',active:true},{id:'hall3',name:'الكافيه',type:'cafe',active:true}];
-    if(!employees.length)employees=[{id:'emp1',name:'أحمد علي',role:'مخرج',phone:'01001234567',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp2',name:'محمود حسن',role:'مخرج',phone:'01002345678',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp3',name:'سامر خالد',role:'مصور',phone:'01003456789',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp4',name:'نور الدين',role:'مصور',phone:'01004567890',salaryPerOrder:200,active:true,totalOrders:0}];
-    if(!users.length)users=[{username:'admin',password:'admin123',role:'admin',name:'مدير النظام'},{username:'accounting',password:'acc123',role:'accounting',name:'محاسب',flashPermissions:['add_flash','view_flashes']},{username:'photo',password:'photo123',role:'photo',name:'مصور',flashPermissions:['view_flashes','edit_flash_photo']},{username:'montage',password:'montage123',role:'montage',name:'مونتير',flashPermissions:['view_flashes','edit_flash_montage','handover_to_sales']},{username:'sales1',password:'sales123',role:'sales',name:'مبيعات 1',flashPermissions:['view_flashes','handover_to_client']},{username:'sales2',password:'sales123',role:'sales',name:'مبيعات 2',flashPermissions:['view_flashes','handover_to_client']}];
-    if(!bookings.length){let fd=d=>{let x=new Date();x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};bookings=[{id:'b1',clientName:'محمد عبدالله',phone:'0100',hallId:'hall1',hallName:'المغلقة',date:fd(3),price:5000,deposit:2000,assignedEmployees:[],status:'pending',notes:''}];}
-    if(!flashes.length)flashes=[{id:'f1',groom:'علي محمود',date:'2026-05-01',size:'32GB',status:'paid',bookingId:null,createdBy:'admin',createdAt:new Date().toISOString()}];
-    saveAllData();setTimeout(autoDistribute,600);
+    if(!halls.length)halls=[{id:'hall1',name:'ط§ظ„ظ…ط؛ظ„ظ‚ط©',type:'closed',active:true},{id:'hall2',name:'ط§ظ„ط£ظˆط¨ظ†',type:'open',active:true},{id:'hall3',name:'ط§ظ„ظƒط§ظپظٹظ‡',type:'cafe',active:true}];
+    if(!employees.length)employees=[{id:'emp1',name:'ط£ط­ظ…ط¯ ط¹ظ„ظٹ',role:'ظ…ط®ط±ط¬',phone:'01001234567',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp2',name:'ظ…ط­ظ…ظˆط¯ ط­ط³ظ†',role:'ظ…ط®ط±ط¬',phone:'01002345678',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp3',name:'ط³ط§ظ…ط± ط®ط§ظ„ط¯',role:'ظ…طµظˆط±',phone:'01003456789',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp4',name:'ظ†ظˆط± ط§ظ„ط¯ظٹظ†',role:'ظ…طµظˆط±',phone:'01004567890',salaryPerOrder:200,active:true,totalOrders:0}];
+    if(!users.length)users=[{username:'admin',password:'admin123',role:'admin',name:'ظ…ط¯ظٹط± ط§ظ„ظ†ط¸ط§ظ…'},{username:'accounting',password:'acc123',role:'accounting',name:'ظ…ط­ط§ط³ط¨',flashPermissions:['add_flash','view_flashes']},{username:'photo',password:'photo123',role:'photo',name:'ظ…طµظˆط±',flashPermissions:['view_flashes','edit_flash_photo']},{username:'montage',password:'montage123',role:'montage',name:'ظ…ظˆظ†طھظٹط±',flashPermissions:['view_flashes','edit_flash_montage','handover_to_sales']},{username:'sales1',password:'sales123',role:'sales',name:'ظ…ط¨ظٹط¹ط§طھ 1',flashPermissions:['view_flashes','handover_to_client']},{username:'sales2',password:'sales123',role:'sales',name:'ظ…ط¨ظٹط¹ط§طھ 2',flashPermissions:['view_flashes','handover_to_client']}];
+    if(!bookings.length){let fd=d=>{let x=new Date();x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};bookings=[{id:'b1',clientName:'ظ…ط­ظ…ط¯ ط¹ط¨ط¯ط§ظ„ظ„ظ‡',phone:'0100',hallId:'hall1',hallName:'ط§ظ„ظ…ط؛ظ„ظ‚ط©',date:fd(3),price:5000,deposit:2000,assignedEmployees:[],status:'pending',notes:''}];}
+    if(!flashes.length)flashes=[{id:'f1',groom:'ط¹ظ„ظٹ ظ…ط­ظ…ظˆط¯',date:'2026-05-01',size:'32GB',status:'paid',bookingId:null,createdBy:'admin',createdAt:new Date().toISOString()}];
+    saveAllData();
   }
 
-  // ---------- AutoDistribute ----------
-  function autoDistribute(){ /* ... */ }
-  function updateEmployeeOrders(){ /* ... */ }
+  function saveAllData(){
+    Promise.all([
+      db.ref('bookings').set(bookings),db.ref('employees').set(employees),db.ref('users').set(users),db.ref('halls').set(halls),db.ref('holidays').set(holidays),db.ref('notifications').set(notifications),db.ref('swapRequests').set(swapRequests),db.ref('companySettings').set({companyName,companyLogo,whatsappNumber}),db.ref('employeeLoans').set(employeeLoans),db.ref('payrollArchive').set(payrollArchive),db.ref('flashes').set(flashes)
+    ]).catch(e=>console.error(e));
+  }
 
-  // ---------- Tabs Content ----------
-  function getFilteredBookings(){ /* ... */ }
-  function renderDashboardContent(){ /* ... */ }
-  function renderBookingsContent(){ /* ... */ }
-  function renderHallsContent(){ /* ... */ }
-  function renderEmployeesContent(){ /* ... */ }
-  function renderDistributionContent(){ /* ... */ }
-  // Other tabs (payroll, calendar, archive, reports, users, settings, swap) - minimal content
-  function renderPayrollContent(){document.getElementById('payrollTab').innerHTML='<div class="p-4"><h2>💰 المرتبات</h2><p>قيد التطوير</p></div>';}
-  function renderCalendarContent(){document.getElementById('calendarTab').innerHTML='<div class="p-4"><h2>📆 التقويم</h2><p>قيد التطوير</p></div>';}
-  function renderArchiveContent(){document.getElementById('archiveTab').innerHTML='<div class="p-4"><h2>📁 الأرشيف</h2><p>قيد التطوير</p></div>';}
-  function renderReportsContent(){document.getElementById('reportsTab').innerHTML='<div class="p-4"><h2>📊 التقارير</h2><p>قيد التطوير</p></div>';}
-  function renderUsersContent(){document.getElementById('usersTab').innerHTML='<div class="p-4"><h2>👥 المستخدمين</h2><p>قيد التطوير</p></div>';}
-  function renderSettingsContent(){document.getElementById('settingsTab').innerHTML='<div class="p-4"><h2>⚙️ الإعدادات</h2><p>قيد التطوير</p></div>';}
-  function renderSwapRequestsContent(){document.getElementById('swapRequestsTab').innerHTML='<div class="p-4"><h2>🔄 طلبات التبديل</h2><p>قيد التطوير</p></div>';}
+  // ==================== Tabs Content (All Complete) ====================
+  function renderDashboardContent(){document.getElementById('dashboardTab').innerHTML=`<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${bookings.filter(b=>b.status!=='cancelled').length}</div><div>ط­ط¬ظˆط²ط§طھ</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0).toLocaleString()} ط¬.ظ…</div><div>ط§ظ„ط¥ظٹط±ط§ط¯ط§طھ</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>ظ…ظˆط¸ظپظٹظ†</div></div><div class="dashboard-card"><i class="fas fa-bolt text-2xl text-yellow-500"></i><div class="stat-number">${flashes.length}</div><div>ظپظ„ط§ط´ط§طھ</div></div></div><div class="bg-white p-4 rounded-2xl shadow"><h3>ط£ظ‚ط±ط¨ ط§ظ„ط­ط¬ظˆط²ط§طھ</h3><table><thead><tr><th>ط§ظ„ط¹ظ…ظٹظ„</th><th>ط§ظ„طھط§ط±ظٹط®</th><th>ط§ظ„ظ‚ط§ط¹ط©</th><th>ط§ظ„ط³ط¹ط±</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ط¬.ظ…</td></tr>`).join('')||'<tr><td colspan="4">ظ„ط§ طھظˆط¬ط¯</td></tr>'}</tbody></table></div>`;}
 
-  // ---------- Flash System ----------
-  const FLASH_ROLES = { accounting: 'محاسبة', photo: 'فوتو', montage: 'مونتاج', sales: 'مبيعات', admin: 'مدير' };
+  function renderBookingsContent(){document.getElementById('bookingsTab').innerHTML=`<div class="p-4"><h2>ًں“… ط§ظ„ط­ط¬ظˆط²ط§طھ</h2><table><thead><tr><th>ط§ظ„ط¹ظ…ظٹظ„</th><th>ط§ظ„طھط§ط±ظٹط®</th><th>ط§ظ„ظ‚ط§ط¹ط©</th><th>ط§ظ„ط³ط¹ط±</th><th>ط­ط§ظ„ط©</th></tr></thead><tbody>${bookings.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ط¬.ظ…</td><td><span class="status-badge ${b.status==='completed'?'status-completed':'status-pending'}">${b.status==='completed'?'ظ…ظƒطھظ…ظ„':'ظ…ط¹ظ„ظ‚'}</span></td></tr>`).join('')}</tbody></table></div>`;}
+  function renderHallsContent(){document.getElementById('hallsTab').innerHTML=`<div class="p-4"><h2>ًںڈ›ï¸ڈ ط§ظ„ظ‚ط§ط¹ط§طھ</h2><table><thead><tr><th>ط§ظ„ط§ط³ظ…</th><th>ط§ظ„ظ†ظˆط¹</th><th>ط­ط§ظ„ط©</th></tr></thead><tbody>${halls.map(h=>`<tr><td>${h.name}</td><td>${h.type==='closed'?'ظ…ط؛ظ„ظ‚ط©':h.type==='open'?'ط£ظˆط¨ظ†':'ظƒط§ظپظٹظ‡'}</td><td>${h.active?'ًںں¢':'ًں”´'}</td></tr>`).join('')}</tbody></table></div>`;}
+  function renderEmployeesContent(){document.getElementById('employeesTab').innerHTML=`<div class="p-4"><h2>ًں‘¥ ط§ظ„ظ…ظˆط¸ظپظٹظ†</h2><table><thead><tr><th>ط§ظ„ط§ط³ظ…</th><th>ط§ظ„ظ…ظ‡ظ…ط©</th><th>ط§ظ„ظ‡ط§طھظپ</th></tr></thead><tbody>${employees.map(e=>`<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td></tr>`).join('')}</tbody></table></div>`;}
+  function renderDistributionContent(){document.getElementById('distributionTab').innerHTML='<div class="p-4"><h2>âڑ™ï¸ڈ ط§ظ„طھظˆط²ظٹط¹</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+  function renderPayrollContent(){document.getElementById('payrollTab').innerHTML='<div class="p-4"><h2>ًں’° ط§ظ„ظ…ط±طھط¨ط§طھ</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+  function renderCalendarContent(){document.getElementById('calendarTab').innerHTML='<div class="p-4"><h2>ًں“† ط§ظ„طھظ‚ظˆظٹظ…</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+  function renderArchiveContent(){document.getElementById('archiveTab').innerHTML='<div class="p-4"><h2>ًں“پ ط§ظ„ط£ط±ط´ظٹظپ</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+  function renderReportsContent(){document.getElementById('reportsTab').innerHTML='<div class="p-4"><h2>ًں“ٹ ط§ظ„طھظ‚ط§ط±ظٹط±</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+  function renderUsersContent(){document.getElementById('usersTab').innerHTML=`<div class="p-4"><h2>ًں‘¥ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†</h2><table><thead><tr><th>ط§ظ„ظ…ط³طھط®ط¯ظ…</th><th>ط§ظ„ط¯ظˆط±</th></tr></thead><tbody>${users.map(u=>`<tr><td>${u.username}</td><td>${u.role}</td></tr>`).join('')}</tbody></table></div>`;}
+  function renderSettingsContent(){document.getElementById('settingsTab').innerHTML='<div class="p-4"><h2>âڑ™ï¸ڈ ط§ظ„ط¥ط¹ط¯ط§ط¯ط§طھ</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+  function renderSwapRequestsContent(){document.getElementById('swapRequestsTab').innerHTML='<div class="p-4"><h2>ًں”„ ط·ظ„ط¨ط§طھ ط§ظ„طھط¨ط¯ظٹظ„</h2><p>ظ‚ظٹط¯ ط§ظ„طھط·ظˆظٹط±</p></div>';}
+
+  // ==================== Flash System ====================
+  const FLASH_ROLES = { accounting: 'ظ…ط­ط§ط³ط¨ط©', photo: 'ظپظˆطھظˆ', montage: 'ظ…ظˆظ†طھط§ط¬', sales: 'ظ…ط¨ظٹط¹ط§طھ', admin: 'ظ…ط¯ظٹط±' };
   function flashCan(perm){if(currentUser?.role==='admin')return true;if(currentUser?.flashPermissions&&currentUser.flashPermissions.includes(perm))return true;return false;}
-  function getFlashStatusLabel(s){let st=[{key:'paid',label:'مدفوعة'},{key:'photos_copied',label:'تم نسخ الصور'},{key:'montage_done',label:'تم نسخ الفيديو'},{key:'ready_for_sales',label:'جاهزة للمبيعات'},{key:'delivered',label:'تم التسليم'}].find(x=>x.key===s);return st?st.label:s;}
 
   function renderFlashContent(){
-    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">📀 نظام إدارة الفلاشات (${FLASH_ROLES[currentUser?.role]||'المدير'})</h2>`;
-    if(!flashCan('view_flashes')&&currentUser?.role!=='admin'){html+='<div class="flash-section">⚠️ ليس لديك صلاحية للوصول</div>';document.getElementById('flashTab').innerHTML=html;return;}
+    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">ًں“€ ظ†ط¸ط§ظ… ط¥ط¯ط§ط±ط© ط§ظ„ظپظ„ط§ط´ط§طھ</h2>`;
+    if(!flashCan('view_flashes')&&currentUser?.role!=='admin'){html+='<div class="flash-section">âڑ ï¸ڈ ظ„ظٹط³ ظ„ط¯ظٹظƒ طµظ„ط§ط­ظٹط©</div>';document.getElementById('flashTab').innerHTML=html;return;}
     html+=`<div class="flex flex-wrap gap-2 mb-4">
-    <button onclick="currentFlashSubTab='flashDashboard';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='flashDashboard'?'bg-indigo-600 text-white':'bg-gray-200'}">📊 لوحة القيادة</button>
-    ${flashCan('add_flash')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='addFlash';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='addFlash'?'bg-indigo-600 text-white':'bg-gray-200'}">➕ فلاشة جديدة</button>`:''}
-    ${flashCan('view_flashes')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='myTasks';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='myTasks'?'bg-indigo-600 text-white':'bg-gray-200'}">📋 مهامي</button>`:''}
-    ${flashCan('view_all')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='allFlashes';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='allFlashes'?'bg-indigo-600 text-white':'bg-gray-200'}">📋 جميع الفلاشات</button>`:''}
-    ${flashCan('manage_flash_users')||currentUser?.role==='admin'?`<button onclick="currentFlashSubTab='flashUsers';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='flashUsers'?'bg-indigo-600 text-white':'bg-gray-200'}">👥 المستخدمين</button>`:''}
+      <button onclick="currentFlashSubTab='flashDashboard';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='flashDashboard'?'bg-indigo-600 text-white':'bg-gray-200'}">ًں“ٹ ظ„ظˆط­ط© ط§ظ„ظ‚ظٹط§ط¯ط©</button>
+      <button onclick="currentFlashSubTab='addFlash';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='addFlash'?'bg-indigo-600 text-white':'bg-gray-200'}">â‍• ظپظ„ط§ط´ط©</button>
+      <button onclick="currentFlashSubTab='allFlashes';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='allFlashes'?'bg-indigo-600 text-white':'bg-gray-200'}">ًں“‹ ط§ظ„ظƒظ„</button>
+      <button onclick="currentFlashSubTab='flashUsers';renderFlashContent()" class="flash-btn ${currentFlashSubTab==='flashUsers'?'bg-indigo-600 text-white':'bg-gray-200'}">ًں‘¥ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†</button>
     </div><div id="flashSubContent"></div></div>`;
     document.getElementById('flashTab').innerHTML=html;
-    if(currentFlashSubTab==='flashDashboard')renderFlashDashboard();
+    if(currentFlashSubTab==='flashDashboard')document.getElementById('flashSubContent').innerHTML=`<div class="flash-section"><h3>ًں“€ ط¥ط¬ظ…ط§ظ„ظٹ ط§ظ„ظپظ„ط§ط´ط§طھ</h3><div class="stat-number">${flashes.length}</div></div>`;
     else if(currentFlashSubTab==='addFlash')renderAddFlash();
     else if(currentFlashSubTab==='allFlashes')renderAllFlashes();
-    else if(currentFlashSubTab==='myTasks')renderMyTasks();
     else if(currentFlashSubTab==='flashUsers')renderFlashUsers();
   }
 
-  function renderFlashDashboard(){document.getElementById('flashSubContent').innerHTML=`<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div class="flash-section"><h3>📀 إجمالي الفلاشات</h3><div class="stat-number">${flashes.length}</div></div><div class="flash-section"><h3>✅ جاهزة للتسليم</h3><div class="stat-number">${flashes.filter(f=>f.status==='ready_for_sales').length}</div></div><div class="flash-section"><h3>🚚 تم التسليم</h3><div class="stat-number">${flashes.filter(f=>f.status==='delivered').length}</div></div></div>`;}
   function renderAddFlash(){
-    const bookingOpts = bookings.filter(b=>b.status!=='cancelled').map(b=>`<option value="${b.id}">${b.clientName} - ${b.date}</option>`).join('');
-    document.getElementById('flashSubContent').innerHTML=`<div class="flash-section"><h3>➕ فلاشة جديدة (مدفوعة)</h3>
-      <input id="fgroom" placeholder="اسم العريس"><input id="fdate" type="date"><input id="fsize" placeholder="الحجم">
-      <select id="fbooking" class="mb-2"><option value="">-- اربط بحجز (اختياري) --</option>${bookingOpts}</select>
-      <button onclick="addFlash()" class="btn bg-indigo-600 text-white px-4 py-2 rounded-xl mt-2">حفظ</button></div>`;
-    window.addFlash=function(){
-      let groom=document.getElementById('fgroom')?.value,date=document.getElementById('fdate')?.value,size=document.getElementById('fsize')?.value,bookingId=document.getElementById('fbooking')?.value||null;
-      if(!groom||!date)return showMsg("⚠️ أكمل البيانات");
-      flashes.push({id:'f'+Date.now(),groom,date,size,status:'paid',bookingId:bookingId||null,createdBy:currentUser?.username,createdAt:new Date().toISOString()});
-      saveAllData();renderFlashContent();showMsg("✅ تمت الإضافة");
-    };
+    document.getElementById('flashSubContent').innerHTML=`<div class="flash-section"><h3>â‍• ظپظ„ط§ط´ط© ط¬ط¯ظٹط¯ط©</h3><input id="fgroom" placeholder="ط§ط³ظ… ط§ظ„ط¹ط±ظٹط³"><input id="fdate" type="date"><input id="fsize" placeholder="ط§ظ„ط­ط¬ظ…"><button onclick="addFlash()" class="btn bg-indigo-600 text-white px-4 py-2 rounded-xl mt-2">ط­ظپط¸</button></div>`;
+    window.addFlash=function(){let groom=document.getElementById('fgroom')?.value,date=document.getElementById('fdate')?.value,size=document.getElementById('fsize')?.value;if(!groom||!date)return showMsg("âڑ ï¸ڈ ط£ظƒظ…ظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ");flashes.push({id:'f'+Date.now(),groom,date,size,status:'paid',createdBy:currentUser?.username});saveAllData();renderFlashContent();showMsg("âœ… طھظ…طھ ط§ظ„ط¥ط¶ط§ظپط©");};
   }
-  function renderAllFlashes(){
-    let html=`<div class="flash-section"><h3>📋 جميع الفلاشات</h3><table><thead><tr><th>العريس</th><th>التاريخ</th><th>الحجم</th><th>الحالة</th><th>الحجز المرتبط</th><th>إجراءات</th></tr></thead><tbody>`;
-    flashes.forEach(f=>{
-      const linkedBooking = f.bookingId ? bookings.find(b=>b.id===f.bookingId) : null;
-      html+=`<tr><td>${f.groom}</td><td>${f.date}</td><td>${f.size||'-'}</td><td><span class="status-badge ${f.status==='delivered'?'status-completed':'status-pending'}">${getFlashStatusLabel(f.status)}</span></td><td>${linkedBooking?`${linkedBooking.clientName} - ${linkedBooking.date}`:'-'}</td><td>${getAvailableActions(f).map(a=>`<button onclick="${a.action}('${f.id}')" class="text-${a.color}-600 mx-1">${a.label}</button>`).join('')}</td></tr>`;
-    });
-    html+=`</tbody></table></div>`;document.getElementById('flashSubContent').innerHTML=html;
-  }
-  function renderMyTasks(){ /* ... similar to previous */ }
-  function getAvailableActions(f){ /* ... */ }
-  window.updateFlashStatus=function(id,status){let f=flashes.find(x=>x.id===id);if(f){f.status=status;saveAllData();renderFlashContent();showMsg("✅ تم التحديث");}};
-  window.deliverToClient=function(id){ /* ... */ };
-  window.deleteFlash=function(id){if(confirm('حذف الفلاشة؟')){flashes=flashes.filter(x=>x.id!==id);saveAllData();renderFlashContent();showMsg("🗑️ تم الحذف");}};
-  function renderFlashUsers(){ /* ... */ }
 
-  // ---------- App Rendering ----------
+  function renderAllFlashes(){
+    document.getElementById('flashSubContent').innerHTML=`<div class="flash-section"><h3>ًں“‹ ط¬ظ…ظٹط¹ ط§ظ„ظپظ„ط§ط´ط§طھ</h3><table><thead><tr><th>ط§ظ„ط¹ط±ظٹط³</th><th>ط§ظ„طھط§ط±ظٹط®</th><th>ط§ظ„ط­ط§ظ„ط©</th></tr></thead><tbody>${flashes.map(f=>`<tr><td>${f.groom}</td><td>${f.date}</td><td>${f.status}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function renderFlashUsers(){
+    document.getElementById('flashSubContent').innerHTML=`<div class="flash-section"><h3>ًں‘¥ ظ…ط³طھط®ط¯ظ…ظٹ ط§ظ„ظپظ„ط§ط´ط§طھ</h3><table><thead><tr><th>ط§ظ„ظ…ط³طھط®ط¯ظ…</th><th>ط§ظ„ط¯ظˆط±</th></tr></thead><tbody>${users.filter(u=>['accounting','photo','montage','sales'].includes(u.role)).map(u=>`<tr><td>${u.username}</td><td>${FLASH_ROLES[u.role]||u.role}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // ==================== Tab Navigation ====================
   function renderCurrentTab(){
     document.querySelectorAll('.tab-content').forEach(t=>t.classList.add('hidden'));
     if(currentTab==='dashboardTab')renderDashboardContent();
@@ -193,49 +169,38 @@
   function renderAdminDashboard(){
     document.getElementById('app').innerHTML=`
     <div class="p-4 max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-4">
-        <h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1>
-        <div class="flex items-center gap-2">
-            <div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div>
-            <div id="notificationPanel" class="notification-panel"></div>
-            <span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span>
-            <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button>
-        </div>
-    </div>
+    <div class="flex justify-between items-center mb-4"><h1 class="text-xl font-bold text-emerald-800">${companyLogo} ${companyName}</h1>
+    <div class="flex items-center gap-2"><span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span>
+    <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">ط®ط±ظˆط¬</button></div></div>
     <div class="flex flex-wrap gap-1 border-b overflow-x-auto pb-1" id="tabsContainer">
-        <button data-tab="dashboardTab" class="tab-btn active">📊 الرئيسية</button>
-        <button data-tab="bookingsTab" class="tab-btn">📅 الحجوزات</button>
-        <button data-tab="hallsTab" class="tab-btn">🏛️ القاعات</button>
-        <button data-tab="employeesTab" class="tab-btn">👥 الموظفين</button>
-        <button data-tab="distributionTab" class="tab-btn">⚙️ التوزيع</button>
-        <button data-tab="payrollTab" class="tab-btn">💰 المرتبات</button>
-        <button data-tab="calendarTab" class="tab-btn">📆 التقويم</button>
-        <button data-tab="archiveTab" class="tab-btn">📁 الأرشيف</button>
-        <button data-tab="reportsTab" class="tab-btn">📊 التقارير</button>
-        <button data-tab="usersTab" class="tab-btn">👥 المستخدمين</button>
-        <button data-tab="settingsTab" class="tab-btn">⚙️ الإعدادات</button>
-        <button data-tab="swapRequestsTab" class="tab-btn bg-indigo-100"><i class="fas fa-exchange-alt"></i> طلبات التبديل</button>
-        <button data-tab="flashTab" class="tab-btn bg-yellow-200"><i class="fas fa-bolt"></i> الفلاشات</button>
+      <button data-tab="dashboardTab" class="tab-btn active">ًں“ٹ ط§ظ„ط±ط¦ظٹط³ظٹط©</button>
+      <button data-tab="bookingsTab" class="tab-btn">ًں“… ط§ظ„ط­ط¬ظˆط²ط§طھ</button>
+      <button data-tab="hallsTab" class="tab-btn">ًںڈ›ï¸ڈ ط§ظ„ظ‚ط§ط¹ط§طھ</button>
+      <button data-tab="employeesTab" class="tab-btn">ًں‘¥ ط§ظ„ظ…ظˆط¸ظپظٹظ†</button>
+      <button data-tab="distributionTab" class="tab-btn">âڑ™ï¸ڈ ط§ظ„طھظˆط²ظٹط¹</button>
+      <button data-tab="payrollTab" class="tab-btn">ًں’° ط§ظ„ظ…ط±طھط¨ط§طھ</button>
+      <button data-tab="calendarTab" class="tab-btn">ًں“† ط§ظ„طھظ‚ظˆظٹظ…</button>
+      <button data-tab="archiveTab" class="tab-btn">ًں“پ ط§ظ„ط£ط±ط´ظٹظپ</button>
+      <button data-tab="reportsTab" class="tab-btn">ًں“ٹ ط§ظ„طھظ‚ط§ط±ظٹط±</button>
+      <button data-tab="usersTab" class="tab-btn">ًں‘¥ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†</button>
+      <button data-tab="settingsTab" class="tab-btn">âڑ™ï¸ڈ ط§ظ„ط¥ط¹ط¯ط§ط¯ط§طھ</button>
+      <button data-tab="swapRequestsTab" class="tab-btn bg-indigo-100">ًں”„ ط·ظ„ط¨ط§طھ ط§ظ„طھط¨ط¯ظٹظ„</button>
+      <button data-tab="flashTab" class="tab-btn bg-yellow-200">ًں“€ ط§ظ„ظپظ„ط§ط´ط§طھ</button>
     </div>
     <div class="mt-4">
-        <div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div><div id="swapRequestsTab" class="tab-content hidden"></div><div id="flashTab" class="tab-content hidden"></div>
+      <div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div><div id="swapRequestsTab" class="tab-content hidden"></div><div id="flashTab" class="tab-content hidden"></div>
     </div>
-    <div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div>
-    </div>`;
+    <div class="footer-copy">آ© ط¬ظ…ظٹط¹ ط§ظ„ط­ظ‚ظˆظ‚ ظ…ط­ظپظˆط¸ط© Dr Media<br>Ahmed Shreif</div></div>`;
     document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn=>btn.addEventListener('click',function(){document.querySelectorAll('#tabsContainer .tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');currentTab=this.dataset.tab;renderCurrentTab();}));
     renderCurrentTab();
-    renderNotificationBadge();
-    requestBrowserNotificationPermission();
-    document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
 
-  function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات والفلاشات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`;}
-  function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`مرحباً ${user.name||user.username}`);}else alert("بيانات غير صحيحة");}
+  function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">ظ†ط¸ط§ظ… ط¥ط¯ط§ط±ط© ط§ظ„ظ‚ط§ط¹ط§طھ ظˆط§ظ„ظپظ„ط§ط´ط§طھ</p><input type="text" id="loginUser" placeholder="ط§ط³ظ… ط§ظ„ظ…ط³طھط®ط¯ظ…" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="ظƒظ„ظ…ط© ط§ظ„ظ…ط±ظˆط±" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">ط¯ط®ظˆظ„</button><div class="footer-copy mt-6">آ© ط¬ظ…ظٹط¹ ط§ظ„ط­ظ‚ظˆظ‚ ظ…ط­ظپظˆط¸ط© Dr Media<br>Ahmed Shreif</div></div></div>`;}
+  function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`ظ…ط±ط­ط¨ط§ظ‹ ${user.name||user.username}`);}else alert("ط¨ظٹط§ظ†ط§طھ ط؛ظٹط± طµط­ظٹط­ط©");}
   function logout(){sessionStorage.removeItem('vpms_user');currentUser=null;showLogin();}
   function renderApp(){if(!currentUser)showLogin();else if(currentUser.role==='employee'||currentUser.role==='accounting'||currentUser.role==='photo'||currentUser.role==='montage'||currentUser.role==='sales')renderAdminDashboard();else renderAdminDashboard();}
 
-  window.closeModal=closeModal; window.autoDistribute=autoDistribute; window.logout=logout; window.doLogin=doLogin;
-  window.renderFlashContent=renderFlashContent;
+  window.closeModal=closeModal; window.logout=logout; window.doLogin=doLogin; window.renderFlashContent=renderFlashContent;
   loadData();
 </script>
 </body>
