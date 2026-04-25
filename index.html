@@ -29,6 +29,7 @@
     .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
     .status-pending { background: #fef3c7; color: #92400e; }
     .status-completed { background: #d1fae5; color: #065f46; }
+    .status-cancelled { background: #fee2e2; color: #991b1b; }
     .footer-copy { text-align: center; padding: 16px; color: #6b7280; font-size: 12px; border-top: 1px solid #e5e7eb; margin-top: 20px; }
     .notification-bell { position: relative; cursor: pointer; }
     .notification-badge { position: absolute; top: -8px; right: -8px; background: red; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; }
@@ -58,7 +59,6 @@
   let selectedBookings=new Set(),selectedEmployees=new Set(),selectedHalls=new Set(),selectedUsers=new Set(),selectedPayrollEmps=new Set();
   let currentHallFilter='all',currentStatusFilter='all',browserNotificationsEnabled=false;
   let pendingPdfBookings=[],pendingExcelData=[];
-  let calendarMonth, calendarYear; // for calendar navigation
 
   function showMsg(m){let t=document.getElementById('toast');t.innerText=m;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),2500);}
   function closeModal(){document.getElementById('modal').classList.add('hidden');}
@@ -112,8 +112,36 @@
   // ====== عرض الصفحات ======
   function getFilteredBookings(){let f=[...bookings];if(currentHallFilter!=='all')f=f.filter(b=>b.hallId===currentHallFilter);if(currentStatusFilter!=='all')f=f.filter(b=>b.status===currentStatusFilter);else f=f.filter(b=>b.status!=='cancelled');return f.sort((a,b)=>new Date(a.date)-new Date(b.date));}
   function renderDashboardContent(){updateEmployeeOrders();let active=bookings.filter(b=>b.status!=='cancelled');let rev=active.reduce((s,b)=>s+b.price,0);document.getElementById('dashboardTab').innerHTML=`<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>حجوزات</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${rev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-2xl text-indigo-600"></i><div class="stat-number">${bookings.filter(b=>b.status==='completed').length}</div><div>مكتمل</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين</div></div></div><div class="bg-white p-4 rounded-2xl shadow"><h3 class="font-bold mb-2">أقرب الحجوزات</h3><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${active.slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">لا توجد</td></tr>'}</tbody></table></div>`;}
-  function renderBookingsContent(){let fb=getFilteredBookings();document.getElementById('bookingsTab').innerHTML=`<div class="p-4"><div class="flex justify-between flex-wrap gap-2 mb-4"><h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2><div class="flex gap-2 flex-wrap"><select id="hallFilter" class="border rounded-xl px-2 py-2 text-sm">${halls.map(h=>`<option value="${h.id}" ${currentHallFilter===h.id?'selected':''}>${h.name}</option>`).join('')}<option value="all" ${currentHallFilter==='all'?'selected':''}>الكل</option></select><select id="statusFilter" class="border rounded-xl px-2 py-2 text-sm"><option value="all">الكل</option><option value="pending">معلق</option><option value="completed">مكتمل</option></select><button onclick="applyFilters()" class="bg-gray-600 text-white px-3 py-2 rounded-xl text-sm">فلترة</button><button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm">+ حجز</button><button onclick="autoDistribute();renderBookingsContent();renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl text-sm">🔄 توزيع ذكي</button></div></div><div class="overflow-x-auto"><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th><th>موظفون</th><th>إجراءات</th></tr></thead><tbody>${fb.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':'status-pending'}">${b.status==='completed'?'مكتمل':'معلق'}</span></td><td class="text-sm">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ')||'-'}</td><td><div class="flex gap-1"><button onclick="markBookingCompleted('${b.id}')" class="text-indigo-600"><i class="fas fa-check-circle"></i></button><button onclick="showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></div></td></tr>`).join('')||'<tr><td colspan="7">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;}
+  
+  // ====== الحجوزات مع تحديد متعدد ======
+  function renderBookingsContent(){
+    let fb=getFilteredBookings();
+    document.getElementById('bookingsTab').innerHTML=`
+      <div class="p-4">
+        <div class="flex justify-between flex-wrap gap-2 mb-4">
+          <h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2>
+          <div class="flex gap-2 flex-wrap">
+            <select id="hallFilter" class="border rounded-xl px-2 py-2 text-sm">${halls.map(h=>`<option value="${h.id}" ${currentHallFilter===h.id?'selected':''}>${h.name}</option>`).join('')}<option value="all" ${currentHallFilter==='all'?'selected':''}>الكل</option></select>
+            <select id="statusFilter" class="border rounded-xl px-2 py-2 text-sm"><option value="all">الكل</option><option value="pending">معلق</option><option value="completed">مكتمل</option></select>
+            <button onclick="applyFilters()" class="bg-gray-600 text-white px-3 py-2 rounded-xl text-sm">فلترة</button>
+            <button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-2 rounded-xl text-sm">تحديد الكل</button>
+            <button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-2 rounded-xl text-sm">حذف المحدد</button>
+            <button onclick="bulkCompleteBookings()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm">إكمال المحدد</button>
+            <button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm">+ حجز</button>
+            <button onclick="autoDistribute();renderBookingsContent();renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl text-sm">🔄 توزيع ذكي</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto"><table><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllBookingsCheckbox" onchange="toggleSelectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th><th>موظفون</th><th>إجراءات</th></tr></thead><tbody>
+        ${fb.map(b=>`<tr><td class="checkbox-col"><input type="checkbox" class="booking-checkbox" value="${b.id}" ${selectedBookings.has(b.id)?'checked':''} onchange="toggleBookingSelection('${b.id}',this.checked)"></td><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':'status-pending'}">${b.status==='completed'?'مكتمل':'معلق'}</span></td><td class="text-sm">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ')||'-'}</td><td><div class="flex gap-1"><button onclick="markBookingCompleted('${b.id}')" class="text-indigo-600"><i class="fas fa-check-circle"></i></button><button onclick="showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></div></td></tr>`).join('')||'<tr><td colspan="8">لا توجد حجوزات</td></tr>'}
+        </tbody></table></div>
+      </div>`;
+  }
   function applyFilters(){currentHallFilter=document.getElementById('hallFilter')?.value||'all';currentStatusFilter=document.getElementById('statusFilter')?.value||'all';renderBookingsContent();}
+  function toggleBookingSelection(id,checked){if(checked)selectedBookings.add(id);else selectedBookings.delete(id);}
+  function selectAllBookings(){let fb=getFilteredBookings();if(selectedBookings.size===fb.length)selectedBookings.clear();else fb.forEach(b=>selectedBookings.add(b.id));renderBookingsContent();}
+  function toggleSelectAllBookings(){let ck=document.getElementById('selectAllBookingsCheckbox')?.checked;let fb=getFilteredBookings();if(ck)fb.forEach(b=>selectedBookings.add(b.id));else selectedBookings.clear();renderBookingsContent();}
+  function bulkDeleteBookings(){if(!selectedBookings.size)return showMsg("⚠️ لم تختر أي حجز");if(confirm(`حذف ${selectedBookings.size} حجز؟`)){bookings=bookings.filter(b=>!selectedBookings.has(b.id));selectedBookings.clear();saveAllData();updateEmployeeOrders();renderBookingsContent();showMsg("🗑️ تم الحذف");}}
+  function bulkCompleteBookings(){if(!selectedBookings.size)return showMsg("⚠️ لم تختر أي حجز");if(confirm(`إكمال ${selectedBookings.size} حجز؟`)){selectedBookings.forEach(id=>{let b=bookings.find(x=>x.id===id);if(b)b.status='completed';});selectedBookings.clear();saveAllData();updateEmployeeOrders();renderBookingsContent();renderArchiveContent();showMsg("✅ تم الإكمال");}}
 
   // ====== القاعات مع تحديد متعدد وتعديل وحذف ======
   function renderHallsContent(){
@@ -226,24 +254,177 @@
   function showEditUserModal(username){let u=users.find(x=>x.username===username);if(!u)return;document.getElementById('modalContent').innerHTML=`<h3>✏️ تعديل مستخدم</h3><input id="editUsername" value="${u.username}"><input id="editPassword" value="${u.password}"><select id="editRole"><option value="admin" ${u.role==='admin'?'selected':''}>admin</option><option value="employee" ${u.role==='employee'?'selected':''}>employee</option></select><button onclick="saveEditUser('${username}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl mt-3">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
   function saveEditUser(oldUsername){let u=users.find(x=>x.username===oldUsername);if(!u)return;let newUsername=document.getElementById('editUsername').value.trim();u.password=document.getElementById('editPassword').value;u.role=document.getElementById('editRole').value;if(newUsername!==oldUsername&&users.some(x=>x.username===newUsername))return alert("⚠️ موجود");u.username=newUsername;saveAllData();closeModal();renderUsersContent();showMsg("✅ تم التحديث");}
 
-  // ====== نظام تبديل الورديات ======
-  function showSwapModal(){if(!currentUser||currentUser.role!=='employee')return;let emp=employees.find(e=>e.id===currentUser.employeeId);if(!emp)return;let my=bookings.filter(b=>b.status==='pending'&&(b.assignedEmployees||[]).includes(emp.id));if(!my.length){showMsg("⚠️ ليس لديك أوردرات للتبديل");return;}let bo=my.map(b=>`<option value="${b.id}">${b.date} - ${b.clientName} - ${b.hallName}</option>`).join('');let ae=employees.filter(e=>e.id!==emp.id&&e.active&&e.role===emp.role).map(e=>`<option value="${e.id}">${e.name}</option>`).join('');document.getElementById('modalContent').innerHTML=`<h3>🔄 تبديل وردية</h3><p>اختر الأوردر:</p><select id="swapBooking" class="mb-2">${bo}</select><p>اختر البديل:</p><select id="swapTargetEmp" class="mb-2">${ae}</select><button onclick="submitSwapRequest()" class="bg-indigo-700 text-white w-full py-2 rounded-xl mt-2">إرسال الطلب</button>`;document.getElementById('modal').classList.remove('hidden');}
-  function submitSwapRequest(){let bid=document.getElementById('swapBooking')?.value;let tid=document.getElementById('swapTargetEmp')?.value;if(!bid||!tid)return showMsg("⚠️ اختر الأوردر والموظف");swapRequests.push({id:'sr_'+Date.now(),fromEmpId:currentUser.employeeId,toEmpId:tid,bookingId:bid,status:'pending',date:new Date().toISOString()});saveAllData();closeModal();if(whatsappNumber)sendWhatsAppNotification(whatsappNumber,`طلب تبديل: ${employees.find(e=>e.id===currentUser.employeeId)?.name}`);addNotification('admin','طلب تبديل','طلب تبديل جديد');showMsg("✅ تم إرسال طلب التبديل");}
+  // ====== نظام تبديل الورديات للموظف مع صفحة كاملة للإدارة ======
+  function showSwapModal(){
+    if(!currentUser||currentUser.role!=='employee')return;
+    let emp=employees.find(e=>e.id===currentUser.employeeId);
+    if(!emp)return;
+    let my=bookings.filter(b=>b.status==='pending'&&(b.assignedEmployees||[]).includes(emp.id));
+    if(!my.length){showMsg("⚠️ ليس لديك أوردرات للتبديل");return;}
+    let bo=my.map(b=>`<option value="${b.id}">${b.date} - ${b.clientName} - ${b.hallName}</option>`).join('');
+    let ae=employees.filter(e=>e.id!==emp.id&&e.active&&e.role===emp.role).map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+    document.getElementById('modalContent').innerHTML=`
+      <h3 class="text-xl font-bold mb-3">🔄 تبديل وردية</h3>
+      <p>اختر الأوردر الذي تريد تبديله:</p>
+      <select id="swapBooking" class="mb-2">${bo}</select>
+      <p>اختر الموظف البديل:</p>
+      <select id="swapTargetEmp" class="mb-2">${ae}</select>
+      <button onclick="submitSwapRequest()" class="bg-indigo-700 text-white w-full py-2 rounded-xl mt-2">📩 إرسال طلب التبديل</button>`;
+    document.getElementById('modal').classList.remove('hidden');
+  }
+  function submitSwapRequest(){
+    let bid=document.getElementById('swapBooking')?.value;
+    let tid=document.getElementById('swapTargetEmp')?.value;
+    if(!bid||!tid)return showMsg("⚠️ اختر الأوردر والموظف");
+    let booking=bookings.find(b=>b.id===bid);
+    if(!booking)return;
+    let fromEmp=employees.find(e=>e.id===currentUser.employeeId);
+    let toEmp=employees.find(e=>e.id===tid);
+    let sr={id:'sr_'+Date.now(),fromEmpId:currentUser.employeeId,toEmpId:tid,bookingId:bid,status:'pending',date:new Date().toISOString()};
+    swapRequests.push(sr);
+    saveAllData();
+    closeModal();
+    // إشعار للإدارة
+    if(whatsappNumber)sendWhatsAppNotification(whatsappNumber,`🔔 طلب تبديل جديد:\n${fromEmp?.name} يريد التبديل مع ${toEmp?.name}\nعلى حجز: ${booking.clientName} - ${booking.date}`);
+    addNotification('admin','طلب تبديل جديد',`${fromEmp?.name} طلب تبديل مع ${toEmp?.name}`);
+    // إشعار للموظف البديل
+    let targetUser=users.find(u=>u.employeeId===tid);
+    if(targetUser)addNotification(targetUser.username,'طلب تبديل',`${fromEmp?.name} يريد التبديل معك`);
+    showMsg("✅ تم إرسال طلب التبديل للإدارة وللموظف البديل");
+  }
+  
+  function renderSwapRequestsContent(){
+    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">🔄 طلبات تبديل الأوردرات</h2><div class="space-y-3">`;
+    if(swapRequests.length===0){html+='<p class="text-gray-500 text-center">لا توجد طلبات تبديل حالياً</p>';}
+    else {
+      swapRequests.slice().reverse().forEach(sr=>{
+        let from=employees.find(e=>e.id===sr.fromEmpId);
+        let to=employees.find(e=>e.id===sr.toEmpId);
+        let bk=bookings.find(b=>b.id===sr.bookingId);
+        let statusBadge='';
+        if(sr.status==='pending')statusBadge='<span class="status-badge status-pending">⏳ معلق</span>';
+        else if(sr.status==='approved')statusBadge='<span class="status-badge status-completed">✅ تمت الموافقة</span>';
+        else statusBadge='<span class="status-badge status-cancelled">❌ مرفوض</span>';
+        html+=`<div class="border p-3 rounded-xl bg-white">
+          <div class="flex justify-between items-center flex-wrap gap-2">
+            <div><strong>${from?.name||'?'}</strong> ↔ <strong>${to?.name||'?'}</strong></div>
+            <div>${statusBadge}</div>
+          </div>
+          <div class="text-sm text-gray-600 mt-1">📅 ${bk?.date} | 👤 ${bk?.clientName} | 🏛️ ${bk?.hallName}</div>
+          ${sr.status==='pending'?`<div class="flex gap-2 mt-2"><button onclick="approveSwap('${sr.id}')" class="bg-green-600 text-white px-3 py-1 rounded text-sm">✅ موافقة</button><button onclick="rejectSwap('${sr.id}')" class="bg-red-600 text-white px-3 py-1 rounded text-sm">❌ رفض</button></div>`:''}
+        </div>`;
+      });
+    }
+    html+=`</div></div>`;
+    document.getElementById('swapRequestsTab').innerHTML=html;
+  }
+  function approveSwap(id){
+    let sr=swapRequests.find(x=>x.id===id);
+    if(!sr)return;
+    sr.status='approved';
+    let booking=bookings.find(b=>b.id===sr.bookingId);
+    if(booking){
+      booking.assignedEmployees=booking.assignedEmployees.map(eid=>eid===sr.fromEmpId?sr.toEmpId:eid);
+    }
+    saveAllData();
+    renderSwapRequestsContent();
+    renderBookingsContent();
+    renderDistributionContent();
+    // إشعار للموظفين
+    let fromEmp=employees.find(e=>e.id===sr.fromEmpId);
+    let toEmp=employees.find(e=>e.id===sr.toEmpId);
+    let fromUser=users.find(u=>u.employeeId===sr.fromEmpId);
+    let toUser=users.find(u=>u.employeeId===sr.toEmpId);
+    if(fromUser)addNotification(fromUser.username,'تمت الموافقة على التبديل',`تمت الموافقة على تبديلك مع ${toEmp?.name}`);
+    if(toUser)addNotification(toUser.username,'تمت الموافقة على التبديل',`تمت الموافقة على تبديل ${fromEmp?.name} معك`);
+    showMsg("✅ تمت الموافقة على التبديل");
+  }
+  function rejectSwap(id){
+    let sr=swapRequests.find(x=>x.id===id);
+    if(!sr)return;
+    sr.status='rejected';
+    saveAllData();
+    renderSwapRequestsContent();
+    let fromUser=users.find(u=>u.employeeId===sr.fromEmpId);
+    if(fromUser)addNotification(fromUser.username,'تم رفض التبديل','تم رفض طلب التبديل الخاص بك');
+    showMsg("❌ تم رفض التبديل");
+  }
 
   // ====== الأرشيف ======
   function renderArchiveContent(){let comp=bookings.filter(b=>b.status==='completed').slice(-50);document.getElementById('archiveTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold mb-3">📁 الأرشيف</h2><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${comp.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4">فارغ</td></tr>'}</tbody></table></div>`;}
   function exportToExcel(){let ws=XLSX.utils.json_to_sheet(bookings.filter(b=>b.status!=='cancelled').map(b=>({العميل:b.clientName,التاريخ:b.date,القاعة:b.hallName,السعر:b.price})));let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"الحجوزات");XLSX.writeFile(wb,"Drmedia_Bookings.xlsx");}
 
   // ====== عرض التطبيق ======
-  function renderCurrentTab(){document.querySelectorAll('.tab-content').forEach(t=>t.classList.add('hidden'));if(currentTab==='dashboardTab')renderDashboardContent();else if(currentTab==='bookingsTab')renderBookingsContent();else if(currentTab==='hallsTab')renderHallsContent();else if(currentTab==='employeesTab')renderEmployeesContent();else if(currentTab==='distributionTab')renderDistributionContent();else if(currentTab==='payrollTab')renderPayrollContent();else if(currentTab==='calendarTab')renderCalendarContent();else if(currentTab==='archiveTab')renderArchiveContent();else if(currentTab==='reportsTab')renderReportsContent();else if(currentTab==='usersTab')renderUsersContent();else if(currentTab==='settingsTab')renderSettingsContent();document.getElementById(currentTab)?.classList.remove('hidden');}
-  function renderAdminDashboard(){document.getElementById('app').innerHTML=`<div class="p-4 max-w-7xl mx-auto"><div class="flex justify-between items-center mb-4 flex-wrap gap-2"><h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1><div class="flex items-center gap-2"><div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div><div id="notificationPanel" class="notification-panel"></div><span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button></div></div><div class="flex flex-wrap gap-1 border-b overflow-x-auto pb-1" id="tabsContainer"><button data-tab="dashboardTab" class="tab-btn active">📊 الرئيسية</button><button data-tab="bookingsTab" class="tab-btn">📅 الحجوزات</button><button data-tab="hallsTab" class="tab-btn">🏛️ القاعات</button><button data-tab="employeesTab" class="tab-btn">👥 الموظفين</button><button data-tab="distributionTab" class="tab-btn">⚙️ التوزيع</button><button data-tab="payrollTab" class="tab-btn">💰 المرتبات</button><button data-tab="calendarTab" class="tab-btn">📆 التقويم</button><button data-tab="archiveTab" class="tab-btn">📁 الأرشيف</button><button data-tab="reportsTab" class="tab-btn">📊 التقارير</button><button data-tab="usersTab" class="tab-btn">👥 المستخدمين</button><button data-tab="settingsTab" class="tab-btn">⚙️ الإعدادات</button></div><div class="mt-4"><div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div></div><div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div>`;document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn=>btn.addEventListener('click',function(){document.querySelectorAll('#tabsContainer .tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');currentTab=this.dataset.tab;renderCurrentTab();}));renderCurrentTab();renderNotificationBadge();requestBrowserNotificationPermission();document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});}
-  function renderEmployeeDashboard(){if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;return;}let emp=employees.find(e=>e.id===currentUser.employeeId);updateEmployeeOrders();let my=bookings.filter(b=>(b.assignedEmployees||[]).includes(emp.id)&&b.status!=='cancelled');document.getElementById('app').innerHTML=`<div class="p-4 max-w-4xl mx-auto"><h1 class="text-xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1><div class="bg-white p-4 rounded-xl shadow mt-4"><h2 class="font-bold">${emp.name} - ${emp.role}</h2><p>أوردرات: ${my.length} | مستحق: ${(my.length*emp.salaryPerOrder).toLocaleString()} ج.م</p><table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${my.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div><div class="flex gap-3 mt-4"><button onclick="showSwapModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-exchange-alt ml-1"></i> تبديل وردية</button><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div><div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div>`;renderNotificationBadge();requestBrowserNotificationPermission();document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});}
+  function renderCurrentTab(){
+    document.querySelectorAll('.tab-content').forEach(t=>t.classList.add('hidden'));
+    if(currentTab==='dashboardTab')renderDashboardContent();
+    else if(currentTab==='bookingsTab')renderBookingsContent();
+    else if(currentTab==='hallsTab')renderHallsContent();
+    else if(currentTab==='employeesTab')renderEmployeesContent();
+    else if(currentTab==='distributionTab')renderDistributionContent();
+    else if(currentTab==='payrollTab')renderPayrollContent();
+    else if(currentTab==='calendarTab')renderCalendarContent();
+    else if(currentTab==='archiveTab')renderArchiveContent();
+    else if(currentTab==='reportsTab')renderReportsContent();
+    else if(currentTab==='usersTab')renderUsersContent();
+    else if(currentTab==='settingsTab')renderSettingsContent();
+    else if(currentTab==='swapRequestsTab')renderSwapRequestsContent();
+    document.getElementById(currentTab)?.classList.remove('hidden');
+  }
+  function renderAdminDashboard(){
+    document.getElementById('app').innerHTML=`
+      <div class="p-4 max-w-7xl mx-auto">
+        <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+          <h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1>
+          <div class="flex items-center gap-2">
+            <div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div>
+            <div id="notificationPanel" class="notification-panel"></div>
+            <span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span>
+            <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1 border-b overflow-x-auto pb-1" id="tabsContainer">
+          <button data-tab="dashboardTab" class="tab-btn active">📊 الرئيسية</button>
+          <button data-tab="bookingsTab" class="tab-btn">📅 الحجوزات</button>
+          <button data-tab="hallsTab" class="tab-btn">🏛️ القاعات</button>
+          <button data-tab="employeesTab" class="tab-btn">👥 الموظفين</button>
+          <button data-tab="distributionTab" class="tab-btn">⚙️ التوزيع</button>
+          <button data-tab="payrollTab" class="tab-btn">💰 المرتبات</button>
+          <button data-tab="calendarTab" class="tab-btn">📆 التقويم</button>
+          <button data-tab="archiveTab" class="tab-btn">📁 الأرشيف</button>
+          <button data-tab="reportsTab" class="tab-btn">📊 التقارير</button>
+          <button data-tab="usersTab" class="tab-btn">👥 المستخدمين</button>
+          <button data-tab="settingsTab" class="tab-btn">⚙️ الإعدادات</button>
+          <button data-tab="swapRequestsTab" class="tab-btn bg-indigo-100"><i class="fas fa-exchange-alt"></i> طلبات التبديل</button>
+        </div>
+        <div class="mt-4">
+          <div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div><div id="swapRequestsTab" class="tab-content hidden"></div>
+        </div>
+        <div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div>
+      </div>`;
+    document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn=>btn.addEventListener('click',function(){document.querySelectorAll('#tabsContainer .tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');currentTab=this.dataset.tab;renderCurrentTab();}));
+    renderCurrentTab();
+    renderNotificationBadge();
+    requestBrowserNotificationPermission();
+    document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
+  }
+  function renderEmployeeDashboard(){
+    if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;return;}
+    let emp=employees.find(e=>e.id===currentUser.employeeId);
+    updateEmployeeOrders();
+    let my=bookings.filter(b=>(b.assignedEmployees||[]).includes(emp.id)&&b.status!=='cancelled');
+    document.getElementById('app').innerHTML=`<div class="p-4 max-w-4xl mx-auto"><h1 class="text-xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1><div class="bg-white p-4 rounded-xl shadow mt-4"><h2 class="font-bold">${emp.name} - ${emp.role}</h2><p>أوردرات: ${my.length} | مستحق: ${(my.length*emp.salaryPerOrder).toLocaleString()} ج.م</p><table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${my.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div><div class="flex gap-3 mt-4"><button onclick="showSwapModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-exchange-alt ml-1"></i> تبديل وردية</button><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div><div class="footer-copy">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div>`;
+    renderNotificationBadge();
+    requestBrowserNotificationPermission();
+    document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
+  }
   function showLogin(){document.getElementById('app').innerHTML=`<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-8 rounded-2xl w-80 md:w-96 text-center shadow-2xl"><h1 class="text-2xl font-bold">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-12 h-12 object-cover rounded-full mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button><div class="footer-copy mt-6">© جميع الحقوق محفوظة Dr Media<br>Ahmed Shreif</div></div></div>`;}
   function doLogin(){let un=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPass').value;let user=users.find(u=>u.username===un&&u.password===pw);if(user){currentUser=user;sessionStorage.setItem('vpms_user',JSON.stringify(user));renderApp();showMsg(`مرحباً ${user.name||user.username}`);}else alert("بيانات غير صحيحة");}
   function logout(){sessionStorage.removeItem('vpms_user');currentUser=null;showLogin();}
   function renderApp(){if(!currentUser)showLogin();else if(currentUser.role==='employee')renderEmployeeDashboard();else renderAdminDashboard();}
 
-  window.closeModal=closeModal;window.showNotificationPanel=showNotificationPanel;window.markAllNotificationsRead=markAllNotificationsRead;window.markNotificationRead=markNotificationRead;window.autoDistribute=autoDistribute;window.applyFilters=applyFilters;window.showAddBookingModal=showAddBookingModal;window.saveNewBooking=saveNewBooking;window.showEditBookingModal=showEditBookingModal;window.saveEditBooking=saveEditBooking;window.markBookingCompleted=markBookingCompleted;window.deleteBooking=deleteBooking;window.showAddEmployeeModal=showAddEmployeeModal;window.saveNewEmployee=saveNewEmployee;window.showEditEmployeeModal=showEditEmployeeModal;window.saveEditEmployee=saveEditEmployee;window.deleteEmployee=deleteEmployee;window.showAddHallModal=showAddHallModal;window.saveNewHall=saveNewHall;window.deleteHall=deleteHall;window.showEditHallModal=showEditHallModal;window.saveEditHall=saveEditHall;window.toggleHallSelection=toggleHallSelection;window.selectAllHalls=selectAllHalls;window.toggleSelectAllHalls=toggleSelectAllHalls;window.bulkDeleteHalls=bulkDeleteHalls;window.toggleEmployeeSelection=toggleEmployeeSelection;window.selectAllEmployees=selectAllEmployees;window.toggleSelectAllEmployees=toggleSelectAllEmployees;window.bulkDeleteEmployees=bulkDeleteEmployees;window.togglePayrollSelection=togglePayrollSelection;window.selectAllPayrollEmps=selectAllPayrollEmps;window.toggleSelectAllPayroll=toggleSelectAllPayroll;window.bulkPayEmployees=bulkPayEmployees;window.toggleUserSelection=toggleUserSelection;window.selectAllUsers=selectAllUsers;window.toggleSelectAllUsers=toggleSelectAllUsers;window.bulkDeleteUsers=bulkDeleteUsers;window.addUser=addUser;window.showEditUserModal=showEditUserModal;window.saveEditUser=saveEditUser;window.linkUserToEmployee=linkUserToEmployee;window.showAddLoanModal=showAddLoanModal;window.saveNewLoan=saveNewLoan;window.payEmployee=payEmployee;window.renderPayrollPeriod=renderPayrollPeriod;window.handleLogoUpload=handleLogoUpload;window.updateCompanyName=updateCompanyName;window.updateWhatsApp=updateWhatsApp;window.exportToExcel=exportToExcel;window.showDayBookings=showDayBookings;window.jumpToMonth=jumpToMonth;window.showImportExcelModal=showImportExcelModal;window.handleExcelFile=handleExcelFile;window.confirmExcelImport=confirmExcelImport;window.showImportPdfModal=showImportPdfModal;window.handlePdfFile=handlePdfFile;window.confirmPdfDayImport=confirmPdfDayImport;window.showSwapModal=showSwapModal;window.submitSwapRequest=submitSwapRequest;window.updateSlot=updateSlot;window.logout=logout;window.doLogin=doLogin;
+  window.closeModal=closeModal;window.showNotificationPanel=showNotificationPanel;window.markAllNotificationsRead=markAllNotificationsRead;window.markNotificationRead=markNotificationRead;window.autoDistribute=autoDistribute;window.applyFilters=applyFilters;window.showAddBookingModal=showAddBookingModal;window.saveNewBooking=saveNewBooking;window.showEditBookingModal=showEditBookingModal;window.saveEditBooking=saveEditBooking;window.markBookingCompleted=markBookingCompleted;window.deleteBooking=deleteBooking;window.showAddEmployeeModal=showAddEmployeeModal;window.saveNewEmployee=saveNewEmployee;window.showEditEmployeeModal=showEditEmployeeModal;window.saveEditEmployee=saveEditEmployee;window.deleteEmployee=deleteEmployee;window.showAddHallModal=showAddHallModal;window.saveNewHall=saveNewHall;window.deleteHall=deleteHall;window.showEditHallModal=showEditHallModal;window.saveEditHall=saveEditHall;window.toggleHallSelection=toggleHallSelection;window.selectAllHalls=selectAllHalls;window.toggleSelectAllHalls=toggleSelectAllHalls;window.bulkDeleteHalls=bulkDeleteHalls;window.toggleEmployeeSelection=toggleEmployeeSelection;window.selectAllEmployees=selectAllEmployees;window.toggleSelectAllEmployees=toggleSelectAllEmployees;window.bulkDeleteEmployees=bulkDeleteEmployees;window.togglePayrollSelection=togglePayrollSelection;window.selectAllPayrollEmps=selectAllPayrollEmps;window.toggleSelectAllPayroll=toggleSelectAllPayroll;window.bulkPayEmployees=bulkPayEmployees;window.toggleUserSelection=toggleUserSelection;window.selectAllUsers=selectAllUsers;window.toggleSelectAllUsers=toggleSelectAllUsers;window.bulkDeleteUsers=bulkDeleteUsers;window.addUser=addUser;window.showEditUserModal=showEditUserModal;window.saveEditUser=saveEditUser;window.linkUserToEmployee=linkUserToEmployee;window.showAddLoanModal=showAddLoanModal;window.saveNewLoan=saveNewLoan;window.payEmployee=payEmployee;window.renderPayrollPeriod=renderPayrollPeriod;window.handleLogoUpload=handleLogoUpload;window.updateCompanyName=updateCompanyName;window.updateWhatsApp=updateWhatsApp;window.exportToExcel=exportToExcel;window.showDayBookings=showDayBookings;window.jumpToMonth=jumpToMonth;window.showImportExcelModal=showImportExcelModal;window.handleExcelFile=handleExcelFile;window.confirmExcelImport=confirmExcelImport;window.showImportPdfModal=showImportPdfModal;window.handlePdfFile=handlePdfFile;window.confirmPdfDayImport=confirmPdfDayImport;window.showSwapModal=showSwapModal;window.submitSwapRequest=submitSwapRequest;window.approveSwap=approveSwap;window.rejectSwap=rejectSwap;window.updateSlot=updateSlot;window.logout=logout;window.doLogin=doLogin;
+  window.toggleBookingSelection=toggleBookingSelection;window.selectAllBookings=selectAllBookings;window.toggleSelectAllBookings=toggleSelectAllBookings;window.bulkDeleteBookings=bulkDeleteBookings;window.bulkCompleteBookings=bulkCompleteBookings;
 
   loadData();
   let saved=sessionStorage.getItem('vpms_user');if(saved)currentUser=JSON.parse(saved);
