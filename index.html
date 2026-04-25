@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=1.0">
-  <title>Drmedia Pro | نظام إدارة متكامل</title>
+  <title>Drmedia Pro | نظام حضور QR</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
@@ -53,29 +52,29 @@
 </div>
 
 <script>
-  // ------------------- Firebase Config -------------------
-  const firebaseConfig = { 
-    apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ", 
-    authDomain: "drmedia-vpms.firebaseapp.com", 
-    databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com", 
-    projectId: "drmedia-vpms", 
-    storageBucket: "drmedia-vpms.firebasestorage.app", 
-    messagingSenderId: "681162512380", 
-    appId: "1:681162512380:web:ab2482f3234d8b59fc4479" 
+  // Firebase Config
+  const firebaseConfig = {
+    apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
+    authDomain: "drmedia-vpms.firebaseapp.com",
+    databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
+    projectId: "drmedia-vpms",
+    storageBucket: "drmedia-vpms.firebasestorage.app",
+    messagingSenderId: "681162512380",
+    appId: "1:681162512380:web:ab2482f3234d8b59fc4479"
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // ------------------- Global Data -------------------
+  // Global Data
   let bookings = [], employees = [], users = [], halls = [], notifications = [], swapRequests = [], payrollArchive = [], employeeLoans = {}, attendance = [];
   let currentUser = null, currentTab = 'dashboardTab', companyName = 'Drmedia Pro', companyLogo = '📷', whatsappNumber = '';
   let browserNotificationsEnabled = false;
   let html5QrCode = null;
 
   // Helper functions
-  function showMsg(m){ let t=document.getElementById('toast'); t.innerText=m; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),2500); }
-  function closeModal(){ document.getElementById('modal').classList.add('hidden'); if(html5QrCode) html5QrCode.stop().catch(e=>{}); html5QrCode=null; }
-  function saveAllData(){ 
+  function showMsg(m) { let t = document.getElementById('toast'); t.innerText = m; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 2500); }
+  function closeModal() { document.getElementById('modal').classList.add('hidden'); if (html5QrCode) html5QrCode.stop().catch(e => { }); html5QrCode = null; }
+  function saveAllData() {
     Promise.all([
       db.ref('bookings').set(bookings),
       db.ref('employees').set(employees),
@@ -86,28 +85,82 @@
       db.ref('payrollArchive').set(payrollArchive),
       db.ref('employeeLoans').set(employeeLoans),
       db.ref('attendance').set(attendance),
-      db.ref('companySettings').set({companyName,companyLogo,whatsappNumber})
-    ]).catch(e=>console.error(e));
+      db.ref('companySettings').set({ companyName, companyLogo, whatsappNumber })
+    ]).catch(e => console.error(e));
   }
 
-  // إشعارات المتصفح
-  function requestBrowserNotificationPermission(){ if(!('Notification' in window)) return; if(Notification.permission==='granted') browserNotificationsEnabled=true; else if(Notification.permission!=='denied'){ Notification.requestPermission().then(p=>{ if(p==='granted'){ browserNotificationsEnabled=true; showMsg('✅ تم تفعيل الإشعارات'); } }); } }
-  function sendBrowserNotification(t,b){ if(!browserNotificationsEnabled||Notification.permission!=='granted') return; try{ new Notification(t,{body:b,icon:'🔔'}); }catch(e){} }
-  function addNotification(uid,title,message){ notifications.push({id:Date.now(),userId:uid,title,message,read:false,date:new Date().toLocaleString()}); saveAllData(); if(currentUser && currentUser.employeeId===uid){ renderNotificationBadge(); sendBrowserNotification(title,message); } }
+  // ------------------- QR Code Attendance System -------------------
+  function generateQRCode(employeeId) { return `DRMEDIA-ATTEND-${employeeId}`; }
+  function generateQRCodeImage(employeeId) {
+    const qr = qrcode(0, 'M');
+    qr.addData(generateQRCode(employeeId));
+    qr.make();
+    return qr.createDataURL(8, 0);
+  }
+  function recordAttendance(employeeId) {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const time = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const alreadyRecorded = attendance.some(a => a.employeeId === employeeId && a.date === today);
+    if (alreadyRecorded) { showMsg('⚠️ تم تسجيل حضورك اليوم بالفعل'); return false; }
+    attendance.push({ id: 'att_' + Date.now(), employeeId, date: today, time, timestamp: now.toISOString() });
+    saveAllData();
+    const emp = employees.find(e => e.id === employeeId);
+    showMsg(`✅ تم تسجيل حضور ${emp ? emp.name : employeeId} - ${time}`);
+    return true;
+  }
+  function showQRScanner() {
+    document.getElementById('modalContent').innerHTML = `
+      <h3 class="text-xl font-bold mb-3">📷 مسح QR للحضور</h3>
+      <div id="qr-reader" style="width:100%;"></div>
+      <div id="qr-result" class="mt-3 text-center"></div>
+      <button onclick="stopQRScanner()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-3 w-full">إيقاف المسح</button>
+    `;
+    document.getElementById('modal').classList.remove('hidden');
+    setTimeout(() => {
+      html5QrCode = new Html5Qrcode("qr-reader");
+      html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          if (decodedText.startsWith('DRMEDIA-ATTEND-')) {
+            const employeeId = decodedText.replace('DRMEDIA-ATTEND-', '');
+            if (recordAttendance(employeeId)) {
+              document.getElementById('qr-result').innerHTML = `<p class="text-green-600 font-bold">✅ تم تسجيل الحضور</p>`;
+              html5QrCode.stop().then(() => setTimeout(closeModal, 1000));
+            } else {
+              document.getElementById('qr-result').innerHTML = `<p class="text-yellow-600">⚠️ تم تسجيل الحضور مسبقاً</p>`;
+              html5QrCode.stop().then(() => setTimeout(closeModal, 1000));
+            }
+          } else { document.getElementById('qr-result').innerHTML = `<p class="text-red-600">❌ رمز غير صالح</p>`; }
+        },
+        (err) => { console.log(err); }
+      ).catch(err => { showMsg('⚠️ تعذر الوصول للكاميرا'); closeModal(); });
+    }, 500);
+  }
+  function stopQRScanner() { if (html5QrCode) html5QrCode.stop().then(() => { html5QrCode = null; closeModal(); }).catch(() => closeModal()); else closeModal(); }
+  function exportAttendanceToExcel() {
+    const data = attendance.map(a => { const emp = employees.find(e => e.id === a.employeeId); return { 'الموظف': emp ? emp.name : a.employeeId, 'التاريخ': a.date, 'الوقت': a.time, 'التوقيت': a.timestamp }; });
+    const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "الحضور"); XLSX.writeFile(wb, "Drmedia_Attendance.xlsx"); showMsg("✅ تم التصدير");
+  }
+  function renderAttendanceContent() {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📋 سجل الحضور</h2><div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${attendance.filter(a => a.date === todayStr).length}</div><div>حضور اليوم</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-blue-600"></i><div class="stat-number">${employees.filter(e => e.active).length}</div><div>إجمالي الموظفين</div></div></div><div class="flex gap-2 mb-3"><input type="date" id="attendanceFilterDate" class="border rounded-xl px-3 py-2" value="${todayStr}" onchange="renderAttendanceContent()" /><button onclick="exportAttendanceToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-file-excel ml-1"></i> تصدير Excel</button></div><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead class="bg-gray-100"><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th><th>حالة</th></tr></thead><tbody>`;
+    const filterDate = document.getElementById('attendanceFilterDate')?.value || todayStr;
+    const filtered = attendance.filter(a => a.date === filterDate);
+    if (filtered.length === 0) html += '<tr><td colspan="4" class="text-center p-4 text-gray-500">لا توجد سجلات حضور</td></tr>';
+    else filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(a => { const emp = employees.find(e => e.id === a.employeeId); html += `<tr><td>${emp ? emp.name : a.employeeId}</td><td>${a.date}</td><td>${a.time}</td><td><span class="status-badge status-completed">✅ حاضر</span></td></tr>`; });
+    html += `</tbody></table></div></div>`;
+    document.getElementById('attendanceTab').innerHTML = html;
+  }
 
-  // ------------------- تسجيل الدخول والخروج -------------------
+  // Login System
   function showLogin() {
-    // إزالة أي مستمع سابق لتجنب التكرار
-    const oldForm = document.getElementById('loginForm');
-    if(oldForm) oldForm.removeEventListener('submit', handleLogin);
-    
     document.getElementById('app').innerHTML = `
       <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
         <div class="bg-white rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md">
           <div class="text-center mb-6">
             <div class="text-5xl mb-3">📷</div>
             <h2 class="text-2xl font-bold text-emerald-800">Drmedia Pro</h2>
-            <p class="text-gray-500">نظام إدارة القاعات والموظفين</p>
+            <p class="text-gray-500">نظام إدارة القاعات والحضور بالـQR</p>
           </div>
           <form id="loginForm">
             <div class="mb-4">
@@ -127,13 +180,12 @@
         </div>
       </div>
     `;
-    
-    function handleLogin(e) {
+    const handleLogin = (e) => {
       e.preventDefault();
       const username = document.getElementById('loginUsername').value.trim();
       const password = document.getElementById('loginPassword').value.trim();
       const user = users.find(u => u.username === username && u.password === password);
-      if(user) {
+      if (user) {
         currentUser = { ...user };
         sessionStorage.setItem('vpms_user', JSON.stringify(currentUser));
         showMsg(`مرحباً ${user.name}`);
@@ -141,207 +193,117 @@
       } else {
         showMsg('❌ اسم المستخدم أو كلمة المرور غير صحيحة');
       }
-    }
-    
+    };
     document.getElementById('loginForm').addEventListener('submit', handleLogin);
   }
 
-  function logout() {
-    currentUser = null;
-    sessionStorage.removeItem('vpms_user');
-    showLogin();
-  }
+  function logout() { currentUser = null; sessionStorage.removeItem('vpms_user'); showLogin(); }
 
-  // ------------------- عرض لوحة التحكم حسب الدور -------------------
-  function renderApp() {
-    if(currentUser?.role === 'admin') renderAdminDashboard();
-    else if(currentUser?.role === 'employee') renderEmployeeDashboard();
-    else showLogin();
-  }
-
-  // ------------------- دوال الحضور و QR -------------------
-  function generateQRCode(employeeId) { return `DRMEDIA-ATTEND-${employeeId}`; }
-  function generateQRCodeImage(employeeId) {
-    const qr = qrcode(0, 'M');
-    qr.addData(generateQRCode(employeeId));
-    qr.make();
-    return qr.createDataURL(8, 0);
-  }
-  function recordAttendance(employeeId) {
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const time = now.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-    const alreadyRecorded = attendance.some(a => a.employeeId === employeeId && a.date === today);
-    if(alreadyRecorded) { showMsg('⚠️ تم تسجيل حضورك اليوم بالفعل'); return false; }
-    attendance.push({ id:'att_'+Date.now(), employeeId, date:today, time, timestamp:now.toISOString() });
-    saveAllData();
-    const emp = employees.find(e => e.id === employeeId);
-    showMsg(`✅ تم تسجيل حضور ${emp ? emp.name : employeeId} - ${time}`);
-    return true;
-  }
-  function showQRScanner() {
-    document.getElementById('modalContent').innerHTML = `
-      <h3 class="text-xl font-bold mb-3">📷 مسح QR للحضور</h3>
-      <div id="qr-reader" style="width:100%;"></div>
-      <div id="qr-result" class="mt-3 text-center"></div>
-      <button onclick="stopQRScanner()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-3 w-full">إيقاف المسح</button>
-    `;
-    document.getElementById('modal').classList.remove('hidden');
-    setTimeout(() => {
-      html5QrCode = new Html5Qrcode("qr-reader");
-      html5QrCode.start({ facingMode: "environment" }, { fps:10, qrbox:{ width:250, height:250 } },
-        (decodedText) => {
-          if(decodedText.startsWith('DRMEDIA-ATTEND-')) {
-            const employeeId = decodedText.replace('DRMEDIA-ATTEND-','');
-            if(recordAttendance(employeeId)) {
-              document.getElementById('qr-result').innerHTML = `<p class="text-green-600 font-bold">✅ تم تسجيل الحضور</p>`;
-              html5QrCode.stop().then(()=>setTimeout(closeModal,1000));
-            } else {
-              document.getElementById('qr-result').innerHTML = `<p class="text-yellow-600">⚠️ تم تسجيل الحضور مسبقاً</p>`;
-              html5QrCode.stop().then(()=>setTimeout(closeModal,1000));
-            }
-          } else { document.getElementById('qr-result').innerHTML = `<p class="text-red-600">❌ رمز غير صالح</p>`; }
-        },
-        (err) => { console.log(err); }
-      ).catch(err=>{ showMsg('⚠️ تعذر الوصول للكاميرا'); closeModal(); });
-    }, 500);
-  }
-  function stopQRScanner() { if(html5QrCode) html5QrCode.stop().then(()=>{ html5QrCode=null; closeModal(); }).catch(()=>closeModal()); else closeModal(); }
-  function exportAttendanceToExcel() {
-    const data = attendance.map(a=>{ const emp=employees.find(e=>e.id===a.employeeId); return { 'الموظف':emp?emp.name:a.employeeId, 'التاريخ':a.date, 'الوقت':a.time, 'التوقيت':a.timestamp }; });
-    const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "الحضور"); XLSX.writeFile(wb, "Drmedia_Attendance.xlsx"); showMsg("✅ تم التصدير");
-  }
-  function renderAttendanceContent() {
-    const todayStr = new Date().toISOString().slice(0,10);
-    let html = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📋 سجل الحضور</h2><div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${attendance.filter(a=>a.date===todayStr).length}</div><div>حضور اليوم</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-blue-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>إجمالي الموظفين</div></div></div><div class="flex gap-2 mb-3"><input type="date" id="attendanceFilterDate" class="border rounded-xl px-3 py-2" value="${todayStr}" onchange="renderAttendanceContent()" /><button onclick="exportAttendanceToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl"><i class="fas fa-file-excel ml-1"></i> تصدير Excel</button></div><div class="overflow-x-auto"><table class="w-full bg-white rounded-xl"><thead class="bg-gray-100"><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th><th>حالة</th></tr></thead><tbody>`;
-    const filterDate = document.getElementById('attendanceFilterDate')?.value || todayStr;
-    const filtered = attendance.filter(a=>a.date===filterDate);
-    if(filtered.length===0) html += '<tr><td colspan="4" class="text-center p-4 text-gray-500">لا توجد سجلات حضور</td></tr>';
-    else filtered.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).forEach(a=>{ const emp=employees.find(e=>e.id===a.employeeId); html+=`<tr><td>${emp?emp.name:a.employeeId}</td><td>${a.date}</td><td>${a.time}</td><td><span class="status-badge status-completed">✅ حاضر</span></td></tr>`; });
-    html += `</tbody></table></div></div>`;
-    document.getElementById('attendanceTab').innerHTML = html;
-  }
-
-  // ------------------- دوال الإشعارات -------------------
-  function renderNotificationBadge(){ 
-    let unread = notifications.filter(n=>n.userId===currentUser?.employeeId && !n.read).length;
-    let bell = document.getElementById('notificationBell');
-    if(bell){ let badge = bell.querySelector('.notification-badge'); if(unread>0){ if(!badge){ badge=document.createElement('span'); badge.className='notification-badge'; bell.appendChild(badge); } badge.innerText=unread; } else if(badge) badge.remove(); }
-  }
-  function showNotificationPanel(){ let p=document.getElementById('notificationPanel'); if(!p) return; if(p.style.display==='block'){ p.style.display='none'; return; } let un=notifications.filter(n=>n.userId===currentUser?.employeeId); p.innerHTML=`<div class="p-2 border-b flex justify-between"><span class="font-bold">الإشعارات (${un.filter(n=>!n.read).length})</span><button onclick="markAllNotificationsRead()" class="text-xs bg-blue-500 text-white px-2 py-1 rounded">الكل مقروء</button></div>${un.slice().reverse().map(n=>`<div class="notification-item p-2 border-b cursor-pointer ${n.read?'':'bg-green-50'}" onclick="markNotificationRead('${n.id}')"><div class="font-bold">${n.title}</div><div class="text-sm">${n.message}</div></div>`).join('')||'<div class="p-3 text-center">لا توجد إشعارات</div>'}`; p.style.display='block'; }
-  function markNotificationRead(id){ let n=notifications.find(x=>x.id==id); if(n) n.read=true; saveAllData(); renderNotificationBadge(); showNotificationPanel(); }
-  function markAllNotificationsRead(){ notifications.forEach(n=>{ if(n.userId===currentUser?.employeeId) n.read=true; }); saveAllData(); renderNotificationBadge(); showNotificationPanel(); showMsg("✅ تم تحديث الكل كمقروء"); }
-
-  // Dashboard للموظف
-  function renderEmployeeDashboard(){
-    if(!currentUser?.employeeId || !employees.some(e=>e.id===currentUser.employeeId)){ document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`; return; }
-    let emp=employees.find(e=>e.id===currentUser.employeeId);
-    let myBookings = bookings.filter(b=> (b.assignedEmployees||[]).includes(emp.id) && b.status!=='cancelled');
+  // Employee Dashboard with QR
+  function renderEmployeeDashboard() {
+    if (!currentUser?.employeeId || !employees.some(e => e.id === currentUser.employeeId)) {
+      document.getElementById('app').innerHTML = `<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
+      return;
+    }
+    let emp = employees.find(e => e.id === currentUser.employeeId);
+    let myBookings = bookings.filter(b => (b.assignedEmployees || []).includes(emp.id) && b.status !== 'cancelled');
     let qrData = generateQRCodeImage(currentUser.employeeId);
-    let todayAtt = attendance.filter(a=>a.employeeId===currentUser.employeeId && a.date===new Date().toISOString().slice(0,10)).length>0;
+    let todayAtt = attendance.filter(a => a.employeeId === currentUser.employeeId && a.date === new Date().toISOString().slice(0, 10)).length > 0;
     document.getElementById('app').innerHTML = `
       <div class="p-4 max-w-4xl mx-auto">
         <div class="flex justify-between items-center mb-4"><h1 class="text-xl font-bold text-emerald-800">${companyLogo} ${companyName}</h1><div><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded-xl text-sm">خروج</button></div></div>
         <div class="bg-white p-4 rounded-xl shadow mb-4"><div class="flex flex-col md:flex-row items-center gap-4"><img src="${qrData}" class="w-32 h-32" /><div><p class="font-bold">${emp.name} - ${emp.role}</p><p class="text-xs text-gray-400">${generateQRCode(currentUser.employeeId)}</p><button onclick="showQRScanner()" class="bg-green-600 text-white px-4 py-2 rounded-xl mt-2 ${todayAtt ? 'bg-gray-400 cursor-not-allowed' : ''}" ${todayAtt ? 'disabled' : ''}><i class="fas fa-camera ml-1"></i> ${todayAtt ? 'تم الحضور اليوم' : 'تسجيل حضور'}</button></div></div></div>
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="font-bold">أوردراتي</h2><p>عدد الأوردرات: ${myBookings.length} | المستحق: ${(myBookings.length * emp.salaryPerOrder).toLocaleString()} ج.م</p><table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myBookings.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div>
+        <div class="bg-white p-4 rounded-xl shadow"><h2 class="font-bold">أوردراتي</h2><p>عدد الأوردرات: ${myBookings.length} | المستحق: ${(myBookings.length * emp.salaryPerOrder).toLocaleString()} ج.م</p><table class="w-full mt-3"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myBookings.map(o => `<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div>
         <div class="footer-copy">© Dr Media - Ahmed Shreif</div>
       </div>`;
-    renderNotificationBadge();
   }
 
-  // دوال إضافية وهمية لتجنب الأخطاء (لأنها قد تستدعى من الأزرار)
-  function renderDistributionContent(){ document.getElementById('distributionTab').innerHTML = '<div class="p-4">محتوى توزيع الأوردرات قيد التطوير</div>'; }
-  function renderCalendarContent(){ document.getElementById('calendarTab').innerHTML = '<div class="p-4">التقويم قيد التطوير</div>'; }
-  function renderArchiveContent(){ document.getElementById('archiveTab').innerHTML = '<div class="p-4">الأرشيف قيد التطوير</div>'; }
-  function renderReportsContent(){ document.getElementById('reportsTab').innerHTML = '<div class="p-4">التقارير قيد التطوير</div>'; }
-  function renderUsersContent(){ document.getElementById('usersTab').innerHTML = '<div class="p-4">إدارة المستخدمين قيد التطوير</div>'; }
-  function renderSwapRequestsContent(){ document.getElementById('swapRequestsTab').innerHTML = '<div class="p-4">طلبات التبديل قيد التطوير</div>'; }
-
-  // Dashboard الأدمن مع تبويبات مختصرة (لضمان عمل النظام)
+  // Admin Dashboard with Attendance Tab
   function renderAdminDashboard() {
     document.getElementById('app').innerHTML = `
       <div class="p-4 max-w-7xl mx-auto">
         <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
           <h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo} ${companyName}</h1>
-          <div class="flex items-center gap-2"><div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div><div id="notificationPanel" class="notification-panel"></div><span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button></div>
+          <div><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button></div>
         </div>
         <div class="flex flex-wrap gap-1 border-b overflow-x-auto pb-1" id="tabsContainer">
           <button data-tab="dashboardTab" class="tab-btn active">📊 الرئيسية</button>
           <button data-tab="bookingsTab" class="tab-btn">📅 الحجوزات</button>
           <button data-tab="employeesTab" class="tab-btn">👥 الموظفين</button>
           <button data-tab="payrollTab" class="tab-btn">💰 المرتبات</button>
-          <button data-tab="attendanceTab" class="tab-btn bg-green-100">📋 الحضور</button>
+          <button data-tab="attendanceTab" class="tab-btn bg-green-100"><i class="fas fa-calendar-check ml-1"></i> 📋 الحضور</button>
           <button data-tab="settingsTab" class="tab-btn">⚙️ الإعدادات</button>
         </div>
-        <div class="mt-4"><div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="attendanceTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div></div>
+        <div class="mt-4">
+          <div id="dashboardTab" class="tab-content"></div>
+          <div id="bookingsTab" class="tab-content hidden"></div>
+          <div id="employeesTab" class="tab-content hidden"></div>
+          <div id="payrollTab" class="tab-content hidden"></div>
+          <div id="attendanceTab" class="tab-content hidden"></div>
+          <div id="settingsTab" class="tab-content hidden"></div>
+        </div>
         <div class="footer-copy">© Dr Media - Ahmed Shreif</div>
       </div>`;
-    document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn=>btn.addEventListener('click',function(){ document.querySelectorAll('#tabsContainer .tab-btn').forEach(b=>b.classList.remove('active')); this.classList.add('active'); currentTab=this.dataset.tab; renderCurrentTab(); }));
+    document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn => btn.addEventListener('click', function () {
+      document.querySelectorAll('#tabsContainer .tab-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      currentTab = this.dataset.tab;
+      renderCurrentTab();
+    }));
     renderCurrentTab();
-    renderNotificationBadge();
-    requestBrowserNotificationPermission();
-    document.addEventListener('click',function(e){ let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell'); if(p&&b&&!b.contains(e.target)&&!p.contains(e.target)) p.style.display='none'; });
   }
 
-  function renderCurrentTab(){
-    document.querySelectorAll('.tab-content').forEach(t=>t.classList.add('hidden'));
-    if(currentTab==='dashboardTab') renderDashboardContent();
-    else if(currentTab==='bookingsTab') renderBookingsSimple();
-    else if(currentTab==='employeesTab') renderEmployeesSimple();
-    else if(currentTab==='payrollTab') renderPayrollSimple();
-    else if(currentTab==='attendanceTab') renderAttendanceContent();
-    else if(currentTab==='settingsTab') renderSettingsSimple();
-    else if(currentTab==='distributionTab') renderDistributionContent();
-    else if(currentTab==='calendarTab') renderCalendarContent();
-    else if(currentTab==='archiveTab') renderArchiveContent();
-    else if(currentTab==='reportsTab') renderReportsContent();
-    else if(currentTab==='usersTab') renderUsersContent();
-    else if(currentTab==='swapRequestsTab') renderSwapRequestsContent();
+  function renderCurrentTab() {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+    if (currentTab === 'dashboardTab') renderDashboardContent();
+    else if (currentTab === 'bookingsTab') renderBookingsSimple();
+    else if (currentTab === 'employeesTab') renderEmployeesSimple();
+    else if (currentTab === 'payrollTab') renderPayrollSimple();
+    else if (currentTab === 'attendanceTab') renderAttendanceContent();
+    else if (currentTab === 'settingsTab') renderSettingsSimple();
     document.getElementById(currentTab)?.classList.remove('hidden');
   }
 
-  // محتوى مبسط للوظائف الرئيسية
-  function renderDashboardContent(){
-    let totalBookings = bookings.length;
-    let totalEmployees = employees.filter(e=>e.active).length;
-    let totalHalls = halls.length;
-    let completed = bookings.filter(b=>b.status==='completed').length;
-    let pending = bookings.filter(b=>b.status==='pending').length;
+  function renderDashboardContent() {
     document.getElementById('dashboardTab').innerHTML = `
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4"><div class="dashboard-card"><i class="fas fa-calendar-alt text-3xl text-emerald-600"></i><div class="stat-number">${totalBookings}</div><div>إجمالي الحجوزات</div></div><div class="dashboard-card"><i class="fas fa-users text-3xl text-blue-600"></i><div class="stat-number">${totalEmployees}</div><div>الموظفين النشطين</div></div><div class="dashboard-card"><i class="fas fa-building text-3xl text-purple-600"></i><div class="stat-number">${totalHalls}</div><div>القاعات</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-3xl text-green-600"></i><div class="stat-number">${completed}</div><div>حجوزات منتهية</div></div><div class="dashboard-card"><i class="fas fa-clock text-3xl text-yellow-600"></i><div class="stat-number">${pending}</div><div>قيد الانتظار</div></div></div>
-    `;
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="dashboard-card"><i class="fas fa-calendar-alt text-3xl text-emerald-600"></i><div class="stat-number">${bookings.length}</div><div>إجمالي الحجوزات</div></div>
+        <div class="dashboard-card"><i class="fas fa-users text-3xl text-blue-600"></i><div class="stat-number">${employees.filter(e => e.active).length}</div><div>الموظفين النشطين</div></div>
+        <div class="dashboard-card"><i class="fas fa-clock text-3xl text-yellow-600"></i><div class="stat-number">${bookings.filter(b => b.status === 'pending').length}</div><div>قيد الانتظار</div></div>
+        <div class="dashboard-card"><i class="fas fa-qrcode text-3xl text-purple-600"></i><div class="stat-number">${attendance.filter(a => a.date === new Date().toISOString().slice(0,10)).length}</div><div>حضور اليوم</div></div>
+      </div>`;
   }
-  function renderBookingsSimple(){
+  function renderBookingsSimple() {
     let html = `<div class="p-2"><h2 class="text-xl font-bold mb-2">📅 قائمة الحجوزات</h2><div class="overflow-x-auto"><table class="min-w-full bg-white"><thead class="bg-gray-100"><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th></tr></thead><tbody>`;
-    bookings.forEach(b=>{
-      html+=`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price}</td><td><span class="status-badge ${b.status==='pending'?'status-pending':b.status==='completed'?'status-completed':'status-cancelled'}">${b.status=== 'pending'?'قيد الانتظار':b.status==='completed'?'منتهي':'ملغي'}</span></td></tr>`;
+    bookings.forEach(b => {
+      html += `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price}</td><td><span class="status-badge ${b.status === 'pending' ? 'status-pending' : b.status === 'completed' ? 'status-completed' : 'status-cancelled'}">${b.status === 'pending' ? 'قيد الانتظار' : b.status === 'completed' ? 'منتهي' : 'ملغي'}</span></td></tr>`;
     });
-    html+=`</tbody></table></div></div>`;
+    html += `</tbody></table></div></div>`;
     document.getElementById('bookingsTab').innerHTML = html;
   }
-  function renderEmployeesSimple(){
+  function renderEmployeesSimple() {
     let html = `<div class="p-2"><h2 class="text-xl font-bold mb-2">👥 الموظفين</h2><div class="overflow-x-auto"><table class="min-w-full bg-white"><thead class="bg-gray-100"><tr><th>الاسم</th><th>الوظيفة</th><th>الأوردرات</th><th>الراتب/أوردر</th></tr></thead><tbody>`;
-    employees.forEach(e=>{
-      let orders = bookings.filter(b=> (b.assignedEmployees||[]).includes(e.id)).length;
-      html+=`<tr><td>${e.name}</td><td>${e.role}</td><td>${orders}</td><td>${e.salaryPerOrder} ج.م</td></tr>`;
+    employees.forEach(e => {
+      let orders = bookings.filter(b => (b.assignedEmployees || []).includes(e.id)).length;
+      html += `<tr><td>${e.name}</td><td>${e.role}</td><td>${orders}</td><td>${e.salaryPerOrder} ج.م</td></tr>`;
     });
-    html+=`</tbody></table></div></div>`;
+    html += `</tbody></table></div></div>`;
     document.getElementById('employeesTab').innerHTML = html;
   }
-  function renderPayrollSimple(){
+  function renderPayrollSimple() {
     let totalPay = 0;
-    let rows = employees.map(emp=>{
-      let orders = bookings.filter(b=> (b.assignedEmployees||[]).includes(emp.id)).length;
+    let rows = employees.map(emp => {
+      let orders = bookings.filter(b => (b.assignedEmployees || []).includes(emp.id)).length;
       let salary = orders * emp.salaryPerOrder;
       totalPay += salary;
       return `<tr><td>${emp.name}</td><td>${emp.role}</td><td>${orders}</td><td>${salary} ج.م</td></tr>`;
     }).join('');
     document.getElementById('payrollTab').innerHTML = `<div class="p-2"><h2 class="text-xl font-bold">💰 المرتبات المستحقة</h2><div class="bg-white p-4 rounded-xl my-2">إجمالي المرتبات: ${totalPay.toLocaleString()} ج.م</div><table class="min-w-full bg-white"><thead class="bg-gray-100"><tr><th>الموظف</th><th>الوظيفة</th><th>عدد الأوردرات</th><th>المستحق</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
-  function renderSettingsSimple(){
+  function renderSettingsSimple() {
     document.getElementById('settingsTab').innerHTML = `<div class="p-2 bg-white rounded-xl"><h2 class="text-xl font-bold mb-2">⚙️ إعدادات الشركة</h2><label>اسم الشركة</label><input type="text" id="setCompanyName" value="${companyName}" class="border rounded p-2 w-full"><label>رقم الواتساب</label><input type="text" id="setWhatsapp" value="${whatsappNumber}" class="border rounded p-2 w-full"><button onclick="saveSettings()" class="bg-emerald-600 text-white px-4 py-2 rounded mt-2">حفظ الإعدادات</button></div>`;
   }
-  function saveSettings(){
+  function saveSettings() {
     companyName = document.getElementById('setCompanyName').value;
     whatsappNumber = document.getElementById('setWhatsapp').value;
     saveAllData();
@@ -349,53 +311,58 @@
     renderAdminDashboard();
   }
 
-  // ------------------- تحميل البيانات وتجهيزها -------------------
-  function initDefaultData(){
-    if(!halls.length) halls=[{id:'hall1',name:'المغلقة',type:'closed',active:true},{id:'hall2',name:'الأوبن',type:'open',active:true},{id:'hall3',name:'الكافيه',type:'cafe',active:true}];
-    if(!employees.length) employees=[{id:'emp1',name:'أحمد علي',role:'مخرج',phone:'01001234567',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp2',name:'محمود حسن',role:'مخرج',phone:'01002345678',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp3',name:'سامر خالد',role:'مصور',phone:'01003456789',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp4',name:'نور الدين',role:'مصور',phone:'01004567890',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp5',name:'ياسر محمد',role:'مصور',phone:'01005678901',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp6',name:'كريم وائل',role:'مصور',phone:'01006789012',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp7',name:'طارق رشاد',role:'كرين',phone:'01007890123',salaryPerOrder:250,active:true,totalOrders:0},{id:'emp8',name:'هاني سعيد',role:'كرين',phone:'01008901234',salaryPerOrder:250,active:true,totalOrders:0}];
-    if(!users.length) users=[{username:'admin',password:'admin123',role:'admin',name:'مدير النظام'},{username:'ahmed',password:'emp123',role:'employee',employeeId:'emp1',name:'أحمد علي'},{username:'mahmoud',password:'emp123',role:'employee',employeeId:'emp2',name:'محمود حسن'},{username:'samer',password:'emp123',role:'employee',employeeId:'emp3',name:'سامر خالد'},{username:'nour',password:'emp123',role:'employee',employeeId:'emp4',name:'نور الدين'},{username:'yasser',password:'emp123',role:'employee',employeeId:'emp5',name:'ياسر محمد'},{username:'kareem',password:'emp123',role:'employee',employeeId:'emp6',name:'كريم وائل'},{username:'tarek',password:'emp123',role:'employee',employeeId:'emp7',name:'طارق رشاد'},{username:'hany',password:'emp123',role:'employee',employeeId:'emp8',name:'هاني سعيد'}];
-    if(!bookings.length){ let fd= d=>{let x=new Date(); x.setDate(x.getDate()+d); return x.toISOString().slice(0,10);}; bookings=[{id:'b1',clientName:'محمد عبدالله',phone:'0100',hallId:'hall1',hallName:'المغلقة',date:fd(3),price:5000,deposit:2000,assignedEmployees:[],status:'pending',notes:''}]; }
+  function renderApp() {
+    if (currentUser?.role === 'admin') renderAdminDashboard();
+    else if (currentUser?.role === 'employee') renderEmployeeDashboard();
+    else showLogin();
+  }
+
+  // Initialize default data
+  function initDefaultData() {
+    if (!halls.length) halls = [{ id: 'hall1', name: 'المغلقة', type: 'closed', active: true }, { id: 'hall2', name: 'الأوبن', type: 'open', active: true }, { id: 'hall3', name: 'الكافيه', type: 'cafe', active: true }];
+    if (!employees.length) employees = [
+      { id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 },
+      { id: 'emp2', name: 'محمود حسن', role: 'مخرج', phone: '01002345678', salaryPerOrder: 300, active: true, totalOrders: 0 },
+      { id: 'emp3', name: 'سامر خالد', role: 'مصور', phone: '01003456789', salaryPerOrder: 200, active: true, totalOrders: 0 }
+    ];
+    if (!users.length) users = [
+      { username: 'admin', password: 'admin123', role: 'admin', name: 'مدير النظام' },
+      { username: 'ahmed', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد علي' }
+    ];
+    if (!bookings.length) {
+      let fd = d => { let x = new Date(); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
+      bookings = [{ id: 'b1', clientName: 'محمد عبدالله', phone: '0100', hallId: 'hall1', hallName: 'المغلقة', date: fd(3), price: 5000, deposit: 2000, assignedEmployees: [], status: 'pending', notes: '' }];
+    }
     saveAllData();
   }
 
   let dataLoadCount = 0;
-  function dataLoaded() { 
-    dataLoadCount++; 
-    if(dataLoadCount===10){ 
-      if(!bookings.length && !employees.length && !halls.length) initDefaultData(); 
-      bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; }); 
-      let savedUser = sessionStorage.getItem('vpms_user'); 
-      if(savedUser) {
-        try { currentUser = JSON.parse(savedUser); } catch(e) { currentUser = null; }
-      }
-      if(currentUser && (currentUser.role === 'admin' || currentUser.role === 'employee')) renderApp(); 
-      else showLogin(); 
-    } 
+  function dataLoaded() {
+    dataLoadCount++;
+    if (dataLoadCount === 10) {
+      if (!bookings.length && !employees.length && !halls.length) initDefaultData();
+      bookings.forEach(b => { if (!b.status) b.status = 'pending'; if (!b.assignedEmployees) b.assignedEmployees = []; });
+      let savedUser = sessionStorage.getItem('vpms_user');
+      if (savedUser) { try { currentUser = JSON.parse(savedUser); } catch (e) { currentUser = null; } }
+      if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'employee')) renderApp();
+      else showLogin();
+    }
   }
 
-  db.ref('bookings').on('value',s=>{ bookings=s.val()||[]; dataLoaded(); });
-  db.ref('employees').on('value',s=>{ employees=s.val()||[]; dataLoaded(); });
-  db.ref('users').on('value',s=>{ users=s.val()||[]; dataLoaded(); });
-  db.ref('halls').on('value',s=>{ halls=s.val()||[]; dataLoaded(); });
-  db.ref('notifications').on('value',s=>{ notifications=s.val()||[]; dataLoaded(); });
-  db.ref('swapRequests').on('value',s=>{ swapRequests=s.val()||[]; dataLoaded(); });
-  db.ref('payrollArchive').on('value',s=>{ payrollArchive=s.val()||[]; dataLoaded(); });
-  db.ref('employeeLoans').on('value',s=>{ employeeLoans=s.val()||{}; dataLoaded(); });
-  db.ref('attendance').on('value',s=>{ attendance=s.val()||[]; dataLoaded(); });
-  db.ref('companySettings').on('value',s=>{ let cs=s.val(); if(cs){ companyName=cs.companyName||'Drmedia Pro'; companyLogo=cs.companyLogo||'📷'; whatsappNumber=cs.whatsappNumber||''; } dataLoaded(); });
+  db.ref('bookings').on('value', s => { bookings = s.val() || []; dataLoaded(); });
+  db.ref('employees').on('value', s => { employees = s.val() || []; dataLoaded(); });
+  db.ref('users').on('value', s => { users = s.val() || []; dataLoaded(); });
+  db.ref('halls').on('value', s => { halls = s.val() || []; dataLoaded(); });
+  db.ref('notifications').on('value', s => { notifications = s.val() || []; dataLoaded(); });
+  db.ref('swapRequests').on('value', s => { swapRequests = s.val() || []; dataLoaded(); });
+  db.ref('payrollArchive').on('value', s => { payrollArchive = s.val() || []; dataLoaded(); });
+  db.ref('employeeLoans').on('value', s => { employeeLoans = s.val() || {}; dataLoaded(); });
+  db.ref('attendance').on('value', s => { attendance = s.val() || []; dataLoaded(); });
+  db.ref('companySettings').on('value', s => { let cs = s.val(); if (cs) { companyName = cs.companyName || 'Drmedia Pro'; companyLogo = cs.companyLogo || '📷'; whatsappNumber = cs.whatsappNumber || ''; } dataLoaded(); });
 
-  window.showQRScanner = showQRScanner; window.stopQRScanner = stopQRScanner; 
-  window.renderAttendanceContent = renderAttendanceContent; window.exportAttendanceToExcel = exportAttendanceToExcel; 
-  window.saveSettings = saveSettings; window.closeModal = closeModal; window.logout = logout; 
-  window.markNotificationRead = markNotificationRead; window.markAllNotificationsRead = markAllNotificationsRead; 
-  window.showNotificationPanel = showNotificationPanel;
-  // تعريف دوال التبويبات الإضافية للنوافذ
-  window.renderDistributionContent = renderDistributionContent;
-  window.renderCalendarContent = renderCalendarContent;
-  window.renderArchiveContent = renderArchiveContent;
-  window.renderReportsContent = renderReportsContent;
-  window.renderUsersContent = renderUsersContent;
-  window.renderSwapRequestsContent = renderSwapRequestsContent;
+  window.showQRScanner = showQRScanner; window.stopQRScanner = stopQRScanner;
+  window.renderAttendanceContent = renderAttendanceContent; window.exportAttendanceToExcel = exportAttendanceToExcel;
+  window.saveSettings = saveSettings; window.closeModal = closeModal; window.logout = logout;
 </script>
 </body>
 </html>
