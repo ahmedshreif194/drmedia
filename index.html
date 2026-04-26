@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=1.0">
-  <title>Drmedia Pro | نظام متكامل للموظفين</title>
+  <title>Drmedia Pro | نظام إدارة متكامل مع حضور QR</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -66,23 +66,22 @@
   let currentHallFilter='all', currentStatusFilter='all', browserNotificationsEnabled=false;
   let pendingPdfBookings=[], pendingExcelData=[];
   let html5QrCode = null;
-  let dataLoadComplete = false;
   
-  // Helper functions
+  // ==================== Helper Functions ====================
   function showMsg(m){let t=document.getElementById('toast');t.innerText=m;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),2500);}
   function closeModal(){document.getElementById('modal').classList.add('hidden'); if(html5QrCode) html5QrCode.stop().catch(e=>{}); html5QrCode=null;}
   function saveAllData(){
     Promise.all([db.ref('bookings').set(bookings), db.ref('employees').set(employees), db.ref('users').set(users), db.ref('halls').set(halls), db.ref('notifications').set(notifications), db.ref('swapRequests').set(swapRequests), db.ref('payrollArchive').set(payrollArchive), db.ref('employeeLoans').set(employeeLoans), db.ref('attendance').set(attendance), db.ref('companySettings').set({companyName,companyLogo,whatsappNumber})]).catch(e=>console.error(e));
   }
   
-  // Notifications
+  // ==================== Notifications ====================
   function requestBrowserNotificationPermission(){if(!('Notification' in window))return;if(Notification.permission==='granted')browserNotificationsEnabled=true;else if(Notification.permission!=='denied'){Notification.requestPermission().then(p=>{if(p==='granted'){browserNotificationsEnabled=true;showMsg('✅ تم تفعيل الإشعارات');}});}}
   function sendBrowserNotification(t,b){if(!browserNotificationsEnabled||Notification.permission!=='granted')return;try{new Notification(t,{body:b,icon:'🔔'});}catch(e){}}
   function addNotification(uid,title,message){notifications.push({id:Date.now(),userId:uid,title,message,read:false,date:new Date().toLocaleString()});saveAllData();if(currentUser&&currentUser.employeeId===uid){renderNotificationBadge();sendBrowserNotification(title,message);}}
   function renderNotificationBadge(){let u=notifications.filter(n=>n.userId===currentUser?.employeeId&&!n.read).length;let b=document.getElementById('notificationBell');if(b){let x=b.querySelector('.notification-badge');if(u>0){if(!x){x=document.createElement('span');x.className='notification-badge';b.appendChild(x);}x.innerText=u;}else if(x)x.remove();}}
   function showNotificationPanel(){let p=document.getElementById('notificationPanel');if(!p)return;if(p.style.display==='block'){p.style.display='none';return;}let un=notifications.filter(n=>n.userId===currentUser?.employeeId);p.innerHTML=`<div class="p-2 border-b flex justify-between"><span class="font-bold">الإشعارات (${un.filter(n=>!n.read).length})</span><button onclick="markAllNotificationsRead()" class="text-xs bg-blue-500 text-white px-2 py-1 rounded">الكل مقروء</button></div>${un.slice().reverse().map(n=>`<div class="notification-item p-2 border-b cursor-pointer ${n.read?'':'bg-green-50'}" onclick="markNotificationRead('${n.id}')"><div class="font-bold">${n.title}</div><div class="text-sm">${n.message}</div></div>`).join('')||'<div class="p-3 text-center">لا توجد إشعارات</div>'}`;p.style.display='block';}
   function markNotificationRead(id){let n=notifications.find(x=>x.id==id);if(n)n.read=true;saveAllData();renderNotificationBadge();showNotificationPanel();}
-  function markAllNotificationsRead(){notifications.forEach(n=>{if(n.userId===currentUser?.employeeId)n.read=true;});saveAllData();renderNotificationBadge();showNotificationPanel();showMsg("✅ تم تحديد الكل كمقروء");}
+  function markAllNotificationsRead(){notifications.forEach(n=>{if(n.userId===currentUser?.employeeId)n.read=true;});saveAllData();renderNotificationBadge();showNotificationPanel();showMsg("✅ تم تحديث الكل كمقروء");}
   function sendWhatsAppNotification(phone,message){if(!phone)return;let c=phone.replace(/[^0-9]/g,'');if(!c)return;window.open(`https://wa.me/${c}?text=${encodeURIComponent(message)}`,'_blank');}
   
   // ==================== نظام الحضور QR ====================
@@ -160,7 +159,7 @@
     document.getElementById('attendanceTab').innerHTML = html;
   }
   
-  // ==================== دوال النظام (حجوزات، قاعات، موظفين، الخ) ====================
+  // ==================== دوال النظام الأساسية ====================
   function updateEmployeeOrders(){
     let active=bookings.filter(b=>b.status!=='cancelled');
     employees.forEach(e=>e.totalOrders=active.filter(b=>(b.assignedEmployees||[]).includes(e.id)).length);
@@ -190,64 +189,192 @@
     }
     updateEmployeeOrders();saveAllData();showMsg('✅ تم التوزيع الذكي');
   }
+  function rotateEmployeesOnHalls(){autoDistribute();renderBookingsContent();renderDistributionContent();showMsg('🔀 تم تبديل الموظفين');}
   function getFilteredBookings(){let f=[...bookings];if(currentHallFilter!=='all')f=f.filter(b=>b.hallId===currentHallFilter);if(currentStatusFilter!=='all')f=f.filter(b=>b.status===currentStatusFilter);else f=f.filter(b=>b.status!=='cancelled');return f.sort((a,b)=>new Date(a.date)-new Date(b.date));}
+  function getEmployeeOrdersInPeriod(empId,start,end){return bookings.filter(b=>b.status!=='cancelled'&&(b.assignedEmployees||[]).includes(empId)&&new Date(b.date)>=start&&new Date(b.date)<=end).length;}
   
-  // دوال العرض الأساسية (مختصرة للعمل)
+  // ==================== دوال العرض الرئيسية ====================
   function renderDashboardContent(){
+    updateEmployeeOrders();
     let active=bookings.filter(b=>b.status!=='cancelled');
     let rev=active.reduce((s,b)=>s+b.price,0);
-    document.getElementById('dashboardTab').innerHTML=`<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"><div class="dashboard-card"><i class="fas fa-calendar-check text-2xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>حجوزات</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-2xl text-emerald-600"></i><div class="stat-number">${rev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-2xl text-indigo-600"></i><div class="stat-number">${bookings.filter(b=>b.status==='completed').length}</div><div>مكتمل</div></div><div class="dashboard-card"><i class="fas fa-users text-2xl text-emerald-600"></i><div class="stat-number">${employees.filter(e=>e.active).length}</div><div>موظفين</div></div></div>`;
+    let totalEmployees=employees.filter(e=>e.active).length;
+    let completed=bookings.filter(b=>b.status==='completed').length;
+    let pending=bookings.filter(b=>b.status==='pending').length;
+    document.getElementById('dashboardTab').innerHTML=`<div class="grid grid-cols-2 md:grid-cols-4 gap-4"><div class="dashboard-card"><i class="fas fa-calendar-alt text-3xl text-emerald-600"></i><div class="stat-number">${active.length}</div><div>إجمالي الحجوزات</div></div><div class="dashboard-card"><i class="fas fa-users text-3xl text-blue-600"></i><div class="stat-number">${totalEmployees}</div><div>الموظفين النشطين</div></div><div class="dashboard-card"><i class="fas fa-building text-3xl text-purple-600"></i><div class="stat-number">${halls.length}</div><div>القاعات</div></div><div class="dashboard-card"><i class="fas fa-check-circle text-3xl text-green-600"></i><div class="stat-number">${completed}</div><div>حجوزات منتهية</div></div><div class="dashboard-card"><i class="fas fa-chart-line text-3xl text-emerald-600"></i><div class="stat-number">${rev.toLocaleString()} ج.م</div><div>الإيرادات</div></div><div class="dashboard-card"><i class="fas fa-clock text-3xl text-yellow-600"></i><div class="stat-number">${pending}</div><div>قيد الانتظار</div></div></div>`;
   }
+  
   function renderBookingsContent(){
     let fb=getFilteredBookings();
-    let html=`<div class="p-4"><div class="flex justify-between flex-wrap gap-2 mb-4"><h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2><div class="flex gap-2 flex-wrap"><button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl">+ حجز</button><button onclick="autoDistribute();renderBookingsContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl">🔄 توزيع ذكي</button></div></div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفون</th><th>إجراءات</th></tr></thead><tbody>${fb.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':'status-pending'}">${b.status==='completed'?'مكتمل':'معلق'}</span></td><td>${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ')||'-'}</td><td><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')||'<tr><td colspan="7">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
+    let html=`<div class="p-4"><div class="flex justify-between flex-wrap gap-2 mb-4"><h2 class="text-xl font-bold">📅 الحجوزات (${fb.length})</h2><div class="flex gap-2 flex-wrap"><select id="hallFilter" class="border rounded-xl px-2 py-2 text-sm">${halls.map(h=>`<option value="${h.id}" ${currentHallFilter===h.id?'selected':''}>${h.name}</option>`).join('')}<option value="all" ${currentHallFilter==='all'?'selected':''}>الكل</option></select><select id="statusFilter" class="border rounded-xl px-2 py-2 text-sm"><option value="all">الكل</option><option value="pending">معلق</option><option value="completed">مكتمل</option></select><button onclick="applyFilters()" class="bg-gray-600 text-white px-3 py-2 rounded-xl">فلترة</button><button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-2 rounded-xl">تحديد الكل</button><button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-2 rounded-xl">حذف المحدد</button><button onclick="bulkCompleteBookings()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl">إكمال المحدد</button><button onclick="showAddBookingModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl">+ حجز</button><button onclick="autoDistribute();renderBookingsContent();renderDistributionContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl">🔄 توزيع ذكي</button><button onclick="rotateEmployeesOnHalls();renderBookingsContent();renderDistributionContent();" class="bg-orange-600 text-white px-4 py-2 rounded-xl">🔀 تبديل موظفين</button></div></div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllBookingsCheckbox" onchange="toggleSelectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th><th>موظفون</th><th>إجراءات</th></tr></thead><tbody>${fb.map(b=>`<tr><td class="checkbox-col"><input type="checkbox" class="booking-checkbox" value="${b.id}" ${selectedBookings.has(b.id)?'checked':''} onchange="toggleBookingSelection('${b.id}',this.checked)"></td><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td><td><span class="status-badge ${b.status==='completed'?'status-completed':'status-pending'}">${b.status==='completed'?'مكتمل':'معلق'}</span></td><td class="text-sm">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ')||'-'}</td><td><div class="flex gap-1"><button onclick="markBookingCompleted('${b.id}')" class="text-indigo-600"><i class="fas fa-check-circle"></i></button><button onclick="showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></div></td></tr>`).join('')||'<tr><td colspan="8" class="text-center">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
     document.getElementById('bookingsTab').innerHTML=html;
+    document.getElementById('selectAllBookingsCheckbox')?.addEventListener('change',(e)=>{document.querySelectorAll('.booking-checkbox').forEach(cb=>cb.checked=e.target.checked);});
   }
-  function renderEmployeesContent(){
-    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">👥 الموظفين</h2><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl mb-3">+ إضافة</button><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th>الاسم</th><th>الوظيفة</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th><th>حذف</th></tr></thead><tbody>${employees.map(e=>`<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td><td><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
-    document.getElementById('employeesTab').innerHTML=html;
-  }
+  
   function renderHallsContent(){
-    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">🏛️ القاعات</h2><button onclick="showAddHallModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl mb-3">+ إضافة</button><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>حجوزات</th><th>حذف</th></tr></thead><tbody>${halls.map(h=>`<tr><td>${h.name}</td><td>${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td>${h.active?'🟢':'🔴'}</td><td>${bookings.filter(b=>b.hallId===h.id&&b.status!=='cancelled').length}</td><td><button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">🏛️ القاعات</h2><div class="flex gap-2 mb-3"><button onclick="showAddHallModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button><button onclick="selectAllHalls()" class="bg-gray-500 text-white px-3 py-2 rounded-xl">تحديد الكل</button><button onclick="bulkDeleteHalls()" class="bg-red-600 text-white px-3 py-2 rounded-xl">حذف المحدد</button></div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllHallsCheckbox" onchange="toggleSelectAllHalls()"></th><th>الاسم</th><th>النوع</th><th>حالة</th><th>حجوزات</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${halls.map(h=>`<tr><td class="checkbox-col"><input type="checkbox" class="hall-checkbox" value="${h.id}" ${selectedHalls.has(h.id)?'checked':''} onchange="toggleHallSelection('${h.id}',this.checked)"></td><td>${h.name}</td><td>${h.type==='closed'?'مغلقة':h.type==='open'?'أوبن':'كافيه'}</td><td>${h.active?'🟢 نشطة':'🔴 غير نشطة'}</td><td>${bookings.filter(b=>b.hallId===h.id&&b.status!=='cancelled').length}</td><td><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteHall('${h.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
     document.getElementById('hallsTab').innerHTML=html;
   }
+  
+  function renderEmployeesContent(){
+    updateEmployeeOrders();
+    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">👥 الموظفين</h2><div class="flex gap-2 mb-3"><button onclick="showAddEmployeeModal()" class="bg-blue-700 text-white px-4 py-2 rounded-xl">+ إضافة</button><button onclick="selectAllEmployees()" class="bg-gray-500 text-white px-3 py-2 rounded-xl">تحديد الكل</button><button onclick="bulkDeleteEmployees()" class="bg-red-600 text-white px-3 py-2 rounded-xl">حذف المحدد</button></div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllEmployeesCheckbox" onchange="toggleSelectAllEmployees()"></th><th>الاسم</th><th>الوظيفة</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th><th>تعديل</th><th>حذف</th></tr></thead><tbody>${employees.map(e=>`<tr><td class="checkbox-col"><input type="checkbox" class="employee-checkbox" value="${e.id}" ${selectedEmployees.has(e.id)?'checked':''} onchange="toggleEmployeeSelection('${e.id}',this.checked)"></td><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td><td><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td><td><button onclick="deleteEmployee('${e.id}')" class="text-red-600"><i class="fas fa-trash-alt"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+    document.getElementById('employeesTab').innerHTML=html;
+  }
+  
   function renderDistributionContent(){
     let pending=bookings.filter(b=>b.status==='pending').sort((a,b)=>new Date(a.date)-new Date(b.date));
-    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">⚙️ التوزيع</h2><button onclick="autoDistribute();renderDistributionContent();renderBookingsContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl mb-4">🔄 توزيع ذكي</button><div class="space-y-4">`;
-    pending.forEach(b=>{html+=`<div class="border p-3 rounded-xl bg-white"><div class="font-bold">${b.clientName} - ${b.hallName} (${b.date})</div><div>الموظفون: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ')||'غير معين'}</div></div>`;});
-    html+=`</div></div>`;
-    document.getElementById('distributionTab').innerHTML=html;
+    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">⚙️ التوزيع اليدوي</h2><div class="flex gap-2 mb-4"><button onclick="autoDistribute();renderDistributionContent();renderBookingsContent();" class="bg-purple-700 text-white px-4 py-2 rounded-xl">🔄 توزيع ذكي عادل</button><button onclick="rotateEmployeesOnHalls();renderDistributionContent();renderBookingsContent();" class="bg-orange-600 text-white px-4 py-2 rounded-xl">🔀 تبديل موظفين القاعات</button></div><div class="space-y-4">`;
+    let grouped={};pending.forEach(b=>{if(!grouped[b.date])grouped[b.date]=[];grouped[b.date].push(b);});
+    for(let date in grouped){html+=`<div class="border rounded-xl overflow-hidden mb-4"><div class="bg-gray-100 p-2 font-bold">📅 ${date} (${grouped[date].length})</div><div class="p-3 space-y-3">`;
+      for(let b of grouped[date]){let h=halls.find(x=>x.id===b.hallId);let type=h?h.type:'closed';let assigned=b.assignedEmployees||[];
+        html+=`<div class="border p-3 rounded-xl bg-white"><div class="font-bold mb-2">${b.clientName} - ${b.hallName}</div><div class="grid grid-cols-1 md:grid-cols-4 gap-2">`;
+        if(type==='cafe'){html+=`<div><label class="text-sm">مصور</label><select onchange="updateSlot('${b.id}','0',this.value)" class="border rounded p-1 w-full"><option value="">--</option>${employees.filter(e=>e.role==='مصور'&&e.active).map(e=>`<option value="${e.id}" ${assigned[0]===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div>`;}
+        else{html+=`<div><label class="text-sm">مخرج</label><select onchange="updateSlot('${b.id}','0',this.value)" class="border rounded p-1 w-full"><option value="">--</option>${employees.filter(e=>e.role==='مخرج'&&e.active).map(e=>`<option value="${e.id}" ${assigned[0]===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div><div><label class="text-sm">مصور 1</label><select onchange="updateSlot('${b.id}','1',this.value)" class="border rounded p-1 w-full"><option value="">--</option>${employees.filter(e=>e.role==='مصور'&&e.active).map(e=>`<option value="${e.id}" ${assigned[1]===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div><div><label class="text-sm">مصور 2</label><select onchange="updateSlot('${b.id}','2',this.value)" class="border rounded p-1 w-full"><option value="">--</option>${employees.filter(e=>e.role==='مصور'&&e.active).map(e=>`<option value="${e.id}" ${assigned[2]===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div><div><label class="text-sm">كرين</label><select onchange="updateSlot('${b.id}','3',this.value)" class="border rounded p-1 w-full"><option value="">--</option>${employees.filter(e=>e.role==='كرين'&&e.active).map(e=>`<option value="${e.id}" ${assigned[3]===e.id?'selected':''}>${e.name}</option>`).join('')}</select></div>`;}
+        html+=`</div></div>`;
+      }
+      html+=`</div></div>`;
+    }
+    html+=`</div></div>`;document.getElementById('distributionTab').innerHTML=html;
   }
+  window.updateSlot=function(bookingId,slot,empId){let b=bookings.find(x=>x.id===bookingId);if(!b)return;if(!b.assignedEmployees)b.assignedEmployees=[];while(b.assignedEmployees.length<=parseInt(slot))b.assignedEmployees.push('');b.assignedEmployees[parseInt(slot)]=empId;b.assignedEmployees=b.assignedEmployees.filter(e=>e!=='');saveAllData();updateEmployeeOrders();renderDistributionContent();renderBookingsContent();showMsg('✅ تم تحديث التوزيع');};
+  
   function renderPayrollContent(){
-    let totalPay=0;
-    let rows=employees.map(emp=>{let orders=bookings.filter(b=>b.assignedEmployees?.includes(emp.id)).length;let salary=orders*emp.salaryPerOrder;totalPay+=salary;return `<tr><td>${emp.name}</td><td>${emp.role}</td><td>${orders}</td><td>${salary.toLocaleString()} ج.م</td></tr>`;}).join('');
-    document.getElementById('payrollTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold mb-3">💰 المرتبات</h2><div class="bg-white p-4 rounded-xl mb-4">إجمالي المرتبات: ${totalPay.toLocaleString()} ج.م</div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th>الموظف</th><th>الوظيفة</th><th>عدد الأوردرات</th><th>المستحق</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    let now=new Date();let y=now.getFullYear(),m=now.getMonth();
+    let periods=[{label:'1 - 10',start:new Date(y,m,1),end:new Date(y,m,10)},{label:'11 - 20',start:new Date(y,m,11),end:new Date(y,m,20)},{label:`21 - ${new Date(y,m+1,0).getDate()}`,start:new Date(y,m,21),end:new Date(y,m+1,0)}];
+    document.getElementById('payrollTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold mb-3">💰 المرتبات</h2><div class="grid grid-cols-3 gap-3 mb-4">${periods.map((p,i)=>`<button onclick="renderPayrollPeriod(${i})" class="bg-blue-600 text-white p-2 rounded-xl">${p.label}</button>`).join('')}</div><div id="payrollPeriodDetail"></div><div class="mt-4"><h3 class="font-bold mb-2">💵 السلف</h3><button onclick="showAddLoanModal()" class="bg-amber-600 text-white px-4 py-2 rounded-xl mb-2">+ سلفة</button><div id="loansSection"></div></div></div>`;
+    renderPayrollPeriod(0);renderLoansSection();
   }
-  function renderCalendarContent(){
+  function renderPayrollPeriod(pi){
     let now=new Date(),y=now.getFullYear(),m=now.getMonth();
-    let first=new Date(y,m,1).getDay();
-    let days=new Date(y,m+1,0).getDate();
+    let start,end;if(pi===0){start=new Date(y,m,1);end=new Date(y,m,10);}else if(pi===1){start=new Date(y,m,11);end=new Date(y,m,20);}else{start=new Date(y,m,21);end=new Date(y,m+1,0);}
+    let active=employees.filter(e=>e.active);
+    let html=`<div class="flex gap-2 mb-2"><button onclick="selectAllPayrollEmps()" class="bg-gray-500 text-white px-3 py-2 rounded-xl">تحديد الكل</button><button onclick="bulkPayEmployees(${pi})" class="bg-green-600 text-white px-3 py-2 rounded-xl">صرف المحددين</button></div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllPayrollCheckbox" onchange="toggleSelectAllPayroll()"></th><th>الموظف</th><th>أوردرات</th><th>الراتب/أوردر</th><th>الإجمالي</th><th>السلف</th><th>الصافي</th><th>صرف</th></tr></thead><tbody>`;
+    active.forEach(e=>{let orders=getEmployeeOrdersInPeriod(e.id,start,end);let salary=orders*e.salaryPerOrder;let loans=(employeeLoans[e.id]||[]).reduce((s,l)=>s+l.amount,0);let net=salary-loans;html+=`<tr><td class="checkbox-col"><input type="checkbox" class="payroll-checkbox" value="${e.id}" ${selectedPayrollEmps.has(e.id)?'checked':''} onchange="togglePayrollSelection('${e.id}',this.checked)"></td><td>${e.name}</td><td>${orders}</td><td>${e.salaryPerOrder} ج.م</td><td>${salary.toLocaleString()}</td><td>${loans.toLocaleString()}</td><td>${net.toLocaleString()}</td><td><button onclick="payEmployee('${e.id}',${pi})" class="bg-green-600 text-white px-2 py-1 rounded text-sm">صرف</button></td></tr>`;});
+    html+=`</tbody></table></div>`;document.getElementById('payrollPeriodDetail').innerHTML=html;
+  }
+  function payEmployee(empId,pi){
+    let now=new Date(),y=now.getFullYear(),m=now.getMonth();
+    let start,end;if(pi===0){start=new Date(y,m,1);end=new Date(y,m,10);}else if(pi===1){start=new Date(y,m,11);end=new Date(y,m,20);}else{start=new Date(y,m,21);end=new Date(y,m+1,0);}
+    let emp=employees.find(e=>e.id===empId);if(!emp)return;
+    let orders=getEmployeeOrdersInPeriod(empId,start,end);let salary=orders*emp.salaryPerOrder;
+    let loans=(employeeLoans[empId]||[]).reduce((s,l)=>s+l.amount,0);let net=salary-loans;
+    if(confirm(`صرف ${net.toLocaleString()} ج.م لـ ${emp.name}؟`)){
+      payrollArchive.push({id:Date.now(),empId,period:pi,month:m,year:y,amount:net,orders,date:now.toISOString().slice(0,10)});
+      if(employeeLoans[empId])delete employeeLoans[empId];
+      if(emp.phone)sendWhatsAppNotification(emp.phone,`تم صرف مرتبك: ${net.toLocaleString()} ج.م`);
+      saveAllData();renderPayrollPeriod(pi);renderLoansSection();showMsg(`✅ تم صرف ${net.toLocaleString()} ج.م`);
+    }
+  }
+  function renderLoansSection(){let html='';employees.filter(e=>e.active).forEach(e=>{let loans=employeeLoans[e.id]||[];let total=loans.reduce((s,l)=>s+l.amount,0);if(total>0)html+=`<div class="border p-2 rounded mb-1"><strong>${e.name}:</strong> ${total.toLocaleString()} ج.م</div>`;});document.getElementById('loansSection').innerHTML=html||'<p class="text-gray-400">لا توجد سلف</p>';}
+  function showAddLoanModal(){document.getElementById('modalContent').innerHTML=`<h3>➕ سلفة</h3><select id="loanEmpId">${employees.filter(e=>e.active).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select><input type="number" id="loanAmount" placeholder="المبلغ"><input type="date" id="loanDate"><input id="loanReason" placeholder="السبب"><button onclick="saveNewLoan()" class="bg-amber-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveNewLoan(){let empId=document.getElementById('loanEmpId')?.value;let amount=parseInt(document.getElementById('loanAmount')?.value)||0;if(!empId||!amount)return showMsg("⚠️ أكمل البيانات");if(!employeeLoans[empId])employeeLoans[empId]=[];employeeLoans[empId].push({id:Date.now(),amount,date:document.getElementById('loanDate')?.value,reason:document.getElementById('loanReason')?.value});saveAllData();closeModal();renderPayrollContent();showMsg("✅ تمت الإضافة");}
+  
+  function renderCalendarContent(monthOffset=0){
+    let now=new Date();now.setMonth(now.getMonth()+monthOffset);
+    let y=now.getFullYear(),m=now.getMonth();
+    let first=new Date(y,m,1).getDay();let days=new Date(y,m+1,0).getDate();
     let mNames=['يناير','فبراير','مارس','إبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">📆 ${mNames[m]} ${y}</h2><div class="calendar-grid">${['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'].map(d=>`<div class="text-center font-bold">${d}</div>`).join('')}`;
+    let html=`<div class="p-4"><div class="flex justify-between items-center mb-4"><button onclick="renderCalendarContent(${monthOffset-1})" class="bg-gray-300 px-4 py-2 rounded-xl"><i class="fas fa-chevron-right"></i></button><h2 class="text-xl font-bold">📆 ${mNames[m]} ${y}</h2><button onclick="renderCalendarContent(${monthOffset+1})" class="bg-gray-300 px-4 py-2 rounded-xl"><i class="fas fa-chevron-left"></i></button></div><div class="flex gap-2 mb-4"><select id="calendarMonthSelect" class="border rounded-xl px-2 py-1" onchange="jumpToMonth()">${mNames.map((mn,i)=>`<option value="${i}" ${i===m?'selected':''}>${mn}</option>`).join('')}</select><input id="calendarYearInput" type="number" value="${y}" class="border rounded-xl px-2 py-1 w-24" onchange="jumpToMonth()"></div><div class="calendar-grid">`;
+    ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'].forEach(d=>html+=`<div class="text-center font-bold py-2 text-sm">${d}</div>`);
     for(let i=0;i<first;i++)html+=`<div></div>`;
-    for(let d=1;d<=days;d++){let ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;let hasBookings=bookings.some(b=>b.date===ds);html+=`<div class="calendar-day ${hasBookings?'booked':''}" onclick="alert('حجوزات يوم ${ds}')">${d}</div>`;}
-    html+=`</div></div>`;
+    for(let d=1;d<=days;d++){let ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;let dayB=bookings.filter(b=>b.date===ds&&b.status!=='cancelled');let cls='';if(dayB.some(b=>b.status==='completed'))cls='completed';else if(dayB.some(b=>b.status==='pending'))cls='booked';html+=`<div class="calendar-day ${cls}" onclick="showDayBookings('${ds}')">${d}${dayB.length?`<span class="block text-xs">${dayB.length}</span>`:''}</div>`;}
+    html+=`</div><div id="calendarInfo" class="mt-3 text-sm"></div></div>`;
     document.getElementById('calendarTab').innerHTML=html;
   }
-  function renderArchiveContent(){document.getElementById('archiveTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold">📁 الأرشيف</h2><div class="bg-white p-4 rounded-xl">عرض الحجوزات المكتملة</div></div>`;}
-  function renderReportsContent(){document.getElementById('reportsTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold">📊 التقارير</h2><div class="bg-white p-4 rounded-xl">إحصائيات متقدمة</div><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl mt-4">تصدير Excel</button></div>`;}
-  function renderUsersContent(){document.getElementById('usersTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold">👥 المستخدمين</h2><div class="bg-white p-4 rounded-xl">إدارة المستخدمين</div></div>`;}
-  function renderSettingsContent(){document.getElementById('settingsTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold">⚙️ الإعدادات</h2><div class="bg-white p-4 rounded-xl">إعدادات الشركة</div></div>`;}
-  function renderSwapRequestsContent(){document.getElementById('swapRequestsTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold">🔄 طلبات التبديل</h2><div class="bg-white p-4 rounded-xl">لا توجد طلبات</div></div>`;}
-  function exportToExcel(){let ws=XLSX.utils.json_to_sheet(bookings);let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"الحجوزات");XLSX.writeFile(wb,"Drmedia_Bookings.xlsx");showMsg("تم التصدير");}
+  window.showDayBookings=function(date){let f=bookings.filter(b=>b.date===date);let info=document.getElementById('calendarInfo');if(info)info.innerHTML=f.length?`<div class="p-3 bg-emerald-50 rounded-xl"><strong>📅 ${date}</strong><ul>${f.map(b=>`<li>${b.clientName} - ${b.hallName} (${b.price} ج.م)</li>`).join('')}</ul></div>`:`<div class="p-3 bg-gray-100 rounded-xl">📭 لا توجد حجوزات</div>`;};
+  window.jumpToMonth=function(){let m=parseInt(document.getElementById('calendarMonthSelect')?.value);let y=parseInt(document.getElementById('calendarYearInput')?.value);if(!isNaN(m)&&!isNaN(y)){let now=new Date();let offset=(y-now.getFullYear())*12+(m-now.getMonth());renderCalendarContent(offset);}};
   
-  // دوال الإضافة والحذف
-  function showAddBookingModal(){let cn=prompt("اسم العميل");if(cn){let h=prompt("اسم القاعة");let dt=prompt("التاريخ (YYYY-MM-DD)");let pr=prompt("السعر")||2500;bookings.push({id:'b'+Date.now(),clientName:cn,hallName:h||'قاعة',date:dt||new Date().toISOString().slice(0,10),price:parseInt(pr),status:'pending',assignedEmployees:[],phone:'',deposit:0,notes:''});saveAllData();autoDistribute();renderBookingsContent();showMsg("✅ تمت الإضافة");}}
+  function renderArchiveContent(){let comp=bookings.filter(b=>b.status==='completed').slice(-50);document.getElementById('archiveTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold mb-3">📁 الأرشيف (آخر 50 حجز مكتمل)</h2><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${comp.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price} ج.م</td></tr>`).join('')||'<tr><td colspan="4" class="text-center">فارغ</td></tr>'}</tbody></table></div></div>`;}
+  
+  function renderReportsContent(){updateEmployeeOrders();let total=bookings.filter(b=>b.status!=='cancelled').length;let rev=bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0);let top=[...employees].sort((a,b)=>b.totalOrders-a.totalOrders)[0];document.getElementById('reportsTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold mb-3">📊 التقارير</h2><div class="grid grid-cols-2 gap-3 mb-4"><div class="bg-white p-4 rounded-xl shadow"><p>إجمالي الحجوزات</p><p class="text-2xl font-bold">${total}</p></div><div class="bg-white p-4 rounded-xl shadow"><p>إجمالي الإيرادات</p><p class="text-2xl font-bold">${rev.toLocaleString()} ج.م</p></div></div><div class="bg-white p-4 rounded-xl shadow mb-4"><h3 class="font-bold">🏆 الأكثر عملاً</h3><p>${top?top.name+' - '+top.totalOrders+' أوردر':'لا يوجد'}</p></div><div class="bg-white p-4 rounded-xl shadow"><h3 class="font-bold mb-2">📋 حسب القاعة</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>القاعة</th><th>عدد الحجوزات</th><th>الإيرادات</th></tr></thead><tbody>${halls.map(h=>{let cnt=bookings.filter(b=>b.hallId===h.id&&b.status!=='cancelled').length;let r=bookings.filter(b=>b.hallId===h.id&&b.status!=='cancelled').reduce((s,b)=>s+b.price,0);return`<tr><td>${h.name}</td><td>${cnt}</td><td>${r.toLocaleString()} ج.م</td></tr>`;}).join('')}</tbody></table></div></div><button onclick="exportToExcel()" class="bg-green-700 text-white px-4 py-2 rounded-xl mt-4"><i class="fas fa-file-excel ml-1"></i> تصدير Excel</button></div>`;}
+  function exportToExcel(){let ws=XLSX.utils.json_to_sheet(bookings.filter(b=>b.status!=='cancelled').map(b=>({العميل:b.clientName,التاريخ:b.date,القاعة:b.hallName,السعر:b.price})));let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"الحجوزات");XLSX.writeFile(wb,"Drmedia_Bookings.xlsx");showMsg("✅ تم تصدير الحجوزات");}
+  
+  function renderUsersContent(){
+    let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">🔐 المستخدمين</h2><div class="flex gap-2 mb-3"><button onclick="addUser()" class="bg-gray-700 text-white px-4 py-2 rounded-xl">+ إضافة</button><button onclick="selectAllUsers()" class="bg-gray-500 text-white px-3 py-2 rounded-xl">تحديد الكل</button><button onclick="bulkDeleteUsers()" class="bg-red-600 text-white px-3 py-2 rounded-xl">حذف المحدد</button></div><div class="overflow-x-auto"><table class="w-full bg-white"><thead><tr><th class="checkbox-col"><input type="checkbox" id="selectAllUsersCheckbox" onchange="toggleSelectAllUsers()"></th><th>المستخدم</th><th>الدور</th><th>الموظف المرتبط</th><th>تعديل</th></tr></thead><tbody>${users.map(u=>`<tr><td class="checkbox-col"><input type="checkbox" class="user-checkbox" value="${u.username}" ${selectedUsers.has(u.username)?'checked':''} onchange="toggleUserSelection('${u.username}',this.checked)"></td><td>${u.username}</td><td>${u.role}</td><td><select class="border rounded px-2 py-1 text-sm w-full" onchange="linkUserToEmployee('${u.username}',this.value)"><option value="">-- غير مرتبط --</option>${employees.map(e=>`<option value="${e.id}" ${u.employeeId===e.id?'selected':''}>${e.name}</option>`).join('')}</select></td><td><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+    document.getElementById('usersTab').innerHTML=html;
+  }
+  function linkUserToEmployee(username,employeeId){let u=users.find(x=>x.username===username);if(u){u.employeeId=employeeId||null;saveAllData();showMsg("✅ تم الربط");}}
+  function addUser(){let un=prompt("اسم المستخدم"),pw=prompt("كلمة المرور"),role=prompt("الدور (admin/employee)","employee");if(un&&pw){if(users.some(u=>u.username===un))return alert("⚠️ موجود");users.push({username:un,password:pw,role:role||'employee',employeeId:null,name:un});saveAllData();renderUsersContent();showMsg("✅ تمت الإضافة");}}
+  function showEditUserModal(username){let u=users.find(x=>x.username===username);if(!u)return;document.getElementById('modalContent').innerHTML=`<h3>✏️ تعديل مستخدم</h3><input id="editUsername" value="${u.username}" class="mb-2"><input id="editPassword" value="${u.password}" class="mb-2"><select id="editRole" class="mb-2"><option value="admin" ${u.role==='admin'?'selected':''}>مدير</option><option value="employee" ${u.role==='employee'?'selected':''}>موظف</option></select><button onclick="saveEditUser('${username}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveEditUser(oldUsername){let u=users.find(x=>x.username===oldUsername);if(!u)return;let newUsername=document.getElementById('editUsername').value.trim();u.password=document.getElementById('editPassword').value;u.role=document.getElementById('editRole').value;if(newUsername!==oldUsername&&users.some(x=>x.username===newUsername))return alert("⚠️ الاسم موجود");u.username=newUsername;saveAllData();closeModal();renderUsersContent();showMsg("✅ تم التحديث");}
+  
+  function renderSettingsContent(){
+    document.getElementById('settingsTab').innerHTML=`<div class="p-4"><h2 class="text-xl font-bold mb-4">⚙️ إعدادات الشركة</h2><div class="grid md:grid-cols-2 gap-4"><div class="border rounded-2xl p-4"><h3 class="font-bold mb-2">اللوجو</h3><input type="file" id="logoFileInput" accept="image/*" onchange="handleLogoUpload(event)" class="mb-2"><div id="logoPreview">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-16 h-16 object-cover rounded-full">`:`<span class="text-3xl">${companyLogo}</span>`}</div></div><div class="border rounded-2xl p-4"><h3 class="font-bold mb-2">اسم الشركة</h3><input id="companyNameInput" value="${companyName}" class="w-full border rounded p-2 mb-2"><button onclick="updateCompanyName()" class="bg-blue-600 text-white px-4 py-2 rounded-xl">حفظ</button></div><div class="border rounded-2xl p-4"><h3 class="font-bold mb-2">رقم واتساب الإشعارات</h3><input id="whatsappInput" value="${whatsappNumber}" placeholder="مثال: 201000000000" class="w-full border rounded p-2 mb-2"><button onclick="updateWhatsApp()" class="bg-green-600 text-white px-4 py-2 rounded-xl">حفظ</button></div><div class="border rounded-2xl p-4"><h3 class="font-bold mb-2">استيراد بيانات</h3><button onclick="showImportExcelModal()" class="bg-green-700 text-white px-4 py-2 rounded-xl w-full mb-2"><i class="fas fa-file-excel ml-1"></i> استيراد Excel</button><button onclick="showImportPdfModal()" class="bg-red-700 text-white px-4 py-2 rounded-xl w-full"><i class="fas fa-file-pdf ml-1"></i> استيراد PDF</button></div></div></div>`;
+  }
+  function handleLogoUpload(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=function(ev){companyLogo=ev.target.result;saveAllData();renderSettingsContent();showMsg("✅ تم تحديث اللوجو");};r.readAsDataURL(f);}
+  function updateCompanyName(){companyName=document.getElementById('companyNameInput')?.value||'Drmedia Pro';saveAllData();showMsg("✅ تم التحديث");renderApp();}
+  function updateWhatsApp(){whatsappNumber=document.getElementById('whatsappInput')?.value||'';saveAllData();showMsg("✅ تم الحفظ");}
+  
+  function showImportExcelModal(){document.getElementById('modalContent').innerHTML=`<h3 class="text-xl font-bold mb-3">📊 استيراد من Excel</h3><select id="excelHallSelect" class="mb-2">${halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select><input type="number" id="excelDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-2"><div class="border-2 border-dashed border-emerald-500 rounded-xl p-6 text-center cursor-pointer" onclick="document.getElementById('excelFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-emerald-600"></i><p>اختر ملف Excel</p></div><input type="file" id="excelFileInput" accept=".xlsx,.xls" class="hidden" onchange="handleExcelFile(this.files[0])"><div id="excelPreview" class="mt-2"></div><button id="excelImportBtn" class="bg-green-700 text-white w-full py-2 rounded-xl mt-2 hidden" onclick="confirmExcelImport()">استيراد</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function handleExcelFile(file){if(!file)return;let preview=document.getElementById('excelPreview'),btn=document.getElementById('excelImportBtn');preview.innerHTML='⏳ جاري التحليل...';let r=new FileReader();r.onload=function(e){try{let data=new Uint8Array(e.target.result),wb=XLSX.read(data,{type:'array'}),ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{header:1});pendingExcelData=[];let headers=rows[0]||[];let colMap={};headers.forEach((h,i)=>{let n=String(h).trim().toLowerCase();if(n.includes('عميل')||n.includes('اسم'))colMap.clientName=i;if(n.includes('تاريخ'))colMap.date=i;if(n.includes('قاعة'))colMap.hallName=i;if(n.includes('سعر'))colMap.price=i;});for(let i=1;i<rows.length;i++){let row=rows[i];if(!row||!row.some(c=>c))continue;let cn=colMap.clientName!==undefined?String(row[colMap.clientName]||'').trim():'';if(!cn)continue;let dr=colMap.date!==undefined?row[colMap.date]:'';let ds='';if(dr){if(typeof dr==='number'){let d=XLSX.SSF.parse_date_code(dr);ds=`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;}else ds=String(dr).trim();}let hn=colMap.hallName!==undefined?String(row[colMap.hallName]||'').trim():'';let price=colMap.price!==undefined?parseInt(row[colMap.price])||2500:2500;let hall=halls.find(h=>h.name.toLowerCase()===hn.toLowerCase());let hid=hall?hall.id:(halls.length?halls[0].id:'hall1');let hname=hall?hall.name:(hn||(halls.length?halls[0].name:'قاعة'));pendingExcelData.push({id:'imp_'+Date.now()+'_'+i,clientName:cn,phone:'',hallId:hid,hallName:hname,date:ds||new Date().toISOString().slice(0,10),price,deposit:0,notes:'',assignedEmployees:[],status:'pending'});}if(pendingExcelData.length){preview.innerHTML=`✅ تم تحليل ${pendingExcelData.length} حجز`;btn.classList.remove('hidden');}else{preview.innerHTML='❌ لا توجد بيانات';}}catch(err){preview.innerHTML='❌ خطأ في الملف';}};r.readAsArrayBuffer(file);}
+  function confirmExcelImport(){if(!pendingExcelData.length)return;let hallId=document.getElementById('excelHallSelect')?.value;let price=parseInt(document.getElementById('excelDefaultPrice')?.value)||2500;if(hallId){let hall=halls.find(h=>h.id===hallId);if(hall)pendingExcelData.forEach(b=>{b.hallId=hall.id;b.hallName=hall.name;});}pendingExcelData.forEach(b=>{if(!b.price||b.price===0)b.price=price;});bookings.push(...pendingExcelData);pendingExcelData=[];saveAllData();closeModal();autoDistribute();renderBookingsContent();showMsg(`✅ تم استيراد ${pendingExcelData.length} حجز`);}
+  
+  function showImportPdfModal(){document.getElementById('modalContent').innerHTML=`<h3 class="text-xl font-bold mb-3">📄 استيراد من PDF</h3><select id="pdfHallSelect" class="mb-2">${halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select><input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-2"><div class="border-2 border-dashed border-red-500 rounded-xl p-6 text-center cursor-pointer" onclick="document.getElementById('pdfFileInput').click()"><i class="fas fa-cloud-upload-alt text-3xl text-red-600"></i><p>اختر ملف PDF</p></div><input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])"><div id="pdfPreview" class="mt-2"></div><button id="pdfImportBtn" class="bg-red-700 text-white w-full py-2 rounded-xl mt-2 hidden" onclick="confirmPdfDayImport()">استيراد</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function handlePdfFile(file){if(!file)return;let preview=document.getElementById('pdfPreview');preview.innerHTML='⏳ جاري استخراج النص...';let r=new FileReader();r.onload=function(e){let typedarray=new Uint8Array(e.target.result);pdfjsLib.getDocument({data:typedarray}).promise.then(pdf=>{let allText='';let promises=[];for(let i=1;i<=pdf.numPages;i++)promises.push(pdf.getPage(i).then(page=>page.getTextContent().then(tc=>{allText+=tc.items.map(it=>it.str).join(' ')+'\n';})));Promise.all(promises).then(()=>{let lines=allText.split('\n').map(l=>l.trim()).filter(l=>l);let found=[];let dp=/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/g;for(let line of lines){let match=line.match(dp);if(match){let parts=match[0].match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);if(parts){let day=parseInt(parts[1]),month=parseInt(parts[2]),yr=parts[3].length===2?2000+parseInt(parts[3]):parseInt(parts[3]);let ds=`${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;let client=line.replace(match[0],'').trim().substring(0,40);if(client&&client.length>1)found.push({clientName:client,date:ds});}}pendingPdfBookings=found;preview.innerHTML=`✅ تم التعرف على ${found.length} حجز`;document.getElementById('pdfImportBtn').classList.remove('hidden');});}).catch(err=>{preview.innerHTML='❌ خطأ في PDF';});};r.readAsArrayBuffer(file);}
+  function confirmPdfDayImport(){let hallId=document.getElementById('pdfHallSelect')?.value;if(!hallId)return showMsg("⚠️ اختر القاعة");let hall=halls.find(h=>h.id===hallId);let price=parseInt(document.getElementById('pdfDefaultPrice')?.value)||2500;let added=0;pendingPdfBookings.forEach(b=>{bookings.push({id:'pdf_'+Date.now()+'_'+added,clientName:b.clientName,phone:'',hallId:hall.id,hallName:hall.name,date:b.date,price,deposit:0,notes:'',assignedEmployees:[],status:'pending'});added++;});pendingPdfBookings=[];saveAllData();closeModal();autoDistribute();renderBookingsContent();showMsg(`✅ تم استيراد ${added} حجز`);}
+  
+  // ==================== دوال التبديل ====================
+  function showSwapModal(){
+    if(!currentUser||currentUser.role!=='employee')return;
+    let emp=employees.find(e=>e.id===currentUser.employeeId);if(!emp)return;
+    let myBookings=bookings.filter(b=>b.status==='pending'&&(b.assignedEmployees||[]).includes(emp.id));
+    if(!myBookings.length){showMsg("⚠️ ليس لديك أوردرات للتبديل");return;}
+    let myOpts=myBookings.map(b=>`<option value="${b.id}">${b.date} - ${b.clientName} - ${b.hallName}</option>`).join('');
+    let otherEmps=employees.filter(e=>e.id!==emp.id&&e.active&&e.role===emp.role);
+    let empOpts=otherEmps.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+    document.getElementById('modalContent').innerHTML=`<h3 class="text-xl font-bold mb-3">🔄 تبديل وردية (أوردر مقابل أوردر)</h3><p class="text-sm mb-2">اختر الأوردر الذي تريد التبديل منه:</p><select id="swapMyBooking" class="mb-3 w-full border rounded p-2">${myOpts}</select><p class="text-sm mb-2">اختر الموظف الذي تريد التبديل معه:</p><select id="swapTargetEmp" class="mb-3 w-full border rounded p-2" onchange="loadTargetEmpBookings()">${empOpts}</select><p class="text-sm mb-2">اختر الأوردر الذي ستأخذه من الموظف البديل:</p><select id="swapTargetBooking" class="mb-3 w-full border rounded p-2"><option value="">-- اختر الموظف أولاً --</option></select><button onclick="submitSwapRequest()" class="bg-indigo-700 text-white w-full py-2 rounded-xl">📩 إرسال طلب التبديل</button>`;
+    document.getElementById('modal').classList.remove('hidden');
+  }
+  window.loadTargetEmpBookings=function(){let tid=document.getElementById('swapTargetEmp')?.value;let targetBookings=bookings.filter(b=>b.status==='pending'&&(b.assignedEmployees||[]).includes(tid));let opts=targetBookings.map(b=>`<option value="${b.id}">${b.date} - ${b.clientName} - ${b.hallName}</option>`).join('');document.getElementById('swapTargetBooking').innerHTML=opts||'<option value="">لا توجد أوردرات</option>';};
+  function submitSwapRequest(){let myBid=document.getElementById('swapMyBooking')?.value;let tid=document.getElementById('swapTargetEmp')?.value;let targetBid=document.getElementById('swapTargetBooking')?.value;if(!myBid||!tid||!targetBid)return showMsg("⚠️ اختر الأوردرين والموظف البديل");if(myBid===targetBid)return showMsg("⚠️ لا يمكن تبديل نفس الأوردر");let fromEmp=employees.find(e=>e.id===currentUser.employeeId);let toEmp=employees.find(e=>e.id===tid);let myBooking=bookings.find(b=>b.id===myBid);let targetBooking=bookings.find(b=>b.id===targetBid);swapRequests.push({id:'sr_'+Date.now(),fromEmpId:currentUser.employeeId,toEmpId:tid,bookingId:myBid,targetBookingId:targetBid,status:'pending',date:new Date().toISOString()});saveAllData();closeModal();if(whatsappNumber)sendWhatsAppNotification(whatsappNumber,`🔔 طلب تبديل جديد:\n${fromEmp?.name} يريد تبديل:\nأوردر ${myBooking?.date} ↔ أوردر ${targetBooking?.date}\nمع ${toEmp?.name}`);addNotification('admin','طلب تبديل جديد',`${fromEmp?.name} طلب تبديل أوردرين مع ${toEmp?.name}`);let targetUser=users.find(u=>u.employeeId===tid);if(targetUser)addNotification(targetUser.username,'طلب تبديل',`${fromEmp?.name} يريد تبديل أوردر معك`);showMsg("✅ تم إرسال طلب التبديل للإدارة وللموظف البديل");}
+  function renderSwapRequestsContent(){let html=`<div class="p-4"><h2 class="text-xl font-bold mb-3">🔄 طلبات تبديل الأوردرات</h2><div class="space-y-3">`;if(swapRequests.length===0)html+='<p class="text-gray-500 text-center">لا توجد طلبات تبديل حالياً</p>';else swapRequests.slice().reverse().forEach(sr=>{let from=employees.find(e=>e.id===sr.fromEmpId);let to=employees.find(e=>e.id===sr.toEmpId);let myBk=bookings.find(b=>b.id===sr.bookingId);let targetBk=bookings.find(b=>b.id===sr.targetBookingId);let statusBadge='';if(sr.status==='pending')statusBadge='<span class="status-badge status-pending">⏳ معلق</span>';else if(sr.status==='approved')statusBadge='<span class="status-badge status-completed">✅ تمت الموافقة</span>';else statusBadge='<span class="status-badge status-cancelled">❌ مرفوض</span>';html+=`<div class="border p-3 rounded-xl bg-white"><div class="flex justify-between items-center flex-wrap gap-2"><div><strong>${from?.name||'?'}</strong> ↔ <strong>${to?.name||'?'}</strong></div><div>${statusBadge}</div></div><div class="text-sm text-gray-600 mt-1">📅 أوردر ${from?.name}: ${myBk?.date} - ${myBk?.clientName}<br>📅 أوردر ${to?.name}: ${targetBk?.date} - ${targetBk?.clientName}</div>${sr.status==='pending'?`<div class="flex gap-2 mt-2"><button onclick="approveSwap('${sr.id}')" class="bg-green-600 text-white px-3 py-1 rounded text-sm">✅ موافقة</button><button onclick="rejectSwap('${sr.id}')" class="bg-red-600 text-white px-3 py-1 rounded text-sm">❌ رفض</button></div>`:''}</div>`;});html+=`</div></div>`;document.getElementById('swapRequestsTab').innerHTML=html;}
+  function approveSwap(id){let sr=swapRequests.find(x=>x.id===id);if(!sr)return;sr.status='approved';let myBooking=bookings.find(b=>b.id===sr.bookingId);let targetBooking=bookings.find(b=>b.id===sr.targetBookingId);if(myBooking&&targetBooking){myBooking.assignedEmployees=myBooking.assignedEmployees.map(eid=>eid===sr.fromEmpId?sr.toEmpId:eid);targetBooking.assignedEmployees=targetBooking.assignedEmployees.map(eid=>eid===sr.toEmpId?sr.fromEmpId:eid);}saveAllData();renderSwapRequestsContent();renderBookingsContent();renderDistributionContent();let fromEmp=employees.find(e=>e.id===sr.fromEmpId);let toEmp=employees.find(e=>e.id===sr.toEmpId);let fromUser=users.find(u=>u.employeeId===sr.fromEmpId);let toUser=users.find(u=>u.employeeId===sr.toEmpId);if(fromUser)addNotification(fromUser.username,'تمت الموافقة على التبديل',`تمت الموافقة على تبديلك مع ${toEmp?.name}`);if(toUser)addNotification(toUser.username,'تمت الموافقة على التبديل',`تمت الموافقة على تبديل ${fromEmp?.name} معك`);showMsg("✅ تمت الموافقة على التبديل");}
+  function rejectSwap(id){let sr=swapRequests.find(x=>x.id===id);if(!sr)return;sr.status='rejected';saveAllData();renderSwapRequestsContent();let fromUser=users.find(u=>u.employeeId===sr.fromEmpId);if(fromUser)addNotification(fromUser.username,'تم رفض التبديل','تم رفض طلب التبديل الخاص بك');showMsg("❌ تم رفض التبديل");}
+  
+  // ==================== دوال الإضافة والتعديل والحذف ====================
+  function showAddBookingModal(){document.getElementById('modalContent').innerHTML=`<h3>➕ حجز جديد</h3><input id="clientName" placeholder="اسم العميل" class="mb-2"><select id="hallId" class="mb-2">${halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select><input id="date" type="date" class="mb-2"><input id="price" type="number" placeholder="السعر" value="2500" class="mb-2"><button onclick="saveNewBooking()" class="bg-emerald-700 text-white w-full py-2 rounded-xl">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveNewBooking(){let hall=halls.find(h=>h.id===document.getElementById('hallId').value);bookings.push({id:Date.now().toString(),clientName:document.getElementById('clientName').value||'عميل',phone:'',hallId:document.getElementById('hallId').value,hallName:hall?.name||'قاعة',date:document.getElementById('date').value,price:parseInt(document.getElementById('price').value)||2500,deposit:0,notes:'',assignedEmployees:[],status:'pending'});saveAllData();closeModal();autoDistribute();renderBookingsContent();showMsg("✅ تمت الإضافة");}
+  function showEditBookingModal(id){let b=bookings.find(x=>x.id===id);if(!b)return;document.getElementById('modalContent').innerHTML=`<h3>✏️ تعديل حجز</h3><input id="editClientName" value="${b.clientName}" class="mb-2"><select id="editHallId" class="mb-2">${halls.map(h=>`<option value="${h.id}" ${b.hallId===h.id?'selected':''}>${h.name}</option>`).join('')}</select><input id="editDate" type="date" value="${b.date}" class="mb-2"><input id="editPrice" type="number" value="${b.price}" class="mb-2"><select id="editStatus" class="mb-2"><option value="pending" ${b.status==='pending'?'selected':''}>معلق</option><option value="completed" ${b.status==='completed'?'selected':''}>مكتمل</option></select><button onclick="saveEditBooking('${id}')" class="bg-emerald-700 text-white w-full py-2 rounded-xl">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveEditBooking(id){let b=bookings.find(x=>x.id===id);if(!b)return;b.clientName=document.getElementById('editClientName').value;b.hallId=document.getElementById('editHallId').value;let hall=halls.find(h=>h.id===b.hallId);b.hallName=hall?.name||b.hallName;b.date=document.getElementById('editDate').value;b.price=parseInt(document.getElementById('editPrice').value)||b.price;b.status=document.getElementById('editStatus').value;saveAllData();closeModal();renderBookingsContent();showMsg("✅ تم التحديث");}
+  function markBookingCompleted(id){let b=bookings.find(x=>x.id===id);if(b){b.status='completed';saveAllData();renderBookingsContent();renderArchiveContent();showMsg("✅ تم النقل للأرشيف");}}
   function deleteBooking(id){if(confirm("حذف الحجز؟")){bookings=bookings.filter(b=>b.id!==id);saveAllData();renderBookingsContent();showMsg("🗑️ تم الحذف");}}
-  function showAddEmployeeModal(){let n=prompt("اسم الموظف");if(n){let r=prompt("الوظيفة (مخرج/مصور/كرين)","مصور");let ph=prompt("الهاتف");employees.push({id:'emp'+Date.now(),name:n,role:r||'موظف',phone:ph||'',salaryPerOrder:200,active:true,totalOrders:0});saveAllData();renderEmployeesContent();showMsg("✅ تمت الإضافة");}}
+  
+  function showAddEmployeeModal(){document.getElementById('modalContent').innerHTML=`<h3>➕ موظف جديد</h3><input id="empName" placeholder="الاسم" class="mb-2"><select id="empRole" class="mb-2"><option>مخرج</option><option>مصور</option><option>كرين</option></select><input id="empPhone" placeholder="الهاتف" class="mb-2"><input id="empSalary" placeholder="الراتب لكل أوردر" value="200" type="number" class="mb-2"><button onclick="saveNewEmployee()" class="bg-blue-700 text-white w-full py-2 rounded-xl">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveNewEmployee(){let name=document.getElementById('empName').value.trim();if(!name)return alert("⚠️ أدخل الاسم");let newEmp={id:'emp'+Date.now(),name,role:document.getElementById('empRole').value,phone:document.getElementById('empPhone').value,salaryPerOrder:parseInt(document.getElementById('empSalary').value)||200,active:true,totalOrders:0};employees.push(newEmp);let un=name.replace(/\s/g,'').toLowerCase();let final=un,c=1;while(users.some(u=>u.username===final))final=un+(c++);users.push({username:final,password:'emp123',role:'employee',employeeId:newEmp.id,name});saveAllData();closeModal();renderEmployeesContent();showMsg(`✅ تمت الإضافة - ${final} / emp123`);}
+  function showEditEmployeeModal(id){let e=employees.find(x=>x.id===id);if(!e)return;document.getElementById('modalContent').innerHTML=`<h3>✏️ تعديل موظف</h3><input id="empName" value="${e.name}" class="mb-2"><select id="empRole" class="mb-2"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select><input id="empPhone" value="${e.phone}" class="mb-2"><input id="empSalary" value="${e.salaryPerOrder}" type="number" class="mb-2"><button onclick="saveEditEmployee('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveEditEmployee(id){let e=employees.find(x=>x.id===id);if(!e)return;e.name=document.getElementById('empName').value;e.role=document.getElementById('empRole').value;e.phone=document.getElementById('empPhone').value;e.salaryPerOrder=parseInt(document.getElementById('empSalary').value)||200;saveAllData();closeModal();renderEmployeesContent();showMsg("✅ تم التحديث");}
   function deleteEmployee(id){if(confirm("حذف الموظف؟")){employees=employees.filter(e=>e.id!==id);users=users.filter(u=>u.employeeId!==id);saveAllData();renderEmployeesContent();showMsg("🗑️ تم الحذف");}}
-  function showAddHallModal(){let n=prompt("اسم القاعة");if(n){halls.push({id:'hall'+Date.now(),name:n,type:'closed',active:true});saveAllData();renderHallsContent();showMsg("✅ تمت الإضافة");}}
-  function deleteHall(id){if(confirm("حذف القاعة؟")){halls=halls.filter(h=>h.id!==id);saveAllData();renderHallsContent();showMsg("🗑️ تم الحذف");}}
+  
+  function showAddHallModal(){document.getElementById('modalContent').innerHTML=`<h3>➕ قاعة جديدة</h3><input id="hallName" placeholder="الاسم" class="mb-2"><select id="hallType" class="mb-2"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select><button onclick="saveNewHall()" class="bg-blue-700 text-white w-full py-2 rounded-xl">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveNewHall(){halls.push({id:'hall'+Date.now(),name:document.getElementById('hallName').value||'قاعة',type:document.getElementById('hallType').value,active:true});saveAllData();closeModal();renderHallsContent();showMsg("✅ تمت الإضافة");}
+  function showEditHallModal(id){let h=halls.find(x=>x.id===id);if(!h)return;document.getElementById('modalContent').innerHTML=`<h3>✏️ تعديل قاعة</h3><input id="hallName" value="${h.name}" class="mb-2"><select id="hallType" class="mb-2"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>أوبن</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select><label><input type="checkbox" id="hallActive" ${h.active?'checked':''}> نشطة</label><button onclick="saveEditHall('${id}')" class="bg-amber-700 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`;document.getElementById('modal').classList.remove('hidden');}
+  function saveEditHall(id){let h=halls.find(x=>x.id===id);if(!h)return;h.name=document.getElementById('hallName').value;h.type=document.getElementById('hallType').value;h.active=document.getElementById('hallActive').checked;saveAllData();closeModal();renderHallsContent();showMsg("✅ تم التحديث");}
+  function deleteHall(id){if(confirm("حذف القاعة؟")){halls=halls.filter(h=>h.id!==id);bookings=bookings.filter(b=>b.hallId!==id);saveAllData();renderHallsContent();renderBookingsContent();showMsg("🗑️ تم الحذف");}}
+  
+  // ==================== دوال التحديد الجماعي ====================
+  function applyFilters(){currentHallFilter=document.getElementById('hallFilter')?.value||'all';currentStatusFilter=document.getElementById('statusFilter')?.value||'all';renderBookingsContent();}
+  function toggleBookingSelection(id,checked){if(checked)selectedBookings.add(id);else selectedBookings.delete(id);}
+  function selectAllBookings(){let fb=getFilteredBookings();if(selectedBookings.size===fb.length)selectedBookings.clear();else fb.forEach(b=>selectedBookings.add(b.id));renderBookingsContent();}
+  function toggleSelectAllBookings(){let ck=document.getElementById('selectAllBookingsCheckbox')?.checked;let fb=getFilteredBookings();if(ck)fb.forEach(b=>selectedBookings.add(b.id));else selectedBookings.clear();renderBookingsContent();}
+  function bulkDeleteBookings(){if(!selectedBookings.size)return showMsg("⚠️ لم تختر أي حجز");if(confirm(`حذف ${selectedBookings.size} حجز؟`)){bookings=bookings.filter(b=>!selectedBookings.has(b.id));selectedBookings.clear();saveAllData();updateEmployeeOrders();renderBookingsContent();showMsg("🗑️ تم الحذف");}}
+  function bulkCompleteBookings(){if(!selectedBookings.size)return showMsg("⚠️ لم تختر أي حجز");if(confirm(`إكمال ${selectedBookings.size} حجز؟`)){selectedBookings.forEach(id=>{let b=bookings.find(x=>x.id===id);if(b)b.status='completed';});selectedBookings.clear();saveAllData();updateEmployeeOrders();renderBookingsContent();renderArchiveContent();showMsg("✅ تم الإكمال");}}
+  function toggleHallSelection(id,checked){if(checked)selectedHalls.add(id);else selectedHalls.delete(id);}
+  function selectAllHalls(){if(selectedHalls.size===halls.length)selectedHalls.clear();else halls.forEach(h=>selectedHalls.add(h.id));renderHallsContent();}
+  function toggleSelectAllHalls(){let ck=document.getElementById('selectAllHallsCheckbox')?.checked;if(ck)halls.forEach(h=>selectedHalls.add(h.id));else selectedHalls.clear();renderHallsContent();}
+  function bulkDeleteHalls(){if(!selectedHalls.size)return showMsg("⚠️ لم تختر أي قاعة");if(confirm(`حذف ${selectedHalls.size} قاعة؟`)){halls=halls.filter(h=>!selectedHalls.has(h.id));bookings=bookings.filter(b=>!selectedHalls.has(b.hallId));selectedHalls.clear();saveAllData();renderHallsContent();renderBookingsContent();showMsg("🗑️ تم الحذف");}}
+  function toggleEmployeeSelection(id,checked){if(checked)selectedEmployees.add(id);else selectedEmployees.delete(id);}
+  function selectAllEmployees(){if(selectedEmployees.size===employees.length)selectedEmployees.clear();else employees.forEach(e=>selectedEmployees.add(e.id));renderEmployeesContent();}
+  function toggleSelectAllEmployees(){let ck=document.getElementById('selectAllEmployeesCheckbox')?.checked;if(ck)employees.forEach(e=>selectedEmployees.add(e.id));else selectedEmployees.clear();renderEmployeesContent();}
+  function bulkDeleteEmployees(){if(!selectedEmployees.size)return showMsg("⚠️ لم تختر أي موظف");if(confirm(`حذف ${selectedEmployees.size} موظف؟`)){employees=employees.filter(e=>!selectedEmployees.has(e.id));users=users.filter(u=>!selectedEmployees.has(u.employeeId));selectedEmployees.clear();saveAllData();updateEmployeeOrders();renderEmployeesContent();renderDistributionContent();showMsg("🗑️ تم الحذف");}}
+  function togglePayrollSelection(id,checked){if(checked)selectedPayrollEmps.add(id);else selectedPayrollEmps.delete(id);}
+  function selectAllPayrollEmps(){let active=employees.filter(e=>e.active);if(selectedPayrollEmps.size===active.length)selectedPayrollEmps.clear();else active.forEach(e=>selectedPayrollEmps.add(e.id));renderPayrollContent();}
+  function toggleSelectAllPayroll(){let ck=document.getElementById('selectAllPayrollCheckbox')?.checked;let active=employees.filter(e=>e.active);if(ck)active.forEach(e=>selectedPayrollEmps.add(e.id));else selectedPayrollEmps.clear();renderPayrollContent();}
+  function bulkPayEmployees(pi){if(!selectedPayrollEmps.size)return showMsg("⚠️ لم تختر أي موظف");if(confirm(`صرف مرتبات ${selectedPayrollEmps.size} موظف؟`)){selectedPayrollEmps.forEach(id=>payEmployee(id,pi));selectedPayrollEmps.clear();renderPayrollContent();showMsg("✅ تم صرف المحددين");}}
+  function toggleUserSelection(username,checked){if(checked)selectedUsers.add(username);else selectedUsers.delete(username);}
+  function selectAllUsers(){if(selectedUsers.size===users.length)selectedUsers.clear();else users.forEach(u=>selectedUsers.add(u.username));renderUsersContent();}
+  function toggleSelectAllUsers(){let ck=document.getElementById('selectAllUsersCheckbox')?.checked;if(ck)users.forEach(u=>selectedUsers.add(u.username));else selectedUsers.clear();renderUsersContent();}
+  function bulkDeleteUsers(){if(!selectedUsers.size)return showMsg("⚠️ لم تختر أي مستخدم");let filtered=users.filter(u=>selectedUsers.has(u.username)&&u.role!=='admin');if(!filtered.length)return showMsg("⚠️ لا يمكن حذف المدير");if(confirm(`حذف ${filtered.length} مستخدم؟`)){users=users.filter(u=>!selectedUsers.has(u.username)||u.role==='admin');selectedUsers.clear();saveAllData();renderUsersContent();showMsg("🗑️ تم الحذف");}}
   
   function renderCurrentTab(){
     document.querySelectorAll('.tab-content').forEach(t=>t.classList.add('hidden'));
@@ -267,43 +394,18 @@
     document.getElementById(currentTab)?.classList.remove('hidden');
   }
   
-  // ==================== واجهة الموظف ====================
-  function renderEmployeeDashboard(){
-    if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){
-        document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
-        return;
-    }
-    let emp=employees.find(e=>e.id===currentUser.employeeId);
-    let myBookings=bookings.filter(b=>(b.assignedEmployees||[]).includes(emp.id)&&b.status!=='cancelled');
-    let qrData = generateQRCodeImage(currentUser.employeeId);
-    let todayAttendance = attendance.some(a=>a.employeeId===currentUser.employeeId && a.date===new Date().toISOString().slice(0,10));
-    document.getElementById('app').innerHTML=`
-      <div class="p-4 max-w-4xl mx-auto">
-        <div class="flex justify-between items-center mb-4"><h1 class="text-xl font-bold text-emerald-800">${companyLogo} ${companyName}</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded-xl text-sm">خروج</button></div>
-        <div class="bg-white p-4 rounded-xl shadow mb-4">
-          <div class="flex flex-col md:flex-row items-center gap-4">
-            <img src="${qrData}" class="w-32 h-32 border-2 border-emerald-500 rounded-lg" />
-            <div><p class="font-bold">${emp.name} - ${emp.role}</p><p class="text-xs text-gray-400">${generateQRCode(currentUser.employeeId)}</p>
-              <div class="mt-3"><button onclick="showQRScanner()" class="bg-green-600 text-white px-5 py-2 rounded-xl"><i class="fas fa-camera ml-1"></i> مسح QR للحضور</button>
-              ${!todayAttendance ? `<button onclick="recordAttendance('${currentUser.employeeId}')" class="bg-blue-600 text-white px-4 py-2 rounded-xl mr-2"><i class="fas fa-sign-in-alt ml-1"></i> تسجيل حضور يدوي</button>` : `<span class="bg-gray-200 text-gray-700 px-4 py-2 rounded-xl mr-2"><i class="fas fa-check-circle ml-1"></i> تم الحضور اليوم</span>`}</div>
-            </div>
-          </div>
-          ${todayAttendance ? `<div class="mt-3 text-center text-green-700">✅ تم تسجيل حضورك اليوم</div>` : `<div class="mt-3 text-center text-yellow-700">⚠️ لم يتم تسجيل الحضور بعد</div>`}
-        </div>
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="font-bold">أوردراتي (${myBookings.length})</h2><p>المستحق: ${(myBookings.length*emp.salaryPerOrder).toLocaleString()} ج.م</p>
-        <div class="overflow-x-auto mt-3"><table class="w-full"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>${myBookings.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td></tr>`).join('')}</tbody></table></div></div>
-        <div class="footer-copy">© Dr Media - Ahmed Shreif</div>
-      </div>`;
-    renderNotificationBadge();
-  }
-  
   // ==================== واجهة المدير ====================
   function renderAdminDashboard(){
     document.getElementById('app').innerHTML=`
       <div class="p-4 max-w-7xl mx-auto">
         <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo} ${companyName}</h1>
-          <div class="flex items-center gap-2"><div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div><div id="notificationPanel" class="notification-panel"></div><span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button></div>
+          <h1 class="text-xl md:text-2xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1>
+          <div class="flex items-center gap-2">
+            <div class="notification-bell relative" id="notificationBell" onclick="showNotificationPanel()"><i class="fas fa-bell text-xl text-gray-600 cursor-pointer"></i></div>
+            <div id="notificationPanel" class="notification-panel"></div>
+            <span class="bg-emerald-100 px-2 py-1 rounded-full text-sm">${currentUser?.username}</span>
+            <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button>
+          </div>
         </div>
         <div class="flex flex-wrap gap-1 border-b overflow-x-auto pb-1" id="tabsContainer">
           <button data-tab="dashboardTab" class="tab-btn active">📊 الرئيسية</button>
@@ -320,7 +422,9 @@
           <button data-tab="swapRequestsTab" class="tab-btn bg-indigo-100"><i class="fas fa-exchange-alt"></i> طلبات التبديل</button>
           <button data-tab="attendanceTab" class="tab-btn bg-green-100"><i class="fas fa-calendar-check ml-1"></i> 📋 الحضور</button>
         </div>
-        <div class="mt-4"><div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div><div id="swapRequestsTab" class="tab-content hidden"></div><div id="attendanceTab" class="tab-content hidden"></div></div>
+        <div class="mt-4">
+          <div id="dashboardTab" class="tab-content"></div><div id="bookingsTab" class="tab-content hidden"></div><div id="hallsTab" class="tab-content hidden"></div><div id="employeesTab" class="tab-content hidden"></div><div id="distributionTab" class="tab-content hidden"></div><div id="payrollTab" class="tab-content hidden"></div><div id="calendarTab" class="tab-content hidden"></div><div id="archiveTab" class="tab-content hidden"></div><div id="reportsTab" class="tab-content hidden"></div><div id="usersTab" class="tab-content hidden"></div><div id="settingsTab" class="tab-content hidden"></div><div id="swapRequestsTab" class="tab-content hidden"></div><div id="attendanceTab" class="tab-content hidden"></div>
+        </div>
         <div class="footer-copy">© جميع الحقوق محفوظة Dr Media - Ahmed Shreif</div>
       </div>`;
     document.querySelectorAll('#tabsContainer .tab-btn').forEach(btn=>btn.addEventListener('click',function(){document.querySelectorAll('#tabsContainer .tab-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active');currentTab=this.dataset.tab;renderCurrentTab();}));
@@ -330,7 +434,100 @@
     document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
   }
   
-  // ==================== تسجيل الدخول ====================
+  // ==================== واجهة الموظف ====================
+  function renderEmployeeDashboard(){
+    if(!currentUser?.employeeId||!employees.some(e=>e.id===currentUser.employeeId)){
+      document.getElementById('app').innerHTML=`<div class="p-8 text-center text-red-500">⚠️ حسابك غير مرتبط بموظف<br><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl mt-4">خروج</button></div>`;
+      return;
+    }
+    updateEmployeeOrders();
+    let emp=employees.find(e=>e.id===currentUser.employeeId);
+    let myBookings=bookings.filter(b=>(b.assignedEmployees||[]).includes(emp.id)&&b.status!=='cancelled');
+    let qrCodeDataUrl = generateQRCodeImage(currentUser.employeeId);
+    let todayAttendance = attendance.some(a=>a.employeeId===currentUser.employeeId && a.date===new Date().toISOString().slice(0,10));
+    let mySwaps=swapRequests.filter(sr=>sr.fromEmpId===currentUser.employeeId||sr.toEmpId===currentUser.employeeId);
+    let swapResultHTML='';
+    if(mySwaps.length>0){
+      swapResultHTML=`<div class="bg-white p-4 rounded-xl shadow mb-4"><h3 class="font-bold mb-2"><i class="fas fa-exchange-alt ml-1"></i> طلبات التبديل</h3><div class="space-y-2">`;
+      mySwaps.slice().reverse().forEach(sr=>{
+        let otherEmp=sr.fromEmpId===currentUser.employeeId?employees.find(e=>e.id===sr.toEmpId):employees.find(e=>e.id===sr.fromEmpId);
+        let myBk=bookings.find(b=>b.id===sr.bookingId);
+        let targetBk=bookings.find(b=>b.id===sr.targetBookingId);
+        let statusIcon='',statusText='',statusColor='';
+        if(sr.status==='approved'){statusIcon='✅';statusText='تمت الموافقة';statusColor='text-green-700';}
+        else if(sr.status==='rejected'){statusIcon='❌';statusText='تم الرفض';statusColor='text-red-600';}
+        else{statusIcon='⏳';statusText='قيد الانتظار';statusColor='text-yellow-600';}
+        swapResultHTML+=`<div class="flex justify-between items-center border-b pb-2"><div><span class="font-medium">${otherEmp?.name||'?'}</span><span class="text-sm text-gray-500 mr-2">${myBk?.date} ↔ ${targetBk?.date}</span></div><span class="${statusColor} font-bold">${statusIcon} ${statusText}</span></div>`;
+      });
+      swapResultHTML+=`</div></div>`;
+    }
+    document.getElementById('app').innerHTML=`
+      <div class="p-4 max-w-4xl mx-auto">
+        <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+          <h1 class="text-xl font-bold text-emerald-800">${companyLogo.startsWith('data:')?`<img src="${companyLogo}" class="w-8 h-8 object-cover rounded-full inline">`:companyLogo} ${companyName}</h1>
+          <div class="flex gap-2">
+            <button onclick="showSwapModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm"><i class="fas fa-exchange-alt ml-1"></i> تبديل وردية</button>
+            <button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl text-sm">خروج</button>
+          </div>
+        </div>
+        ${swapResultHTML}
+        <div class="bg-white p-4 rounded-xl shadow mb-4">
+          <div class="flex flex-col md:flex-row items-center gap-4">
+            <img src="${qrCodeDataUrl}" alt="QR Code" class="w-32 h-32 border-2 border-emerald-500 rounded-lg" />
+            <div class="flex-1 text-center md:text-right">
+              <p class="font-bold text-lg">${emp.name} - ${emp.role}</p>
+              <p class="text-xs text-gray-400">${generateQRCode(currentUser.employeeId)}</p>
+              <div class="flex flex-wrap gap-3 mt-3 justify-center md:justify-start">
+                <button onclick="showQRScanner()" class="qr-scanner-btn bg-green-600 hover:bg-green-700"><i class="fas fa-camera ml-2"></i> مسح QR للحضور</button>
+                ${!todayAttendance ? `<button onclick="recordAttendance('${currentUser.employeeId}')" class="bg-blue-600 text-white px-4 py-2 rounded-xl"><i class="fas fa-sign-in-alt ml-1"></i> تسجيل حضور يدوي</button>` : `<span class="bg-gray-200 text-gray-700 px-4 py-2 rounded-xl"><i class="fas fa-check-circle ml-1"></i> تم الحضور اليوم</span>`}
+              </div>
+            </div>
+          </div>
+          ${todayAttendance ? `<div class="mt-3 p-2 bg-green-50 rounded-xl text-center text-green-700">✅ تم تسجيل حضورك اليوم</div>` : `<div class="mt-3 p-2 bg-yellow-50 rounded-xl text-center text-yellow-700">⚠️ لم يتم تسجيل الحضور بعد. استخدم زر مسح QR أو التسجيل اليدوي.</div>`}
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow mt-4">
+          <h2 class="font-bold text-lg mb-2">📋 أوردراتي</h2>
+          <p>عدد الأوردرات: ${myBookings.length} | المستحق: ${(myBookings.length*emp.salaryPerOrder).toLocaleString()} ج.م</p>
+          <div class="overflow-x-auto mt-3"><table class="w-full"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th><th>الحالة</th></tr></thead><tbody>${myBookings.map(o=>`<tr><td>${o.date}</td><td>${o.clientName}</td><td>${o.hallName}</td><td>${o.status==='pending'?'قيد الانتظار':o.status==='completed'?'منتهي':'ملغي'}</td></tr>`).join('')}</tbody></table></div>
+        </div>
+        <div class="footer-copy">© جميع الحقوق محفوظة Dr Media - Ahmed Shreif</div>
+      </div>`;
+    renderNotificationBadge();
+    requestBrowserNotificationPermission();
+    document.addEventListener('click',function(e){let p=document.getElementById('notificationPanel'),b=document.getElementById('notificationBell');if(p&&b&&!b.contains(e.target)&&!p.contains(e.target))p.style.display='none';});
+  }
+  
+  // ==================== تسجيل الدخول والبيانات الافتراضية ====================
+  function initDefaultData(){
+    if(!halls.length)halls=[{id:'hall1',name:'المغلقة',type:'closed',active:true},{id:'hall2',name:'الأوبن',type:'open',active:true},{id:'hall3',name:'الكافيه',type:'cafe',active:true}];
+    if(!employees.length)employees=[
+      {id:'emp1',name:'أحمد علي',role:'مخرج',phone:'01001234567',salaryPerOrder:300,active:true,totalOrders:0},
+      {id:'emp2',name:'محمود حسن',role:'مخرج',phone:'01002345678',salaryPerOrder:300,active:true,totalOrders:0},
+      {id:'emp3',name:'سامر خالد',role:'مصور',phone:'01003456789',salaryPerOrder:200,active:true,totalOrders:0},
+      {id:'emp4',name:'نور الدين',role:'مصور',phone:'01004567890',salaryPerOrder:200,active:true,totalOrders:0},
+      {id:'emp5',name:'ياسر محمد',role:'مصور',phone:'01005678901',salaryPerOrder:200,active:true,totalOrders:0},
+      {id:'emp6',name:'كريم وائل',role:'مصور',phone:'01006789012',salaryPerOrder:200,active:true,totalOrders:0},
+      {id:'emp7',name:'طارق رشاد',role:'كرين',phone:'01007890123',salaryPerOrder:250,active:true,totalOrders:0},
+      {id:'emp8',name:'هاني سعيد',role:'كرين',phone:'01008901234',salaryPerOrder:250,active:true,totalOrders:0}
+    ];
+    if(!users.length)users=[
+      {username:'admin',password:'admin123',role:'admin',name:'مدير النظام'},
+      {username:'ahmed',password:'emp123',role:'employee',employeeId:'emp1',name:'أحمد علي'},
+      {username:'mahmoud',password:'emp123',role:'employee',employeeId:'emp2',name:'محمود حسن'},
+      {username:'samer',password:'emp123',role:'employee',employeeId:'emp3',name:'سامر خالد'},
+      {username:'nour',password:'emp123',role:'employee',employeeId:'emp4',name:'نور الدين'},
+      {username:'yasser',password:'emp123',role:'employee',employeeId:'emp5',name:'ياسر محمد'},
+      {username:'kareem',password:'emp123',role:'employee',employeeId:'emp6',name:'كريم وائل'},
+      {username:'tarek',password:'emp123',role:'employee',employeeId:'emp7',name:'طارق رشاد'},
+      {username:'hany',password:'emp123',role:'employee',employeeId:'emp8',name:'هاني سعيد'}
+    ];
+    if(!bookings.length){
+      let fd=d=>{let x=new Date();x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};
+      bookings=[{id:'b1',clientName:'محمد عبدالله',phone:'0100',hallId:'hall1',hallName:'المغلقة',date:fd(3),price:5000,deposit:2000,assignedEmployees:[],status:'pending',notes:''}];
+    }
+    saveAllData();setTimeout(autoDistribute,500);
+  }
+  
   function showLogin(){
     document.getElementById('app').innerHTML=`
       <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
@@ -349,30 +546,8 @@
       else showMsg("❌ اسم المستخدم أو كلمة المرور غير صحيحة");
     });
   }
-  
   function logout(){sessionStorage.removeItem('vpms_user');currentUser=null;showLogin();}
   function renderApp(){if(currentUser?.role==='admin')renderAdminDashboard();else if(currentUser?.role==='employee')renderEmployeeDashboard();else showLogin();}
-  
-  // ==================== البيانات الافتراضية ====================
-  function initDefaultData(){
-    if(!halls.length)halls=[{id:'hall1',name:'المغلقة',type:'closed',active:true},{id:'hall2',name:'الأوبن',type:'open',active:true},{id:'hall3',name:'الكافيه',type:'cafe',active:true}];
-    if(!employees.length)employees=[
-      {id:'emp1',name:'أحمد علي',role:'مخرج',phone:'01001234567',salaryPerOrder:300,active:true,totalOrders:0},
-      {id:'emp2',name:'محمود حسن',role:'مخرج',phone:'01002345678',salaryPerOrder:300,active:true,totalOrders:0},
-      {id:'emp3',name:'سامر خالد',role:'مصور',phone:'01003456789',salaryPerOrder:200,active:true,totalOrders:0},
-      {id:'emp4',name:'نور الدين',role:'مصور',phone:'01004567890',salaryPerOrder:200,active:true,totalOrders:0}
-    ];
-    if(!users.length)users=[
-      {username:'admin',password:'admin123',role:'admin',name:'مدير النظام'},
-      {username:'ahmed',password:'emp123',role:'employee',employeeId:'emp1',name:'أحمد علي'},
-      {username:'mahmoud',password:'emp123',role:'employee',employeeId:'emp2',name:'محمود حسن'}
-    ];
-    if(!bookings.length){
-      let fd=d=>{let x=new Date();x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};
-      bookings=[{id:'b1',clientName:'محمد عبدالله',phone:'0100',hallId:'hall1',hallName:'المغلقة',date:fd(3),price:5000,deposit:2000,assignedEmployees:[],status:'pending',notes:''}];
-    }
-    saveAllData();setTimeout(autoDistribute,500);
-  }
   
   // ==================== تحميل البيانات ====================
   let loadedCount=0;
@@ -399,8 +574,25 @@
   
   // تعريف الدوال العامة
   window.closeModal=closeModal;window.showNotificationPanel=showNotificationPanel;window.markAllNotificationsRead=markAllNotificationsRead;window.markNotificationRead=markNotificationRead;
-  window.logout=logout;window.showQRScanner=showQRScanner;window.stopQRScanner=stopQRScanner;window.recordAttendance=recordAttendance;window.exportAttendanceToExcel=exportAttendanceToExcel;window.renderAttendanceContent=renderAttendanceContent;
-  window.showAddBookingModal=showAddBookingModal;window.deleteBooking=deleteBooking;window.showAddEmployeeModal=showAddEmployeeModal;window.deleteEmployee=deleteEmployee;window.showAddHallModal=showAddHallModal;window.deleteHall=deleteHall;window.exportToExcel=exportToExcel;
+  window.autoDistribute=autoDistribute;window.rotateEmployeesOnHalls=rotateEmployeesOnHalls;
+  window.applyFilters=applyFilters;window.showAddBookingModal=showAddBookingModal;window.saveNewBooking=saveNewBooking;window.showEditBookingModal=showEditBookingModal;window.saveEditBooking=saveEditBooking;
+  window.markBookingCompleted=markBookingCompleted;window.deleteBooking=deleteBooking;
+  window.showAddEmployeeModal=showAddEmployeeModal;window.saveNewEmployee=saveNewEmployee;window.showEditEmployeeModal=showEditEmployeeModal;window.saveEditEmployee=saveEditEmployee;window.deleteEmployee=deleteEmployee;
+  window.showAddHallModal=showAddHallModal;window.saveNewHall=saveNewHall;window.deleteHall=deleteHall;window.showEditHallModal=showEditHallModal;window.saveEditHall=saveEditHall;
+  window.toggleHallSelection=toggleHallSelection;window.selectAllHalls=selectAllHalls;window.toggleSelectAllHalls=toggleSelectAllHalls;window.bulkDeleteHalls=bulkDeleteHalls;
+  window.toggleEmployeeSelection=toggleEmployeeSelection;window.selectAllEmployees=selectAllEmployees;window.toggleSelectAllEmployees=toggleSelectAllEmployees;window.bulkDeleteEmployees=bulkDeleteEmployees;
+  window.togglePayrollSelection=togglePayrollSelection;window.selectAllPayrollEmps=selectAllPayrollEmps;window.toggleSelectAllPayroll=toggleSelectAllPayroll;window.bulkPayEmployees=bulkPayEmployees;
+  window.toggleUserSelection=toggleUserSelection;window.selectAllUsers=selectAllUsers;window.toggleSelectAllUsers=toggleSelectAllUsers;window.bulkDeleteUsers=bulkDeleteUsers;
+  window.addUser=addUser;window.showEditUserModal=showEditUserModal;window.saveEditUser=saveEditUser;window.linkUserToEmployee=linkUserToEmployee;
+  window.showAddLoanModal=showAddLoanModal;window.saveNewLoan=saveNewLoan;window.payEmployee=payEmployee;window.renderPayrollPeriod=renderPayrollPeriod;
+  window.handleLogoUpload=handleLogoUpload;window.updateCompanyName=updateCompanyName;window.updateWhatsApp=updateWhatsApp;window.exportToExcel=exportToExcel;
+  window.showDayBookings=showDayBookings;window.jumpToMonth=jumpToMonth;
+  window.showImportExcelModal=showImportExcelModal;window.handleExcelFile=handleExcelFile;window.confirmExcelImport=confirmExcelImport;
+  window.showImportPdfModal=showImportPdfModal;window.handlePdfFile=handlePdfFile;window.confirmPdfDayImport=confirmPdfDayImport;
+  window.showSwapModal=showSwapModal;window.loadTargetEmpBookings=loadTargetEmpBookings;window.submitSwapRequest=submitSwapRequest;window.approveSwap=approveSwap;window.rejectSwap=rejectSwap;
+  window.updateSlot=updateSlot;window.logout=logout;
+  window.toggleBookingSelection=toggleBookingSelection;window.selectAllBookings=selectAllBookings;window.toggleSelectAllBookings=toggleSelectAllBookings;window.bulkDeleteBookings=bulkDeleteBookings;window.bulkCompleteBookings=bulkCompleteBookings;
+  window.showQRScanner=showQRScanner;window.stopQRScanner=stopQRScanner;window.recordAttendance=recordAttendance;window.exportAttendanceToExcel=exportAttendanceToExcel;window.renderAttendanceContent=renderAttendanceContent;
 </script>
 </body>
 </html>
