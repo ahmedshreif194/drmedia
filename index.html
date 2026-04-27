@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" class="scroll-smooth">
 <head>
-  <!-- نفس المحتوى الأصلي من البداية حتى نهاية <head> -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <meta name="description" content="Drmedia Pro - نظام إدارة القاعات">
@@ -19,7 +18,16 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   
   <script>
-    tailwind.config = { darkMode: 'class', theme: { extend: { colors: { brand: { 50:'#f0fdf4',100:'#dcfce7',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d' }, dark: { bg:'#0f172a', card:'#1e293b', text:'#f8fafc', border:'#334155' } }, animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite', 'float': 'float 3s ease-in-out infinite', 'slideIn': 'slideIn 0.3s ease forwards', 'shake': 'shake 0.3s ease-in-out', 'emergency': 'emergency 1s ease-in-out infinite' }, keyframes: { float: { '0%,100%':{transform:'translateY(0)'}, '50%':{transform:'translateY(-6px)'} }, slideIn: { from:{opacity:0,transform:'translateY(10px)'}, to:{opacity:1,transform:'translateY(0)'} }, shake: { '0%,100%':{transform:'translateX(0)'}, '25%':{transform:'translateX(-5px)'}, '75%':{transform:'translateX(5px)'} }, emergency: { '0%,100%':{boxShadow:'0 0 0 0 rgba(239,68,68,0.4)'}, '50%':{boxShadow:'0 0 0 20px rgba(239,68,68,0)'} } } } } }
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: { brand: { 50:'#f0fdf4',100:'#dcfce7',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d' }, dark: { bg:'#0f172a', card:'#1e293b', text:'#f8fafc', border:'#334155' } },
+          animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite', 'float': 'float 3s ease-in-out infinite', 'slideIn': 'slideIn 0.3s ease forwards', 'shake': 'shake 0.3s ease-in-out', 'emergency': 'emergency 1s ease-in-out infinite' },
+          keyframes: { float: { '0%,100%':{transform:'translateY(0)'}, '50%':{transform:'translateY(-6px)'} }, slideIn: { from:{opacity:0,transform:'translateY(10px)'}, to:{opacity:1,transform:'translateY(0)'} }, shake: { '0%,100%':{transform:'translateX(0)'}, '25%':{transform:'translateX(-5px)'}, '75%':{transform:'translateX(5px)'} }, emergency: { '0%,100%':{boxShadow:'0 0 0 0 rgba(239,68,68,0.4)'}, '50%':{boxShadow:'0 0 0 20px rgba(239,68,68,0)'} } }
+        }
+      }
+    }
   </script>
   <style>
     :root { --primary: #065f46; --primary-dark: #047857; --accent: #10b981; --bg: #f0fdf4; --card-bg: #ffffff; --text: #0f172a; --text-muted: #64748b; --border: #e2e8f0; --shadow: 0 4px 6px -1px rgba(0,0,0,0.1); --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.15); --radius: 16px; --transition: all 0.25s cubic-bezier(0.4,0,0.2,1); }
@@ -196,12 +204,12 @@
     function activateEmergencyMode() { emergencyMode=true; document.body.classList.add('emergency-mode'); document.getElementById('emergencyPanel').classList.remove('hidden'); saveAllData(); showMsg("🚨 وضع الطوارئ مفعل", 'error'); }
     function deactivateEmergency() { emergencyMode=false; document.body.classList.remove('emergency-mode'); document.getElementById('emergencyPanel').classList.add('hidden'); saveAllData(); showMsg("✅ تم إنهاء وضع الطوارئ"); }
     
-    // Simple Dashboard & Bookings render (keeping original structure but minimal to avoid lengthy code)
+    // Dashboard & Bookings render (keeping original structure but minimal to avoid lengthy code)
     function renderDashboardContent() {
       updateEmployeeOrders();
       let activeCount = bookings.filter(b=>b.status!=='cancelled').length;
       let revenue = bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0);
-      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
+      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات</td></tr>'}</tbody></tr></div></div>`;
     }
     function renderBookingsContent() {
       const fb = getFilteredBookings();
@@ -272,32 +280,38 @@
     function initDefaultData() {
       if(!halls.length) halls = [{id:'hall1',name:'المغلقة',type:'closed',active:true},{id:'hall2',name:'الأوبن',type:'open',active:true},{id:'hall3',name:'الكافيه',type:'cafe',active:true}];
       if(!employees.length) employees = [{id:'emp1',name:'أحمد علي',role:'مخرج',phone:'01001234567',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp2',name:'محمود حسن',role:'مخرج',phone:'01002345678',salaryPerOrder:300,active:true,totalOrders:0},{id:'emp3',name:'سامر خالد',role:'مصور',phone:'01003456789',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp4',name:'نور الدين',role:'مصور',phone:'01004567890',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp5',name:'ياسر محمد',role:'مصور',phone:'01005678901',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp6',name:'كريم وائل',role:'مصور',phone:'01006789012',salaryPerOrder:200,active:true,totalOrders:0},{id:'emp7',name:'طارق رشاد',role:'كرين',phone:'01007890123',salaryPerOrder:250,active:true,totalOrders:0},{id:'emp8',name:'هاني سعيد',role:'كرين',phone:'01008901234',salaryPerOrder:250,active:true,totalOrders:0}];
-      if(!users.length) users = [{username:'admin',password:'admin123',role:'admin',name:'مدير 시스템'},{username:'ahmed',password:'emp123',role:'employee',employeeId:'emp1',name:'أحمد علي'}];
+      if(!users.length) users = [{username:'admin',password:'admin123',role:'admin',name:'مدير النظام'},{username:'ahmed',password:'emp123',role:'employee',employeeId:'emp1',name:'أحمد علي'}];
       if(!bookings.length) bookings = [{id:'b1',clientName:'محمد عبدالله',phone:'01012345678',hallId:'hall1',hallName:'المغلقة',date:new Date(new Date().getTime()+3*86400000).toISOString().slice(0,10),price:5000,deposit:2000,assignedEmployees:[],status:'pending',notes:'',paymentStatus:'pending'}];
       if(!Object.keys(equipmentInventory).length) equipmentInventory = {'cam1':{name:'كاميرا Sony A7',quantity:3,minStock:1,category:'تصوير'}};
       saveAllData();
       autoDistribute();
     }
     function loadData() {
+      // First, check if there is already a logged-in user from sessionStorage to show dashboard immediately
+      const savedUser = sessionStorage.getItem('vpms_user');
+      if(savedUser) { currentUser = JSON.parse(savedUser); renderApp(); }
+      else { showLogin(); }
+      // Hide preloader after 1 second anyway to ensure UI appears
+      setTimeout(() => { document.getElementById('preloader')?.classList.add('hidden'); }, 1200);
+      
+      // Then load data in background
       let loadedCount = 0;
       const totalNodes = 11;
-      function onLoad() { loadedCount++; if(loadedCount === totalNodes) { if(!bookings.length && !employees.length && !halls.length) initDefaultData(); bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; }); // بعد تحميل البيانات، إذا كان هناك مستخدم محفوظ في sessionStorage نعرض التطبيق، وإلا نعرض شاشة الدخول
-          const savedUser = sessionStorage.getItem('vpms_user');
-          if(savedUser) { currentUser = JSON.parse(savedUser); renderApp(); } else { showLogin(); }
-          document.getElementById('preloader')?.classList.add('hidden');
+      function onData() { loadedCount++; if(loadedCount === totalNodes) { if(!bookings.length && !employees.length && !halls.length) initDefaultData(); bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; }); // if user already logged in, re-render to update data
+          if(currentUser) { renderApp(); }
         }
       }
-      db.ref('bookings').on('value', snap=>{ bookings=snap.val()||[]; onLoad(); });
-      db.ref('employees').on('value', snap=>{ employees=snap.val()||[]; onLoad(); });
-      db.ref('users').on('value', snap=>{ users=snap.val()||[]; onLoad(); });
-      db.ref('halls').on('value', snap=>{ halls=snap.val()||[]; onLoad(); });
-      db.ref('notifications').on('value', snap=>{ notifications=snap.val()||[]; onLoad(); });
-      db.ref('swapRequests').on('value', snap=>{ swapRequests=snap.val()||[]; onLoad(); });
-      db.ref('payrollArchive').on('value', snap=>{ payrollArchive=snap.val()||[]; onLoad(); });
-      db.ref('employeeLoans').on('value', snap=>{ employeeLoans=snap.val()||{}; onLoad(); });
-      db.ref('equipmentInventory').on('value', snap=>{ equipmentInventory=snap.val()||{}; onLoad(); });
-      db.ref('companySettings').on('value', snap=>{ let v=snap.val(); if(v){ companyName=v.companyName||'Drmedia Pro'; companyLogo=v.companyLogo||'📷'; whatsappNumber=v.whatsappNumber||''; if(v.themeSettings) themeSettings={...themeSettings,...v.themeSettings}; applyTheme(); } onLoad(); });
-      db.ref('emergencyMode').on('value', snap=>{ emergencyMode=snap.val()===true; onLoad(); });
+      db.ref('bookings').on('value', snap=>{ bookings=snap.val()||[]; onData(); });
+      db.ref('employees').on('value', snap=>{ employees=snap.val()||[]; onData(); });
+      db.ref('users').on('value', snap=>{ users=snap.val()||[]; onData(); });
+      db.ref('halls').on('value', snap=>{ halls=snap.val()||[]; onData(); });
+      db.ref('notifications').on('value', snap=>{ notifications=snap.val()||[]; onData(); });
+      db.ref('swapRequests').on('value', snap=>{ swapRequests=snap.val()||[]; onData(); });
+      db.ref('payrollArchive').on('value', snap=>{ payrollArchive=snap.val()||[]; onData(); });
+      db.ref('employeeLoans').on('value', snap=>{ employeeLoans=snap.val()||{}; onData(); });
+      db.ref('equipmentInventory').on('value', snap=>{ equipmentInventory=snap.val()||{}; onData(); });
+      db.ref('companySettings').on('value', snap=>{ let v=snap.val(); if(v){ companyName=v.companyName||'Drmedia Pro'; companyLogo=v.companyLogo||'📷'; whatsappNumber=v.whatsappNumber||''; if(v.themeSettings) themeSettings={...themeSettings,...v.themeSettings}; applyTheme(); } onData(); });
+      db.ref('emergencyMode').on('value', snap=>{ emergencyMode=snap.val()===true; onData(); });
     }
     // Online/Offline status
     function updateOnlineStatus() { const div=document.getElementById('onlineStatus'); if(navigator.onLine) { div.innerHTML='<i class="fas fa-wifi"></i> متصل'; div.classList.remove('offline'); } else { div.innerHTML='<i class="fas fa-plug"></i> غير متصل (بيانات محلية)'; div.classList.add('offline'); } }
