@@ -82,6 +82,7 @@
     let rotationPointers = { dPtr:0, pPtr:0, cPtr:0 };
     let autoBackupInterval = null;
     const BACKUP_INTERVAL_MS = 2 * 60 * 60 * 1000; // كل ساعتين
+    let dataReady = false;
 
     // Helper Functions
     function showMsg(message, type='success') {
@@ -98,7 +99,7 @@
     function openModal(content) { document.getElementById('modalContent').innerHTML = content; document.getElementById('modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
     function adjustColor(hex, percent) { let num=parseInt(hex.replace('#',''),16), amt=Math.round(2.55*percent); let R=(num>>16)+amt, G=((num>>8)&0x00FF)+amt, B=(num&0x0000FF)+amt; return '#'+(0x1000000+(R<255?R<1?0:R:255)*0x10000+(G<255?G<1?0:G:255)*0x100+(B<255?B<1?0:B:255)).toString(16).slice(1); }
     function applyTheme() { if(themeSettings.darkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); if(themeSettings.primaryColor) { document.documentElement.style.setProperty('--custom-primary', themeSettings.primaryColor); document.documentElement.style.setProperty('--custom-primary-dark', adjustColor(themeSettings.primaryColor, -20)); } localStorage.setItem('drmedia_theme', JSON.stringify(themeSettings)); }
-    function saveAllData() { Promise.all([ db.ref('bookings').set(bookings), db.ref('employees').set(employees), db.ref('users').set(users), db.ref('halls').set(halls), db.ref('notifications').set(notifications), db.ref('swapRequests').set(swapRequests), db.ref('payrollArchive').set(payrollArchive), db.ref('employeeLoans').set(employeeLoans), db.ref('equipmentInventory').set(equipmentInventory), db.ref('companySettings').set({companyName, companyLogo, whatsappNumber, themeSettings}), db.ref('emergencyMode').set(emergencyMode) ]).catch(e=>console.error); }
+    function saveAllData() { if(!dataReady) return; Promise.all([ db.ref('bookings').set(bookings), db.ref('employees').set(employees), db.ref('users').set(users), db.ref('halls').set(halls), db.ref('notifications').set(notifications), db.ref('swapRequests').set(swapRequests), db.ref('payrollArchive').set(payrollArchive), db.ref('employeeLoans').set(employeeLoans), db.ref('equipmentInventory').set(equipmentInventory), db.ref('companySettings').set({companyName, companyLogo, whatsappNumber, themeSettings}), db.ref('emergencyMode').set(emergencyMode) ]).catch(e=>console.error); }
     function addNotification(uid, title, message, priority='normal') { notifications.push({ id:Date.now(), userId:uid, title, message, read:false, date:new Date().toLocaleString('ar-EG'), priority }); saveAllData(); if(currentUser && currentUser.employeeId===uid) { renderNotificationBadge(); if(browserNotificationsEnabled && Notification.permission==='granted') new Notification(title,{body:message}); } }
     function renderNotificationBadge() { let unread = notifications.filter(n=>n.userId===currentUser?.employeeId && !n.read).length; let bell=document.getElementById('notificationBell'); if(!bell) return; let badge=bell.querySelector('.notification-badge'); if(unread>0) { if(!badge) { badge=document.createElement('span'); badge.className='notification-badge'; bell.appendChild(badge); } badge.textContent=unread>9?'9+':unread; } else if(badge) badge.remove(); }
     function sendWhatsAppNotification(phone, message) { if(!phone) return; let clean=phone.replace(/[^0-9+]/g,''); if(clean) window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`,'_blank'); }
@@ -118,6 +119,7 @@
     function loadRotationPointers() { const saved = localStorage.getItem('drmedia_rotation_pointers'); if(saved) rotationPointers = JSON.parse(saved); }
     function saveRotationPointers() { localStorage.setItem('drmedia_rotation_pointers', JSON.stringify(rotationPointers)); }
     function autoDistribute() {
+      if(!dataReady) return;
       const active = bookings.filter(b=>b.status==='pending');
       active.forEach(b=>b.assignedEmployees=[]);
       const sorted = [...active].sort((a,b)=>new Date(a.date)-new Date(b.date));
@@ -209,7 +211,7 @@
       updateEmployeeOrders();
       let activeCount = bookings.filter(b=>b.status!=='cancelled').length;
       let revenue = bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0);
-      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات</td></tr>'}</tbody></tr></div></div>`;
+      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
     }
     function renderBookingsContent() {
       const fb = getFilteredBookings();
@@ -287,18 +289,33 @@
       autoDistribute();
     }
     function loadData() {
-      // First, check if there is already a logged-in user from sessionStorage to show dashboard immediately
-      const savedUser = sessionStorage.getItem('vpms_user');
-      if(savedUser) { currentUser = JSON.parse(savedUser); renderApp(); }
-      else { showLogin(); }
-      // Hide preloader after 1 second anyway to ensure UI appears
-      setTimeout(() => { document.getElementById('preloader')?.classList.add('hidden'); }, 1200);
+      // أولاً: إخفاء preloader وعرض صفحة الدخول فوراً (بعد 1 ثانية كحد أقصى)
+      setTimeout(() => {
+        const preloader = document.getElementById('preloader');
+        if(preloader) preloader.classList.add('hidden');
+        // إذا لم يكن هناك مستخدم مسجل مسبقاً، اعرض شاشة الدخول
+        const savedUser = sessionStorage.getItem('vpms_user');
+        if(savedUser) {
+          currentUser = JSON.parse(savedUser);
+          renderApp();
+        } else {
+          showLogin();
+        }
+      }, 1000);
       
-      // Then load data in background
+      // ثم تحميل البيانات من Firebase في الخلفية
       let loadedCount = 0;
       const totalNodes = 11;
-      function onData() { loadedCount++; if(loadedCount === totalNodes) { if(!bookings.length && !employees.length && !halls.length) initDefaultData(); bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; }); // if user already logged in, re-render to update data
-          if(currentUser) { renderApp(); }
+      function onData() {
+        loadedCount++;
+        if(loadedCount === totalNodes) {
+          dataReady = true;
+          if(!bookings.length && !employees.length && !halls.length) initDefaultData();
+          bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; });
+          // تحديث الواجهة إذا كان المستخدم مسجلاً بالفعل
+          if(currentUser) {
+            renderApp();  // إعادة render لضمان عرض البيانات
+          }
         }
       }
       db.ref('bookings').on('value', snap=>{ bookings=snap.val()||[]; onData(); });
