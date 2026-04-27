@@ -296,9 +296,37 @@
       <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow border border-gray-100 dark:border-slate-700"><h3 class="font-bold mb-3 flex items-center gap-2"><i class="fas fa-clock text-emerald-600"></i> أقرب الحجوزات</h3><div class="overflow-x-auto"><table class="text-sm"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الدفع</th></tr></thead><tbody>${active.slice(0,5).map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td class="font-bold text-emerald-600">${b.price.toLocaleString()} ج.م</td><td><span class="payment-badge ${b.paymentStatus==='paid'?'payment-paid':'payment-pending'}">${b.paymentStatus==='paid'?'✅ مدفوع':'⏳ معلق'}</span></td></tr>`).join('') || '<tr><td colspan="5" class="text-center py-4 text-gray-400">لا توجد حجوزات قادمة</td></tr>'}</tbody></table></div></div>`;
       setTimeout(renderCharts, 100);
     }
+    // 🔧 FIXED Chart Syntax (Added 'data' key)
     function renderCharts() {
-      const weeklyCtx = document.getElementById('weeklyChart'); if(weeklyCtx) { if(charts.weekly) charts.weekly.destroy(); const labels = ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت']; const data = [0,0,0,0,0,0,0]; const now = new Date(); const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay()); bookings.filter(b => b.status !== 'cancelled').forEach(b => { const bDate = new Date(b.date); if(bDate >= startOfWeek && bDate < new Date(startOfWeek.getTime() + 7*86400000)) data[bDate.getDay()]++; }); charts.weekly = new Chart(weeklyCtx, { type: 'line',  { labels, datasets: [{ label: 'عدد الحجوزات', data, borderColor: '#065f46', backgroundColor: 'rgba(6,95,70,0.1)', tension: 0.4, fill: true }] }, options: { responsive: true, plugins: { legend: {display:false} }, scales: { y: { beginAtZero: true, ticks: {stepSize:1} } } } }); }
-      const hallsCtx = document.getElementById('hallsChart'); if(hallsCtx) { if(charts.halls) charts.halls.destroy(); const hallData = halls.map(h => ({ name: h.name, count: bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length })); charts.halls = new Chart(hallsCtx, { type: 'doughnut', data: { labels: hallData.map(h => h.name), datasets: [{ data: hallData.map(h => h.count), backgroundColor: ['#065f46', '#10b981', '#22c55e', '#6366f1'] }] }, options: { responsive: true, plugins: { legend: {position:'bottom'} } } }); }
+      const weeklyCtx = document.getElementById('weeklyChart'); 
+      if(weeklyCtx) { 
+        if(charts.weekly) charts.weekly.destroy(); 
+        const labels = ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت']; 
+        const data = [0,0,0,0,0,0,0]; 
+        const now = new Date(); 
+        const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay()); 
+        bookings.filter(b => b.status !== 'cancelled').forEach(b => { 
+            const bDate = new Date(b.date); 
+            if(bDate >= startOfWeek && bDate < new Date(startOfWeek.getTime() + 7*86400000)) data[bDate.getDay()]++; 
+        }); 
+        
+        charts.weekly = new Chart(weeklyCtx, { 
+            type: 'line', 
+            data: { labels: labels, datasets: [{ label: 'عدد الحجوزات', data: data, borderColor: '#065f46', backgroundColor: 'rgba(6,95,70,0.1)', tension: 0.4, fill: true }] }, 
+            options: { responsive: true, plugins: { legend: {display:false} }, scales: { y: { beginAtZero: true, ticks: {stepSize:1} } } } 
+        }); 
+      }
+      const hallsCtx = document.getElementById('hallsChart'); 
+      if(hallsCtx) { 
+        if(charts.halls) charts.halls.destroy(); 
+        const hallData = halls.map(h => ({ name: h.name, count: bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length })); 
+        
+        charts.halls = new Chart(hallsCtx, { 
+            type: 'doughnut', 
+            data: { labels: hallData.map(h => h.name), datasets: [{ data: hallData.map(h => h.count), backgroundColor: ['#065f46', '#10b981', '#22c55e', '#6366f1'] }] }, 
+            options: { responsive: true, plugins: { legend: {position:'bottom'} } } 
+        }); 
+      }
     }
 
     function renderBookingsContent() {
