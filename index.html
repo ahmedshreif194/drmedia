@@ -1,383 +1,202 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drmedia Pro Plus</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
-    <style>
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 20px; border-radius: 40px; z-index: 10000; display: none; }
-        .toast.show { display: block; }
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1100; visibility: hidden; opacity: 0; transition: 0.2s; }
-        .modal.show { visibility: visible; opacity: 1; }
-        .modal-content { background: white; border-radius: 24px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 24px; }
-        .tab-btn { padding: 8px 16px; border-radius: 12px 12px 0 0; font-weight: 600; cursor: pointer; }
-        .tab-btn.active { background-color: #16a34a; color: white; }
-        .btn-primary { background-color: #16a34a; color: white; padding: 8px 16px; border-radius: 12px; border: none; cursor: pointer; }
-        .btn-primary:hover { background-color: #15803d; }
-        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; }
-        .status-pending { background: #fef3c7; color: #92400e; }
-        .status-completed { background: #d1fae5; color: #065f46; }
-        .online-status { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-left: 8px; }
-        .online { background-color: #22c55e; }
-        .offline { background-color: #ef4444; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drmedia Pro V3</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body { font-family: sans-serif }
+.btn { background:#16a34a;color:#fff;padding:10px;border-radius:10px;width:100% }
+.card { background:#fff;padding:20px;border-radius:15px }
+</style>
 </head>
-<body>
-<div id="toast" class="toast"></div>
-<div id="modal" class="modal"><div class="modal-content" id="modalContent"></div></div>
+
+<body class="bg-gray-100">
+
 <div id="app"></div>
 
 <script>
-// ======================== قاعدة البيانات والمستخدمين الأساسيين ========================
-// التأكد من وجود المستخدمين حتى لو لم يتم تحميل أي بيانات
+
+// ================= USERS =================
 let users = [
-    { username: 'ahmed', password: '1994', role: 'admin', name: 'مدير النظام', employeeId: null },
-    { username: 'ahmed_emp', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد علي' }
+ {username:"admin",password:"1234",role:"admin"},
+ {username:"emp",password:"1234",role:"employee"}
 ];
-let bookings = [], employees = [], halls = [], clients = [], equipmentInventory = {}, attendanceRecords = [];
+
 let currentUser = null;
-let companyName = 'Drmedia Pro Plus', companyLogo = '📷';
-let isOnline = navigator.onLine;
 
-// ======================== دوال مساعدة ========================
-function showMsg(msg) {
-    const toast = document.getElementById('toast');
-    toast.textContent = msg;
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3000);
-}
-function closeModal() { document.getElementById('modal').classList.remove('show'); }
-function openModal(content) { document.getElementById('modalContent').innerHTML = content; document.getElementById('modal').classList.add('show'); }
-function saveAllData() {
-    const data = { bookings, employees, halls, clients, equipmentInventory, attendanceRecords, users, companyName, companyLogo };
-    localStorage.setItem('drmedia_data', JSON.stringify(data));
-}
-function loadAllData() {
-    const raw = localStorage.getItem('drmedia_data');
-    if (raw) {
-        try {
-            const data = JSON.parse(raw);
-            bookings = data.bookings || [];
-            employees = data.employees || [];
-            halls = data.halls || [];
-            clients = data.clients || [];
-            equipmentInventory = data.equipmentInventory || {};
-            attendanceRecords = data.attendanceRecords || [];
-            if (data.users && data.users.length) users = data.users;
-            companyName = data.companyName || companyName;
-            companyLogo = data.companyLogo || companyLogo;
-        } catch(e) { console.warn(e); }
-    }
-    // التأكد من وجود المستخدمين الأساسيين
-    if (!users.find(u => u.username === 'ahmed')) {
-        users.push({ username: 'ahmed', password: '1994', role: 'admin', name: 'مدير النظام', employeeId: null });
-    }
-    if (!users.find(u => u.username === 'ahmed_emp')) {
-        users.push({ username: 'ahmed_emp', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد علي' });
-    }
-    // إذا كانت البيانات فارغة أنشئ بيانات افتراضية
-    if (!employees.length) {
-        employees = [
-            { id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 },
-            { id: 'emp2', name: 'محمود حسن', role: 'مصور', phone: '01002345678', salaryPerOrder: 200, active: true, totalOrders: 0 }
-        ];
-    }
-    if (!halls.length) {
-        halls = [
-            { id: 'h1', name: 'القاعة المغلقة', type: 'closed', active: true },
-            { id: 'h2', name: 'القاعة المفتوحة', type: 'open', active: true }
-        ];
-    }
-    if (!bookings.length) {
-        bookings = [
-            { id: 'b1', clientName: 'محمد عبدالله', phone: '01012345678', hallId: 'h1', hallName: 'القاعة المغلقة', date: new Date().toISOString().slice(0,10), price: 5000, status: 'pending', paymentStatus: 'pending', assignedEmployees: [] }
-        ];
-    }
-    if (!clients.length) {
-        clients = [{ id: 'c1', name: 'محمد عبدالله', phone: '01012345678', email: '' }];
-    }
-    if (Object.keys(equipmentInventory).length === 0) {
-        equipmentInventory = { eq1: { name: 'كاميرا', quantity: 3, minStock: 1, category: 'تصوير' } };
-    }
-    updateEmployeeOrders();
-    saveAllData(); // حفظ البيانات بعد التأكد من وجودها
-}
-function updateEmployeeOrders() {
-    const active = bookings.filter(b => b.status !== 'cancelled');
-    employees.forEach(e => e.totalOrders = active.filter(b => (b.assignedEmployees || []).includes(e.id)).length);
+// ================= DATA =================
+let bookings = JSON.parse(localStorage.getItem('bookings')) || [];
+let employees = JSON.parse(localStorage.getItem('employees')) || [
+ {id:'e1',name:'زكاوة',role:'مخرج',salary:250,total:0},
+ {id:'e2',name:'الصاوي',role:'مخرج',salary:250,total:0},
+ {id:'e3',name:'محمد',role:'مصور',salary:200,total:0},
+ {id:'e4',name:'اسلام',role:'مصور',salary:200,total:0},
+ {id:'e5',name:'خالد',role:'مصور',salary:200,total:0},
+ {id:'e6',name:'ياسر',role:'كرين',salary:200,total:0}
+];
+
+let halls = [
+ {id:'h1',name:'المغلقة'},
+ {id:'h2',name:'الأوبن'},
+ {id:'h3',name:'الكافيه'}
+];
+
+// ================= SAVE =================
+function save(){
+ localStorage.setItem('bookings',JSON.stringify(bookings));
+ localStorage.setItem('employees',JSON.stringify(employees));
 }
 
-// ======================== دوال الحجوزات ========================
-function addBooking() {
-    const name = prompt('اسم العميل'), hallId = prompt('معرف القاعة (h1/h2)'), price = parseInt(prompt('السعر'));
-    if (name && hallId && price) {
-        const hall = halls.find(h => h.id === hallId);
-        if (hall) {
-            bookings.push({ id: 'b' + Date.now(), clientName: name, phone: '', hallId, hallName: hall.name, date: new Date().toISOString().slice(0,10), price, status: 'pending', paymentStatus: 'pending', assignedEmployees: [] });
-            saveAllData();
-            renderBookings();
-            showMsg('✅ تمت الإضافة');
-        } else alert('قاعة غير موجودة');
-    }
-}
-function markComplete(id) {
-    const b = bookings.find(x => x.id === id);
-    if (b) { b.status = 'completed'; b.paymentStatus = 'paid'; saveAllData(); renderBookings(); showMsg('✅ تم الإكمال'); }
-}
-function deleteBooking(id) {
-    if (confirm('حذف الحجز؟')) { bookings = bookings.filter(b => b.id !== id); saveAllData(); renderBookings(); showMsg('🗑️ تم الحذف'); }
-}
-function renderBookings() {
-    const container = document.getElementById('bookings');
-    if (!container) return;
-    const filtered = bookings.filter(b => b.status !== 'cancelled');
-    container.innerHTML = `
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-3">📅 الحجوزات (${filtered.length})</h2><button onclick="addBooking()" class="btn-primary mb-3">+ حجز جديد</button>
-        <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th></th></tr></thead><tbody>${filtered.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price} ج.م</td><td class="p-2"><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td><td class="p-2"><button onclick="markComplete('${b.id}')" class="text-green-600">إكمال</button> <button onclick="deleteBooking('${b.id}')" class="text-red-600">حذف</button></td></tr>`).join('')}</tbody></table></div></div>`;
+// ================= LOGIN =================
+function showLogin(){
+ document.getElementById("app").innerHTML = `
+ <div class="min-h-screen flex items-center justify-center">
+   <div class="card w-full max-w-sm text-center">
+     <h2 class="text-xl mb-4">🔐 تسجيل الدخول</h2>
+     <input id="user" placeholder="Username" class="border p-2 w-full mb-2">
+     <input id="pass" type="password" placeholder="Password" class="border p-2 w-full mb-3">
+     <button onclick="login()" class="btn">دخول</button>
+     <p class="text-sm mt-3 text-gray-400">admin / 1234</p>
+   </div>
+ </div>
+ `;
 }
 
-// ======================== دوال الموظفين ========================
-function renderEmployees() {
-    const container = document.getElementById('employees');
-    if (!container) return;
-    updateEmployeeOrders();
-    container.innerHTML = `
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-3">👥 الموظفين</h2>
-        <div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th></tr></thead><tbody>${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.totalOrders || 0}</td><td class="p-2 text-emerald-600 font-bold">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div></div>`;
+function login(){
+ let u = document.getElementById("user").value.trim();
+ let p = document.getElementById("pass").value;
+
+ let user = users.find(x=>x.username===u && x.password===p);
+
+ if(user){
+   currentUser = user;
+   sessionStorage.setItem("user", JSON.stringify(user));
+   renderApp();
+ }else{
+   alert("❌ بيانات غلط");
+ }
 }
 
-// ======================== دوال العملاء ========================
-function addClient() {
-    const name = prompt('الاسم'), phone = prompt('الهاتف');
-    if (name && phone) { clients.push({ id: 'c' + Date.now(), name, phone, email: '' }); saveAllData(); renderClients(); showMsg('✅ تمت الإضافة'); }
-}
-function deleteClient(id) {
-    if (confirm('حذف العميل؟')) { clients = clients.filter(c => c.id !== id); saveAllData(); renderClients(); showMsg('🗑️ تم الحذف'); }
-}
-function renderClients() {
-    const container = document.getElementById('clients');
-    if (!container) return;
-    container.innerHTML = `
-        <div class="bg-white p-4 rounded-xl shadow"><div class="flex justify-between mb-3"><h2 class="text-xl font-bold">👥 العملاء</h2><button onclick="addClient()" class="btn-primary px-3 py-1 text-sm">+ عميل</button></div>
-        <div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>الحجوزات</th><th></th></tr></thead><tbody>${clients.map(c => `<tr><td class="p-2">${c.name}</td><td class="p-2">${c.phone}</td><td class="p-2">${c.email || '-'}</td><td class="p-2">${bookings.filter(b => b.phone === c.phone).length}</td><td class="p-2"><button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+function logout(){
+ sessionStorage.removeItem("user");
+ currentUser = null;
+ showLogin();
 }
 
-// ======================== دوال المعدات ========================
-function addEquipment() {
-    const name = prompt('الاسم'), category = prompt('الفئة'), qty = parseInt(prompt('الكمية', '1'));
-    if (name && qty) { const id = 'eq' + Date.now(); equipmentInventory[id] = { name, category, quantity: qty, minStock: 1 }; saveAllData(); renderEquipment(); showMsg('✅ تمت الإضافة'); }
-}
-function adjustInventory(id, delta) {
-    if (equipmentInventory[id]) { equipmentInventory[id].quantity = Math.max(0, equipmentInventory[id].quantity + delta); saveAllData(); renderEquipment(); showMsg('✅ تم التحديث'); }
-}
-function renderEquipment() {
-    const container = document.getElementById('equipment');
-    if (!container) return;
-    let items = '';
-    for (let id in equipmentInventory) {
-        const item = equipmentInventory[id];
-        items += `<div class="border p-3 rounded-xl"><div><strong>${item.name}</strong> (${item.category})</div><div>الكمية: ${item.quantity} <span class="${item.quantity <= item.minStock ? 'text-red-500' : 'text-green-500'}">${item.quantity <= item.minStock ? '⚠️ منخفض' : 'متوفر'}</span></div><div><button onclick="adjustInventory('${id}',-1)" class="bg-gray-300 px-2 py-1 rounded">-</button> <button onclick="adjustInventory('${id}',1)" class="bg-gray-300 px-2 py-1 rounded">+</button></div></div>`;
-    }
-    container.innerHTML = `<div class="bg-white p-4 rounded-xl shadow"><div class="flex justify-between mb-3"><h2 class="text-xl font-bold">📦 المعدات</h2><button onclick="addEquipment()" class="btn-primary px-3 py-1 text-sm">+ معدة</button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-3">${items}</div></div>`;
+// ================= MAIN APP =================
+function renderApp(){
+ document.getElementById("app").innerHTML = `
+ <div class="p-4">
+
+   <div class="flex justify-between mb-4">
+     <h2 class="text-xl">👋 ${currentUser.username}</h2>
+     <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded">خروج</button>
+   </div>
+
+   <div class="card mb-4">
+     <button onclick="showAdd()" class="btn mb-2">+ حجز</button>
+     <button onclick="smartDistribute()" class="btn bg-blue-600">⚡ توزيع</button>
+
+     <table class="w-full mt-3">
+       <tr><th>عميل</th><th>قاعة</th><th>موظفين</th></tr>
+       ${bookings.map(b=>`
+       <tr>
+         <td>${b.client}</td>
+         <td>${b.hall}</td>
+         <td>${b.assigned.map(id=>employees.find(e=>e.id==id)?.name).join(', ')}</td>
+       </tr>
+       `).join('')}
+     </table>
+   </div>
+
+   <div class="card">
+     ${employees.map(e=>`
+       <div>${e.name} | ${e.total} | ${e.total*e.salary} ج</div>
+     `).join('')}
+   </div>
+
+ </div>
+ `;
 }
 
-// ======================== دوال الحضور ========================
-function getTodayDateStr() { return new Date().toISOString().slice(0, 10); }
-function getTodayAttendance(empId) { return attendanceRecords.find(a => a.empId === empId && a.date === getTodayDateStr()); }
-function checkIn(empId) {
-    const today = getTodayDateStr();
-    const existing = getTodayAttendance(empId);
-    if (existing && existing.checkIn) return showMsg('⚠️ تم تسجيل الحضور مسبقاً');
-    const time = new Date().toLocaleTimeString('ar-EG');
-    if (existing) { existing.checkIn = time; existing.status = 'present'; }
-    else { attendanceRecords.push({ id: Date.now(), empId, date: today, checkIn: time, checkOut: null, status: 'present' }); }
-    saveAllData(); renderAttendance(); showMsg(`✅ تم تسجيل حضور الساعة ${time}`);
-}
-function checkOut(empId) {
-    const rec = getTodayAttendance(empId);
-    if (!rec || !rec.checkIn) return showMsg('⚠️ لم يتم تسجيل الحضور بعد');
-    if (rec.checkOut) return showMsg('⚠️ تم تسجيل الانصراف مسبقاً');
-    rec.checkOut = new Date().toLocaleTimeString('ar-EG');
-    saveAllData(); renderAttendance(); showMsg(`✅ تم تسجيل الانصراف الساعة ${rec.checkOut}`);
-}
-function showQrModal(empId, empName) {
-    const qrData = `emp_attendance_${empId}`;
-    openModal(`
-        <h3 class="text-xl font-bold mb-4">📱 مسح QR للحضور/الانصراف</h3>
-        <p>الموظف: <strong>${empName}</strong></p>
-        <div id="qrCode" class="flex justify-center my-4"></div>
-        <div class="flex gap-2 mt-4"><button onclick="checkIn('${empId}');closeModal();" class="btn-primary px-4 py-2 rounded">تسجيل حضور</button><button onclick="checkOut('${empId}');closeModal();" class="bg-amber-600 text-white px-4 py-2 rounded">تسجيل انصراف</button></div>
-    `);
-    setTimeout(() => { new QRCode(document.getElementById("qrCode"), { text: qrData, width: 200, height: 200 }); }, 100);
-}
-function renderAttendance() {
-    const container = document.getElementById('attendance');
-    if (!container) return;
-    const emp = employees.find(e => e.id === currentUser?.employeeId);
-    const todayRec = emp ? getTodayAttendance(emp.id) : null;
-    const myAttendance = attendanceRecords.filter(a => a.empId === emp?.id).sort((a, b) => b.date.localeCompare(a.date));
-    container.innerHTML = `
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-4">📋 الحضور والانصراف</h2>
-        ${currentUser?.role === 'employee' ? `
-            <div class="mb-4 p-3 border rounded-xl bg-green-50"><div class="flex gap-2"><button onclick="showQrModal('${emp.id}','${emp.name}')" class="btn-primary text-sm">📱 عرض QR</button><button onclick="checkIn('${emp.id}')" class="btn-primary">حضور</button><button onclick="checkOut('${emp.id}')" class="bg-amber-600 text-white px-4 py-2 rounded">انصراف</button></div><div class="mt-2">حالة اليوم: ${todayRec ? (todayRec.checkOut ? '✅ تم الحضور والانصراف' : '🟢 تم الحضور فقط') : '❌ لم يتم التسجيل'}</div></div>
-        ` : ''}
-        <h3 class="font-bold">سجل الحضور السابق</h3><table class="w-full text-sm"><thead><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${myAttendance.map(a => `<tr><td class="p-2">${a.date}</td><td class="p-2">${a.checkIn || '-'}</td><td class="p-2">${a.checkOut || '-'}</td></tr>`).join('') || '<tr><td colspan="3" class="text-center">لا توجد سجلات</td></tr>'}</tbody></table></div>`;
+// ================= ADD =================
+function showAdd(){
+ let name = prompt("اسم العميل");
+ let hall = prompt("h1/h2/h3");
+
+ let hallName = halls.find(h=>h.id==hall)?.name;
+
+ if(!name || !hallName) return;
+
+ bookings.push({
+   id:Date.now(),
+   client:name,
+   hall:hallName,
+   hallId:hall,
+   assigned:[]
+ });
+
+ save();
+ renderApp();
 }
 
-// ======================== تحديث النظام ========================
-function checkForUpdates() {
-    if (!isOnline) { showMsg('⚠️ لا يوجد اتصال بالإنترنت'); return; }
-    showMsg('🔍 جاري التحقق...');
-    setTimeout(() => {
-        const hasUpdate = Math.random() > 0.5;
-        if (hasUpdate) {
-            showMsg('✨ يتوفر تحديث جديد (الإصدار 2.0.0)');
-            if (document.getElementById('updateStatus')) document.getElementById('updateStatus').innerHTML = '<div class="text-green-600">✅ يتوفر تحديث جديد</div>';
-            if (document.getElementById('downloadUpdateBtn')) document.getElementById('downloadUpdateBtn').classList.remove('hidden');
-        } else {
-            showMsg('✅ نظامك محدث');
-            if (document.getElementById('updateStatus')) document.getElementById('updateStatus').innerHTML = '<div class="text-green-600">✅ نظامك محدث</div>';
-        }
-    }, 1000);
-}
-function downloadUpdate() {
-    showMsg('📥 جاري تنزيل التحديث...');
-    setTimeout(() => { showMsg('✅ تم التحديث، سيتم إعادة التشغيل'); setTimeout(() => location.reload(), 1500); }, 1500);
-}
-function renderSystemUpdate() {
-    const container = document.getElementById('systemUpdate');
-    if (!container) return;
-    container.innerHTML = `
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-4">🔄 تحديث النظام</h2>
-        <div class="mb-2"><span class="online-status ${isOnline ? 'online' : 'offline'}"></span> ${isOnline ? 'متصل' : 'غير متصل'}</div>
-        <div>الإصدار: v1.5.0</div>
-        <div id="updateStatus" class="my-2"></div>
-        <button onclick="checkForUpdates()" class="btn-primary w-full mb-2" ${!isOnline ? 'disabled style="opacity:0.5;"' : ''}>🔍 التحقق من التحديثات</button>
-        <button id="downloadUpdateBtn" onclick="downloadUpdate()" class="btn-primary w-full hidden">📥 تنزيل التحديث</button>
-        <div class="text-xs text-gray-400 mt-3">النظام يعمل في وضع عدم الاتصال (Offline-first)</div>
-        </div>`;
+// ================= DISTRIBUTION =================
+function smartDistribute(){
+
+ let directors = employees.filter(e=>e.role=='مخرج').sort((a,b)=>a.total-b.total);
+ let photographers = employees.filter(e=>e.role=='مصور').sort((a,b)=>a.total-b.total);
+ let cranes = employees.filter(e=>e.role=='كرين').sort((a,b)=>a.total-b.total);
+
+ bookings.forEach(b=>{
+   let assigned=[];
+
+   if(b.hallId=='h1'||b.hallId=='h2'){
+     if(directors.length) assigned.push(directors.shift().id);
+     assigned.push(...photographers.splice(0,2).map(e=>e.id));
+     if(cranes.length) assigned.push(cranes.shift().id);
+   }
+
+   if(b.hallId=='h3'){
+     if(photographers.length) assigned.push(photographers.shift().id);
+   }
+
+   b.assigned = assigned;
+ });
+
+ updateTotals();
+ save();
+ renderApp();
 }
 
-// ======================== الإعدادات ========================
-function renderSettings() {
-    const container = document.getElementById('settings');
-    if (!container) return;
-    container.innerHTML = `
-        <div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ الإعدادات</h2>
-        <div><label>اسم الشركة</label><input type="text" id="companyNameInput" value="${companyName}" class="w-full border rounded p-2 mb-3"></div>
-        <div><label>شعار (نص)</label><input type="text" id="companyLogoInput" value="${companyLogo}" class="w-full border rounded p-2 mb-3"></div>
-        <button onclick="updateCompanySettings()" class="btn-primary w-full mb-3">💾 حفظ</button>
-        <button onclick="resetData()" class="bg-red-600 text-white w-full py-2 rounded-xl">⚠️ إعادة ضبط البيانات</button>
-        </div>`;
-}
-function updateCompanySettings() {
-    companyName = document.getElementById('companyNameInput').value;
-    companyLogo = document.getElementById('companyLogoInput').value;
-    saveAllData(); showMsg('✅ تم حفظ الإعدادات');
-    if (currentUser?.role === 'admin') renderAdminDashboard();
-}
-function resetData() {
-    if (confirm('⚠️ مسح كل البيانات؟')) { localStorage.clear(); location.reload(); }
+// ================= TOTAL =================
+function updateTotals(){
+ employees.forEach(e=>e.total=0);
+ bookings.forEach(b=>{
+   b.assigned.forEach(id=>{
+     let emp = employees.find(e=>e.id==id);
+     if(emp) emp.total++;
+   });
+ });
 }
 
-// ======================== واجهة المدير ========================
-function renderAdminDashboard() {
-    document.getElementById('app').innerHTML = `
-        <div class="min-h-screen bg-gray-100">
-            <header class="bg-white shadow p-3 flex justify-between items-center"><h1 class="text-xl font-bold">${companyLogo} ${companyName}</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">خروج</button></header>
-            <div class="flex overflow-x-auto border-b bg-white px-2">
-                ${['dashboard','bookings','employees','halls','clients','equipment','attendance','systemUpdate','settings'].map(tab => `<button data-tab="${tab}" class="tab-btn px-4 py-2 rounded-t-lg">${tab==='dashboard'?'📊 الرئيسية':tab==='bookings'?'📅 الحجوزات':tab==='employees'?'👥 الموظفين':tab==='halls'?'🏛️ القاعات':tab==='clients'?'👥 العملاء':tab==='equipment'?'📦 المعدات':tab==='attendance'?'📋 الحضور':tab==='systemUpdate'?'🔄 تحديث النظام':'⚙️ الإعدادات'}</button>`).join('')}
-            </div>
-            <main class="p-4 max-w-7xl mx-auto">
-                <div id="dashboard" class="tab-pane"><div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold">📊 لوحة التحكم</h2><div class="grid grid-cols-3 gap-3 mt-3"><div class="bg-green-50 p-3 rounded">الحجوزات: ${bookings.filter(b=>b.status!=='cancelled').length}</div><div class="bg-blue-50 p-3 rounded">الموظفين: ${employees.length}</div><div class="bg-purple-50 p-3 rounded">العملاء: ${clients.length}</div></div><button onclick="addBooking()" class="btn-primary mt-3">+ حجز جديد</button></div></div>
-                <div id="bookings" class="tab-pane hidden"></div>
-                <div id="employees" class="tab-pane hidden"></div>
-                <div id="halls" class="tab-pane hidden"><div class="bg-white p-4 rounded-xl shadow"><h2 class="text-xl font-bold mb-3">🏛️ القاعات</h2><table class="w-full"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>الحجوزات</th></tr></thead><tbody>${halls.map(h => `<tr><td class="p-2">${h.name}</td><td class="p-2">${h.type}</td><td class="p-2">${h.active?'نشطة':'غير نشطة'}</td><td class="p-2">${bookings.filter(b=>b.hallId===h.id && b.status!=='cancelled').length}</td></tr>`).join('')}</tbody></table></div></div>
-                <div id="clients" class="tab-pane hidden"></div>
-                <div id="equipment" class="tab-pane hidden"></div>
-                <div id="attendance" class="tab-pane hidden"></div>
-                <div id="systemUpdate" class="tab-pane hidden"></div>
-                <div id="settings" class="tab-pane hidden"></div>
-            </main>
-        </div>`;
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const tab = btn.dataset.tab;
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
-        document.getElementById(tab).classList.remove('hidden');
-        if (tab === 'bookings') renderBookings();
-        if (tab === 'employees') renderEmployees();
-        if (tab === 'clients') renderClients();
-        if (tab === 'equipment') renderEquipment();
-        if (tab === 'attendance') renderAttendance();
-        if (tab === 'systemUpdate') renderSystemUpdate();
-        if (tab === 'settings') renderSettings();
-    }));
-    renderBookings(); renderEmployees(); renderClients(); renderEquipment(); renderAttendance(); renderSystemUpdate(); renderSettings();
+// ================= INIT =================
+function init(){
+ let savedUser = sessionStorage.getItem("user");
+
+ if(savedUser){
+   currentUser = JSON.parse(savedUser);
+   renderApp();
+ }else{
+   showLogin();
+ }
 }
 
-// ======================== واجهة الموظف ========================
-function renderEmployeeDashboard() {
-    const emp = employees.find(e => e.id === currentUser.employeeId);
-    document.getElementById('app').innerHTML = `
-        <div class="min-h-screen bg-gray-100"><header class="bg-white p-3 flex justify-between"><h1 class="text-xl font-bold">${companyLogo} ${companyName}</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">خروج</button></header>
-        <main class="p-4 max-w-md mx-auto"><div class="bg-white p-5 rounded-xl shadow"><h2 class="text-2xl font-bold">مرحباً ${emp?.name}</h2><div class="grid grid-cols-2 gap-3 mt-4"><div><div class="text-3xl font-bold text-emerald-600">${emp?.totalOrders || 0}</div><div>أوردرات</div></div><div><div class="text-3xl font-bold text-blue-600">${((emp?.totalOrders || 0) * (emp?.salaryPerOrder || 0)).toLocaleString()} ج.م</div><div>المستحق</div></div></div><button onclick="showQrModal('${emp?.id}','${emp?.name}')" class="btn-primary w-full mt-4">📋 تسجيل الحضور QR</button><button onclick="currentTab='attendance';renderAdminDashboard();renderAttendance();" class="btn-primary w-full mt-2">📋 عرض الحضور</button></div></main></div>`;
-}
+init();
 
-// ======================== شاشة الدخول ========================
-function showLogin() {
-    document.getElementById('app').innerHTML = `
-        <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
-            <div class="bg-white p-6 rounded-2xl w-full max-w-md text-center shadow-2xl">
-                <h1 class="text-3xl font-bold text-emerald-700 mb-2">${companyLogo} ${companyName}</h1>
-                <p class="text-gray-500 mb-6">نظام إدارة القاعات الذكي</p>
-                <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3">
-                <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2">
-                <button onclick="doLogin()" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">دخول</button>
-                <div class="mt-4 text-sm text-gray-400"><p>المدير: <strong>ahmed</strong> / <strong>1994</strong></p><p>الموظف: <strong>ahmed_emp</strong> / <strong>emp123</strong></p></div>
-            </div>
-        </div>`;
-}
-function doLogin() {
-    const un = document.getElementById('loginUser').value.trim();
-    const pw = document.getElementById('loginPass').value;
-    const user = users.find(u => u.username === un && u.password === pw);
-    if (user) {
-        currentUser = user;
-        sessionStorage.setItem('drmedia_user', JSON.stringify(user));
-        if (user.role === 'admin') renderAdminDashboard();
-        else renderEmployeeDashboard();
-        showMsg(`مرحباً ${user.name}`);
-    } else {
-        showMsg('❌ اسم المستخدم أو كلمة المرور غير صحيحة');
-    }
-}
-function logout() {
-    sessionStorage.removeItem('drmedia_user');
-    currentUser = null;
-    showLogin();
-    showMsg('👋 تم تسجيل الخروج');
-}
-
-// ======================== بدء التشغيل ========================
-loadAllData();
-window.addEventListener('online', () => { isOnline = true; showMsg('✅ تم الاتصال بالإنترنت'); if (currentUser?.role === 'admin') renderSystemUpdate(); });
-window.addEventListener('offline', () => { isOnline = false; showMsg('⚠️ تم قطع الاتصال'); if (currentUser?.role === 'admin') renderSystemUpdate(); });
-const saved = sessionStorage.getItem('drmedia_user');
-if (saved && saved !== 'undefined') {
-    try {
-        currentUser = JSON.parse(saved);
-        if (currentUser.role === 'admin') renderAdminDashboard();
-        else renderEmployeeDashboard();
-    } catch(e) { showLogin(); }
-} else {
-    showLogin();
-}
 </script>
 </body>
 </html>
