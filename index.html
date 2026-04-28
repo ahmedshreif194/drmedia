@@ -50,12 +50,7 @@
     .online-status { position: fixed; bottom: 20px; left: 20px; background: #10b981; color: white; padding: 6px 12px; border-radius: 50px; font-size: 0.7rem; z-index: 61; display: flex; align-items: center; gap: 5px; }
     .online-status.offline { background: #ef4444; }
     .footer-copy { text-align: center; padding: 16px; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 24px; }
-    /* تحسين شكل شاشة التحميل */
-    #preloader { position: fixed; inset: 0; background: linear-gradient(135deg, #065f46 0%, #047857 50%, #065f46 100%); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.6s ease, visibility 0.6s ease; }
-    #preloader.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-    .loader-ring { width: 70px; height: 70px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 24px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loader-text { color: #fff; font-size: 1.3rem; font-weight: 600; } .loader-subtext { color: rgba(255,255,255,0.85); font-size: 0.95rem; margin-top: 10px; }
+    /* تحسينات نموذج الدخول */
     .login-card {
       background: rgba(255,255,255,0.95);
       backdrop-filter: blur(10px);
@@ -69,10 +64,17 @@
     .input-icon { position: relative; }
     .input-icon i { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
     .input-icon input { padding-right: 42px; }
+    /* شاشة تحميل بسيطة مؤقتة */
+    .mini-loader { display: inline-block; width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #10b981; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    #preloader { position: fixed; inset: 0; background: linear-gradient(135deg, #065f46 0%, #047857 50%, #065f46 100%); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.6s ease, visibility 0.6s ease; }
+    #preloader.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .loader-ring { width: 70px; height: 70px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 24px; }
+    .loader-text { color: #fff; font-size: 1.3rem; font-weight: 600; }
   </style>
 </head>
 <body>
-  <div id="preloader"><div class="loader-ring"></div><div class="loader-text">Drmedia Pro Ultimate</div><div class="loader-subtext">جاري التحميل، يرجى الانتظار...</div></div>
+  <div id="preloader"><div class="loader-ring"></div><div class="loader-text">Drmedia Pro Ultimate</div></div>
   <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMessage"></span></div>
   <div id="modal" class="hidden"><div class="bg-white"><div id="modalContent"></div><div class="flex justify-end gap-3 p-4"><button onclick="closeModal()" class="bg-gray-400 text-white px-5 py-2 rounded-xl">إغلاق</button></div></div></div>
   <div id="emergencyPanel" class="fixed inset-0 bg-black/90 z-[9999] hidden flex-col items-center justify-center text-white"><div class="text-6xl mb-4">🚨</div><h2 class="text-2xl font-bold">وضع الطوارئ مفعل</h2><button onclick="deactivateEmergency()" class="bg-green-600 px-6 py-3 rounded-xl mt-4">إنهاء الطوارئ</button></div>
@@ -96,7 +98,8 @@
     let rotationPointers = { dPtr:0, pPtr:0, cPtr:0 };
     let autoBackupInterval = null;
     const BACKUP_INTERVAL_MS = 2 * 60 * 60 * 1000; // كل ساعتين
-    let dataReady = false; // للإشارة إلى اكتمال تحميل البيانات الأساسية
+    let dataReady = false;
+    let loadingData = false; // لمنع إعادة render متكرر
 
     // Helper Functions
     function showMsg(message, type='success') {
@@ -220,16 +223,16 @@
     function activateEmergencyMode() { emergencyMode=true; document.body.classList.add('emergency-mode'); document.getElementById('emergencyPanel').classList.remove('hidden'); saveAllData(); showMsg("🚨 وضع الطوارئ مفعل", 'error'); }
     function deactivateEmergency() { emergencyMode=false; document.body.classList.remove('emergency-mode'); document.getElementById('emergencyPanel').classList.add('hidden'); saveAllData(); showMsg("✅ تم إنهاء وضع الطوارئ"); }
     
-    // Dashboard & Bookings render (keeping original structure but minimal to avoid lengthy code)
+    // Dashboard & Bookings render (keeping original structure but minimal)
     function renderDashboardContent() {
       updateEmployeeOrders();
       let activeCount = bookings.filter(b=>b.status!=='cancelled').length;
       let revenue = bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0);
-      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات<th></td>'}</tbody></table></div></div>`;
+      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
     }
     function renderBookingsContent() {
       const fb = getFilteredBookings();
-      document.getElementById('bookingsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📅 الحجوزات (${fb.length})</h2><div class="overflow-auto"><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th></tr></thead><tbody>${fb.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td class="status-badge status-pending">${b.status==='completed'?'مكتمل':'معلق'}</td></tr>`).join('')||'</tr><td colspan="5">لا توجد حجوزات</tr>'}</tbody></table></div></div>`;
+      document.getElementById('bookingsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📅 الحجوزات (${fb.length})</h2><div class="overflow-auto"><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th></tr></thead><tbody>${fb.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td class="status-badge status-pending">${b.status==='completed'?'مكتمل':'معلق'}</td></tr>`).join('')||'<tr><td colspan="5">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
     }
     function renderHallsContent() { document.getElementById('hallsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold">🏛️ القاعات</h2><ul>${halls.map(h=>`<li>${h.name} (${h.type})</li>`).join('')}</ul></div>`; }
     function renderEmployeesContent() { updateEmployeeOrders(); document.getElementById('employeesTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold">👥 الموظفين</h2><ul>${employees.map(e=>`<li>${e.name} - ${e.role} - أوردرات: ${e.totalOrders}</li>`).join('')}</ul></div>`; }
@@ -333,26 +336,24 @@
       autoDistribute();
     }
     function loadData() {
-      // الخطوة 1: إخفاء preloader بعد 2 ثانية كحد أقصى وعرض نموذج الدخول أو استعادة الجلسة
+      // أولاً: إخفاء شاشة التحميل فوراً بعد 0.5 ثانية (أو أقل) وعرض واجهة الدخول
       setTimeout(() => {
         const preloader = document.getElementById('preloader');
         if(preloader) preloader.classList.add('hidden');
-        
         // التحقق من وجود مستخدم مسجل مسبقاً
         const savedUser = sessionStorage.getItem('vpms_user');
         if(savedUser) {
           try {
             currentUser = JSON.parse(savedUser);
-            // إذا كان المستخدم مسجلاً، اعرض واجهة التطبيق فوراً مع رسالة تحميل البيانات
-            document.getElementById('app').innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center"><div class="loader-ring mx-auto mb-4"></div><p class="text-gray-600 dark:text-gray-300">جاري تحميل البيانات...</p><p class="text-sm text-gray-500 mt-2">سيتم تحديث الشاشة تلقائياً</p></div></div>';
-            // ثم بعد اكتمال البيانات سيتم إعادة render
+            // عرض شاشة تحميل بسيطة لحين جاهزية البيانات
+            document.getElementById('app').innerHTML = `<div class="flex items-center justify-center min-h-screen"><div class="text-center"><div class="loader-ring mx-auto mb-4"></div><p class="text-gray-600 dark:text-gray-300">جاري تحميل البيانات...</p><p class="text-sm text-gray-500 mt-2">سيتم تحديث الشاشة تلقائياً</p></div></div>`;
           } catch(e) { currentUser = null; showLogin(); }
         } else {
           showLogin();
         }
-      }, 2000); // 2 ثانية كحد أقصى لظهور شاشة الدخول
-      
-      // الخطوة 2: تحميل البيانات من Firebase في الخلفية
+      }, 500); // نصف ثانية فقط
+        
+      // تحميل البيانات من Firebase في الخلفية
       let loadedCount = 0;
       const totalNodes = 11;
       function onData() {
@@ -361,14 +362,13 @@
           dataReady = true;
           if(!bookings.length && !employees.length && !halls.length) initDefaultData();
           bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; });
-          // إذا كان المستخدم مسجلاً بالفعل، قم بتحديث الواجهة بالبيانات الحقيقية
+          // إذا كان المستخدم مسجلاً بالفعل، قم بتحديث الواجهة بالبيانات
           if(currentUser) {
             renderApp();
             showMsg("تم تحميل البيانات بنجاح", "success");
           }
         }
       }
-      // الاستماع إلى التغييرات في Firebase
       db.ref('bookings').on('value', snap=>{ bookings=snap.val()||[]; onData(); });
       db.ref('employees').on('value', snap=>{ employees=snap.val()||[]; onData(); });
       db.ref('users').on('value', snap=>{ users=snap.val()||[]; onData(); });
