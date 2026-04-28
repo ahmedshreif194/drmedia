@@ -3,19 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drmedia Pro V3</title>
-
+<title>Drmedia Pro V3+</title>
 <script src="https://cdn.tailwindcss.com"></script>
-
-<style>
-body { font-family: sans-serif }
-.btn { background:#16a34a;color:#fff;padding:10px;border-radius:10px;width:100% }
-.card { background:#fff;padding:20px;border-radius:15px }
-</style>
 </head>
 
 <body class="bg-gray-100">
-
 <div id="app"></div>
 
 <script>
@@ -55,12 +47,11 @@ function save(){
 function showLogin(){
  document.getElementById("app").innerHTML = `
  <div class="min-h-screen flex items-center justify-center">
-   <div class="card w-full max-w-sm text-center">
+   <div class="bg-white p-6 rounded-xl w-full max-w-sm text-center">
      <h2 class="text-xl mb-4">🔐 تسجيل الدخول</h2>
      <input id="user" placeholder="Username" class="border p-2 w-full mb-2">
      <input id="pass" type="password" placeholder="Password" class="border p-2 w-full mb-3">
-     <button onclick="login()" class="btn">دخول</button>
-     <p class="text-sm mt-3 text-gray-400">admin / 1234</p>
+     <button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">دخول</button>
    </div>
  </div>
  `;
@@ -87,7 +78,7 @@ function logout(){
  showLogin();
 }
 
-// ================= MAIN APP =================
+// ================= UI =================
 function renderApp(){
  document.getElementById("app").innerHTML = `
  <div class="p-4">
@@ -97,26 +88,21 @@ function renderApp(){
      <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded">خروج</button>
    </div>
 
-   <div class="card mb-4">
-     <button onclick="showAdd()" class="btn mb-2">+ حجز</button>
-     <button onclick="smartDistribute()" class="btn bg-blue-600">⚡ توزيع</button>
+   <div class="bg-white p-4 rounded-xl mb-4">
+     <button onclick="showAdd()" class="bg-green-600 text-white px-3 py-1 rounded">+ حجز</button>
+     <button onclick="distributeMonth()" class="bg-blue-600 text-white px-3 py-1 rounded">🔥 توزيع شهر</button>
 
-     <table class="w-full mt-3">
-       <tr><th>عميل</th><th>قاعة</th><th>موظفين</th></tr>
+     <table class="w-full mt-3 text-sm">
+       <tr><th>عميل</th><th>تاريخ</th><th>قاعة</th><th>توزيع</th></tr>
        ${bookings.map(b=>`
        <tr>
          <td>${b.client}</td>
+         <td>${b.date}</td>
          <td>${b.hall}</td>
          <td>${b.assigned.map(id=>employees.find(e=>e.id==id)?.name).join(', ')}</td>
        </tr>
        `).join('')}
      </table>
-   </div>
-
-   <div class="card">
-     ${employees.map(e=>`
-       <div>${e.name} | ${e.total} | ${e.total*e.salary} ج</div>
-     `).join('')}
    </div>
 
  </div>
@@ -127,16 +113,18 @@ function renderApp(){
 function showAdd(){
  let name = prompt("اسم العميل");
  let hall = prompt("h1/h2/h3");
+ let date = prompt("التاريخ YYYY-MM-DD");
 
  let hallName = halls.find(h=>h.id==hall)?.name;
 
- if(!name || !hallName) return;
+ if(!name || !hallName || !date) return;
 
  bookings.push({
    id:Date.now(),
    client:name,
    hall:hallName,
    hallId:hall,
+   date:date,
    assigned:[]
  });
 
@@ -144,43 +132,67 @@ function showAdd(){
  renderApp();
 }
 
-// ================= DISTRIBUTION =================
-function smartDistribute(){
+// ================= SMART MONTH DISTRIBUTION =================
+function distributeMonth(){
 
- let directors = employees.filter(e=>e.role=='مخرج').sort((a,b)=>a.total-b.total);
- let photographers = employees.filter(e=>e.role=='مصور').sort((a,b)=>a.total-b.total);
- let cranes = employees.filter(e=>e.role=='كرين').sort((a,b)=>a.total-b.total);
+ // reset totals
+ employees.forEach(e=>e.total=0);
 
+ // group by day
+ let days = {};
  bookings.forEach(b=>{
-   let assigned=[];
-
-   if(b.hallId=='h1'||b.hallId=='h2'){
-     if(directors.length) assigned.push(directors.shift().id);
-     assigned.push(...photographers.splice(0,2).map(e=>e.id));
-     if(cranes.length) assigned.push(cranes.shift().id);
-   }
-
-   if(b.hallId=='h3'){
-     if(photographers.length) assigned.push(photographers.shift().id);
-   }
-
-   b.assigned = assigned;
+   if(!days[b.date]) days[b.date]=[];
+   days[b.date].push(b);
  });
 
- updateTotals();
+ Object.keys(days).forEach(day=>{
+
+   let usedToday = new Set();
+
+   let directors = employees.filter(e=>e.role=='مخرج').sort((a,b)=>a.total-b.total);
+   let photographers = employees.filter(e=>e.role=='مصور').sort((a,b)=>a.total-b.total);
+   let cranes = employees.filter(e=>e.role=='كرين').sort((a,b)=>a.total-b.total);
+
+   days[day].forEach(b=>{
+
+     let assigned=[];
+
+     function pick(arr,count){
+       let picked=[];
+       for(let i=0;i<arr.length;i++){
+         if(!usedToday.has(arr[i].id)){
+           picked.push(arr[i]);
+           usedToday.add(arr[i].id);
+         }
+         if(picked.length===count) break;
+       }
+       return picked;
+     }
+
+     if(b.hallId=='h1'||b.hallId=='h2'){
+       assigned.push(...pick(directors,1).map(e=>e.id));
+       assigned.push(...pick(photographers,2).map(e=>e.id));
+       assigned.push(...pick(cranes,1).map(e=>e.id));
+     }
+
+     if(b.hallId=='h3'){
+       assigned.push(...pick(photographers,1).map(e=>e.id));
+     }
+
+     b.assigned = assigned;
+
+     assigned.forEach(id=>{
+       let emp = employees.find(e=>e.id==id);
+       if(emp) emp.total++;
+     });
+
+   });
+
+ });
+
  save();
  renderApp();
-}
-
-// ================= TOTAL =================
-function updateTotals(){
- employees.forEach(e=>e.total=0);
- bookings.forEach(b=>{
-   b.assigned.forEach(id=>{
-     let emp = employees.find(e=>e.id==id);
-     if(emp) emp.total++;
-   });
- });
+ alert("🔥 تم توزيع الشهر بالكامل بنجاح");
 }
 
 // ================= INIT =================
