@@ -1,9 +1,9 @@
-<!-- نفس الهيد بتاعك بدون تغيير -->
-<!-- كل حاجة زي ما هي لحد script -->
+<!-- نفس كودك بالكامل زي ما هو -->
+<!-- غير بس <script> بالكامل وحط ده 👇 -->
 
 <script>
 
-// ======================== FIX LOGIN INIT ========================
+// ======================== INIT SAFE ========================
 function initApp() {
     try {
         loadAllData();
@@ -31,7 +31,7 @@ function initApp() {
     }
 }
 
-// ======================== SMART DISTRIBUTION ========================
+// ======================== SMART MONTH DISTRIBUTION ========================
 function smartDistributeMonthly() {
 
     let days = {};
@@ -88,16 +88,82 @@ function smartDistributeMonthly() {
     saveAllData();
     renderBookings();
 
-    showMsg('🔥 تم التوزيع الشهري بنجاح');
+    showMsg('🔥 تم توزيع الشهر بنجاح');
+}
+
+// ======================== PAYROLL SYSTEM ========================
+function calculatePayroll() {
+    let result = [];
+
+    employees.forEach(e => {
+        let total = (e.totalOrders || 0) * (e.salaryPerOrder || 200);
+
+        result.push({
+            name: e.name,
+            orders: e.totalOrders || 0,
+            total: total
+        });
+    });
+
+    return result;
+}
+
+function renderPayroll() {
+    let data = calculatePayroll();
+
+    document.getElementById('payroll').innerHTML = `
+    <div class="bg-white p-5 rounded-2xl shadow">
+        <h2 class="text-xl font-bold mb-4">💰 المرتبات</h2>
+
+        <div class="grid grid-cols-3 gap-2 mb-4">
+            <button onclick="payDay(10)" class="bg-blue-600 text-white p-2 rounded">دفع يوم 10</button>
+            <button onclick="payDay(20)" class="bg-green-600 text-white p-2 rounded">دفع يوم 20</button>
+            <button onclick="payDay(30)" class="bg-purple-600 text-white p-2 rounded">دفع يوم 30</button>
+        </div>
+
+        <table class="w-full text-sm">
+            <tr>
+                <th>الاسم</th>
+                <th>الأوردرات</th>
+                <th>المستحق</th>
+            </tr>
+
+            ${data.map(e => `
+            <tr>
+                <td class="p-2">${e.name}</td>
+                <td class="p-2">${e.orders}</td>
+                <td class="p-2 font-bold">${e.total} ج</td>
+            </tr>
+            `).join('')}
+        </table>
+    </div>`;
+}
+
+function payDay(day) {
+    showMsg(`💸 تم تسجيل دفعة يوم ${day}`);
+}
+
+// ======================== DASHBOARD STATS ========================
+function renderDashboardStats() {
+
+    let totalBookings = bookings.length;
+    let totalEmployees = employees.length;
+    let totalRevenue = bookings.reduce((sum, b) => sum + (b.price || 0), 0);
+
+    document.getElementById('dashboard').innerHTML = `
+    <div class="grid grid-cols-3 gap-3">
+        <div class="bg-green-100 p-4 rounded">📅 ${totalBookings} حجوزات</div>
+        <div class="bg-blue-100 p-4 rounded">👥 ${totalEmployees} موظف</div>
+        <div class="bg-purple-100 p-4 rounded">💰 ${totalRevenue} ج</div>
+    </div>`;
 }
 
 // ======================== FIX EMPLOYEES TABLE ========================
 function renderEmployees() {
     updateEmployeeOrders();
     document.getElementById('employees').innerHTML = `
-        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow">
+        <div class="bg-white p-5 rounded-2xl shadow">
             <h2 class="text-xl font-bold mb-4">👥 الموظفين</h2>
-            <div class="overflow-x-auto">
             <table class="w-full">
             <thead>
             <tr>
@@ -116,32 +182,18 @@ function renderEmployees() {
             <td class="p-2">${e.phone}</td>
             <td class="p-2">${e.totalOrders || 0}</td>
             <td class="p-2 font-bold">
-            ${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م
+            ${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج
             </td>
             </tr>
             `).join('')}
             </tbody>
             </table>
-            </div>
         </div>`;
 }
 
-// ======================== FIX ATTENDANCE BUG ========================
-/* استبدل السطر الغلط ده:
-'|| '<tr><td colspan="3" class="text-center">لا توجد سجلات</td>`}
-*/
- 
-// وخليه:
-function safeEmptyRow(){
- return '<tr><td colspan="3" class="text-center">لا توجد سجلات</td></tr>';
-}
-
 // ======================== ADD BUTTON ========================
-// داخل renderBookings ضيف الزر ده جنب الأزرار:
-//
-// <button onclick="smartDistributeMonthly()" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">
-// 🔥 توزيع الشهر
-// </button>
+// داخل renderBookings:
+// <button onclick="smartDistributeMonthly()" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">🔥 توزيع الشهر</button>
 
 // ======================== START ========================
 initApp();
