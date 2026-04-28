@@ -1,249 +1,149 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drmedia Pro Plus V2</title>
-
-<script src="https://cdn.tailwindcss.com"></script>
-
-<style>
-body { font-family: 'Segoe UI'; }
-.toast { position: fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#111;color:#fff;padding:10px 20px;border-radius:20px; display:none;}
-.toast.show{display:block}
-</style>
-</head>
-
-<body class="bg-gray-100">
-
-<div id="toast" class="toast"></div>
-<div id="app"></div>
+<!-- نفس الهيد بتاعك بدون تغيير -->
+<!-- كل حاجة زي ما هي لحد script -->
 
 <script>
 
-// ================== بيانات ==================
-let users = [
- { username:'ahmed', password:'1994', role:'admin', name:'مدير النظام' },
- { username:'emp', password:'1234', role:'employee', name:'موظف' }
-];
+// ======================== FIX LOGIN INIT ========================
+function initApp() {
+    try {
+        loadAllData();
 
-let currentUser = null;
+        const saved = sessionStorage.getItem('drmedia_user');
 
-let bookings = JSON.parse(localStorage.getItem('bookings')) || [];
-let employees = JSON.parse(localStorage.getItem('employees')) || [
- {id:'e1',name:'زكاوة',role:'مخرج',salary:250,totalOrders:0},
- {id:'e2',name:'الصاوي',role:'مخرج',salary:250,totalOrders:0},
- {id:'e3',name:'محمد',role:'مصور',salary:200,totalOrders:0},
- {id:'e4',name:'اسلام',role:'مصور',salary:200,totalOrders:0},
- {id:'e5',name:'خالد',role:'مصور',salary:200,totalOrders:0},
- {id:'e6',name:'ياسر',role:'كرين',salary:200,totalOrders:0}
-];
+        if (saved) {
+            currentUser = JSON.parse(saved);
 
-let halls = [
- {id:'h1',name:'القاعة المغلقة'},
- {id:'h2',name:'القاعة المفتوحة'},
- {id:'h3',name:'الكافيه'}
-];
+            if (currentUser?.role === 'admin') {
+                renderAdminDashboard();
+            } else if (currentUser?.role === 'employee') {
+                renderEmployeeDashboard();
+            } else {
+                showLogin();
+            }
+        } else {
+            showLogin();
+        }
 
-// ================== أدوات ==================
-function showMsg(msg){
- let t=document.getElementById("toast");
- t.innerText=msg;
- t.classList.add("show");
- setTimeout(()=>t.classList.remove("show"),3000);
+    } catch (e) {
+        console.error("INIT ERROR:", e);
+        sessionStorage.removeItem('drmedia_user');
+        showLogin();
+    }
 }
 
-function saveAll(){
- localStorage.setItem("bookings",JSON.stringify(bookings));
- localStorage.setItem("employees",JSON.stringify(employees));
+// ======================== SMART DISTRIBUTION ========================
+function smartDistributeMonthly() {
+
+    let days = {};
+
+    bookings.forEach(b => {
+        if (!days[b.date]) days[b.date] = [];
+        days[b.date].push(b);
+    });
+
+    Object.keys(days).forEach(day => {
+
+        let usedToday = new Set();
+
+        let directors = employees.filter(e => e.role === 'مخرج')
+            .sort((a,b)=>a.totalOrders - b.totalOrders);
+
+        let photographers = employees.filter(e => e.role === 'مصور')
+            .sort((a,b)=>a.totalOrders - b.totalOrders);
+
+        let cranes = employees.filter(e => e.role === 'كرين')
+            .sort((a,b)=>a.totalOrders - b.totalOrders);
+
+        days[day].forEach(b => {
+
+            let assigned = [];
+
+            function pick(list, count) {
+                let result = [];
+                for (let i = 0; i < list.length; i++) {
+                    if (!usedToday.has(list[i].id)) {
+                        result.push(list[i]);
+                        usedToday.add(list[i].id);
+                    }
+                    if (result.length === count) break;
+                }
+                return result;
+            }
+
+            if (b.hallId === 'h1' || b.hallId === 'h2') {
+                assigned.push(...pick(directors,1).map(e=>e.id));
+                assigned.push(...pick(photographers,2).map(e=>e.id));
+                assigned.push(...pick(cranes,1).map(e=>e.id));
+            }
+
+            if (b.hallId === 'h3') {
+                assigned.push(...pick(photographers,1).map(e=>e.id));
+            }
+
+            b.assignedEmployees = assigned;
+        });
+    });
+
+    updateEmployeeOrders();
+    saveAllData();
+    renderBookings();
+
+    showMsg('🔥 تم التوزيع الشهري بنجاح');
 }
 
-// ================== Login ==================
-function showLogin(){
- document.getElementById("app").innerHTML=`
- <div class="min-h-screen flex items-center justify-center">
-   <div class="bg-white p-6 rounded-xl w-full max-w-sm text-center shadow">
-     <h2 class="text-xl mb-4">🔐 تسجيل الدخول</h2>
-     <input id="user" placeholder="اسم المستخدم" class="border p-2 w-full mb-2">
-     <input id="pass" type="password" placeholder="كلمة المرور" class="border p-2 w-full mb-3">
-     <button onclick="doLogin()" class="bg-green-600 text-white w-full p-2 rounded">دخول</button>
-   </div>
- </div>`;
+// ======================== FIX EMPLOYEES TABLE ========================
+function renderEmployees() {
+    updateEmployeeOrders();
+    document.getElementById('employees').innerHTML = `
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow">
+            <h2 class="text-xl font-bold mb-4">👥 الموظفين</h2>
+            <div class="overflow-x-auto">
+            <table class="w-full">
+            <thead>
+            <tr>
+            <th>الاسم</th>
+            <th>الدور</th>
+            <th>الهاتف</th>
+            <th>الأوردرات</th>
+            <th>المستحق</th>
+            </tr>
+            </thead>
+            <tbody>
+            ${employees.map(e => `
+            <tr>
+            <td class="p-2">${e.name}</td>
+            <td class="p-2">${e.role}</td>
+            <td class="p-2">${e.phone}</td>
+            <td class="p-2">${e.totalOrders || 0}</td>
+            <td class="p-2 font-bold">
+            ${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م
+            </td>
+            </tr>
+            `).join('')}
+            </tbody>
+            </table>
+            </div>
+        </div>`;
 }
 
-function doLogin(){
- let u=document.getElementById("user").value.trim();
- let p=document.getElementById("pass").value;
-
- let user=users.find(x=>x.username===u && x.password===p);
-
- if(user){
-   currentUser=user;
-   sessionStorage.setItem("drmedia_user",JSON.stringify(user));
-   renderDashboard();
-   showMsg("مرحباً "+user.name);
- }else{
-   showMsg("❌ بيانات غلط");
- }
+// ======================== FIX ATTENDANCE BUG ========================
+/* استبدل السطر الغلط ده:
+'|| '<tr><td colspan="3" class="text-center">لا توجد سجلات</td>`}
+*/
+ 
+// وخليه:
+function safeEmptyRow(){
+ return '<tr><td colspan="3" class="text-center">لا توجد سجلات</td></tr>';
 }
 
-function logout(){
- sessionStorage.removeItem("drmedia_user");
- currentUser=null;
- showLogin();
-}
+// ======================== ADD BUTTON ========================
+// داخل renderBookings ضيف الزر ده جنب الأزرار:
+//
+// <button onclick="smartDistributeMonthly()" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">
+// 🔥 توزيع الشهر
+// </button>
 
-// ================== Dashboard ==================
-function renderDashboard(){
- document.getElementById("app").innerHTML=`
- <div class="p-4">
-
-   <div class="flex justify-between mb-4">
-     <h2 class="text-xl font-bold">${currentUser.name}</h2>
-     <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded">خروج</button>
-   </div>
-
-   <div class="bg-white p-4 rounded-xl mb-4 shadow">
-     <div class="flex gap-2 mb-2">
-       <button onclick="addBooking()" class="bg-green-600 text-white px-3 py-1 rounded">+ حجز</button>
-       <button onclick="smartDistributeMonthly()" class="bg-blue-600 text-white px-3 py-1 rounded">🔥 توزيع الشهر</button>
-     </div>
-
-     <table class="w-full text-sm">
-       <tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>الموظفين</th></tr>
-       ${bookings.map(b=>`
-       <tr>
-         <td>${b.clientName}</td>
-         <td>${b.date}</td>
-         <td>${b.hallName}</td>
-         <td>${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id==id)?.name).join(', ')}</td>
-       </tr>
-       `).join('')}
-     </table>
-   </div>
-
-   <div class="bg-white p-4 rounded-xl shadow">
-     <h3 class="mb-2 font-bold">👥 الموظفين</h3>
-     ${employees.map(e=>`
-       <div>${e.name} | ${e.totalOrders||0} أوردر | ${(e.totalOrders||0)*e.salary} ج</div>
-     `).join('')}
-   </div>
-
- </div>`;
-}
-
-// ================== إضافة حجز ==================
-function addBooking(){
- let name=prompt("اسم العميل");
- let hall=prompt("h1 / h2 / h3");
- let date=prompt("التاريخ YYYY-MM-DD");
-
- let hallObj=halls.find(h=>h.id==hall);
-
- if(!name||!hallObj||!date) return;
-
- bookings.push({
-   id:'b'+Date.now(),
-   clientName:name,
-   hallId:hall,
-   hallName:hallObj.name,
-   date:date,
-   assignedEmployees:[]
- });
-
- saveAll();
- renderDashboard();
-}
-
-// ================== تحديث أوردرات ==================
-function updateEmployeeOrders(){
- employees.forEach(e=>e.totalOrders=0);
-
- bookings.forEach(b=>{
-   (b.assignedEmployees||[]).forEach(id=>{
-     let emp=employees.find(e=>e.id==id);
-     if(emp) emp.totalOrders++;
-   });
- });
-}
-
-// ================== التوزيع الذكي الشهري ==================
-function smartDistributeMonthly(){
-
- let days={};
-
- bookings.forEach(b=>{
-   if(!days[b.date]) days[b.date]=[];
-   days[b.date].push(b);
- });
-
- Object.keys(days).forEach(day=>{
-
-   let used=new Set();
-
-   let directors=employees.filter(e=>e.role==='مخرج').sort((a,b)=>a.totalOrders-b.totalOrders);
-   let photographers=employees.filter(e=>e.role==='مصور').sort((a,b)=>a.totalOrders-b.totalOrders);
-   let cranes=employees.filter(e=>e.role==='كرين').sort((a,b)=>a.totalOrders-b.totalOrders);
-
-   days[day].forEach(b=>{
-
-     let assigned=[];
-
-     function pick(arr,count){
-       let res=[];
-       for(let i=0;i<arr.length;i++){
-         if(!used.has(arr[i].id)){
-           res.push(arr[i]);
-           used.add(arr[i].id);
-         }
-         if(res.length===count) break;
-       }
-       return res;
-     }
-
-     if(b.hallId==='h1'||b.hallId==='h2'){
-       assigned.push(...pick(directors,1).map(e=>e.id));
-       assigned.push(...pick(photographers,2).map(e=>e.id));
-       assigned.push(...pick(cranes,1).map(e=>e.id));
-     }
-
-     if(b.hallId==='h3'){
-       assigned.push(...pick(photographers,1).map(e=>e.id));
-     }
-
-     b.assignedEmployees=assigned;
-
-   });
-
- });
-
- updateEmployeeOrders();
- saveAll();
- renderDashboard();
- showMsg("🔥 تم توزيع الشهر بنجاح");
-}
-
-// ================== INIT ==================
-function init(){
- try{
-   let saved=sessionStorage.getItem("drmedia_user");
-
-   if(saved){
-     currentUser=JSON.parse(saved);
-     renderDashboard();
-   }else{
-     showLogin();
-   }
-
- }catch(e){
-   console.error(e);
-   sessionStorage.removeItem("drmedia_user");
-   showLogin();
- }
-}
-
-init();
+// ======================== START ========================
+initApp();
 
 </script>
-</body>
-</html>
