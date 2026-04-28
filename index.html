@@ -1,201 +1,220 @@
-<!-- نفس كودك بالكامل زي ما هو -->
-<!-- غير بس <script> بالكامل وحط ده 👇 -->
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drmedia Pro Plus V3 FIXED</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+body { font-family: Arial; }
+.toast{
+position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+background:#111;color:#fff;padding:10px 20px;border-radius:20px;display:none;
+}
+.toast.show{display:block;}
+.hidden{display:none;}
+.tab-btn{padding:8px 12px;cursor:pointer}
+.tab-btn.active{background:#16a34a;color:#fff;border-radius:10px}
+</style>
+</head>
+
+<body>
+
+<div id="toast" class="toast"></div>
+<div id="app"></div>
 
 <script>
+// ================= DATA =================
+let users = [
+{ username:"ahmed", password:"1994", role:"admin", name:"مدير النظام", employeeId:null },
+{ username:"ahmed_emp", password:"emp123", role:"employee", name:"أحمد علي", employeeId:"emp1" }
+];
 
-// ======================== INIT SAFE ========================
-function initApp() {
-    try {
-        loadAllData();
+let employees = [];
+let bookings = [];
+let halls = [];
+let clients = [];
 
-        const saved = sessionStorage.getItem('drmedia_user');
+let currentUser = null;
+let currentTab = "dashboard";
 
-        if (saved) {
-            currentUser = JSON.parse(saved);
-
-            if (currentUser?.role === 'admin') {
-                renderAdminDashboard();
-            } else if (currentUser?.role === 'employee') {
-                renderEmployeeDashboard();
-            } else {
-                showLogin();
-            }
-        } else {
-            showLogin();
-        }
-
-    } catch (e) {
-        console.error("INIT ERROR:", e);
-        sessionStorage.removeItem('drmedia_user');
-        showLogin();
-    }
+// ================= INIT =================
+function showMsg(msg){
+let t=document.getElementById("toast");
+t.innerText=msg;
+t.classList.add("show");
+setTimeout(()=>t.classList.remove("show"),3000);
 }
 
-// ======================== SMART MONTH DISTRIBUTION ========================
-function smartDistributeMonthly() {
-
-    let days = {};
-
-    bookings.forEach(b => {
-        if (!days[b.date]) days[b.date] = [];
-        days[b.date].push(b);
-    });
-
-    Object.keys(days).forEach(day => {
-
-        let usedToday = new Set();
-
-        let directors = employees.filter(e => e.role === 'مخرج')
-            .sort((a,b)=>a.totalOrders - b.totalOrders);
-
-        let photographers = employees.filter(e => e.role === 'مصور')
-            .sort((a,b)=>a.totalOrders - b.totalOrders);
-
-        let cranes = employees.filter(e => e.role === 'كرين')
-            .sort((a,b)=>a.totalOrders - b.totalOrders);
-
-        days[day].forEach(b => {
-
-            let assigned = [];
-
-            function pick(list, count) {
-                let result = [];
-                for (let i = 0; i < list.length; i++) {
-                    if (!usedToday.has(list[i].id)) {
-                        result.push(list[i]);
-                        usedToday.add(list[i].id);
-                    }
-                    if (result.length === count) break;
-                }
-                return result;
-            }
-
-            if (b.hallId === 'h1' || b.hallId === 'h2') {
-                assigned.push(...pick(directors,1).map(e=>e.id));
-                assigned.push(...pick(photographers,2).map(e=>e.id));
-                assigned.push(...pick(cranes,1).map(e=>e.id));
-            }
-
-            if (b.hallId === 'h3') {
-                assigned.push(...pick(photographers,1).map(e=>e.id));
-            }
-
-            b.assignedEmployees = assigned;
-        });
-    });
-
-    updateEmployeeOrders();
-    saveAllData();
-    renderBookings();
-
-    showMsg('🔥 تم توزيع الشهر بنجاح');
+function save(){
+localStorage.setItem("drmedia",JSON.stringify({employees,bookings,halls,clients}));
 }
 
-// ======================== PAYROLL SYSTEM ========================
-function calculatePayroll() {
-    let result = [];
-
-    employees.forEach(e => {
-        let total = (e.totalOrders || 0) * (e.salaryPerOrder || 200);
-
-        result.push({
-            name: e.name,
-            orders: e.totalOrders || 0,
-            total: total
-        });
-    });
-
-    return result;
+function load(){
+let d=JSON.parse(localStorage.getItem("drmedia")||"{}");
+employees=d.employees||[
+{id:"emp1",name:"أحمد علي",role:"مخرج",salary:300,orders:0},
+{id:"emp2",name:"محمد",role:"مصور",salary:200,orders:0}
+];
+bookings=d.bookings||[];
+halls=d.halls||[
+{id:"h1",name:"المغلقة"},
+{id:"h2",name:"الأوبن"},
+{id:"h3",name:"الكافيه"}
+];
+clients=d.clients||[];
 }
 
-function renderPayroll() {
-    let data = calculatePayroll();
+load();
 
-    document.getElementById('payroll').innerHTML = `
-    <div class="bg-white p-5 rounded-2xl shadow">
-        <h2 class="text-xl font-bold mb-4">💰 المرتبات</h2>
-
-        <div class="grid grid-cols-3 gap-2 mb-4">
-            <button onclick="payDay(10)" class="bg-blue-600 text-white p-2 rounded">دفع يوم 10</button>
-            <button onclick="payDay(20)" class="bg-green-600 text-white p-2 rounded">دفع يوم 20</button>
-            <button onclick="payDay(30)" class="bg-purple-600 text-white p-2 rounded">دفع يوم 30</button>
-        </div>
-
-        <table class="w-full text-sm">
-            <tr>
-                <th>الاسم</th>
-                <th>الأوردرات</th>
-                <th>المستحق</th>
-            </tr>
-
-            ${data.map(e => `
-            <tr>
-                <td class="p-2">${e.name}</td>
-                <td class="p-2">${e.orders}</td>
-                <td class="p-2 font-bold">${e.total} ج</td>
-            </tr>
-            `).join('')}
-        </table>
-    </div>`;
+// ================= LOGIN FIX =================
+function showLogin(){
+document.getElementById("app").innerHTML=`
+<div style="text-align:center;margin-top:100px">
+<h2>Drmedia Login</h2>
+<input id="u" placeholder="username"><br><br>
+<input id="p" type="password" placeholder="password"><br><br>
+<button onclick="login()">Login</button>
+</div>`;
 }
 
-function payDay(day) {
-    showMsg(`💸 تم تسجيل دفعة يوم ${day}`);
+function login(){
+let u=document.getElementById("u").value.trim();
+let p=document.getElementById("p").value;
+
+let user=users.find(x=>x.username===u && x.password===p);
+
+if(!user){
+showMsg("خطأ في البيانات");
+return;
 }
 
-// ======================== DASHBOARD STATS ========================
-function renderDashboardStats() {
+currentUser=user;
+sessionStorage.setItem("u",JSON.stringify(user));
 
-    let totalBookings = bookings.length;
-    let totalEmployees = employees.length;
-    let totalRevenue = bookings.reduce((sum, b) => sum + (b.price || 0), 0);
+if(user.role==="admin") renderAdmin();
+else renderEmployee();
 
-    document.getElementById('dashboard').innerHTML = `
-    <div class="grid grid-cols-3 gap-3">
-        <div class="bg-green-100 p-4 rounded">📅 ${totalBookings} حجوزات</div>
-        <div class="bg-blue-100 p-4 rounded">👥 ${totalEmployees} موظف</div>
-        <div class="bg-purple-100 p-4 rounded">💰 ${totalRevenue} ج</div>
-    </div>`;
+showMsg("تم الدخول");
 }
 
-// ======================== FIX EMPLOYEES TABLE ========================
-function renderEmployees() {
-    updateEmployeeOrders();
-    document.getElementById('employees').innerHTML = `
-        <div class="bg-white p-5 rounded-2xl shadow">
-            <h2 class="text-xl font-bold mb-4">👥 الموظفين</h2>
-            <table class="w-full">
-            <thead>
-            <tr>
-            <th>الاسم</th>
-            <th>الدور</th>
-            <th>الهاتف</th>
-            <th>الأوردرات</th>
-            <th>المستحق</th>
-            </tr>
-            </thead>
-            <tbody>
-            ${employees.map(e => `
-            <tr>
-            <td class="p-2">${e.name}</td>
-            <td class="p-2">${e.role}</td>
-            <td class="p-2">${e.phone}</td>
-            <td class="p-2">${e.totalOrders || 0}</td>
-            <td class="p-2 font-bold">
-            ${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج
-            </td>
-            </tr>
-            `).join('')}
-            </tbody>
-            </table>
-        </div>`;
+function logout(){
+sessionStorage.removeItem("u");
+location.reload();
 }
 
-// ======================== ADD BUTTON ========================
-// داخل renderBookings:
-// <button onclick="smartDistributeMonthly()" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">🔥 توزيع الشهر</button>
+// ================= ADMIN =================
+function renderAdmin(){
+document.getElementById("app").innerHTML=`
+<div>
+<header style="display:flex;justify-content:space-between;padding:10px;background:#eee">
+<div>Drmedia V3 FIX</div>
+<button onclick="logout()">خروج</button>
+</header>
 
-// ======================== START ========================
-initApp();
+<div style="display:flex;gap:10px;padding:10px">
+<button class="tab-btn active" onclick="tab('dashboard')">الرئيسية</button>
+<button class="tab-btn" onclick="tab('bookings')">الحجوزات</button>
+<button class="tab-btn" onclick="tab('employees')">الموظفين</button>
+</div>
+
+<div id="content" style="padding:10px"></div>
+</div>`;
+
+tab("dashboard");
+}
+
+function tab(t){
+currentTab=t;
+
+document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+event.target.classList.add("active");
+
+if(t==="dashboard") dashboard();
+if(t==="bookings") renderBookings();
+if(t==="employees") renderEmployees();
+}
+
+function dashboard(){
+document.getElementById("content").innerHTML=`
+<h3>Dashboard</h3>
+<p>Bookings: ${bookings.length}</p>
+<p>Employees: ${employees.length}</p>
+`;
+}
+
+// ================= BOOKINGS FIX =================
+function renderBookings(){
+document.getElementById("content").innerHTML=`
+<h3>الحجوزات</h3>
+<button onclick="addBooking()">+ إضافة</button>
+
+<table border="1" width="100%">
+<tr><th>العميل</th><th>القاعة</th><th>السعر</th></tr>
+
+${bookings.map(b=>`
+<tr>
+<td>${b.client}</td>
+<td>${b.hall}</td>
+<td>${b.price}</td>
+</tr>
+`).join("")}
+
+</table>
+`;
+}
+
+function addBooking(){
+let c=prompt("اسم العميل");
+let h=prompt("القاعه");
+let p=prompt("السعر");
+
+if(!c||!h||!p)return;
+
+bookings.push({
+id:Date.now(),
+client:c,
+hall:h,
+price:p
+});
+
+save();
+renderBookings();
+showMsg("تمت الإضافة");
+}
+
+// ================= EMPLOYEES FIX =================
+function renderEmployees(){
+document.getElementById("content").innerHTML=`
+<h3>الموظفين</h3>
+
+<table border="1" width="100%">
+<tr><th>الاسم</th><th>الدور</th><th>الأوردرات</th></tr>
+
+${employees.map(e=>`
+<tr>
+<td>${e.name}</td>
+<td>${e.role}</td>
+<td>${e.orders}</td>
+</tr>
+`).join("")}
+
+</table>
+`;
+}
+
+// ================= BOOT =================
+let saved=sessionStorage.getItem("u");
+if(saved){
+currentUser=JSON.parse(saved);
+renderAdmin();
+}else{
+showLogin();
+}
 
 </script>
+</body>
+</html>
