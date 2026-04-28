@@ -290,10 +290,16 @@
 
     <script>
         // Firebase Config
-  const firebaseConfig = { apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ", authDomain: "drmedia-vpms.firebaseapp.com", databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com", projectId: "drmedia-vpms", storageBucket: "drmedia-vpms.firebasestorage.app", messagingSenderId: "681162512380", appId: "1:681162512380:web:ab2482f3234d8b59fc4479" };
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.database();
-        
+const firebaseConfig = {
+  apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
+  authDomain: "drmedia-vpms.firebaseapp.com",
+  databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
+  projectId: "drmedia-vpms",
+  storageBucket: "drmedia-vpms.firebasestorage.app",
+  messagingSenderId: "681162512380",
+  appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
+  measurementId: "G-9KHN6N33FX"
+};        
         let bookings=[], employees=[], users=[], halls=[], notifications=[], swapRequests=[], payrollArchive=[], employeeLoans={}, equipmentInventory={};
         let currentUser=null, currentTab='dashboardTab', companyName='Drmedia Pro', companyLogo='📷', whatsappNumber='';
         let themeSettings = { primaryColor: '#22c55e', darkMode: false };
