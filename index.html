@@ -3,143 +3,175 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drmedia Pro V3+</title>
+<title>Drmedia Pro Plus V2</title>
+
 <script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body { font-family: 'Segoe UI'; }
+.toast { position: fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#111;color:#fff;padding:10px 20px;border-radius:20px; display:none;}
+.toast.show{display:block}
+</style>
 </head>
 
 <body class="bg-gray-100">
+
+<div id="toast" class="toast"></div>
 <div id="app"></div>
 
 <script>
 
-// ================= USERS =================
+// ================== بيانات ==================
 let users = [
- {username:"admin",password:"1234",role:"admin"},
- {username:"emp",password:"1234",role:"employee"}
+ { username:'ahmed', password:'1994', role:'admin', name:'مدير النظام' },
+ { username:'emp', password:'1234', role:'employee', name:'موظف' }
 ];
 
 let currentUser = null;
 
-// ================= DATA =================
 let bookings = JSON.parse(localStorage.getItem('bookings')) || [];
 let employees = JSON.parse(localStorage.getItem('employees')) || [
- {id:'e1',name:'زكاوة',role:'مخرج',salary:250,total:0},
- {id:'e2',name:'الصاوي',role:'مخرج',salary:250,total:0},
- {id:'e3',name:'محمد',role:'مصور',salary:200,total:0},
- {id:'e4',name:'اسلام',role:'مصور',salary:200,total:0},
- {id:'e5',name:'خالد',role:'مصور',salary:200,total:0},
- {id:'e6',name:'ياسر',role:'كرين',salary:200,total:0}
+ {id:'e1',name:'زكاوة',role:'مخرج',salary:250,totalOrders:0},
+ {id:'e2',name:'الصاوي',role:'مخرج',salary:250,totalOrders:0},
+ {id:'e3',name:'محمد',role:'مصور',salary:200,totalOrders:0},
+ {id:'e4',name:'اسلام',role:'مصور',salary:200,totalOrders:0},
+ {id:'e5',name:'خالد',role:'مصور',salary:200,totalOrders:0},
+ {id:'e6',name:'ياسر',role:'كرين',salary:200,totalOrders:0}
 ];
 
 let halls = [
- {id:'h1',name:'المغلقة'},
- {id:'h2',name:'الأوبن'},
+ {id:'h1',name:'القاعة المغلقة'},
+ {id:'h2',name:'القاعة المفتوحة'},
  {id:'h3',name:'الكافيه'}
 ];
 
-// ================= SAVE =================
-function save(){
- localStorage.setItem('bookings',JSON.stringify(bookings));
- localStorage.setItem('employees',JSON.stringify(employees));
+// ================== أدوات ==================
+function showMsg(msg){
+ let t=document.getElementById("toast");
+ t.innerText=msg;
+ t.classList.add("show");
+ setTimeout(()=>t.classList.remove("show"),3000);
 }
 
-// ================= LOGIN =================
+function saveAll(){
+ localStorage.setItem("bookings",JSON.stringify(bookings));
+ localStorage.setItem("employees",JSON.stringify(employees));
+}
+
+// ================== Login ==================
 function showLogin(){
- document.getElementById("app").innerHTML = `
+ document.getElementById("app").innerHTML=`
  <div class="min-h-screen flex items-center justify-center">
-   <div class="bg-white p-6 rounded-xl w-full max-w-sm text-center">
+   <div class="bg-white p-6 rounded-xl w-full max-w-sm text-center shadow">
      <h2 class="text-xl mb-4">🔐 تسجيل الدخول</h2>
-     <input id="user" placeholder="Username" class="border p-2 w-full mb-2">
-     <input id="pass" type="password" placeholder="Password" class="border p-2 w-full mb-3">
-     <button onclick="login()" class="bg-green-600 text-white w-full p-2 rounded">دخول</button>
+     <input id="user" placeholder="اسم المستخدم" class="border p-2 w-full mb-2">
+     <input id="pass" type="password" placeholder="كلمة المرور" class="border p-2 w-full mb-3">
+     <button onclick="doLogin()" class="bg-green-600 text-white w-full p-2 rounded">دخول</button>
    </div>
- </div>
- `;
+ </div>`;
 }
 
-function login(){
- let u = document.getElementById("user").value.trim();
- let p = document.getElementById("pass").value;
+function doLogin(){
+ let u=document.getElementById("user").value.trim();
+ let p=document.getElementById("pass").value;
 
- let user = users.find(x=>x.username===u && x.password===p);
+ let user=users.find(x=>x.username===u && x.password===p);
 
  if(user){
-   currentUser = user;
-   sessionStorage.setItem("user", JSON.stringify(user));
-   renderApp();
+   currentUser=user;
+   sessionStorage.setItem("drmedia_user",JSON.stringify(user));
+   renderDashboard();
+   showMsg("مرحباً "+user.name);
  }else{
-   alert("❌ بيانات غلط");
+   showMsg("❌ بيانات غلط");
  }
 }
 
 function logout(){
- sessionStorage.removeItem("user");
- currentUser = null;
+ sessionStorage.removeItem("drmedia_user");
+ currentUser=null;
  showLogin();
 }
 
-// ================= UI =================
-function renderApp(){
- document.getElementById("app").innerHTML = `
+// ================== Dashboard ==================
+function renderDashboard(){
+ document.getElementById("app").innerHTML=`
  <div class="p-4">
 
    <div class="flex justify-between mb-4">
-     <h2 class="text-xl">👋 ${currentUser.username}</h2>
+     <h2 class="text-xl font-bold">${currentUser.name}</h2>
      <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded">خروج</button>
    </div>
 
-   <div class="bg-white p-4 rounded-xl mb-4">
-     <button onclick="showAdd()" class="bg-green-600 text-white px-3 py-1 rounded">+ حجز</button>
-     <button onclick="distributeMonth()" class="bg-blue-600 text-white px-3 py-1 rounded">🔥 توزيع شهر</button>
+   <div class="bg-white p-4 rounded-xl mb-4 shadow">
+     <div class="flex gap-2 mb-2">
+       <button onclick="addBooking()" class="bg-green-600 text-white px-3 py-1 rounded">+ حجز</button>
+       <button onclick="smartDistributeMonthly()" class="bg-blue-600 text-white px-3 py-1 rounded">🔥 توزيع الشهر</button>
+     </div>
 
-     <table class="w-full mt-3 text-sm">
-       <tr><th>عميل</th><th>تاريخ</th><th>قاعة</th><th>توزيع</th></tr>
+     <table class="w-full text-sm">
+       <tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>الموظفين</th></tr>
        ${bookings.map(b=>`
        <tr>
-         <td>${b.client}</td>
+         <td>${b.clientName}</td>
          <td>${b.date}</td>
-         <td>${b.hall}</td>
-         <td>${b.assigned.map(id=>employees.find(e=>e.id==id)?.name).join(', ')}</td>
+         <td>${b.hallName}</td>
+         <td>${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id==id)?.name).join(', ')}</td>
        </tr>
        `).join('')}
      </table>
    </div>
 
- </div>
- `;
+   <div class="bg-white p-4 rounded-xl shadow">
+     <h3 class="mb-2 font-bold">👥 الموظفين</h3>
+     ${employees.map(e=>`
+       <div>${e.name} | ${e.totalOrders||0} أوردر | ${(e.totalOrders||0)*e.salary} ج</div>
+     `).join('')}
+   </div>
+
+ </div>`;
 }
 
-// ================= ADD =================
-function showAdd(){
- let name = prompt("اسم العميل");
- let hall = prompt("h1/h2/h3");
- let date = prompt("التاريخ YYYY-MM-DD");
+// ================== إضافة حجز ==================
+function addBooking(){
+ let name=prompt("اسم العميل");
+ let hall=prompt("h1 / h2 / h3");
+ let date=prompt("التاريخ YYYY-MM-DD");
 
- let hallName = halls.find(h=>h.id==hall)?.name;
+ let hallObj=halls.find(h=>h.id==hall);
 
- if(!name || !hallName || !date) return;
+ if(!name||!hallObj||!date) return;
 
  bookings.push({
-   id:Date.now(),
-   client:name,
-   hall:hallName,
+   id:'b'+Date.now(),
+   clientName:name,
    hallId:hall,
+   hallName:hallObj.name,
    date:date,
-   assigned:[]
+   assignedEmployees:[]
  });
 
- save();
- renderApp();
+ saveAll();
+ renderDashboard();
 }
 
-// ================= SMART MONTH DISTRIBUTION =================
-function distributeMonth(){
+// ================== تحديث أوردرات ==================
+function updateEmployeeOrders(){
+ employees.forEach(e=>e.totalOrders=0);
 
- // reset totals
- employees.forEach(e=>e.total=0);
+ bookings.forEach(b=>{
+   (b.assignedEmployees||[]).forEach(id=>{
+     let emp=employees.find(e=>e.id==id);
+     if(emp) emp.totalOrders++;
+   });
+ });
+}
 
- // group by day
- let days = {};
+// ================== التوزيع الذكي الشهري ==================
+function smartDistributeMonthly(){
+
+ let days={};
+
  bookings.forEach(b=>{
    if(!days[b.date]) days[b.date]=[];
    days[b.date].push(b);
@@ -147,62 +179,65 @@ function distributeMonth(){
 
  Object.keys(days).forEach(day=>{
 
-   let usedToday = new Set();
+   let used=new Set();
 
-   let directors = employees.filter(e=>e.role=='مخرج').sort((a,b)=>a.total-b.total);
-   let photographers = employees.filter(e=>e.role=='مصور').sort((a,b)=>a.total-b.total);
-   let cranes = employees.filter(e=>e.role=='كرين').sort((a,b)=>a.total-b.total);
+   let directors=employees.filter(e=>e.role==='مخرج').sort((a,b)=>a.totalOrders-b.totalOrders);
+   let photographers=employees.filter(e=>e.role==='مصور').sort((a,b)=>a.totalOrders-b.totalOrders);
+   let cranes=employees.filter(e=>e.role==='كرين').sort((a,b)=>a.totalOrders-b.totalOrders);
 
    days[day].forEach(b=>{
 
      let assigned=[];
 
      function pick(arr,count){
-       let picked=[];
+       let res=[];
        for(let i=0;i<arr.length;i++){
-         if(!usedToday.has(arr[i].id)){
-           picked.push(arr[i]);
-           usedToday.add(arr[i].id);
+         if(!used.has(arr[i].id)){
+           res.push(arr[i]);
+           used.add(arr[i].id);
          }
-         if(picked.length===count) break;
+         if(res.length===count) break;
        }
-       return picked;
+       return res;
      }
 
-     if(b.hallId=='h1'||b.hallId=='h2'){
+     if(b.hallId==='h1'||b.hallId==='h2'){
        assigned.push(...pick(directors,1).map(e=>e.id));
        assigned.push(...pick(photographers,2).map(e=>e.id));
        assigned.push(...pick(cranes,1).map(e=>e.id));
      }
 
-     if(b.hallId=='h3'){
+     if(b.hallId==='h3'){
        assigned.push(...pick(photographers,1).map(e=>e.id));
      }
 
-     b.assigned = assigned;
-
-     assigned.forEach(id=>{
-       let emp = employees.find(e=>e.id==id);
-       if(emp) emp.total++;
-     });
+     b.assignedEmployees=assigned;
 
    });
 
  });
 
- save();
- renderApp();
- alert("🔥 تم توزيع الشهر بالكامل بنجاح");
+ updateEmployeeOrders();
+ saveAll();
+ renderDashboard();
+ showMsg("🔥 تم توزيع الشهر بنجاح");
 }
 
-// ================= INIT =================
+// ================== INIT ==================
 function init(){
- let savedUser = sessionStorage.getItem("user");
+ try{
+   let saved=sessionStorage.getItem("drmedia_user");
 
- if(savedUser){
-   currentUser = JSON.parse(savedUser);
-   renderApp();
- }else{
+   if(saved){
+     currentUser=JSON.parse(saved);
+     renderDashboard();
+   }else{
+     showLogin();
+   }
+
+ }catch(e){
+   console.error(e);
+   sessionStorage.removeItem("drmedia_user");
    showLogin();
  }
 }
