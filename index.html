@@ -8,8 +8,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; transition: background 0.3s, color 0.3s; }
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 20px; border-radius: 40px; z-index: 10000; display: none; white-space: nowrap; }
         .toast.show { display: block; animation: fadeInUp 0.3s ease; }
         @keyframes fadeInUp { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
@@ -25,10 +26,12 @@
         .status-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
         .status-pending { background: #fef3c7; color: #92400e; }
         .status-completed { background: #d1fae5; color: #065f46; }
-        .status-cancelled { background: #fee2e2; color: #991b1b; }
         .voice-btn { position: fixed; bottom: 20px; right: 20px; background: #6366f1; width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; z-index: 200; }
         .voice-btn.listening { background: #ef4444; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .dark { background-color: #0f172a; color: #f8fafc; }
+        .dark .bg-white, .dark .bg-gray-100 { background-color: #1e293b !important; color: #f1f5f9; }
+        .dark .border { border-color: #334155; }
     </style>
 </head>
 <body>
@@ -58,10 +61,18 @@
     let currentUser = null;
     let currentTab = 'dashboard';
     let pendingExcelData = [];
+    let pendingPdfBookings = [];
     let charts = {};
     let emergencyMode = false;
     let voiceRecognition = null;
     let isListening = false;
+    let browserNotifications = false;
+
+    // إعدادات الشركة والمظهر
+    let companyName = 'Drmedia Pro Plus';
+    let companyLogo = '📷';
+    let whatsappNumber = '201000000000';  // رقم واتساب الشركة الافتراضي (بدون +)
+    let themeSettings = { darkMode: false, primaryColor: '#16a34a' };
 
     // ----------------------------- دوال مساعدة -----------------------------
     function showMsg(msg, type = 'success') {
@@ -82,9 +93,11 @@
         document.body.style.overflow = 'hidden';
     }
 
+    // حفظ البيانات مع إعدادات الشركة
     function saveAllData() {
-        const data = { bookings, employees, halls, clients, equipmentInventory, swapRequests, payrollArchive, employeeLoans, whatsappLogs, users };
+        const data = { bookings, employees, halls, clients, equipmentInventory, swapRequests, payrollArchive, employeeLoans, whatsappLogs, users, companyName, companyLogo, whatsappNumber, themeSettings };
         localStorage.setItem('drmedia_data', JSON.stringify(data));
+        applyTheme();
     }
 
     function loadAllData() {
@@ -101,8 +114,12 @@
             employeeLoans = data.employeeLoans || {};
             whatsappLogs = data.whatsappLogs || [];
             users = data.users || users;
+            companyName = data.companyName || 'Drmedia Pro Plus';
+            companyLogo = data.companyLogo || '📷';
+            whatsappNumber = data.whatsappNumber || '201000000000';
+            themeSettings = data.themeSettings || { darkMode: false, primaryColor: '#16a34a' };
         } else {
-            // بيانات أولية كاملة
+            // بيانات أولية
             halls = [
                 { id: 'h1', name: 'القاعة المغلقة', type: 'closed', active: true },
                 { id: 'h2', name: 'القاعة المفتوحة', type: 'open', active: true },
@@ -126,6 +143,7 @@
             saveAllData();
         }
         updateEmployeeOrders();
+        applyTheme();
     }
 
     function updateEmployeeOrders() {
@@ -135,7 +153,82 @@
         });
     }
 
-    // ----------------------------- التوزيع الذكي المتقدم -----------------------------
+    // ----------------------------- إشعارات المتصفح -----------------------------
+    function requestNotificationPermission() {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'granted') browserNotifications = true;
+        else if (Notification.permission !== 'denied') {
+            Notification.requestPermission().then(perm => {
+                browserNotifications = (perm === 'granted');
+                if (browserNotifications) showMsg('✅ تم تفعيل الإشعارات');
+            });
+        }
+    }
+
+    function sendBrowserNotification(title, body) {
+        if (browserNotifications && Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '🔔' });
+        }
+    }
+
+    // ----------------------------- إرسال واتساب حقيقي + تسجيل -----------------------------
+    function sendWhatsApp(phone, message) {
+        if (!phone) return;
+        // تنظيف الرقم (إزالة كل ما ليس رقم أو +)
+        let clean = phone.replace(/[^0-9+]/g, '');
+        if (clean.startsWith('0')) clean = '2' + clean; // لو بدأ بصفر حوله مصري
+        if (!clean.startsWith('+')) clean = '+' + clean;
+        const url = `https://wa.me/${clean}?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
+        // تسجيل الرسالة في السجل
+        whatsappLogs.push({
+            id: Date.now(),
+            to: phone,
+            message: message.substring(0, 200),
+            date: new Date().toLocaleString('ar-EG'),
+            status: 'تم الإرسال'
+        });
+        saveAllData();
+        if (document.getElementById('whatsappLogs')) renderWhatsappLogs();
+    }
+
+    // إرسال تأكيد حجز واتساب
+    function sendBookingConfirmation(booking) {
+        const msg = `✅ *تم تأكيد حجزك في ${companyName}*\n👤 العميل: ${booking.clientName}\n📅 التاريخ: ${booking.date}\n🏛️ القاعة: ${booking.hallName}\n💰 السعر: ${booking.price.toLocaleString()} ج.م`;
+        if (booking.phone) sendWhatsApp(booking.phone, msg);
+        sendBrowserNotification('تأكيد حجز', `تم تأكيد حجز ${booking.clientName}`);
+    }
+
+    // إرسال تذكير يومي للموظفين (يُستدعى تلقائياً الساعة 6 مساءً)
+    function sendDailyReminders() {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().slice(0,10);
+        const tomorrowBookings = bookings.filter(b => b.date === tomorrowStr && b.status === 'pending');
+        for (let emp of employees) {
+            const empBookings = tomorrowBookings.filter(b => (b.assignedEmployees || []).includes(emp.id));
+            if (empBookings.length > 0 && emp.phone) {
+                const msg = `🔔 *تذكير بأوردرات غدًا* - ${companyName}\nمرحباً ${emp.name}، لديك ${empBookings.length} أوردر:\n${empBookings.map(b=>`• ${b.clientName} - ${b.hallName}`).join('\n')}`;
+                sendWhatsApp(emp.phone, msg);
+            }
+        }
+        showMsg('📧 تم إرسال التذكيرات');
+    }
+
+    // جدولة التذكير اليومي الساعة 6 مساءً
+    function scheduleDailyReminder() {
+        const now = new Date();
+        let next6 = new Date();
+        next6.setHours(18, 0, 0, 0);
+        if (now >= next6) next6.setDate(next6.getDate() + 1);
+        const delay = next6 - now;
+        setTimeout(() => {
+            sendDailyReminders();
+            setInterval(sendDailyReminders, 86400000);
+        }, delay);
+    }
+
+    // ----------------------------- التوزيع الذكي -----------------------------
     function autoDistribute() {
         const pending = bookings.filter(b => b.status === 'pending');
         const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
@@ -158,9 +251,10 @@
         updateEmployeeOrders();
         saveAllData();
         showMsg('✅ تم التوزيع الذكي');
+        sendBrowserNotification('توزيع المهام', 'تم توزيع الأوردرات تلقائياً');
     }
 
-    // ----------------------------- تصدير واستيراد Excel -----------------------------
+    // ----------------------------- استيراد Excel (موجود) -----------------------------
     function exportToExcel() {
         const wsData = bookings.map(b => ({
             'العميل': b.clientName,
@@ -173,7 +267,7 @@
         const ws = XLSX.utils.json_to_sheet(wsData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'الحجوزات');
-        XLSX.writeFile(wb, `Drmedia_Bookings_${new Date().toISOString().slice(0,10)}.xlsx`);
+        XLSX.writeFile(wb, `${companyName}_Bookings_${new Date().toISOString().slice(0,10)}.xlsx`);
         showMsg('✅ تم تصدير Excel');
     }
 
@@ -276,15 +370,142 @@
         autoDistribute();
         renderCurrentTab();
         showMsg(`✅ تم استيراد ${pendingExcelData.length} حجز`);
+        sendBrowserNotification('استيراد Excel', 'تم استيراد الحجوزات بنجاح');
+    }
+
+    // ----------------------------- استيراد PDF (يتطلب خادم محلي، لكن سنضيفه مع تحذير) -----------------------------
+    function showImportPdfModal() {
+        if (window.location.protocol === 'file:') {
+            alert('⚠️ استيراد PDF يتطلب تشغيل الملف عبر خادم محلي (مثل Live Server) لأسباب أمنية. الرجاء استخدام Excel بدلاً من ذلك.');
+            return;
+        }
+        openModal(`
+            <h3 class="text-xl font-bold mb-4">📥 استيراد من PDF</h3>
+            <select id="pdfHallSelect" class="w-full p-2 border rounded-xl mb-3">${halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('')}</select>
+            <input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="w-full p-2 border rounded-xl mb-3">
+            <div class="border-2 border-dashed border-red-500 rounded-xl p-6 text-center cursor-pointer hover:bg-red-50 transition" onclick="document.getElementById('pdfFileInput').click()">
+                <i class="fas fa-cloud-upload-alt text-3xl text-red-600"></i><p class="text-sm mt-2">اضغط أو اسحب ملف PDF</p>
+            </div>
+            <input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])">
+            <div id="pdfPreview" class="mt-3 text-sm"></div>
+            <button id="pdfImportBtn" class="bg-red-700 text-white w-full py-2 rounded-xl mt-3 hidden" onclick="confirmPdfImport()">✅ استيراد</button>
+        `);
+    }
+
+    function handlePdfFile(file) {
+        if (!file) return;
+        const preview = document.getElementById('pdfPreview');
+        preview.innerHTML = '<div class="text-gray-500">⏳ جاري استخراج النص...</div>';
+        const reader = new FileReader();
+        reader.onload = e => {
+            const typedarray = new Uint8Array(e.target.result);
+            pdfjsLib.getDocument({ data: typedarray }).promise.then(pdf => {
+                let allText = '';
+                const promises = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    promises.push(pdf.getPage(i).then(page => page.getTextContent().then(tc => {
+                        allText += tc.items.map(it => it.str).join(' ') + '\n';
+                    })));
+                }
+                Promise.all(promises).then(() => {
+                    const lines = allText.split('\n').map(l => l.trim()).filter(l => l);
+                    const found = [];
+                    const dp = /(\d{1,2})\s*[\/\-]\s*(\d{1,2})\s*[\/\-]\s*(\d{2,4})/g;
+                    let currentEntry = null;
+                    for (let line of lines) {
+                        const dm = line.match(dp);
+                        if (dm) {
+                            if (currentEntry) {
+                                const pdm = currentEntry.match(dp);
+                                if (pdm) {
+                                    const datePart = pdm[0];
+                                    const dateParts = datePart.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                                    if (dateParts) {
+                                        let day = parseInt(dateParts[1]);
+                                        let month = parseInt(dateParts[2]);
+                                        let yr = dateParts[3].length === 2 ? 2000 + parseInt(dateParts[3]) : parseInt(dateParts[3]);
+                                        let ds = `${yr}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                                        const after = currentEntry.substring(currentEntry.indexOf(datePart) + datePart.length).trim();
+                                        const nums = after.match(/\d+/g);
+                                        let count = 0, rest = after;
+                                        if (nums && nums.length > 0) {
+                                            count = parseInt(nums[nums.length-1]);
+                                            rest = after.replace(new RegExp(`${count}\\s*$`), '').trim();
+                                        }
+                                        const pkgs = ['عشاء','سواريه','غداء','فطار','بوفيه','حفل','زفاف'];
+                                        let cn = '', pt = '';
+                                        for (let kw of pkgs) {
+                                            const idx = rest.indexOf(kw);
+                                            if (idx !== -1) {
+                                                cn = rest.substring(0, idx).trim();
+                                                pt = rest.substring(idx).replace(/\d+$/,'').trim();
+                                                break;
+                                            }
+                                        }
+                                        if (!pt) cn = rest;
+                                        cn = cn.replace(/[\/\-\.]/g, '').trim();
+                                        if (cn && cn !== '-' && cn.length > 1) found.push({ clientName: cn, date: ds, packageType: pt, guestCount: count });
+                                    }
+                                }
+                                currentEntry = null;
+                            }
+                            currentEntry = line;
+                        } else if (currentEntry) {
+                            currentEntry += ' ' + line;
+                        }
+                    }
+                    if (found.length > 0) {
+                        pendingPdfBookings = found;
+                        preview.innerHTML = `<div class="bg-green-100 p-2 rounded">✅ تم التعرف على ${found.length} حجز</div><ul class="list-disc pr-4 text-xs mt-2 max-h-32 overflow-y-auto">${found.map(b => `<li><b>${b.clientName}</b> - ${b.date}</li>`).join('')}</ul>`;
+                        document.getElementById('pdfImportBtn').classList.remove('hidden');
+                    } else {
+                        preview.innerHTML = '<div class="bg-red-100 p-2 rounded">❌ لم يتم استخراج أي حجز</div>';
+                    }
+                });
+            }).catch(() => preview.innerHTML = '<div class="bg-red-100 p-2 rounded">❌ خطأ في قراءة PDF</div>');
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function confirmPdfImport() {
+        if (!pendingPdfBookings.length) return showMsg('⚠️ لا توجد بيانات');
+        const hallId = document.getElementById('pdfHallSelect')?.value;
+        const defaultPrice = parseInt(document.getElementById('pdfDefaultPrice')?.value) || 2500;
+        const hall = halls.find(h => h.id === hallId);
+        if (!hall) return showMsg('⚠️ اختر قاعة صحيحة');
+        let added = 0;
+        for (let b of pendingPdfBookings) {
+            bookings.push({
+                id: 'pdf_' + Date.now() + '_' + added,
+                clientName: b.clientName,
+                phone: '',
+                hallId: hall.id,
+                hallName: hall.name,
+                date: b.date,
+                price: defaultPrice,
+                status: 'pending',
+                paymentStatus: 'pending',
+                assignedEmployees: [],
+                notes: `${b.packageType || ''} - ${b.guestCount || 0} فرد`
+            });
+            added++;
+        }
+        pendingPdfBookings = [];
+        saveAllData();
+        closeModal();
+        autoDistribute();
+        renderCurrentTab();
+        showMsg(`✅ تم استيراد ${added} حجز من PDF`);
+        sendBrowserNotification('استيراد PDF', `تم استيراد ${added} حجز`);
     }
 
     // ----------------------------- النسخ الاحتياطي والاستعادة -----------------------------
     function backupData() {
-        const fullData = { bookings, employees, halls, clients, equipmentInventory, swapRequests, payrollArchive, employeeLoans, whatsappLogs, users };
+        const fullData = { bookings, employees, halls, clients, equipmentInventory, swapRequests, payrollArchive, employeeLoans, whatsappLogs, users, companyName, companyLogo, whatsappNumber, themeSettings };
         const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `drmedia_backup_${new Date().toISOString().slice(0,19)}.json`;
+        a.download = `${companyName}_backup_${new Date().toISOString().slice(0,19)}.json`;
         a.click();
         showMsg('✅ تم تصدير النسخة الاحتياطية');
     }
@@ -304,12 +525,45 @@
                 employeeLoans = data.employeeLoans || {};
                 whatsappLogs = data.whatsappLogs || [];
                 users = data.users || users;
+                companyName = data.companyName || companyName;
+                companyLogo = data.companyLogo || companyLogo;
+                whatsappNumber = data.whatsappNumber || whatsappNumber;
+                themeSettings = data.themeSettings || themeSettings;
                 saveAllData();
                 showMsg('✅ تمت الاستعادة، سيتم تحديث الصفحة');
                 setTimeout(() => location.reload(), 1500);
             } catch(err) { showMsg('❌ ملف غير صالح', 'error'); }
         };
         reader.readAsText(file);
+    }
+
+    // ----------------------------- إعدادات الثيم والمظهر -----------------------------
+    function applyTheme() {
+        if (themeSettings.darkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+        document.documentElement.style.setProperty('--primary-color', themeSettings.primaryColor);
+    }
+
+    function toggleDarkMode() {
+        themeSettings.darkMode = !themeSettings.darkMode;
+        saveAllData();
+        applyTheme();
+        showMsg('تم تغيير الوضع');
+    }
+
+    function updateCompanySettings() {
+        const newName = document.getElementById('companyNameInput')?.value;
+        const newLogo = document.getElementById('companyLogoInput')?.value;
+        const newWhatsapp = document.getElementById('whatsappNumberInput')?.value;
+        if (newName) companyName = newName;
+        if (newLogo) companyLogo = newLogo;
+        if (newWhatsapp) whatsappNumber = newWhatsapp;
+        saveAllData();
+        closeModal();
+        renderSettings();
+        showMsg('✅ تم حفظ إعدادات الشركة');
+        // تحديث عنوان الصفحة
+        document.title = companyName;
     }
 
     // ----------------------------- الأوامر الصوتية -----------------------------
@@ -365,13 +619,22 @@
     // ----------------------------- وضع الطوارئ -----------------------------
     function toggleEmergencyMode() {
         emergencyMode = !emergencyMode;
-        if (emergencyMode) showMsg('🚨 تم تفعيل وضع الطوارئ', 'error');
-        else showMsg('✅ تم إلغاء الطوارئ');
+        if (emergencyMode) {
+            showMsg('🚨 تم تفعيل وضع الطوارئ', 'error');
+            sendBrowserNotification('🚨 طوارئ', 'تم تفعيل وضع الطوارئ في النظام');
+            // إرسال واتساب لجميع الموظفين (إذا كان رقم الشركة محدد)
+            if (whatsappNumber) {
+                const msg = `🚨 *تنبيه طوارئ من ${companyName}* - تم تفعيل وضع الطوارئ.`;
+                for (let emp of employees) if (emp.phone) sendWhatsApp(emp.phone, msg);
+            }
+        } else {
+            showMsg('✅ تم إلغاء الطوارئ');
+        }
         document.body.style.backgroundColor = emergencyMode ? '#ffebee' : '';
         saveAllData();
     }
 
-    // ----------------------------- دوال الإدارة (حجوزات، موظفين، إلخ) -----------------------------
+    // ----------------------------- دوال الإدارة -----------------------------
     function addBooking() {
         const name = prompt('اسم العميل');
         const hallId = prompt('معرف القاعة (h1/h2/h3)');
@@ -379,25 +642,42 @@
         if (name && hallId && price) {
             const hall = halls.find(h => h.id === hallId);
             if (hall) {
-                bookings.push({
+                const newBooking = {
                     id: 'b'+Date.now(), clientName: name, phone: '', hallId, hallName: hall.name,
                     date: new Date().toISOString().slice(0,10), price, status: 'pending', paymentStatus: 'pending', assignedEmployees: []
-                });
+                };
+                bookings.push(newBooking);
                 saveAllData();
                 autoDistribute();
                 renderCurrentTab();
                 showMsg('✅ تمت إضافة الحجز');
+                sendBrowserNotification('حجز جديد', `تم إضافة حجز لـ ${name}`);
+                // إرسال تأكيد واتساب للعميل إذا كان الرقم موجوداً (سؤال اختياري)
+                const sendWa = confirm('هل تريد إرسال تأكيد واتساب للعميل؟');
+                if (sendWa && newBooking.phone) sendBookingConfirmation(newBooking);
             } else alert('قاعة غير موجودة');
         }
     }
 
     function markComplete(id) {
         const b = bookings.find(x => x.id === id);
-        if (b) { b.status = 'completed'; b.paymentStatus = 'paid'; saveAllData(); renderCurrentTab(); showMsg('✅ تم إكمال الحجز'); }
+        if (b) {
+            b.status = 'completed';
+            b.paymentStatus = 'paid';
+            saveAllData();
+            renderCurrentTab();
+            showMsg('✅ تم إكمال الحجز');
+            sendBrowserNotification('إكمال حجز', `تم إكمال حجز ${b.clientName}`);
+        }
     }
 
     function deleteBooking(id) {
-        if (confirm('حذف الحجز؟')) { bookings = bookings.filter(b => b.id !== id); saveAllData(); renderCurrentTab(); showMsg('🗑️ تم الحذف'); }
+        if (confirm('حذف الحجز؟')) {
+            bookings = bookings.filter(b => b.id !== id);
+            saveAllData();
+            renderCurrentTab();
+            showMsg('🗑️ تم الحذف');
+        }
     }
 
     function addEmployee() {
@@ -494,7 +774,7 @@
                 <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow text-center"><i class="fas fa-users text-emerald-600 text-3xl"></i><div class="text-2xl font-bold mt-2">${empCount}</div><div>موظفين</div></div>
                 <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow text-center"><i class="fas fa-check-circle text-emerald-600 text-3xl"></i><div class="text-2xl font-bold mt-2">${completed}</div><div>مكتملة</div></div>
             </div>
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h3 class="font-bold mb-4">⚡ إجراءات سريعة</h3><div class="flex flex-wrap gap-3"><button onclick="addBooking()" class="bg-emerald-600 text-white px-5 py-2 rounded-xl">+ حجز جديد</button><button onclick="autoDistribute();renderCurrentTab()" class="bg-purple-600 text-white px-5 py-2 rounded-xl">🔄 توزيع ذكي</button><button onclick="exportToExcel()" class="bg-blue-600 text-white px-5 py-2 rounded-xl">📊 تصدير Excel</button><button onclick="showImportExcelModal()" class="bg-amber-600 text-white px-5 py-2 rounded-xl">📂 استيراد Excel</button><button onclick="toggleEmergencyMode()" class="bg-red-600 text-white px-5 py-2 rounded-xl">🚨 طوارئ</button></div></div>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h3 class="font-bold mb-4">⚡ إجراءات سريعة</h3><div class="flex flex-wrap gap-3"><button onclick="addBooking()" class="bg-emerald-600 text-white px-5 py-2 rounded-xl">+ حجز جديد</button><button onclick="autoDistribute();renderCurrentTab()" class="bg-purple-600 text-white px-5 py-2 rounded-xl">🔄 توزيع ذكي</button><button onclick="exportToExcel()" class="bg-blue-600 text-white px-5 py-2 rounded-xl">📊 تصدير Excel</button><button onclick="showImportExcelModal()" class="bg-amber-600 text-white px-5 py-2 rounded-xl">📂 استيراد Excel</button><button onclick="showImportPdfModal()" class="bg-red-600 text-white px-5 py-2 rounded-xl">📄 استيراد PDF</button><button onclick="toggleEmergencyMode()" class="bg-red-700 text-white px-5 py-2 rounded-xl">🚨 طوارئ</button></div></div>
         `;
     }
 
@@ -502,8 +782,8 @@
         const filtered = bookings.filter(b => b.status !== 'cancelled');
         document.getElementById('bookings').innerHTML = `
             <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📅 الحجوزات (${filtered.length})</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الدفع</th><th></th></tr></thead><tbody>${filtered.map(b => `
-                <tr><td class="p-2">${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td><td>${b.paymentStatus==='paid'?'مدفوع':'معلق'}</td><td><button onclick="markComplete('${b.id}')" class="text-green-600 ml-2"><i class="fas fa-check-circle"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>
-            `).join('')}</tbody></table></div></div>`;
+                <tr><td class="p-2">${b.clientName} ${b.phone ? `<br><span class="text-xs text-gray-400">${b.phone}</span>` : ''}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td><td>${b.paymentStatus==='paid'?'مدفوع':'معلق'}</td><td><button onclick="markComplete('${b.id}')" class="text-green-600 ml-2"><i class="fas fa-check-circle"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>
+            `).join('')}</tbody>}xe</div></div>`;
     }
 
     function renderEmployees() {
@@ -511,13 +791,13 @@
         document.getElementById('employees').innerHTML = `
             <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">👥 الموظفين</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th></tr></thead><tbody>${employees.map(e => `
                 <tr><td class="p-2">${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td class="text-emerald-600 font-bold">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>
-            `).join('')}</tbody></table></div><button onclick="addEmployee()" class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl">+ إضافة موظف</button></div>`;
+            `).join('')}</tbody>}xe</div><button onclick="addEmployee()" class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl">+ إضافة موظف</button></div>`;
     }
 
     function renderHalls() {
         document.getElementById('halls').innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">🏛️ القاعات</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th></tr></thead><tbody>${halls.map(h => `
             <tr><td class="p-2">${h.name}</td><td>${h.type}</td><td>${h.active?'✅ نشطة':'❌ غير نشطة'}</td><td>${bookings.filter(b=>b.hallId===h.id && b.status!=='cancelled').length}</td></tr>
-        `).join('')}</tbody></table></div></div>`;
+        `).join('')}</tbody>}xe</div></div>`;
     }
 
     function renderDistribution() {
@@ -542,17 +822,31 @@
             `).join('')}</tbody>}xe</div><div class="mt-4"><h3 class="font-bold">💵 السلف المسجلة</h3>${loansHtml || 'لا توجد سلف'}<button onclick="addLoan()" class="mt-3 bg-amber-600 text-white px-4 py-2 rounded-xl">+ تسجيل سلفة</button></div></div>`;
     }
 
+    // ----------------------------- التقويم مع اختيار السنة والشهر -----------------------------
+    let calendarYear = new Date().getFullYear();
+    let calendarMonth = new Date().getMonth();
     function renderCalendar() {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth();
-        const firstDay = new Date(year, month, 1).getDay();
-        const daysInMonth = new Date(year, month+1, 0).getDate();
-        let html = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📆 ${today.toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</h2><div class="grid grid-cols-7 gap-1 text-center">`;
-        ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'].forEach(d => html += `<div class="font-bold">${d}</div>`);
+        const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+        const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
+        const monthNames = ['يناير','فبراير','مارس','إبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+        let html = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">📆 التقويم</h2>
+                    <div class="flex gap-2">
+                        <select id="calendarMonthSelect" class="p-1 border rounded">
+                            ${monthNames.map((m,i) => `<option value="${i}" ${i===calendarMonth ? 'selected' : ''}>${m}</option>`).join('')}
+                        </select>
+                        <input type="number" id="calendarYearInput" value="${calendarYear}" class="p-1 border rounded w-24">
+                        <button onclick="changeCalendar()" class="bg-emerald-600 text-white px-3 py-1 rounded">انتقال</button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center">
+                    ${['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'].map(d => `<div class="font-bold">${d}</div>`).join('')}
+        `;
         for (let i=0; i<firstDay; i++) html += `<div></div>`;
         for (let d=1; d<=daysInMonth; d++) {
-            const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const dateStr = `${calendarYear}-${String(calendarMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
             const hasBooking = bookings.some(b => b.date === dateStr);
             html += `<div class="p-2 border rounded ${hasBooking ? 'bg-emerald-100 dark:bg-emerald-900' : ''}">${d}</div>`;
         }
@@ -560,6 +854,13 @@
         document.getElementById('calendar').innerHTML = html;
     }
 
+    function changeCalendar() {
+        calendarYear = parseInt(document.getElementById('calendarYearInput').value);
+        calendarMonth = parseInt(document.getElementById('calendarMonthSelect').value);
+        renderCalendar();
+    }
+
+    // ----------------------------- باقي التبويبات -----------------------------
     function renderArchive() {
         const completed = bookings.filter(b => b.status === 'completed');
         document.getElementById('archive').innerHTML = `
@@ -593,7 +894,7 @@
     function renderClients() {
         document.getElementById('clients').innerHTML = `
             <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">👥 العملاء</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>حجوزات</th><th></th></tr></thead><tbody>${clients.map(c => `
-                <tr><td class="p-2">${c.name}</td><td>${c.phone}</td><td>${c.email || '-'}</td><td>${bookings.filter(b=>b.phone===c.phone).length}</td><td><button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>
+                </tr><td class="p-2">${c.name}</td><td>${c.phone}</td><td>${c.email || '-'}</td><td>${bookings.filter(b=>b.phone===c.phone).length}</td><td><button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>
             `).join('')}</tbody>}xe</div><button onclick="addClient()" class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl">+ عميل جديد</button></div>`;
     }
 
@@ -620,9 +921,9 @@
 
     function renderWhatsappLogs() {
         document.getElementById('whatsappLogs').innerHTML = `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📨 سجل المراسلات</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>التاريخ</th><th>إلى</th><th>الرسالة</th></thead><tbody>${whatsappLogs.slice().reverse().map(log => `
-                <tr><td class="p-2">${log.date}</td><td>${log.to}</td><td>${log.message.substring(0,50)}...</td></tr>
-            `).join('') || '<tr><td colspan="3" class="text-center">لا توجد رسائل</td></tr>'}</tbody>}xe</div><button onclick="exportWhatsappLogs()" class="mt-3 bg-green-600 text-white px-4 py-2 rounded-xl">📥 تصدير Excel</button></div>`;
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📨 سجل المراسلات</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>التاريخ</th><th>إلى</th><th>الرسالة</th><th>الحالة</th></tr></thead><tbody>${whatsappLogs.slice().reverse().map(log => `
+                <tr><td class="p-2">${log.date}</td><td>${log.to}</td><td>${log.message.substring(0,50)}...</td><td>${log.status}</td></tr>
+            `).join('') || '<tr><td colspan="4" class="text-center">لا توجد رسائل</td></tr>'}</tbody>}xe</div><button onclick="exportWhatsappLogs()" class="mt-3 bg-green-600 text-white px-4 py-2 rounded-xl">📥 تصدير Excel</button></div>`;
     }
 
     function exportWhatsappLogs() {
@@ -633,9 +934,34 @@
         showMsg('✅ تم التصدير');
     }
 
+    // ----------------------------- إعدادات النظام الكاملة -----------------------------
     function renderSettings() {
         document.getElementById('settings').innerHTML = `
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ الإعدادات</h2><button onclick="resetData()" class="bg-red-600 text-white px-5 py-2 rounded-xl">إعادة ضبط البيانات (مسح الكل)</button></div>`;
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow">
+                <h2 class="text-xl font-bold mb-4">⚙️ إعدادات النظام</h2>
+                <div class="mb-4"><label class="block font-bold mb-1">🏢 اسم الشركة</label><input type="text" id="companyNameInput" value="${companyName}" class="w-full p-2 border rounded"></div>
+                <div class="mb-4"><label class="block font-bold mb-1">🖼️ شعار الشركة (رمز أو نص)</label><input type="text" id="companyLogoInput" value="${companyLogo}" class="w-full p-2 border rounded" placeholder="📷 أو نص"></div>
+                <div class="mb-4"><label class="block font-bold mb-1">📱 رقم واتساب الشركة (بدون +)</label><input type="text" id="whatsappNumberInput" value="${whatsappNumber}" class="w-full p-2 border rounded" dir="ltr"></div>
+                <div class="mb-4 flex items-center justify-between"><span class="font-bold">🌙 الوضع الداكن</span><button onclick="toggleDarkMode()" class="bg-gray-600 text-white px-4 py-1 rounded">${themeSettings.darkMode ? 'إلغاء' : 'تفعيل'}</button></div>
+                <button onclick="updateCompanySettings()" class="bg-emerald-600 text-white w-full py-2 rounded-xl mb-3">💾 حفظ الإعدادات</button>
+                <hr class="my-4">
+                <h3 class="font-bold mb-2">📂 استيراد/تصدير</h3>
+                <button onclick="exportToExcel()" class="bg-blue-600 text-white w-full py-2 rounded-xl mb-2">📊 تصدير الحجوزات Excel</button>
+                <button onclick="showImportExcelModal()" class="bg-amber-600 text-white w-full py-2 rounded-xl mb-2">📂 استيراد من Excel</button>
+                <button onclick="showImportPdfModal()" class="bg-red-600 text-white w-full py-2 rounded-xl mb-2">📄 استيراد من PDF</button>
+                <hr class="my-4">
+                <h3 class="font-bold mb-2">🔔 الإشعارات</h3>
+                <button onclick="requestNotificationPermission()" class="bg-purple-600 text-white w-full py-2 rounded-xl mb-2">🔔 تفعيل إشعارات المتصفح</button>
+                <button onclick="sendTestNotification()" class="bg-indigo-600 text-white w-full py-2 rounded-xl">📨 اختبار الإشعار</button>
+                <hr class="my-4">
+                <button onclick="resetData()" class="bg-red-700 text-white w-full py-2 rounded-xl">⚠️ إعادة ضبط كل البيانات (مسح كامل)</button>
+            </div>
+        `;
+    }
+
+    function sendTestNotification() {
+        sendBrowserNotification('📢 اختبار', 'تم تفعيل الإشعارات بنجاح');
+        showMsg('تم إرسال إشعار تجريبي');
     }
 
     // ----------------------------- رندر التبويب الحالي -----------------------------
@@ -668,7 +994,7 @@
         document.getElementById('app').innerHTML = `
             <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
                 <header class="bg-white dark:bg-gray-800 shadow p-3 flex flex-wrap justify-between items-center sticky top-0 z-50">
-                    <h1 class="text-xl font-bold text-emerald-700">📷 Drmedia Pro Plus</h1>
+                    <h1 class="text-xl font-bold text-emerald-700">${companyLogo} ${companyName}</h1>
                     <div class="flex items-center gap-3"><span class="text-sm">👤 ${currentUser.name}</span><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded-lg text-sm">خروج</button></div>
                 </header>
                 <div class="flex overflow-x-auto border-b bg-white dark:bg-gray-800 px-2 sticky top-12 z-40">
@@ -723,7 +1049,7 @@
     function renderEmployeeDashboard() {
         const emp = employees.find(e => e.id === currentUser.employeeId);
         document.getElementById('app').innerHTML = `
-            <div class="min-h-screen bg-gray-100"><header class="bg-white p-3 flex justify-between"><h1 class="text-xl font-bold">📷 Drmedia Pro Plus</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">خروج</button></header><main class="p-4 max-w-md mx-auto"><div class="bg-white p-5 rounded-xl shadow"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><div class="grid grid-cols-2 gap-3 mt-4"><div><div class="text-3xl font-bold text-emerald-600">${emp.totalOrders||0}</div><div>أوردرات</div></div><div><div class="text-3xl font-bold text-blue-600">${((emp.totalOrders||0)*emp.salaryPerOrder).toLocaleString()} ج.م</div><div>المستحق</div></div></div></div></main></div>`;
+            <div class="min-h-screen bg-gray-100"><header class="bg-white p-3 flex justify-between"><h1 class="text-xl font-bold">${companyLogo} ${companyName}</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">خروج</button></header><main class="p-4 max-w-md mx-auto"><div class="bg-white p-5 rounded-xl shadow"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><div class="grid grid-cols-2 gap-3 mt-4"><div><div class="text-3xl font-bold text-emerald-600">${emp.totalOrders||0}</div><div>أوردرات</div></div><div><div class="text-3xl font-bold text-blue-600">${((emp.totalOrders||0)*emp.salaryPerOrder).toLocaleString()} ج.م</div><div>المستحق</div></div></div></div></main></div>`;
     }
 
     // ----------------------------- تسجيل الدخول -----------------------------
@@ -731,11 +1057,11 @@
         document.getElementById('app').innerHTML = `
             <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-md text-center shadow-2xl">
-                    <h1 class="text-3xl font-bold text-emerald-700 mb-2">📷 Drmedia Pro Plus</h1>
+                    <h1 class="text-3xl font-bold text-emerald-700 mb-2">${companyLogo} ${companyName}</h1>
                     <p class="text-gray-500 mb-6">نظام إدارة القاعات الذكي</p>
-                    <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3" autocomplete="username">
-                    <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2" autocomplete="current-password">
-                    <button onclick="doLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition">دخول</button>
+                    <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3">
+                    <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2">
+                    <button onclick="doLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button>
                     <div class="mt-4 text-sm text-gray-400"><p>المدير: <strong>ahmed</strong> / <strong>1994</strong></p><p>الموظف: <strong>ahmed_emp</strong> / <strong>emp123</strong></p></div>
                 </div>
             </div>
@@ -752,6 +1078,7 @@
             if (user.role === 'admin') renderAdminDashboard();
             else renderEmployeeDashboard();
             showMsg(`مرحباً ${user.name}`);
+            requestNotificationPermission();
         } else {
             showMsg('❌ اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
         }
@@ -773,6 +1100,9 @@
     window.showImportExcelModal = showImportExcelModal;
     window.handleExcelFile = handleExcelFile;
     window.confirmExcelImport = confirmExcelImport;
+    window.showImportPdfModal = showImportPdfModal;
+    window.handlePdfFile = handlePdfFile;
+    window.confirmPdfImport = confirmPdfImport;
     window.addClient = addClient;
     window.deleteClient = deleteClient;
     window.addEquipment = addEquipment;
@@ -786,14 +1116,21 @@
     window.toggleEmergencyMode = toggleEmergencyMode;
     window.toggleVoice = toggleVoice;
     window.exportWhatsappLogs = exportWhatsappLogs;
+    window.changeCalendar = changeCalendar;
+    window.toggleDarkMode = toggleDarkMode;
+    window.updateCompanySettings = updateCompanySettings;
+    window.requestNotificationPermission = requestNotificationPermission;
+    window.sendTestNotification = sendTestNotification;
 
     // بدء التشغيل
     loadAllData();
+    scheduleDailyReminder();
     const saved = sessionStorage.getItem('drmedia_user');
     if (saved) {
         currentUser = JSON.parse(saved);
         if (currentUser.role === 'admin') renderAdminDashboard();
         else renderEmployeeDashboard();
+        requestNotificationPermission();
     } else {
         showLogin();
     }
