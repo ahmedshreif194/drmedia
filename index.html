@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <meta name="description" content="Drmedia Pro Plus - نظام إدارة القاعات ">
+    <meta name="description" content="Drmedia Pro Plus - نظام إدارة القاعات الذكي">
     <meta name="theme-color" content="#16a34a" id="themeColorMeta">
     <title>Drmedia Pro Plus | Ahmed Shreif © 2026</title>
     
@@ -290,16 +290,10 @@
 
     <script>
         // Firebase Config
-const firebaseConfig = {
-  apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
-  authDomain: "drmedia-vpms.firebaseapp.com",
-  databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
-  projectId: "drmedia-vpms",
-  storageBucket: "drmedia-vpms.firebasestorage.app",
-  messagingSenderId: "681162512380",
-  appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
-  measurementId: "G-9KHN6N33FX"
-};        
+  const firebaseConfig = { apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ", authDomain: "drmedia-vpms.firebaseapp.com", databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com", projectId: "drmedia-vpms", storageBucket: "drmedia-vpms.firebasestorage.app", messagingSenderId: "681162512380", appId: "1:681162512380:web:ab2482f3234d8b59fc4479" };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+        
         let bookings=[], employees=[], users=[], halls=[], notifications=[], swapRequests=[], payrollArchive=[], employeeLoans={}, equipmentInventory={};
         let currentUser=null, currentTab='dashboardTab', companyName='Drmedia Pro', companyLogo='📷', whatsappNumber='';
         let themeSettings = { primaryColor: '#22c55e', darkMode: false };
@@ -724,7 +718,7 @@ const firebaseConfig = {
                 <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
                     <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl w-full max-w-md text-center shadow-2xl border border-gray-100 dark:border-slate-700">
                         <h1 class="text-2xl font-bold mb-2 flex items-center justify-center gap-2">${companyLogo.startsWith('data:image') ? `<img src="${companyLogo}" class="w-10 h-10 object-cover rounded-full">` : `<span class="text-3xl">${companyLogo}</span>`} Drmedia Pro Plus</h1>
-                        <p class="text-gray-500 mb-6">نظام إدارة القاعات </p>
+                        <p class="text-gray-500 mb-6">نظام إدارة القاعات الذكي</p>
                         <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3 bg-white dark:bg-slate-900" autocomplete="username">
                         <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2 bg-white dark:bg-slate-900" autocomplete="current-password">
                         <button onclick="doLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition">دخول للنظام</button>
