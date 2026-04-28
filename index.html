@@ -604,7 +604,239 @@
         function handleLogoUpload(e){ const file=e.target.files[0]; if(file){ const reader=new FileReader(); reader.onload=ev=>{ companyLogo=ev.target.result; saveAllData(); renderSettingsContent(); showMsg("✅ تم تحديث الشعار"); }; reader.readAsDataURL(file); } }
         function updateCompanyName(){ companyName=document.getElementById('companyNameInput')?.value||'Drmedia Pro'; saveAllData(); showMsg("✅ تم حفظ الاسم"); renderApp(); }
         function updateWhatsApp(){ whatsappNumber=document.getElementById('whatsappInput')?.value||''; saveAllData(); showMsg("✅ تم حفظ الرقم"); }
+// ========== دوال استيراد Excel و PDF (مفقودة) ==========
+function showImportExcelModal() {
+    openModal(`
+        <h3 class="text-xl font-bold mb-4">📥 استيراد من Excel</h3>
+        <select id="excelHallSelect" class="mb-3 border rounded-xl p-2 w-full">${halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('')}</select>
+        <input type="number" id="excelDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3 border rounded-xl p-2 w-full">
+        <div class="border-2 border-dashed border-emerald-500 rounded-xl p-6 text-center cursor-pointer hover:bg-emerald-50 transition" onclick="document.getElementById('excelFileInput').click()">
+            <i class="fas fa-cloud-upload-alt text-3xl text-emerald-600 mb-2"></i>
+            <p class="text-sm">اضغط أو اسحب ملف Excel</p>
+        </div>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls" class="hidden" onchange="handleExcelFile(this.files[0])">
+        <div id="excelPreview" class="mt-3 text-sm"></div>
+        <button id="excelImportBtn" class="bg-green-700 hover:bg-green-800 text-white w-full py-3 rounded-xl mt-3 transition font-bold hidden" onclick="confirmExcelImport()">✅ استيراد البيانات</button>
+    `);
+}
 
+function handleExcelFile(file) {
+    if (!file) return;
+    const preview = document.getElementById('excelPreview');
+    const btn = document.getElementById('excelImportBtn');
+    preview.innerHTML = '<div class="text-center text-gray-500">⏳ جاري تحليل الملف...</div>';
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+            pendingExcelData = [];
+            const headers = rows[0] || [];
+            const colMap = {};
+            headers.forEach((h, i) => {
+                const n = String(h).trim().toLowerCase();
+                if (n.includes('عميل') || n.includes('client') || n.includes('name')) colMap.clientName = i;
+                if (n.includes('تاريخ') || n.includes('date')) colMap.date = i;
+                if (n.includes('قاعة') || n.includes('hall')) colMap.hallName = i;
+                if (n.includes('سعر') || n.includes('price')) colMap.price = i;
+                if (n.includes('هاتف') || n.includes('phone')) colMap.phone = i;
+            });
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || !row.some(c => c)) continue;
+                const cn = colMap.clientName !== undefined ? String(row[colMap.clientName] || '').trim() : '';
+                if (!cn) continue;
+                let dr = colMap.date !== undefined ? row[colMap.date] : '';
+                let ds = '';
+                if (dr) {
+                    if (typeof dr === 'number') {
+                        const d = XLSX.SSF.parse_date_code(dr);
+                        ds = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+                    } else ds = String(dr).trim();
+                }
+                const hn = colMap.hallName !== undefined ? String(row[colMap.hallName] || '').trim() : '';
+                const price = colMap.price !== undefined ? parseInt(row[colMap.price]) || 2500 : 2500;
+                const phone = colMap.phone !== undefined ? String(row[colMap.phone] || '').trim() : '';
+                let hall = halls.find(h => h.name.toLowerCase() === hn.toLowerCase());
+                if (!hall && hn) hall = halls.find(h => h.name.includes(hn) || hn.includes(h.name));
+                const hid = hall ? hall.id : (halls.length ? halls[0].id : 'hall1');
+                const hname = hall ? hall.name : (hn || (halls.length ? halls[0].name : 'قاعة'));
+                pendingExcelData.push({
+                    id: 'imp_' + Date.now() + '_' + i,
+                    clientName: cn,
+                    phone,
+                    hallId: hid,
+                    hallName: hname,
+                    date: ds,
+                    price,
+                    deposit: 0,
+                    notes: '',
+                    assignedEmployees: [],
+                    status: 'pending'
+                });
+            }
+            if (pendingExcelData.length) {
+                preview.innerHTML = `<div class="bg-green-50 dark:bg-green-900/20 p-3 rounded-xl text-green-700">✅ تم تحليل ${pendingExcelData.length} حجز بنجاح</div>`;
+                btn.classList.remove('hidden');
+            } else {
+                preview.innerHTML = '<div class="bg-red-50 p-3 rounded-xl text-red-700">❌ لم يتم العثور على بيانات صالحة</div>';
+            }
+        } catch (err) {
+            preview.innerHTML = '<div class="bg-red-50 p-3 rounded-xl text-red-700">❌ خطأ في قراءة الملف</div>';
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function confirmExcelImport() {
+    if (!pendingExcelData.length) return showMsg("⚠️ لا توجد بيانات للاستيراد");
+    const hallId = document.getElementById('excelHallSelect')?.value;
+    const price = parseInt(document.getElementById('excelDefaultPrice')?.value) || 2500;
+    if (hallId) {
+        const hall = halls.find(h => h.id === hallId);
+        if (hall) pendingExcelData.forEach(b => { b.hallId = hall.id; b.hallName = hall.name; });
+    }
+    pendingExcelData.forEach(b => { if (!b.price || b.price === 0) b.price = price; });
+    bookings.push(...pendingExcelData);
+    pendingExcelData = [];
+    saveAllData();
+    closeModal();
+    autoDistribute();
+    renderBookingsContent();
+    showMsg(`✅ تم استيراد ${pendingExcelData.length} حجز جديد`);
+}
+
+function showImportPdfModal() {
+    openModal(`
+        <h3 class="text-xl font-bold mb-4">📥 استيراد من PDF</h3>
+        <select id="pdfHallSelect" class="mb-3 border rounded-xl p-2 w-full">${halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('')}</select>
+        <input type="number" id="pdfDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="mb-3 border rounded-xl p-2 w-full">
+        <div class="border-2 border-dashed border-red-500 rounded-xl p-6 text-center cursor-pointer hover:bg-red-50 transition" onclick="document.getElementById('pdfFileInput').click()">
+            <i class="fas fa-cloud-upload-alt text-3xl text-red-600 mb-2"></i>
+            <p class="text-sm">اضغط أو اسحب ملف PDF</p>
+        </div>
+        <input type="file" id="pdfFileInput" accept=".pdf" class="hidden" onchange="handlePdfFile(this.files[0])">
+        <div id="pdfPreview" class="mt-3 text-sm"></div>
+        <button id="pdfImportBtn" class="bg-red-700 hover:bg-red-800 text-white w-full py-3 rounded-xl mt-3 transition font-bold hidden" onclick="confirmPdfDayImport()">✅ استيراد الحجوزات</button>
+    `);
+}
+
+function handlePdfFile(file) {
+    if (!file) return;
+    const preview = document.getElementById('pdfPreview');
+    preview.innerHTML = '<div class="text-center text-gray-500">⏳ جاري استخراج النص من PDF...</div>';
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const typedarray = new Uint8Array(e.target.result);
+        pdfjsLib.getDocument({ data: typedarray }).promise.then(pdf => {
+            let allText = '';
+            const promises = [];
+            for (let i = 1; i <= pdf.numPages; i++) {
+                promises.push(pdf.getPage(i).then(page => page.getTextContent().then(tc => {
+                    allText += tc.items.map(it => it.str).join(' ') + '\n';
+                })));
+            }
+            Promise.all(promises).then(() => {
+                const lines = allText.split('\n').map(l => l.trim()).filter(l => l);
+                const found = [];
+                const dp = /(\d{1,2})\s*[\/\-]\s*(\d{1,2})\s*[\/\-]\s*(\d{2,4})/g;
+                let currentEntry = null;
+                for (let line of lines) {
+                    const dm = line.match(dp);
+                    if (dm) {
+                        if (currentEntry) {
+                            const pdm = currentEntry.match(dp);
+                            if (pdm) {
+                                const datePart = pdm[0];
+                                const dateParts = datePart.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                                if (dateParts) {
+                                    let day = parseInt(dateParts[1]);
+                                    let month = parseInt(dateParts[2]);
+                                    let yr = dateParts[3].length === 2 ? 2000 + parseInt(dateParts[3]) : parseInt(dateParts[3]);
+                                    let ds = `${yr}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                    const after = currentEntry.substring(currentEntry.indexOf(datePart) + datePart.length).trim();
+                                    const nums = after.match(/\d+/g);
+                                    let count = 0, rest = after;
+                                    if (nums && nums.length > 0) {
+                                        count = parseInt(nums[nums.length - 1]);
+                                        rest = after.replace(new RegExp(`${count}\\s*$`), '').trim();
+                                    }
+                                    const pkgs = ['عشاء 1', 'عشاء 2', 'عشاء', 'سواريه', 'سوارية', 'غداء', 'فطار', 'إفطار', 'بوفيه', 'حفل', 'زفاف'];
+                                    let cn = '', pt = '';
+                                    for (let kw of pkgs) {
+                                        const idx = rest.indexOf(kw);
+                                        if (idx !== -1) {
+                                            cn = rest.substring(0, idx).trim();
+                                            pt = rest.substring(idx).replace(/\d+$/, '').trim();
+                                            break;
+                                        }
+                                    }
+                                    if (!pt) cn = rest;
+                                    cn = cn.replace(/[\/\-\.]/g, '').trim();
+                                    if (cn && cn !== '-' && cn.length > 1) found.push({ clientName: cn, date: ds, packageType: pt, guestCount: count });
+                                }
+                            }
+                            currentEntry = null;
+                        }
+                        currentEntry = line;
+                    } else if (currentEntry) {
+                        currentEntry += ' ' + line;
+                    }
+                }
+                if (found.length > 0) {
+                    pendingPdfBookings = found;
+                    preview.innerHTML = `<div class="bg-green-50 p-2 rounded text-green-700">✅ تم التعرف على ${found.length} حجز</div><ul class="list-disc pr-4 text-xs mt-2 max-h-32 overflow-y-auto">${found.map(b => `<li><b>${b.clientName}</b> - ${b.date}</li>`).join('')}</ul>`;
+                    document.getElementById('pdfImportBtn').classList.remove('hidden');
+                } else {
+                    preview.innerHTML = '<div class="bg-red-50 p-2 rounded text-red-700">❌ لم يتم استخراج أي حجز</div>';
+                }
+            });
+        }).catch(() => {
+            preview.innerHTML = '<div class="bg-red-50 p-2 rounded text-red-700">❌ خطأ في قراءة ملف PDF</div>';
+        });
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function confirmPdfDayImport() {
+    const hallId = document.getElementById('pdfHallSelect')?.value;
+    if (!hallId) return showMsg("⚠️ اختر القاعة أولاً");
+    const hall = halls.find(h => h.id === hallId);
+    const price = parseInt(document.getElementById('pdfDefaultPrice')?.value) || 2500;
+    let added = 0;
+    pendingPdfBookings.forEach(b => {
+        bookings.push({
+            id: 'pdf_' + Date.now() + '_' + added,
+            clientName: b.clientName,
+            phone: '',
+            hallId: hall.id,
+            hallName: hall.name,
+            date: b.date,
+            price,
+            deposit: 0,
+            notes: `${b.packageType || ''} - ${b.guestCount || 0} فرد`.trim(),
+            assignedEmployees: [],
+            status: 'pending'
+        });
+        added++;
+    });
+    if (!added) return showMsg("⚠️ لا توجد بيانات للاستيراد");
+    saveAllData();
+    closeModal();
+    autoDistribute();
+    renderBookingsContent();
+    showMsg(`✅ تم استيراد ${added} حجز من ملف PDF`);
+}
+
+// تأكد من ربط الدوال بالنافذة (window) لتكون متاحة على مستوى الصفحة
+window.showImportExcelModal = showImportExcelModal;
+window.handleExcelFile = handleExcelFile;
+window.confirmExcelImport = confirmExcelImport;
+window.showImportPdfModal = showImportPdfModal;
+window.handlePdfFile = handlePdfFile;
+window.confirmPdfDayImport = confirmPdfDayImport;
         // Clients (جديد)
         function renderClientsContent(){ document.getElementById('clientsTab').innerHTML=`<div class="p-4"><div class="flex justify-between"><h2 class="text-xl font-bold mb-4">👥 العملاء</h2><button onclick="showAddClientModal()" class="bg-blue-600 text-white px-4 py-2 rounded-xl">+ عميل جديد</button></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>عدد الحجوزات</th><th>إجراءات</th></tr></thead><tbody>${clients.map(c=>`<tr><td>${c.name}</td><td>${c.phone}</td><td>${c.email||'-'}</td><td>${bookings.filter(b=>b.phone===c.phone).length}</td><td><button onclick="editClient('${c.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')||'<tr><td colspan="5" class="text-center">لا يوجد عملاء</td></tr>'}</tbody></table></div></div>`; }
         function showAddClientModal(){ openModal(`<h3>➕ عميل جديد</h3><input id="clientName" placeholder="الاسم"><input id="clientPhone" placeholder="رقم الهاتف" dir="ltr"><input id="clientEmail" placeholder="البريد الإلكتروني (اختياري)"><button onclick="saveNewClient()" class="bg-blue-600 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`); }
