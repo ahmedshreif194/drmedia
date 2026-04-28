@@ -2,31 +2,30 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Drmedia Pro Plus | النظام المتكامل</title>
-    <!-- Tailwind CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Drmedia Pro Plus | النسخة الكاملة</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- SheetJS (Excel) -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* تخصيصات بسيطة */
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 12px 24px; border-radius: 40px; z-index: 9999; display: none; white-space: nowrap; }
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 20px; border-radius: 40px; z-index: 10000; display: none; white-space: nowrap; }
         .toast.show { display: block; animation: fadeInUp 0.3s ease; }
         @keyframes fadeInUp { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-        .tab-btn.active { background-color: #16a34a; color: white; }
-        .tab-btn { transition: all 0.2s; }
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; visibility: hidden; opacity: 0; transition: 0.2s; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1100; visibility: hidden; opacity: 0; transition: 0.2s; }
         .modal.show { visibility: visible; opacity: 1; }
-        .modal-content { background: white; border-radius: 24px; max-width: 500px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 20px; }
+        .modal-content { background: white; border-radius: 24px; max-width: 550px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         .dark .modal-content { background: #1e293b; color: #f1f5f9; }
-        input, select, textarea { border: 1px solid #cbd5e1; border-radius: 12px; padding: 8px 12px; width: 100%; margin-bottom: 12px; }
+        input, select, textarea { border: 1px solid #cbd5e1; border-radius: 12px; padding: 8px 12px; width: 100%; margin-bottom: 12px; background: white; }
         .dark input, .dark select, .dark textarea { background: #334155; border-color: #475569; color: white; }
-        button { cursor: pointer; }
+        button { cursor: pointer; transition: 0.2s; }
+        .tab-btn { padding: 8px 16px; border-radius: 12px 12px 0 0; font-weight: 600; }
+        .tab-btn.active { background-color: #16a34a; color: white; }
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-completed { background: #d1fae5; color: #065f46; }
+        .status-cancelled { background: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body>
@@ -38,7 +37,7 @@
 <div id="app"></div>
 
 <script>
-    // ----------------------------- data / state -----------------------------
+    // ----------------------------- البيانات الأساسية -----------------------------
     let users = [
         { username: 'ahmed', password: '1994', role: 'admin', name: 'مدير النظام' },
         { username: 'ahmed_emp', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد علي' }
@@ -54,8 +53,10 @@
     let whatsappLogs = [];
     let currentUser = null;
     let currentTab = 'dashboard';
+    let pendingExcelData = [];     // للاستيراد المؤقت
+    let charts = {};
 
-    // Helper functions
+    // ----------------------------- دوال مساعدة -----------------------------
     function showMsg(msg, type = 'success') {
         const toast = document.getElementById('toast');
         toast.textContent = msg;
@@ -74,12 +75,13 @@
         document.body.style.overflow = 'hidden';
     }
 
-    // Save / Load from localStorage
+    // حفظ كل البيانات في localStorage
     function saveAllData() {
         const data = { bookings, employees, halls, clients, equipmentInventory, swapRequests, payrollArchive, employeeLoans, whatsappLogs, users };
         localStorage.setItem('drmedia_data', JSON.stringify(data));
     }
 
+    // تحميل البيانات أو إنشاء بيانات افتراضية
     function loadAllData() {
         const raw = localStorage.getItem('drmedia_data');
         if (raw) {
@@ -95,7 +97,7 @@
             whatsappLogs = data.whatsappLogs || [];
             users = data.users || users;
         } else {
-            // بيانات افتراضية للبدء
+            // بيانات أولية
             halls = [
                 { id: 'h1', name: 'القاعة المغلقة', type: 'closed', active: true },
                 { id: 'h2', name: 'القاعة المفتوحة', type: 'open', active: true },
@@ -107,33 +109,35 @@
                 { id: 'emp3', name: 'سامر خالد', role: 'كرين', phone: '01003456789', salaryPerOrder: 250, active: true, totalOrders: 0 }
             ];
             bookings = [
-                { id: 'b1', clientName: 'محمد عبدالله', phone: '01012345678', hallId: 'h1', hallName: 'القاعة المغلقة', date: new Date().toISOString().slice(0,10), price: 5000, status: 'pending', paymentStatus: 'pending', assignedEmployees: [] }
+                { id: 'b1', clientName: 'محمد عبدالله', phone: '01012345678', hallId: 'h1', hallName: 'القاعة المغلقة', date: new Date().toISOString().slice(0,10), price: 5000, status: 'pending', paymentStatus: 'pending', assignedEmployees: [], notes: '' }
             ];
             clients = [
-                { id: 'c1', name: 'محمد عبدالله', phone: '01012345678', email: 'm@x.com' }
+                { id: 'c1', name: 'محمد عبدالله', phone: '01012345678', email: 'mohamed@example.com' }
             ];
             equipmentInventory = {
-                cam1: { name: 'كاميرا Sony', quantity: 3, minStock: 1, category: 'تصوير' }
+                cam1: { name: 'كاميرا Sony A7', quantity: 3, minStock: 1, category: 'تصوير' },
+                light1: { name: 'إضاءة LED', quantity: 5, minStock: 2, category: 'إضاءة' }
             };
             saveAllData();
         }
+        updateEmployeeOrders();
     }
 
-    // Function to update employee orders count
+    // تحديث عدد الأوردرات لكل موظف
     function updateEmployeeOrders() {
         const activeBookings = bookings.filter(b => b.status !== 'cancelled');
-        employees.forEach(e => {
-            e.totalOrders = activeBookings.filter(b => (b.assignedEmployees || []).includes(e.id)).length;
+        employees.forEach(emp => {
+            emp.totalOrders = activeBookings.filter(b => (b.assignedEmployees || []).includes(emp.id)).length;
         });
     }
 
-    // Auto distribute simple
+    // توزيع ذكي بسيط
     function autoDistribute() {
         const pending = bookings.filter(b => b.status === 'pending');
         const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
         const phs = employees.filter(e => e.role === 'مصور' && e.active);
         const crs = employees.filter(e => e.role === 'كرين' && e.active);
-        pending.forEach(b => {
+        for (let b of pending) {
             let assigned = [];
             const hall = halls.find(h => h.id === b.hallId);
             const type = hall ? hall.type : 'closed';
@@ -146,65 +150,292 @@
                 if (crs.length) assigned.push(crs[0].id);
             }
             b.assignedEmployees = assigned;
-        });
+        }
         updateEmployeeOrders();
         saveAllData();
         showMsg('✅ تم التوزيع الذكي');
     }
 
-    // Render functions for each tab
+    // تصدير Excel
+    function exportToExcel() {
+        const wsData = bookings.map(b => ({
+            'العميل': b.clientName,
+            'التاريخ': b.date,
+            'القاعة': b.hallName,
+            'السعر': b.price,
+            'الحالة': b.status === 'completed' ? 'مكتمل' : (b.status === 'cancelled' ? 'ملغي' : 'معلق'),
+            'الدفع': b.paymentStatus === 'paid' ? 'مدفوع' : 'معلق'
+        }));
+        const ws = XLSX.utils.json_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'الحجوزات');
+        XLSX.writeFile(wb, `Drmedia_Bookings_${new Date().toISOString().slice(0,10)}.xlsx`);
+        showMsg('✅ تم تصدير Excel');
+    }
+
+    // استيراد Excel (يظهر مودال)
+    function showImportExcelModal() {
+        openModal(`
+            <h3 class="text-xl font-bold mb-4">📥 استيراد من Excel</h3>
+            <select id="excelHallSelect" class="w-full p-2 border rounded-xl mb-3">${halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('')}</select>
+            <input type="number" id="excelDefaultPrice" placeholder="السعر الافتراضي" value="2500" class="w-full p-2 border rounded-xl mb-3">
+            <div class="border-2 border-dashed border-emerald-500 rounded-xl p-6 text-center cursor-pointer hover:bg-emerald-50 transition" onclick="document.getElementById('excelFileInput').click()">
+                <i class="fas fa-cloud-upload-alt text-3xl text-emerald-600"></i><p class="text-sm mt-2">اضغط أو اسحب ملف Excel</p>
+            </div>
+            <input type="file" id="excelFileInput" accept=".xlsx,.xls" class="hidden" onchange="handleExcelFile(this.files[0])">
+            <div id="excelPreview" class="mt-3 text-sm"></div>
+            <button id="excelImportBtn" class="bg-green-700 text-white w-full py-2 rounded-xl mt-3 hidden" onclick="confirmExcelImport()">✅ استيراد</button>
+        `);
+    }
+
+    function handleExcelFile(file) {
+        if (!file) return;
+        const preview = document.getElementById('excelPreview');
+        const btn = document.getElementById('excelImportBtn');
+        preview.innerHTML = '<div class="text-gray-500">⏳ جاري التحليل...</div>';
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                pendingExcelData = [];
+                const headers = rows[0] || [];
+                const colMap = { clientName: -1, date: -1, hallName: -1, price: -1, phone: -1 };
+                headers.forEach((h, i) => {
+                    const txt = String(h).trim().toLowerCase();
+                    if (txt.includes('عميل') || txt.includes('client') || txt.includes('name')) colMap.clientName = i;
+                    if (txt.includes('تاريخ') || txt.includes('date')) colMap.date = i;
+                    if (txt.includes('قاعة') || txt.includes('hall')) colMap.hallName = i;
+                    if (txt.includes('سعر') || txt.includes('price')) colMap.price = i;
+                    if (txt.includes('هاتف') || txt.includes('phone')) colMap.phone = i;
+                });
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || !row.some(c => c)) continue;
+                    const cn = colMap.clientName !== -1 ? String(row[colMap.clientName] || '').trim() : '';
+                    if (!cn) continue;
+                    let ds = '';
+                    if (colMap.date !== -1 && row[colMap.date]) {
+                        let dv = row[colMap.date];
+                        if (typeof dv === 'number') {
+                            const d = XLSX.SSF.parse_date_code(dv);
+                            ds = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+                        } else ds = String(dv).trim();
+                    }
+                    const hn = colMap.hallName !== -1 ? String(row[colMap.hallName] || '').trim() : '';
+                    let price = (colMap.price !== -1 && row[colMap.price]) ? parseInt(row[colMap.price]) : 0;
+                    const phone = colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '';
+                    let hall = halls.find(h => h.name === hn);
+                    if (!hall && hn) hall = halls.find(h => h.name.includes(hn) || hn.includes(h.name));
+                    const hid = hall ? hall.id : halls[0].id;
+                    const hname = hall ? hall.name : halls[0].name;
+                    pendingExcelData.push({
+                        id: 'imp_' + Date.now() + '_' + i,
+                        clientName: cn,
+                        phone,
+                        hallId: hid,
+                        hallName: hname,
+                        date: ds || new Date().toISOString().slice(0,10),
+                        price: price || 2500,
+                        status: 'pending',
+                        paymentStatus: 'pending',
+                        assignedEmployees: []
+                    });
+                }
+                if (pendingExcelData.length) {
+                    preview.innerHTML = `<div class="bg-green-100 p-2 rounded">✅ تم تحليل ${pendingExcelData.length} حجز</div>`;
+                    btn.classList.remove('hidden');
+                } else {
+                    preview.innerHTML = '<div class="bg-red-100 p-2 rounded">❌ لم يتم العثور على بيانات</div>';
+                }
+            } catch(err) {
+                preview.innerHTML = '<div class="bg-red-100 p-2 rounded">❌ خطأ في قراءة الملف</div>';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function confirmExcelImport() {
+        if (!pendingExcelData.length) return showMsg('⚠️ لا توجد بيانات');
+        const defaultHallId = document.getElementById('excelHallSelect')?.value;
+        const defaultPrice = parseInt(document.getElementById('excelDefaultPrice')?.value) || 2500;
+        if (defaultHallId) {
+            const hall = halls.find(h => h.id === defaultHallId);
+            if (hall) pendingExcelData.forEach(b => { b.hallId = hall.id; b.hallName = hall.name; });
+        }
+        pendingExcelData.forEach(b => { if (!b.price || b.price === 0) b.price = defaultPrice; });
+        bookings.push(...pendingExcelData);
+        pendingExcelData = [];
+        saveAllData();
+        closeModal();
+        autoDistribute();
+        renderCurrentTab();
+        showMsg(`✅ تم استيراد ${pendingExcelData.length} حجز جديد`);
+    }
+
+    // إدارة العملاء
+    function addClient() {
+        const name = prompt('اسم العميل');
+        const phone = prompt('رقم الهاتف');
+        if (name && phone) {
+            clients.push({ id: 'c'+Date.now(), name, phone, email: '' });
+            saveAllData();
+            renderClients();
+            showMsg('✅ تمت إضافة العميل');
+        }
+    }
+
+    function deleteClient(id) {
+        if (confirm('حذف العميل؟')) {
+            clients = clients.filter(c => c.id !== id);
+            saveAllData();
+            renderClients();
+            showMsg('🗑️ تم الحذف');
+        }
+    }
+
+    // المعدات
+    function addEquipment() {
+        const name = prompt('اسم المعدة');
+        const category = prompt('الفئة (تصوير/إضاءة/صوت)');
+        const quantity = parseInt(prompt('الكمية', '1'));
+        if (name && quantity) {
+            const id = 'eq'+Date.now();
+            equipmentInventory[id] = { name, category, quantity, minStock: 1 };
+            saveAllData();
+            renderEquipment();
+            showMsg('✅ تمت الإضافة');
+        }
+    }
+
+    function adjustInventory(id, delta) {
+        if (equipmentInventory[id]) {
+            equipmentInventory[id].quantity = Math.max(0, equipmentInventory[id].quantity + delta);
+            saveAllData();
+            renderEquipment();
+            showMsg('✅ تم التحديث');
+        }
+    }
+
+    // المرتبات والسلف
+    function addLoan() {
+        const empId = prompt('أدخل ID الموظف (emp1, emp2...)');
+        const amount = parseInt(prompt('المبلغ'));
+        if (empId && amount) {
+            if (!employeeLoans[empId]) employeeLoans[empId] = [];
+            employeeLoans[empId].push({ id: Date.now(), amount, date: new Date().toISOString().slice(0,10) });
+            saveAllData();
+            renderPayroll();
+            showMsg('✅ تم تسجيل السلفة');
+        }
+    }
+
+    // الحجوزات
+    function addBooking() {
+        const name = prompt('اسم العميل');
+        const hallId = prompt('معرف القاعة (h1/h2/h3)');
+        const price = parseInt(prompt('السعر'));
+        if (name && hallId && price) {
+            const hall = halls.find(h => h.id === hallId);
+            if (hall) {
+                bookings.push({
+                    id: 'b'+Date.now(), clientName: name, phone: '', hallId, hallName: hall.name,
+                    date: new Date().toISOString().slice(0,10), price, status: 'pending', paymentStatus: 'pending', assignedEmployees: []
+                });
+                saveAllData();
+                autoDistribute();
+                renderCurrentTab();
+                showMsg('✅ تمت إضافة الحجز');
+            } else alert('قاعة غير موجودة');
+        }
+    }
+
+    function markComplete(id) {
+        const b = bookings.find(x => x.id === id);
+        if (b) { b.status = 'completed'; b.paymentStatus = 'paid'; saveAllData(); renderCurrentTab(); showMsg('✅ تم إكمال الحجز'); }
+    }
+
+    function deleteBooking(id) {
+        if (confirm('حذف الحجز؟')) { bookings = bookings.filter(b => b.id !== id); saveAllData(); renderCurrentTab(); showMsg('🗑️ تم الحذف'); }
+    }
+
+    // ----------------------------- دوال العرض (التبويبات) -----------------------------
     function renderDashboard() {
         updateEmployeeOrders();
-        const totalBookings = bookings.filter(b => b.status !== 'cancelled').length;
-        const totalRevenue = bookings.filter(b => b.status !== 'cancelled').reduce((s,b)=>s+b.price,0);
-        const activeEmployees = employees.filter(e=>e.active).length;
+        const total = bookings.filter(b => b.status !== 'cancelled').length;
+        const revenue = bookings.filter(b => b.status !== 'cancelled').reduce((s,b)=>s+b.price,0);
+        const empCount = employees.filter(e=>e.active).length;
         const completed = bookings.filter(b=>b.status==='completed').length;
         document.getElementById('dashboard').innerHTML = `
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><i class="fas fa-calendar text-emerald-600 text-2xl"></i><div class="text-2xl font-bold">${totalBookings}</div><div class="text-gray-500">حجوزات نشطة</div></div>
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><i class="fas fa-chart-line text-emerald-600 text-2xl"></i><div class="text-2xl font-bold">${totalRevenue.toLocaleString()} ج.م</div><div class="text-gray-500">الإيرادات</div></div>
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><i class="fas fa-users text-emerald-600 text-2xl"></i><div class="text-2xl font-bold">${activeEmployees}</div><div class="text-gray-500">موظفين نشطين</div></div>
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><i class="fas fa-check-circle text-emerald-600 text-2xl"></i><div class="text-2xl font-bold">${completed}</div><div class="text-gray-500">مكتملة</div></div>
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow text-center"><i class="fas fa-calendar-alt text-emerald-600 text-3xl"></i><div class="text-2xl font-bold mt-2">${total}</div><div class="text-gray-500">حجوزات نشطة</div></div>
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow text-center"><i class="fas fa-chart-line text-emerald-600 text-3xl"></i><div class="text-2xl font-bold mt-2">${revenue.toLocaleString()} ج.م</div><div class="text-gray-500">الإيرادات</div></div>
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow text-center"><i class="fas fa-users text-emerald-600 text-3xl"></i><div class="text-2xl font-bold mt-2">${empCount}</div><div class="text-gray-500">موظفين</div></div>
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow text-center"><i class="fas fa-check-circle text-emerald-600 text-3xl"></i><div class="text-2xl font-bold mt-2">${completed}</div><div class="text-gray-500">مكتملة</div></div>
             </div>
-            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h3 class="font-bold mb-3">⚡ إجراءات سريعة</h3><div class="flex flex-wrap gap-2"><button onclick="showAddBookingModal()" class="bg-emerald-600 text-white px-4 py-2 rounded-xl">+ حجز جديد</button><button onclick="autoDistribute();renderCurrentTab()" class="bg-purple-600 text-white px-4 py-2 rounded-xl">🔄 توزيع ذكي</button><button onclick="exportToExcel()" class="bg-blue-600 text-white px-4 py-2 rounded-xl">📊 تصدير Excel</button></div></div>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h3 class="font-bold mb-4">⚡ إجراءات سريعة</h3><div class="flex flex-wrap gap-3"><button onclick="addBooking()" class="bg-emerald-600 text-white px-5 py-2 rounded-xl">+ حجز جديد</button><button onclick="autoDistribute();renderCurrentTab()" class="bg-purple-600 text-white px-5 py-2 rounded-xl">🔄 توزيع ذكي</button><button onclick="exportToExcel()" class="bg-blue-600 text-white px-5 py-2 rounded-xl">📊 تصدير Excel</button><button onclick="showImportExcelModal()" class="bg-amber-600 text-white px-5 py-2 rounded-xl">📂 استيراد Excel</button></div></div>
         `;
     }
 
     function renderBookings() {
         const filtered = bookings.filter(b => b.status !== 'cancelled');
         document.getElementById('bookings').innerHTML = `
-            <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📅 الحجوزات (${filtered.length})</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>${filtered.map(b => `<tr><td class="p-2">${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td><span class="px-2 py-1 rounded-full ${b.status==='pending'?'bg-yellow-100 text-yellow-800':'bg-green-100 text-green-800'}">${b.status}</span></td><td><button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check-circle"></i></button> <button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📅 الحجوزات (${filtered.length})</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الدفع</th><th></th></tr></thead><tbody>${filtered.map(b => `
+                <tr><td class="p-2">${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td><td>${b.paymentStatus==='paid'?'مدفوع':'معلق'}</td><td><button onclick="markComplete('${b.id}')" class="text-green-600 ml-2"><i class="fas fa-check-circle"></i></button><button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>
+            `).join('')}</tbody></table></div></div>`;
     }
 
     function renderEmployees() {
         updateEmployeeOrders();
-        document.getElementById('employees').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">👥 الموظفين</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>أوردرات</th><th>المستحق</th></tr></thead><tbody>${employees.map(e => `<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div></div>`;
+        document.getElementById('employees').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">👥 الموظفين</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th></tr></thead><tbody>${employees.map(e => `
+                <tr><td class="p-2">${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders||0}</td><td class="text-emerald-600 font-bold">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>
+            `).join('')}</tbody></table></div><button onclick="addEmployee()" class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl">+ إضافة موظف</button></div>`;
+    }
+
+    function addEmployee() {
+        const name = prompt('اسم الموظف');
+        const role = prompt('الدور (مخرج/مصور/كرين)');
+        const phone = prompt('رقم الهاتف');
+        if (name && role) {
+            employees.push({
+                id: 'emp'+Date.now(), name, role, phone, salaryPerOrder: role==='مخرج'?300:role==='مصور'?200:250,
+                active: true, totalOrders: 0
+            });
+            saveAllData();
+            renderEmployees();
+            showMsg('✅ تمت الإضافة');
+        }
     }
 
     function renderHalls() {
-        document.getElementById('halls').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">🏛️ القاعات</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>حجوزات</th></tr></thead><tbody>${halls.map(h => `<tr><td>${h.name}</td><td>${h.type}</td><td>${h.active?'نشطة':'غير نشطة'}</td><td>${bookings.filter(b=>b.hallId===h.id && b.status!=='cancelled').length}</td></tr>`).join('')}</tbody></table></div></div>`;
+        document.getElementById('halls').innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">🏛️ القاعات</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th><th>عدد الحجوزات</th></tr></thead><tbody>${halls.map(h => `
+            <tr><td class="p-2">${h.name}</td><td>${h.type}</td><td>${h.active?'✅ نشطة':'❌ غير نشطة'}</td><td>${bookings.filter(b=>b.hallId===h.id && b.status!=='cancelled').length}</td></tr>
+        `).join('')}</tbody></table></div></div>`;
     }
 
-    // باقي التبويبات (توزيع، مرتيات، الخ) سأضيفها باختصار ولكن كاملة
     function renderDistribution() {
         const pending = bookings.filter(b => b.status === 'pending');
-        let html = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ توزيع المهام</h2>`;
-        pending.forEach(b => {
-            html += `<div class="border p-3 rounded-xl mb-3"><div><strong>${b.clientName}</strong> - ${b.hallName} (${b.date})</div><div>الموظفون: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ') || 'غير معين'}</div><button onclick="autoDistribute();renderCurrentTab()" class="bg-purple-600 text-white px-3 py-1 rounded text-sm mt-2">توزيع تلقائي</button></div>`;
-        });
-        html += `</div>`;
-        document.getElementById('distribution').innerHTML = html;
+        document.getElementById('distribution').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ توزيع المهام</h2>${pending.map(b => `
+                <div class="border p-3 rounded-xl mb-3"><div class="font-bold">${b.clientName} - ${b.hallName} (${b.date})</div><div>الموظفون: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ') || 'غير معين'}</div><button onclick="autoDistribute();renderCurrentTab()" class="bg-purple-600 text-white px-3 py-1 rounded text-sm mt-2">توزيع تلقائي</button></div>
+            `).join('')}</div>`;
     }
 
     function renderPayroll() {
-        let html = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">💰 المرتبات</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الموظف</th><th>عدد الأوردرات</th><th>قيمة الأوردر</th><th>الإجمالي</th></tr></thead><tbody>`;
-        employees.forEach(e => {
-            const orders = e.totalOrders || 0;
-            const total = orders * e.salaryPerOrder;
-            html += `<tr><td>${e.name}</td><td>${orders}</td><td>${e.salaryPerOrder}</td><td>${total.toLocaleString()} ج.م</td></tr>`;
-        });
-        html += `</tbody></table></div></div>`;
-        document.getElementById('payroll').innerHTML = html;
+        updateEmployeeOrders();
+        let loansHtml = '';
+        for (let empId in employeeLoans) {
+            const emp = employees.find(e=>e.id===empId);
+            const total = employeeLoans[empId].reduce((s,l)=>s+l.amount,0);
+            loansHtml += `<div class="flex justify-between border-b py-1"><span>${emp?.name || empId}</span><span class="text-red-500">${total.toLocaleString()} ج.م</span></div>`;
+        }
+        document.getElementById('payroll').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">💰 المرتبات</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الموظف</th><th>الأوردرات</th><th>سعر الأوردر</th><th>الإجمالي</th></tr></thead><tbody>${employees.map(e => `
+                <tr><td>${e.name}</td><td>${e.totalOrders||0}</td><td>${e.salaryPerOrder}</td><td class="font-bold">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>
+            `).join('')}</tbody>}</table></div><div class="mt-4"><h3 class="font-bold">💵 السلف المسجلة</h3>${loansHtml || 'لا توجد سلف'}<button onclick="addLoan()" class="mt-3 bg-amber-600 text-white px-4 py-2 rounded-xl">+ تسجيل سلفة</button></div></div>`;
     }
 
     function renderCalendar() {
@@ -213,10 +444,10 @@
         const month = today.getMonth();
         const firstDay = new Date(year, month, 1).getDay();
         const daysInMonth = new Date(year, month+1, 0).getDate();
-        let html = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📆 تقويم ${today.toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</h2><div class="grid grid-cols-7 gap-1 text-center">`;
+        let html = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📆 ${today.toLocaleDateString('ar-EG', { month:'long', year:'numeric' })}</h2><div class="grid grid-cols-7 gap-1 text-center">`;
         ['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'].forEach(d => html += `<div class="font-bold">${d}</div>`);
-        for(let i=0; i<firstDay; i++) html += `<div></div>`;
-        for(let d=1; d<=daysInMonth; d++) {
+        for (let i=0; i<firstDay; i++) html += `<div></div>`;
+        for (let d=1; d<=daysInMonth; d++) {
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
             const hasBooking = bookings.some(b => b.date === dateStr);
             html += `<div class="p-2 border rounded ${hasBooking ? 'bg-emerald-100 dark:bg-emerald-900' : ''}">${d}</div>`;
@@ -227,105 +458,103 @@
 
     function renderArchive() {
         const completed = bookings.filter(b => b.status === 'completed');
-        document.getElementById('archive').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📁 أرشيف المكتمل (${completed.length})</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${completed.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`;
+        document.getElementById('archive').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📁 الأرشيف (${completed.length})</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${completed.map(b => `
+                <tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td></tr>
+            `).join('')}</tbody>}</table></div></div>`;
     }
 
     function renderReports() {
-        const total = bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0);
-        document.getElementById('reports').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📊 التقارير</h2><canvas id="revenueChart" height="200"></canvas></div>`;
+        document.getElementById('reports').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📊 الإحصائيات</h2><canvas id="reportsChart" height="200"></canvas><div class="mt-4"><button onclick="exportToExcel()" class="bg-green-600 text-white px-4 py-2 rounded-xl">تصدير Excel</button></div></div>`;
         setTimeout(() => {
-            const ctx = document.getElementById('revenueChart')?.getContext('2d');
-            if(ctx) new Chart(ctx, { type: 'bar', data: { labels: halls.map(h=>h.name), datasets: [{ label: 'الإيرادات', data: halls.map(h=>bookings.filter(b=>b.hallId===h.id && b.status!=='cancelled').reduce((s,b)=>s+b.price,0)), backgroundColor: '#16a34a' }] } });
+            const ctx = document.getElementById('reportsChart')?.getContext('2d');
+            if (ctx) {
+                if (charts.reports) charts.reports.destroy();
+                charts.reports = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: halls.map(h => h.name),
+                        datasets: [{
+                            label: 'الإيرادات (ج.م)',
+                            data: halls.map(h => bookings.filter(b=>b.hallId===h.id && b.status!=='cancelled').reduce((s,b)=>s+b.price,0)),
+                            backgroundColor: '#16a34a'
+                        }]
+                    }
+                });
+            }
         }, 100);
     }
 
     function renderClients() {
-        document.getElementById('clients').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">👥 العملاء</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>حجوزات</th></tr></thead><tbody>${clients.map(c=>`<tr><td>${c.name}</td><td>${c.phone}</td><td>${c.email||'-'}</td><td>${bookings.filter(b=>b.phone===c.phone).length}</td></tr>`).join('')}</tbody></table></div></div>`;
+        document.getElementById('clients').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">👥 العملاء</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>حجوزات</th><th></th></tr></thead><tbody>${clients.map(c => `
+                <tr><td>${c.name}</td><td>${c.phone}</td><td>${c.email || '-'}</td><td>${bookings.filter(b=>b.phone===c.phone).length}</td><td><button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>
+            `).join('')}</tbody>}</table></div><button onclick="addClient()" class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl">+ عميل جديد</button></div>`;
     }
 
     function renderEquipment() {
-        let html = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📦 المعدات</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
-        for(let id in equipmentInventory) {
+        let itemsHtml = '';
+        for (let id in equipmentInventory) {
             const item = equipmentInventory[id];
-            html += `<div class="border p-3 rounded-xl"><div><strong>${item.name}</strong> (${item.category})</div><div>الكمية: ${item.quantity} <span class="${item.quantity <= item.minStock ? 'text-red-500' : 'text-green-500'}">${item.quantity <= item.minStock ? '⚠️ منخفض' : 'متوفر'}</span></div><button onclick="adjustInventory('${id}',-1)" class="bg-gray-300 px-3 py-1 rounded">-</button> <button onclick="adjustInventory('${id}',1)" class="bg-gray-300 px-3 py-1 rounded">+</button></div>`;
+            itemsHtml += `
+                <div class="border p-4 rounded-xl"><div><strong>${item.name}</strong> (${item.category})</div><div>الكمية: ${item.quantity} <span class="${item.quantity <= item.minStock ? 'text-red-500' : 'text-green-500'}">${item.quantity <= item.minStock ? '⚠️ منخفض' : 'متوفر'}</span></div><div class="flex gap-2 mt-2"><button onclick="adjustInventory('${id}',-1)" class="bg-gray-300 px-3 py-1 rounded">-</button><button onclick="adjustInventory('${id}',1)" class="bg-gray-300 px-3 py-1 rounded">+</button></div></div>
+            `;
         }
-        html += `</div></div>`;
-        document.getElementById('equipment').innerHTML = html;
+        document.getElementById('equipment').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📦 المعدات</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-4">${itemsHtml}</div><button onclick="addEquipment()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-xl">+ إضافة معدة</button></div>`;
     }
 
     function renderSwap() {
-        document.getElementById('swap').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">🔄 طلبات التبديل</h2><p>لا توجد طلبات حالياً</p></div>`;
+        document.getElementById('swap').innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">🔄 طلبات التبديل</h2><p>ليس لديك طلبات حالياً</p><button onclick="requestSwap()" class="mt-3 bg-indigo-600 text-white px-4 py-2 rounded-xl">طلب تبديل جديد</button></div>`;
+    }
+
+    function requestSwap() {
+        alert('يمكن تقديم طلب تبديل للموظفين الآخرين (ستضاف هذه الميزة في التحديث القادم)');
     }
 
     function renderSettings() {
-        document.getElementById('settings').innerHTML = `<div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ الإعدادات</h2><button onclick="localStorage.clear(); location.reload();" class="bg-red-600 text-white px-4 py-2 rounded-xl">إعادة ضبط البيانات</button></div>`;
+        document.getElementById('settings').innerHTML = `
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ الإعدادات</h2><button onclick="resetData()" class="bg-red-600 text-white px-5 py-2 rounded-xl">إعادة ضبط البيانات (مسح الكل)</button><div class="mt-4 text-sm text-gray-500">يمكنك تصدير البيانات عبر Excel أو نسخ احتياطي يدوي.</div></div>`;
     }
 
-    // Helpers for actions
-    window.markComplete = function(id) {
-        const b = bookings.find(x=>x.id===id);
-        if(b) { b.status = 'completed'; b.paymentStatus='paid'; saveAllData(); renderCurrentTab(); showMsg('✅ تم إكمال الحجز'); }
-    };
-    window.deleteBooking = function(id) {
-        if(confirm('حذف الحجز؟')) { bookings = bookings.filter(b=>b.id!==id); saveAllData(); renderCurrentTab(); showMsg('🗑️ تم الحذف'); }
-    };
-    window.adjustInventory = function(id, delta) {
-        if(equipmentInventory[id]) {
-            equipmentInventory[id].quantity = Math.max(0, equipmentInventory[id].quantity + delta);
-            saveAllData(); renderEquipment(); showMsg('✅ تم تحديث المخزون');
+    function resetData() {
+        if (confirm('⚠️ هل أنت متأكد؟ سيتم حذف جميع البيانات ولن يمكن استعادتها!')) {
+            localStorage.removeItem('drmedia_data');
+            location.reload();
         }
-    };
-    window.exportToExcel = function() {
-        const ws = XLSX.utils.json_to_sheet(bookings.map(b=>({العميل:b.clientName,التاريخ:b.date,القاعة:b.hallName,السعر:b.price,الحالة:b.status})));
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'الحجوزات');
-        XLSX.writeFile(wb, `bookings_${new Date().toISOString().slice(0,10)}.xlsx`);
-        showMsg('✅ تم التصدير');
-    };
-    window.showAddBookingModal = function() {
-        openModal(`<h3 class="text-xl font-bold mb-4">➕ حجز جديد</h3><input id="clientName" placeholder="اسم العميل"><input id="clientPhone" placeholder="رقم الهاتف"><select id="hallId">${halls.map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select><input id="date" type="date" value="${new Date().toISOString().slice(0,10)}"><input id="price" placeholder="السعر" value="2500"><button onclick="saveNewBooking()" class="bg-emerald-600 text-white w-full py-2 rounded-xl mt-2">حفظ</button>`);
-    };
-    window.saveNewBooking = function() {
-        const hall = halls.find(h=>h.id===document.getElementById('hallId').value);
-        const newBooking = {
-            id: 'b'+Date.now(), clientName: document.getElementById('clientName').value, phone: document.getElementById('clientPhone').value,
-            hallId: hall.id, hallName: hall.name, date: document.getElementById('date').value, price: parseInt(document.getElementById('price').value),
-            status: 'pending', paymentStatus: 'pending', assignedEmployees: []
-        };
-        bookings.push(newBooking);
-        saveAllData();
-        closeModal();
-        renderCurrentTab();
-        showMsg('✅ تمت الإضافة');
-    };
-
-    // Render current tab based on currentTab variable
-    function renderCurrentTab() {
-        if(currentTab === 'dashboard') renderDashboard();
-        else if(currentTab === 'bookings') renderBookings();
-        else if(currentTab === 'employees') renderEmployees();
-        else if(currentTab === 'halls') renderHalls();
-        else if(currentTab === 'distribution') renderDistribution();
-        else if(currentTab === 'payroll') renderPayroll();
-        else if(currentTab === 'calendar') renderCalendar();
-        else if(currentTab === 'archive') renderArchive();
-        else if(currentTab === 'reports') renderReports();
-        else if(currentTab === 'clients') renderClients();
-        else if(currentTab === 'equipment') renderEquipment();
-        else if(currentTab === 'swap') renderSwap();
-        else if(currentTab === 'settings') renderSettings();
     }
 
-    // Admin Dashboard UI
+    // ----------------------------- رندر التبويب الحالي -----------------------------
+    function renderCurrentTab() {
+        const tabIds = ['dashboard', 'bookings', 'employees', 'halls', 'distribution', 'payroll', 'calendar', 'archive', 'reports', 'clients', 'equipment', 'swap', 'settings'];
+        for (let id of tabIds) {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        }
+        document.getElementById(currentTab).classList.remove('hidden');
+        if (currentTab === 'dashboard') renderDashboard();
+        else if (currentTab === 'bookings') renderBookings();
+        else if (currentTab === 'employees') renderEmployees();
+        else if (currentTab === 'halls') renderHalls();
+        else if (currentTab === 'distribution') renderDistribution();
+        else if (currentTab === 'payroll') renderPayroll();
+        else if (currentTab === 'calendar') renderCalendar();
+        else if (currentTab === 'archive') renderArchive();
+        else if (currentTab === 'reports') renderReports();
+        else if (currentTab === 'clients') renderClients();
+        else if (currentTab === 'equipment') renderEquipment();
+        else if (currentTab === 'swap') renderSwap();
+        else if (currentTab === 'settings') renderSettings();
+    }
+
+    // ----------------------------- واجهة المدير -----------------------------
     function renderAdminDashboard() {
         document.getElementById('app').innerHTML = `
             <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
                 <header class="bg-white dark:bg-gray-800 shadow p-3 flex flex-wrap justify-between items-center sticky top-0 z-50">
                     <h1 class="text-xl font-bold text-emerald-700">📷 Drmedia Pro Plus</h1>
-                    <div class="flex gap-3 items-center">
-                        <span class="text-sm">👤 ${currentUser.name}</span>
-                        <button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded-lg">خروج</button>
-                    </div>
+                    <div class="flex items-center gap-3"><span class="text-sm">👤 ${currentUser.name}</span><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded-lg text-sm">خروج</button></div>
                 </header>
                 <div class="flex overflow-x-auto border-b bg-white dark:bg-gray-800 px-2 sticky top-12 z-40">
                     <button data-tab="dashboard" class="tab-btn px-4 py-2 rounded-t-lg">📊 الرئيسية</button>
@@ -359,41 +588,36 @@
                 </main>
             </div>
         `;
-        // Add event listeners for tabs
         document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', () => {
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentTab = btn.dataset.tab;
-                document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
-                document.getElementById(currentTab).classList.remove('hidden');
                 renderCurrentTab();
             });
         });
-        // Activate first tab
+        // تنشيط أول تبويب
         document.querySelector('.tab-btn').classList.add('active');
-        document.getElementById('dashboard').classList.remove('hidden');
         renderCurrentTab();
     }
 
-    // Employee dashboard (بسيط)
+    // ----------------------------- واجهة الموظف -----------------------------
     function renderEmployeeDashboard() {
-        const emp = employees.find(e=>e.id === currentUser.employeeId);
+        const emp = employees.find(e => e.id === currentUser.employeeId);
         document.getElementById('app').innerHTML = `
-            <div class="min-h-screen bg-gray-100"><header class="bg-white p-3 flex justify-between"><h1 class="text-xl font-bold">📷 Drmedia Pro Plus</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">خروج</button></header><main class="p-4"><div class="bg-white p-4 rounded-xl shadow"><h2>مرحباً ${emp.name}</h2><p>عدد أوردراتك: ${emp.totalOrders || 0}</p><p>المستحق: ${((emp.totalOrders||0)*emp.salaryPerOrder).toLocaleString()} ج.م</p></div></main></div>
-        `;
+            <div class="min-h-screen bg-gray-100"><header class="bg-white p-3 flex justify-between"><h1 class="text-xl font-bold">📷 Drmedia Pro Plus</h1><button onclick="logout()" class="bg-red-600 text-white px-3 py-1 rounded">خروج</button></header><main class="p-4 max-w-md mx-auto"><div class="bg-white p-5 rounded-xl shadow"><h2 class="text-2xl font-bold">مرحباً ${emp.name}</h2><div class="grid grid-cols-2 gap-3 mt-4"><div><div class="text-3xl font-bold text-emerald-600">${emp.totalOrders||0}</div><div>أوردرات</div></div><div><div class="text-3xl font-bold text-blue-600">${((emp.totalOrders||0)*emp.salaryPerOrder).toLocaleString()} ج.م</div><div>المستحق</div></div></div></div></main></div>`;
     }
 
-    // Login screen
+    // ----------------------------- تسجيل الدخول والخروج -----------------------------
     function showLogin() {
         document.getElementById('app').innerHTML = `
             <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-md text-center shadow-2xl">
                     <h1 class="text-3xl font-bold text-emerald-700 mb-2">📷 Drmedia Pro Plus</h1>
                     <p class="text-gray-500 mb-6">نظام إدارة القاعات الذكي</p>
-                    <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3">
-                    <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2">
-                    <button onclick="doLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold">دخول</button>
+                    <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3" autocomplete="username">
+                    <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2" autocomplete="current-password">
+                    <button onclick="doLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition">دخول</button>
                     <div class="mt-4 text-sm text-gray-400"><p>المدير: <strong>ahmed</strong> / <strong>1994</strong></p><p>الموظف: <strong>ahmed_emp</strong> / <strong>emp123</strong></p></div>
                 </div>
             </div>
@@ -422,7 +646,25 @@
         showMsg('👋 تم تسجيل الخروج');
     };
 
-    // Initialization
+    // ربط الدوال التي تحتاجها الأزرار
+    window.addBooking = addBooking;
+    window.markComplete = markComplete;
+    window.deleteBooking = deleteBooking;
+    window.autoDistribute = autoDistribute;
+    window.exportToExcel = exportToExcel;
+    window.showImportExcelModal = showImportExcelModal;
+    window.handleExcelFile = handleExcelFile;
+    window.confirmExcelImport = confirmExcelImport;
+    window.addClient = addClient;
+    window.deleteClient = deleteClient;
+    window.addEquipment = addEquipment;
+    window.adjustInventory = adjustInventory;
+    window.addLoan = addLoan;
+    window.addEmployee = addEmployee;
+    window.requestSwap = requestSwap;
+    window.resetData = resetData;
+
+    // ----------------------------- بدء التشغيل -----------------------------
     loadAllData();
     const saved = sessionStorage.getItem('drmedia_user');
     if (saved) {
