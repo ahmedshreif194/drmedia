@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <meta name="description" content="Drmedia Pro Plus - نظام إدارة القاعات ">
+    <meta name="description" content="Drmedia Pro Plus - نظام إدارة القاعات الذكي">
     <meta name="theme-color" content="#16a34a" id="themeColorMeta">
     <title>Drmedia Pro Plus | Ahmed Shreif © 2026</title>
     
@@ -290,8 +290,9 @@
 
     <script>
         // Firebase Config
-        const firebaseConfig = { apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ", authDomain: "drmedia-vpms.firebaseapp.com", databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com", projectId: "drmedia-vpms", storageBucket: "drmedia-vpms.firebasestorage.app", messagingSenderId: "681162512380", appId: "1:681162512380:web:ab2482f3234d8b59fc4479" };
-        firebase.initializeApp(firebaseConfig); const db = firebase.database();
+  const firebaseConfig = { apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ", authDomain: "drmedia-vpms.firebaseapp.com", databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com", projectId: "drmedia-vpms", storageBucket: "drmedia-vpms.firebasestorage.app", messagingSenderId: "681162512380", appId: "1:681162512380:web:ab2482f3234d8b59fc4479" };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
         
         let bookings=[], employees=[], users=[], halls=[], notifications=[], swapRequests=[], payrollArchive=[], employeeLoans={}, equipmentInventory={};
         let currentUser=null, currentTab='dashboardTab', companyName='Drmedia Pro', companyLogo='📷', whatsappNumber='';
