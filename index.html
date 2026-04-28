@@ -35,11 +35,6 @@
     * { margin:0; padding:0; box-sizing:border-box; } html { scroll-behavior:smooth; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; transition: var(--transition); line-height: 1.6; }
     body.emergency-mode { animation: emergency 1s infinite; }
-    #preloader { position: fixed; inset: 0; background: linear-gradient(135deg, #065f46 0%, #047857 50%, #065f46 100%); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.6s ease, visibility 0.6s ease; }
-    #preloader.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-    .loader-ring { width: 70px; height: 70px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 24px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loader-text { color: #fff; font-size: 1.3rem; font-weight: 600; } .loader-subtext { color: rgba(255,255,255,0.85); font-size: 0.95rem; margin-top: 10px; }
     .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px); background: linear-gradient(135deg, #1e293b, #334155); color: white; padding: 14px 28px; border-radius: 50px; z-index: 10000; font-size: 0.95rem; font-weight: 500; box-shadow: 0 10px 40px rgba(0,0,0,0.3); transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1); display: flex; align-items: center; gap: 10px; max-width: 90vw; }
     .toast.show { transform: translateX(-50%) translateY(0); } .toast.success { background: linear-gradient(135deg, #065f46, #047857); } .toast.error { background: linear-gradient(135deg, #dc2626, #b91c1c); } .toast.warning { background: linear-gradient(135deg, #d97706, #b45309); }
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; opacity: 0; visibility: hidden; transition: opacity 0.25s ease, visibility 0.25s ease; }
@@ -55,10 +50,29 @@
     .online-status { position: fixed; bottom: 20px; left: 20px; background: #10b981; color: white; padding: 6px 12px; border-radius: 50px; font-size: 0.7rem; z-index: 61; display: flex; align-items: center; gap: 5px; }
     .online-status.offline { background: #ef4444; }
     .footer-copy { text-align: center; padding: 16px; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 24px; }
+    /* تحسين شكل شاشة التحميل */
+    #preloader { position: fixed; inset: 0; background: linear-gradient(135deg, #065f46 0%, #047857 50%, #065f46 100%); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.6s ease, visibility 0.6s ease; }
+    #preloader.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .loader-ring { width: 70px; height: 70px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 24px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text { color: #fff; font-size: 1.3rem; font-weight: 600; } .loader-subtext { color: rgba(255,255,255,0.85); font-size: 0.95rem; margin-top: 10px; }
+    .login-card {
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.3);
+      transition: all 0.3s ease;
+    }
+    .dark .login-card {
+      background: rgba(30,41,59,0.95);
+      border-color: rgba(255,255,255,0.1);
+    }
+    .input-icon { position: relative; }
+    .input-icon i { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+    .input-icon input { padding-right: 42px; }
   </style>
 </head>
 <body>
-  <div id="preloader"><div class="loader-ring"></div><div class="loader-text">Drmedia Pro Ultimate</div><div class="loader-subtext">جاري التحميل ...</div></div>
+  <div id="preloader"><div class="loader-ring"></div><div class="loader-text">Drmedia Pro Ultimate</div><div class="loader-subtext">جاري التحميل، يرجى الانتظار...</div></div>
   <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMessage"></span></div>
   <div id="modal" class="hidden"><div class="bg-white"><div id="modalContent"></div><div class="flex justify-end gap-3 p-4"><button onclick="closeModal()" class="bg-gray-400 text-white px-5 py-2 rounded-xl">إغلاق</button></div></div></div>
   <div id="emergencyPanel" class="fixed inset-0 bg-black/90 z-[9999] hidden flex-col items-center justify-center text-white"><div class="text-6xl mb-4">🚨</div><h2 class="text-2xl font-bold">وضع الطوارئ مفعل</h2><button onclick="deactivateEmergency()" class="bg-green-600 px-6 py-3 rounded-xl mt-4">إنهاء الطوارئ</button></div>
@@ -82,7 +96,7 @@
     let rotationPointers = { dPtr:0, pPtr:0, cPtr:0 };
     let autoBackupInterval = null;
     const BACKUP_INTERVAL_MS = 2 * 60 * 60 * 1000; // كل ساعتين
-    let dataReady = false;
+    let dataReady = false; // للإشارة إلى اكتمال تحميل البيانات الأساسية
 
     // Helper Functions
     function showMsg(message, type='success') {
@@ -211,11 +225,11 @@
       updateEmployeeOrders();
       let activeCount = bookings.filter(b=>b.status!=='cancelled').length;
       let revenue = bookings.filter(b=>b.status!=='cancelled').reduce((s,b)=>s+b.price,0);
-      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td class="font-medium">${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
+      document.getElementById('dashboardTab').innerHTML = `<div class="p-4"><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div class="dashboard-card"><div class="stat-number">${activeCount}</div><div>حجوزات نشطة</div></div><div class="dashboard-card"><div class="stat-number">${revenue.toLocaleString()} ج.م</div><div>الإيرادات</div></div></div><div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow"><h3 class="font-bold">أقرب الحجوزات</h3><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th></tr></thead><tbody>${bookings.filter(b=>b.status!=='cancelled').slice(0,5).map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td></tr>`).join('')||'<tr><td colspan="2">لا توجد حجوزات<th></td>'}</tbody></table></div></div>`;
     }
     function renderBookingsContent() {
       const fb = getFilteredBookings();
-      document.getElementById('bookingsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📅 الحجوزات (${fb.length})</h2><div class="overflow-auto"><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th></tr></thead><tbody>${fb.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td class="status-badge status-pending">${b.status==='completed'?'مكتمل':'معلق'}</td></tr>`).join('')||'<tr><td colspan="5">لا توجد حجوزات</td></tr>'}</tbody></table></div></div>`;
+      document.getElementById('bookingsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold mb-3">📅 الحجوزات (${fb.length})</h2><div class="overflow-auto"><table class="w-full text-sm"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>حالة</th></tr></thead><tbody>${fb.map(b=>`<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price.toLocaleString()}</td><td class="status-badge status-pending">${b.status==='completed'?'مكتمل':'معلق'}</td></tr>`).join('')||'</tr><td colspan="5">لا توجد حجوزات</tr>'}</tbody></table></div></div>`;
     }
     function renderHallsContent() { document.getElementById('hallsTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold">🏛️ القاعات</h2><ul>${halls.map(h=>`<li>${h.name} (${h.type})</li>`).join('')}</ul></div>`; }
     function renderEmployeesContent() { updateEmployeeOrders(); document.getElementById('employeesTab').innerHTML = `<div class="p-4"><h2 class="text-xl font-bold">👥 الموظفين</h2><ul>${employees.map(e=>`<li>${e.name} - ${e.role} - أوردرات: ${e.totalOrders}</li>`).join('')}</ul></div>`; }
@@ -263,7 +277,37 @@
     }
     function renderEmployeeDashboard() { document.getElementById('app').innerHTML = `<div class="p-4 max-w-md mx-auto"><h2 class="text-xl font-bold">مرحباً ${employees.find(e=>e.id===currentUser.employeeId)?.name}</h2><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-xl">خروج</button></div>`; }
     function showLogin() {
-      document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4"><div class="bg-white dark:bg-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl"><h1 class="text-2xl font-bold text-center mb-2 flex items-center justify-center gap-2">${companyLogo} ${companyName}</h1><p class="text-center text-gray-500 mb-6">نظام إدارة القاعات</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-4"><button onclick="doLogin()" class="w-full btn-primary py-3 mb-3">دخول</button><button onclick="loginWithBiometric()" class="w-full border-2 border-emerald-600 text-emerald-700 py-3 rounded-xl flex items-center justify-center gap-2"><i class="fas fa-fingerprint"></i> دخول بالبصمة</button><div class="footer-copy mt-6 border-0 pt-4">© ${companyName}</div></div></div>`;
+      document.getElementById('app').innerHTML = `
+        <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4">
+          <div class="login-card bg-white dark:bg-slate-800 p-8 rounded-2xl w-full max-w-md shadow-2xl transform transition-all duration-500 hover:scale-105">
+            <div class="text-center mb-8">
+              <div class="text-5xl mb-3 inline-block bg-emerald-100 dark:bg-emerald-900/30 p-4 rounded-full shadow-lg animate-float">${companyLogo}</div>
+              <h1 class="text-2xl font-bold mt-2 text-gray-800 dark:text-white">${companyName}</h1>
+              <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">نظام إدارة القاعات المتكامل</p>
+            </div>
+            <div class="space-y-4">
+              <div class="input-icon">
+                <i class="fas fa-user text-gray-400"></i>
+                <input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border border-gray-300 dark:border-gray-600 rounded-xl p-3 pr-10 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition bg-white dark:bg-slate-900">
+              </div>
+              <div class="input-icon">
+                <i class="fas fa-lock text-gray-400"></i>
+                <input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border border-gray-300 dark:border-gray-600 rounded-xl p-3 pr-10 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition bg-white dark:bg-slate-900">
+              </div>
+              <button onclick="doLogin()" class="w-full btn-primary py-3 rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2">
+                <i class="fas fa-sign-in-alt"></i> دخول
+              </button>
+              <button onclick="loginWithBiometric()" class="w-full border-2 border-emerald-600 text-emerald-700 dark:text-emerald-400 py-3 rounded-xl font-medium hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition flex items-center justify-center gap-2">
+                <i class="fas fa-fingerprint"></i> دخول بالبصمة
+              </button>
+            </div>
+            <div class="mt-8 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-4">
+              <p>© 2025 ${companyName} | تصميم أحمد شريف</p>
+              <p class="text-xs mt-1">مدعوم بـ Firebase Realtime Database</p>
+            </div>
+          </div>
+        </div>
+      `;
       setTimeout(()=>document.getElementById('loginUser')?.focus(), 100);
     }
     function doLogin() {
@@ -289,21 +333,26 @@
       autoDistribute();
     }
     function loadData() {
-      // أولاً: إخفاء preloader بعد 1.5 ثانية بحد أقصى وعرض واجهة المستخدم
+      // الخطوة 1: إخفاء preloader بعد 2 ثانية كحد أقصى وعرض نموذج الدخول أو استعادة الجلسة
       setTimeout(() => {
         const preloader = document.getElementById('preloader');
         if(preloader) preloader.classList.add('hidden');
-        // إذا كان هناك مستخدم مسجل مسبقاً في sessionStorage، استخدمه
+        
+        // التحقق من وجود مستخدم مسجل مسبقاً
         const savedUser = sessionStorage.getItem('vpms_user');
         if(savedUser) {
-          currentUser = JSON.parse(savedUser);
-          renderApp();
+          try {
+            currentUser = JSON.parse(savedUser);
+            // إذا كان المستخدم مسجلاً، اعرض واجهة التطبيق فوراً مع رسالة تحميل البيانات
+            document.getElementById('app').innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center"><div class="loader-ring mx-auto mb-4"></div><p class="text-gray-600 dark:text-gray-300">جاري تحميل البيانات...</p><p class="text-sm text-gray-500 mt-2">سيتم تحديث الشاشة تلقائياً</p></div></div>';
+            // ثم بعد اكتمال البيانات سيتم إعادة render
+          } catch(e) { currentUser = null; showLogin(); }
         } else {
           showLogin();
         }
-      }, 1500);
+      }, 2000); // 2 ثانية كحد أقصى لظهور شاشة الدخول
       
-      // ثم تحميل البيانات من Firebase في الخلفية
+      // الخطوة 2: تحميل البيانات من Firebase في الخلفية
       let loadedCount = 0;
       const totalNodes = 11;
       function onData() {
@@ -312,12 +361,14 @@
           dataReady = true;
           if(!bookings.length && !employees.length && !halls.length) initDefaultData();
           bookings.forEach(b=>{ if(!b.status) b.status='pending'; if(!b.assignedEmployees) b.assignedEmployees=[]; });
-          // إذا كان المستخدم مسجلاً بالفعل، نعيد تحميل الواجهة لتحديث البيانات
+          // إذا كان المستخدم مسجلاً بالفعل، قم بتحديث الواجهة بالبيانات الحقيقية
           if(currentUser) {
             renderApp();
+            showMsg("تم تحميل البيانات بنجاح", "success");
           }
         }
       }
+      // الاستماع إلى التغييرات في Firebase
       db.ref('bookings').on('value', snap=>{ bookings=snap.val()||[]; onData(); });
       db.ref('employees').on('value', snap=>{ employees=snap.val()||[]; onData(); });
       db.ref('users').on('value', snap=>{ users=snap.val()||[]; onData(); });
