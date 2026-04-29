@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>Drmedia Pro Plus – النظام المتكامل</title>
+    <title>Drmedia Pro Plus – النظام المتكامل مع Firebase</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <!-- Firebase (اختياري) -->
+    <!-- Firebase (Realtime Database) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <!-- مكتبة QR Code Scanner -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <!-- QR Scanner -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -32,7 +32,7 @@
         .status-pending { background: #fef3c7; color: #92400e; }
         .status-completed { background: #d1fae5; color: #065f46; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 8px; }
-        .calendar-day { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer; }
+        .calendar-day { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 8px; text-align: center; }
         .calendar-day.booked { background: #d1fae5; }
         .stat-card { background: white; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         #qr-reader { width: 100%; max-width: 500px; margin: 0 auto; border: 1px solid #ccc; border-radius: 16px; padding: 10px; background: #f9f9f9; }
@@ -45,8 +45,7 @@
 <div id="app"></div>
 
 <script>
-// ======================== إعدادات Firebase (اختيارية - استبدل البيانات الحقيقية إن أردت) ========================
-// لتفعيل Firebase املأ البيانات أدناه من مشروعك في Firebase Console
+// ======================== إعدادات Firebase المقدمة ========================
 const firebaseConfig = {
   apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
   authDomain: "drmedia-vpms.firebaseapp.com",
@@ -62,16 +61,12 @@ let useFirebase = false;
 let db = null;
 
 try {
-    if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "") {
-        firebase.initializeApp(FIREBASE_CONFIG);
-        db = firebase.firestore();
-        useFirebase = true;
-        console.log("✅ Firebase متصل بنجاح");
-    } else {
-        console.log("ℹ️ لم يتم تكوين Firebase، سيتم استخدام التخزين المحلي فقط");
-    }
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    useFirebase = true;
+    console.log("✅ Firebase Realtime Database متصل بنجاح");
 } catch(e) {
-    console.warn("⚠️ فشل تهيئة Firebase، سيتم استخدام التخزين المحلي", e);
+    console.warn("⚠️ فشل تهيئة Firebase، سيتم استخدام التخزين المحلي فقط", e);
 }
 
 // ======================== البيانات الأساسية ========================
@@ -84,7 +79,7 @@ let currentUser = null;
 let companyName = 'Drmedia Pro Plus';
 let companyLogo = '📷';
 
-// متغيرات البيانات
+// جداول البيانات
 let bookings = [];
 let employees = [];
 let halls = [];
@@ -97,37 +92,88 @@ let trashBin = [];
 
 let browserNotifications = false;
 
-// ======================== دوال التخزين (دعم Firebase + LocalStorage احتياطي) ========================
+// ======================== دوال مساعدة للتخزين (Realtime DB + LocalStorage) ========================
+
+// حفظ كل البيانات في Firebase (ككائنات منفصلة)
 async function saveAllData() {
-    try {
-        if (useFirebase && db) {
-            // حفظ كل مجموعة في Firestore
-            const collections = { bookings, employees, halls, clients, attendanceRecords, payrollArchive, notifications, trashBin, equipmentInventory };
-            for (const [colName, data] of Object.entries(collections)) {
-                const colRef = db.collection(colName);
-                const snapshot = await colRef.get();
-                const batch = db.batch();
-                snapshot.forEach(doc => batch.delete(doc.ref));
-                if (Array.isArray(data)) {
-                    data.forEach(item => {
-                        const docRef = colRef.doc(item.id?.toString() || Date.now().toString());
-                        batch.set(docRef, { ...item });
-                    });
-                } else if (typeof data === 'object') {
-                    const docRef = colRef.doc('main');
-                    batch.set(docRef, data);
-                }
-                await batch.commit();
-            }
-        }
-    } catch(e) { console.warn("Firebase save error", e); }
-    // دائماً نحفظ في localStorage كنسخة احتياطية
+    if (useFirebase && db) {
+        try {
+            await db.ref('bookings').set(bookings);
+            await db.ref('employees').set(employees);
+            await db.ref('halls').set(halls);
+            await db.ref('clients').set(clients);
+            await db.ref('equipmentInventory').set(equipmentInventory);
+            await db.ref('attendanceRecords').set(attendanceRecords);
+            await db.ref('payrollArchive').set(payrollArchive);
+            await db.ref('notifications').set(notifications);
+            await db.ref('trashBin').set(trashBin);
+            await db.ref('companyInfo').set({ companyName, companyLogo });
+        } catch(e) { console.warn("Firebase save error", e); }
+    }
+    // نسخة احتياطية في localStorage
     const localData = { bookings, employees, halls, clients, equipmentInventory, attendanceRecords, payrollArchive, notifications, trashBin, companyName, companyLogo };
     localStorage.setItem('drmedia_data', JSON.stringify(localData));
 }
 
+// تحميل البيانات (من Firebase أولاً ثم LocalStorage كنسخة احتياطية)
 async function loadAllData() {
-    // محاولة التحميل من localStorage أولاً (أسرع)
+    if (useFirebase && db) {
+        try {
+            const snapBookings = await db.ref('bookings').get();
+            if (snapBookings.exists()) bookings = snapBookings.val();
+            const snapEmployees = await db.ref('employees').get();
+            if (snapEmployees.exists()) employees = snapEmployees.val();
+            const snapHalls = await db.ref('halls').get();
+            if (snapHalls.exists()) halls = snapHalls.val();
+            const snapClients = await db.ref('clients').get();
+            if (snapClients.exists()) clients = snapClients.val();
+            const snapEquipment = await db.ref('equipmentInventory').get();
+            if (snapEquipment.exists()) equipmentInventory = snapEquipment.val();
+            const snapAttendance = await db.ref('attendanceRecords').get();
+            if (snapAttendance.exists()) attendanceRecords = snapAttendance.val();
+            const snapPayroll = await db.ref('payrollArchive').get();
+            if (snapPayroll.exists()) payrollArchive = snapPayroll.val();
+            const snapNotif = await db.ref('notifications').get();
+            if (snapNotif.exists()) notifications = snapNotif.val();
+            const snapTrash = await db.ref('trashBin').get();
+            if (snapTrash.exists()) trashBin = snapTrash.val();
+            const snapCompany = await db.ref('companyInfo').get();
+            if (snapCompany.exists()) {
+                companyName = snapCompany.val().companyName || companyName;
+                companyLogo = snapCompany.val().companyLogo || companyLogo;
+            }
+            console.log("تم التحميل من Firebase");
+        } catch(e) { console.warn("Firebase load error", e); fallbackLocalLoad(); }
+    } else {
+        fallbackLocalLoad();
+    }
+    
+    // التأكد من البيانات الافتراضية إذا كانت فارغة
+    if (!Array.isArray(halls) || !halls.length) halls = [
+        { id: 'h1', name: 'القاعة المغلقة', type: 'closed', active: true },
+        { id: 'h2', name: 'القاعة المفتوحة', type: 'open', active: true },
+        { id: 'h3', name: 'الكافيه', type: 'cafe', active: true }
+    ];
+    if (!Array.isArray(employees) || !employees.length) employees = [
+        { id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 },
+        { id: 'emp2', name: 'محمود حسن', role: 'مصور', phone: '01002345678', salaryPerOrder: 200, active: true, totalOrders: 0 },
+        { id: 'emp3', name: 'سامر خالد', role: 'كرين', phone: '01003456789', salaryPerOrder: 250, active: true, totalOrders: 0 }
+    ];
+    if (!Array.isArray(bookings) || !bookings.length) bookings = [
+        { id: 'b1', clientName: 'محمد عبدالله', phone: '01012345678', hallId: 'h1', hallName: 'القاعة المغلقة', date: new Date().toISOString().slice(0,10), price: 5000, status: 'pending', paymentStatus: 'pending', assignedEmployees: [] }
+    ];
+    if (!Array.isArray(clients) || !clients.length) clients = [{ id: 'c1', name: 'محمد عبدالله', phone: '01012345678', email: '' }];
+    if (Object.keys(equipmentInventory).length === 0) equipmentInventory = { eq1: { name: 'كاميرا Sony A7', quantity: 3, minStock: 1, category: 'تصوير' } };
+    if (!Array.isArray(attendanceRecords)) attendanceRecords = [];
+    if (!Array.isArray(payrollArchive)) payrollArchive = [];
+    if (!Array.isArray(notifications)) notifications = [];
+    if (!Array.isArray(trashBin)) trashBin = [];
+    
+    updateEmployeeOrders();
+    await saveAllData(); // مزامنة الافتراضيات مع Firebase
+}
+
+function fallbackLocalLoad() {
     const raw = localStorage.getItem('drmedia_data');
     if (raw) {
         try {
@@ -145,47 +191,6 @@ async function loadAllData() {
             companyLogo = data.companyLogo || companyLogo;
         } catch(e) { console.warn(e); }
     }
-    // ثم محاولة التحميل من Firebase إن وجد
-    if (useFirebase && db) {
-        try {
-            const snapshotBookings = await db.collection('bookings').get();
-            if (!snapshotBookings.empty) bookings = snapshotBookings.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotEmployees = await db.collection('employees').get();
-            if (!snapshotEmployees.empty) employees = snapshotEmployees.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotHalls = await db.collection('halls').get();
-            if (!snapshotHalls.empty) halls = snapshotHalls.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotClients = await db.collection('clients').get();
-            if (!snapshotClients.empty) clients = snapshotClients.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotAttendance = await db.collection('attendanceRecords').get();
-            if (!snapshotAttendance.empty) attendanceRecords = snapshotAttendance.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotPayroll = await db.collection('payrollArchive').get();
-            if (!snapshotPayroll.empty) payrollArchive = snapshotPayroll.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotNotif = await db.collection('notifications').get();
-            if (!snapshotNotif.empty) notifications = snapshotNotif.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotTrash = await db.collection('trashBin').get();
-            if (!snapshotTrash.empty) trashBin = snapshotTrash.docs.map(d => ({ id: d.id, ...d.data() }));
-            const snapshotEq = await db.collection('equipmentInventory').doc('main').get();
-            if (snapshotEq.exists) equipmentInventory = snapshotEq.data();
-        } catch(e) { console.warn("Firebase load error", e); }
-    }
-    // التأكد من وجود بيانات افتراضية
-    if (!halls.length) halls = [
-        { id: 'h1', name: 'القاعة المغلقة', type: 'closed', active: true },
-        { id: 'h2', name: 'القاعة المفتوحة', type: 'open', active: true },
-        { id: 'h3', name: 'الكافيه', type: 'cafe', active: true }
-    ];
-    if (!employees.length) employees = [
-        { id: 'emp1', name: 'أحمد علي', role: 'مخرج', phone: '01001234567', salaryPerOrder: 300, active: true, totalOrders: 0 },
-        { id: 'emp2', name: 'محمود حسن', role: 'مصور', phone: '01002345678', salaryPerOrder: 200, active: true, totalOrders: 0 },
-        { id: 'emp3', name: 'سامر خالد', role: 'كرين', phone: '01003456789', salaryPerOrder: 250, active: true, totalOrders: 0 }
-    ];
-    if (!bookings.length) bookings = [
-        { id: 'b1', clientName: 'محمد عبدالله', phone: '01012345678', hallId: 'h1', hallName: 'القاعة المغلقة', date: new Date().toISOString().slice(0,10), price: 5000, status: 'pending', paymentStatus: 'pending', assignedEmployees: [] }
-    ];
-    if (!clients.length) clients = [{ id: 'c1', name: 'محمد عبدالله', phone: '01012345678', email: '' }];
-    if (Object.keys(equipmentInventory).length === 0) equipmentInventory = { eq1: { name: 'كاميرا Sony A7', quantity: 3, minStock: 1, category: 'تصوير' } };
-    updateEmployeeOrders();
-    await saveAllData();
 }
 
 function updateEmployeeOrders() {
@@ -193,7 +198,7 @@ function updateEmployeeOrders() {
     employees.forEach(e => e.totalOrders = active.filter(b => (b.assignedEmployees || []).includes(e.id)).length);
 }
 
-// ======================== دوال مساعدة ========================
+// ======================== دوال مساعدة عامة ========================
 function showMsg(msg) { const toast = document.getElementById('toast'); toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
 function closeModal() { document.getElementById('modal').classList.remove('show'); document.body.style.overflow = ''; }
 function openModal(content) { document.getElementById('modalContent').innerHTML = content; document.getElementById('modal').classList.add('show'); document.body.style.overflow = 'auto'; }
@@ -241,14 +246,11 @@ function renderManagerQR() {
     const qrContainer = document.getElementById('attendanceQrContainer');
     if (!qrContainer) return;
     qrContainer.innerHTML = '';
-    // نص QR ثابت يمكن للموظفين مسحه (متجدد يومياً لتجنب إعادة الاستخدام)
     const today = getTodayDateStr();
     const qrText = `DRMEDIA_ATT_${today}`;
-    new QRCode(qrContainer, { text: qrText, width: 220, height: 220 });
-    document.getElementById('qrCodeValue')?.setAttribute('data-qr-value', qrText);
+    new QRCode(qrContainer, { text: qrText, width: 200, height: 200 });
 }
 
-// فتح كاميرا الموظف لمسح QR (تظهر فقط للموظف)
 async function startEmployeeScan() {
     if (!currentUser || currentUser.role !== 'employee') {
         showMsg("هذه الخاصية للموظفين فقط");
@@ -273,7 +275,7 @@ async function startEmployeeScan() {
                     stopScannerAndClose();
                     showAttendanceChoiceForEmployee();
                 } else {
-                    showMsg("⚠️ رمز QR منتهي الصلاحية أو غير صالح. يرجى استخدام الرمز الحالي في لوحة المدير");
+                    showMsg("⚠️ رمز QR منتهي الصلاحية أو غير صالح.");
                     stopScannerAndClose();
                 }
             } else {
@@ -399,7 +401,7 @@ function autoDistribute() {
     showMsg('✅ تم التوزيع الذكي');
 }
 
-// ======================== دوال العرض ========================
+// ======================== دوال العرض (المكونات) ========================
 function renderBookings() {
     const c = document.getElementById('bookings');
     if (!c) return;
@@ -407,8 +409,8 @@ function renderBookings() {
     c.innerHTML = `<div class="bg-white p-4 rounded-2xl shadow">
         <div class="flex justify-between"><h2 class="text-xl font-bold">📅 الحجوزات (${filtered.length})</h2><button onclick="addBooking()" class="btn-primary">+ حجز</button></div>
         <table class="w-full mt-3"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th></th></tr></thead>
-        <tbody>${filtered.map(b => `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price}</td><td><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td>
-        <td><button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check"></i></button> <button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`;
+        <tbody>${filtered.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price}</td><td class="p-2"><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td>
+        <td class="p-2"><button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check"></i></button> <button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function renderEmployees() {
@@ -417,7 +419,7 @@ function renderEmployees() {
     updateEmployeeOrders();
     c.innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">👥 الموظفين</h2>
         <table class="w-full"><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th></tr></thead>
-        <tbody>${employees.map(e => `<tr><td>${e.name}</td><td>${e.role}</td><td>${e.phone}</td><td>${e.totalOrders}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table>
+        <tbody>${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.totalOrders}</td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table>
         <button onclick="addEmployee()" class="btn-primary mt-2">+ موظف</button></div>`;
 }
 
@@ -430,7 +432,6 @@ function addEmployee() {
     }
 }
 
-// عرض الحضور (للمدير والموظف)
 function renderAttendance() {
     const container = document.getElementById('attendance');
     if(!container) return;
@@ -459,7 +460,7 @@ function renderAttendance() {
             ` : ''}
             <h3 class="font-bold mt-3">سجل الحضور السابق</h3>
             <table class="w-full text-sm"><thead><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead>
-            <tbody>${(emp ? myAttendance : attendanceRecords.slice(0,10)).map(a=>`<tr><td>${a.date}</td><td>${a.checkIn||'-'}</td><td>${a.checkOut||'-'}</td></tr>`).join('')||'<tr><td colspan="3">لا توجد سجلات</td></tr>'}</tbody></table>
+            <tbody>${(emp ? myAttendance : attendanceRecords.slice(0,10)).map(a=>`<tr><td class="p-2">${a.date}</td><td class="p-2">${a.checkIn||'-'}</td><td class="p-2">${a.checkOut||'-'}</td></tr>`).join('')||'<tr><td colspan="3">لا توجد سجلات</td></tr>'}</tbody>
         </div>`;
     if(isAdmin && document.getElementById('attendanceQrContainer')) renderManagerQR();
 }
@@ -470,26 +471,22 @@ function renderPayroll() {
     if(!c) return;
     c.innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">💰 المرتبات</h2>
         <table class="w-full"><thead><tr><th>الموظف</th><th>الأوردرات</th><th>الإجمالي</th></tr></thead>
-        <tbody>${employees.map(e => `<tr><td>${e.name}</td><td>${e.totalOrders}</td><td>${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>`;
+        <tbody>${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.totalOrders}</td><td class="p-2">${((e.totalOrders||0)*e.salaryPerOrder).toLocaleString()} ج.م</td></tr>`).join('')}</tbody></table></div>`;
 }
-
 function renderHalls() {
     const c = document.getElementById('halls');
     if(!c) return;
     c.innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">🏛️ القاعات</h2>${halls.map(h => `<div class="border-b p-2">${h.name} (${h.type}) - حجوزات: ${bookings.filter(b=>b.hallId===h.id).length}</div>`).join('')}</div>`;
 }
-
 function renderClients() {
     const c = document.getElementById('clients');
     if(!c) return;
     c.innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">👥 العملاء</h2><ul>${clients.map(cl=>`<li>${cl.name} - ${cl.phone}</li>`).join('')}</ul><button onclick="addClient()" class="btn-primary mt-2">+ عميل</button></div>`;
 }
-
 function addClient() {
     const n = prompt('الاسم'), p = prompt('الهاتف');
     if(n && p) { clients.push({ id:'c'+Date.now(), name:n, phone:p, email:'' }); saveAllData(); renderClients(); }
 }
-
 function renderEquipment() {
     const c = document.getElementById('equipment');
     if(!c) return;
@@ -501,24 +498,32 @@ function renderEquipment() {
     html += `</div><button onclick="addEquipment()" class="btn-primary mt-2">+ معدة</button></div>`;
     c.innerHTML = html;
 }
-
 function addEquipment() {
     const n = prompt('الاسم'), q = parseInt(prompt('الكمية','1'));
     if(n && q) { const id='eq'+Date.now(); equipmentInventory[id]={name:n, quantity:q, minStock:1, category:'عام'}; saveAllData(); renderEquipment(); }
 }
-function adjustInventory(id,delta){ if(equipmentInventory[id]){ equipmentInventory[id].quantity += delta; saveAllData(); renderEquipment(); } }
-
+function adjustInventory(id,delta){ if(equipmentInventory[id]){ equipmentInventory[id].quantity += delta; if(equipmentInventory[id].quantity<0) equipmentInventory[id].quantity=0; saveAllData(); renderEquipment(); } }
 function renderDistribution() {
     const c = document.getElementById('distribution');
     if(!c) return;
     c.innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">⚙️ توزيع المهام</h2><button onclick="autoDistribute();renderDistribution();" class="btn-primary mb-3">توزيع ذكي</button>
-    ${bookings.filter(b=>b.status==='pending').map(b=>`<div class="border p-2 mb-1"><strong>${b.clientName}</strong> - موظفون: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(',') || 'غير معين'}</div>`).join('')}</div>`;
+    ${bookings.filter(b=>b.status==='pending').map(b=>`<div class="border p-2 mb-1"><strong>${b.clientName}</strong> - موظفون: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ') || 'غير معين'}</div>`).join('')}</div>`;
 }
-
 function renderCalendar() {
-    document.getElementById('calendar').innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">📆 التقويم</h2><div class="calendar-grid">${['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'].map(d=>`<div class="font-bold">${d}</div>`).join('')}</div></div>`;
+    const year = new Date().getFullYear(), month = new Date().getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const days = new Date(year, month+1, 0).getDate();
+    const monthNames = ['يناير','فبراير','مارس','إبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    let html = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📆 التقويم - ${monthNames[month]} ${year}</h2><div class="calendar-grid">${['أحد','إثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'].map(d=>`<div class="font-bold text-center">${d}</div>`).join('')}`;
+    for(let i=0;i<firstDay;i++) html+=`<div></div>`;
+    for(let d=1;d<=days;d++){
+        const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const has = bookings.some(b=>b.date===dateStr);
+        html+=`<div class="calendar-day ${has?'booked':''}">${d}</div>`;
+    }
+    html+=`</div></div>`;
+    document.getElementById('calendar').innerHTML = html;
 }
-
 function exportToExcel() {
     const ws = XLSX.utils.json_to_sheet(bookings.map(b=>({العميل:b.clientName,التاريخ:b.date,السعر:b.price})));
     const wb = XLSX.utils.book_new();
@@ -526,12 +531,11 @@ function exportToExcel() {
     XLSX.writeFile(wb, `Drmedia_${new Date().toISOString().slice(0,10)}.xlsx`);
     showMsg('تم التصدير');
 }
-
 function renderReports() { document.getElementById('reports').innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">📊 التقارير</h2><button onclick="exportToExcel()" class="btn-primary">تصدير Excel</button></div>`; }
 function renderAdvancedReports() { document.getElementById('advancedReports').innerHTML = `<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">📈 تقارير متقدمة</h2><canvas id="revenueChart" width="300" height="200"></canvas></div><script>setTimeout(()=>{try{new Chart(document.getElementById('revenueChart'),{type:'bar',data:{labels:['يناير','فبراير','مارس'],datasets:[{label:'الإيرادات',data:[5000,7000,6000]}]}});}catch(e){}},100);<\/script>`; }
 function renderTrash() { const c=document.getElementById('trash'); if(!c)return; c.innerHTML=`<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">🗑️ سلة المحذوفات</h2><p>${trashBin.length} عنصر محذوف</p></div>`; }
 function renderNotifications() { const c=document.getElementById('notifications'); if(!c)return; c.innerHTML=`<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">🔔 الإشعارات</h2>${notifications.map(n=>`<div class="border-b p-2">${n.title} - ${n.body}<br><span class="text-xs">${n.date}</span></div>`).join('')||'لا توجد إشعارات'}</div>`; }
-function renderSystemUpdate() { document.getElementById('systemUpdate').innerHTML=`<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">🔄 تحديث النظام</h2><p>النظام يعمل ${useFirebase ? 'مع Firebase' : 'بالتخزين المحلي'}</p><button onclick="alert('تم التحقق، لا توجد تحديثات')" class="btn-primary mt-2">التحقق</button></div>`; }
+function renderSystemUpdate() { document.getElementById('systemUpdate').innerHTML=`<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">🔄 تحديث النظام</h2><p>النظام يعمل ${useFirebase ? 'مع Firebase (Realtime DB)' : 'بالتخزين المحلي'}</p><button onclick="alert('تم التحقق، لا توجد تحديثات')" class="btn-primary mt-2">التحقق</button></div>`; }
 function renderSettings() { document.getElementById('settings').innerHTML=`<div class="bg-white p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">⚙️ الإعدادات</h2><label>اسم الشركة</label><input id="companyNameInput" value="${companyName}" class="w-full border p-2 rounded"><button onclick="updateSettings()" class="btn-primary w-full mt-2">حفظ</button></div>`; }
 function updateSettings() { companyName = document.getElementById('companyNameInput').value; saveAllData(); showMsg('تم حفظ الإعدادات'); renderAdminDashboard(); }
 
@@ -559,7 +563,7 @@ function renderEmployeeDashboard() {
         <div class="grid grid-cols-2 gap-3 mt-4"><div class="bg-gray-100 p-3 rounded text-center"><div class="text-2xl font-bold">${emp?.totalOrders}</div><div>الأوردرات</div></div><div class="bg-gray-100 p-3 rounded text-center"><div class="text-2xl font-bold text-emerald-600">${((emp?.totalOrders||0)*(emp?.salaryPerOrder||0)).toLocaleString()} ج.م</div><div>المستحق</div></div></div>
         <button onclick="startEmployeeScan()" class="btn-primary w-full mt-6 py-3 text-lg"><i class="fas fa-qrcode ml-2"></i> مسح QR للحضور والانصراف</button>
         <div class="mt-6"><h3 class="font-bold">حضوري اليوم</h3><div id="empAttendanceStatus"></div></div></div></main></div>`;
-    renderAttendance(); // لعرض الحالة داخل نفس الصفحة
+    renderAttendance();
 }
 
 // ======================== شاشة تسجيل الدخول ========================
