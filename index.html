@@ -157,7 +157,7 @@ function getEmployeeOrdersInPeriod(empId, start, end) {
     return bookings.filter(b => b.status !== 'cancelled' && (b.assignedEmployees || []).includes(empId) && new Date(b.date) >= start && new Date(b.date) <= end).length;
 }
 
-// ======================== الحجوزات (كاملة) ========================
+// ======================== الحجوزات ========================
 function toggleSelectBooking(id, checked) { checked ? selectedBookings.add(id) : selectedBookings.delete(id); renderBookings(); }
 function selectAllBookings() { const ids = bookings.filter(b => b.status !== 'cancelled').map(b => b.id); selectedBookings.size === ids.length ? selectedBookings.clear() : ids.forEach(id => selectedBookings.add(id)); renderBookings(); }
 function bulkDeleteBookings() { if (!selectedBookings.size) return showMsg('⚠️ اختر حجوزات أولاً'); if (confirm(`حذف ${selectedBookings.size} حجز؟`)) { bookings = bookings.filter(b => !selectedBookings.has(b.id)); selectedBookings.clear(); saveToFirebase('bookings', bookings); renderBookings(); showMsg('🗑️ تم الحذف الجماعي'); sendNotification('حذف جماعي', `تم حذف ${selectedBookings.size} حجز`); } }
@@ -170,10 +170,10 @@ function deleteBooking(id) { if (confirm('حذف الحجز؟')) { bookings = bo
 function renderBookings() {
     const container = document.getElementById('bookings'); if (!container) return;
     const filtered = bookings.filter(b => b.status !== 'cancelled');
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4 flex-wrap gap-2"><h2 class="text-xl font-bold">📅 الحجوزات (${filtered.length})</h2><div class="flex gap-2"><button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="bulkCompleteBookings()" class="bg-green-600 text-white px-3 py-1 rounded text-sm">إكمال المحدد</button><button onclick="addBooking()" class="btn-primary px-3 py-1 rounded text-sm">+ حجز</button></div></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th><input type="checkbox" id="selectAllBookingsCheck" onchange="selectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الدفع</th><th></th></tr></thead><tbody>${filtered.map(b => `<tr><td class="p-2"><input type="checkbox" class="booking-check" value="${b.id}" ${selectedBookings.has(b.id) ? 'checked' : ''} onchange="toggleSelectBooking('${b.id}',this.checked)"></td><td class="p-2">${b.clientName}${b.phone ? `<br><span class="text-xs">${b.phone}</span>` : ''}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price.toLocaleString()} ج.م</td><td class="p-2"><span class="status-badge ${b.status === 'pending' ? 'status-pending' : 'status-completed'}">${b.status}</span></td><td class="p-2">${b.paymentStatus === 'paid' ? 'مدفوع' : 'معلق'}</td><td class="p-2"><button onclick="showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check-circle"></i></button> <button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4 flex-wrap gap-2"><h2 class="text-xl font-bold">📅 الحجوزات (${filtered.length})</h2><div class="flex gap-2"><button onclick="selectAllBookings()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteBookings()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="bulkCompleteBookings()" class="bg-green-600 text-white px-3 py-1 rounded text-sm">إكمال المحدد</button><button onclick="addBooking()" class="btn-primary px-3 py-1 rounded text-sm">+ حجز</button></div></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th><input type="checkbox" id="selectAllBookingsCheck" onchange="selectAllBookings()"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الدفع</th><th></th></td></thead><tbody>${filtered.map(b => `<tr><td class="p-2"><input type="checkbox" class="booking-check" value="${b.id}" ${selectedBookings.has(b.id) ? 'checked' : ''} onchange="toggleSelectBooking('${b.id}',this.checked)"></td><td class="p-2">${b.clientName}${b.phone ? `<br><span class="text-xs">${b.phone}</span>` : ''}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price.toLocaleString()} ج.م</td><td class="p-2"><span class="status-badge ${b.status === 'pending' ? 'status-pending' : 'status-completed'}">${b.status}</span></td><td class="p-2">${b.paymentStatus === 'paid' ? 'مدفوع' : 'معلق'}</td><td class="p-2"><button onclick="showEditBookingModal('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check-circle"></i></button> <button onclick="deleteBooking('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></tr>`).join('')}</tbody></table></div></div>`;
 }
 
-// ======================== الموظفين (كاملة) ========================
+// ======================== الموظفين ========================
 function toggleSelectEmployee(id, checked) { checked ? selectedEmployees.add(id) : selectedEmployees.delete(id); renderEmployees(); }
 function selectAllEmployees() { const ids = employees.map(e => e.id); selectedEmployees.size === ids.length ? selectedEmployees.clear() : ids.forEach(id => selectedEmployees.add(id)); renderEmployees(); }
 function bulkDeleteEmployees() { if (!selectedEmployees.size) return showMsg('⚠️ اختر موظفين أولاً'); if (confirm(`حذف ${selectedEmployees.size} موظف؟`)) { employees = employees.filter(e => !selectedEmployees.has(e.id)); users = users.filter(u => !selectedEmployees.has(u.employeeId)); selectedEmployees.clear(); saveToFirebase('employees', employees); saveToFirebase('users', users); renderEmployees(); showMsg('🗑️ تم الحذف الجماعي'); } }
@@ -183,10 +183,10 @@ function saveEditEmployee(id) { const e = employees.find(x => x.id === id); e.na
 function renderEmployees() {
     const container = document.getElementById('employees'); if (!container) return;
     updateEmployeeOrders();
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">👥 الموظفين</h2><div><button onclick="selectAllEmployees()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteEmployees()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="addEmployee()" class="btn-primary px-3 py-1 rounded text-sm">+ موظف</button></div></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th><input type="checkbox" id="selectAllEmpCheck" onchange="selectAllEmployees()"></th><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th><th></th><tr></thead><tbody>${employees.map(e => `<tr><td class="p-2"><input type="checkbox" class="emp-check" value="${e.id}" ${selectedEmployees.has(e.id) ? 'checked' : ''} onchange="toggleSelectEmployee('${e.id}',this.checked)"></td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.totalOrders || 0}</td><td class="p-2 text-emerald-600 font-bold">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">👥 الموظفين</h2><div><button onclick="selectAllEmployees()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteEmployees()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="addEmployee()" class="btn-primary px-3 py-1 rounded text-sm">+ موظف</button></div></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th><input type="checkbox" id="selectAllEmpCheck" onchange="selectAllEmployees()"></th><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المستحق</th><th></th></tr></thead><tbody>${employees.map(e => `<tr><td class="p-2"><input type="checkbox" class="emp-check" value="${e.id}" ${selectedEmployees.has(e.id) ? 'checked' : ''} onchange="toggleSelectEmployee('${e.id}',this.checked)"></td><td class="p-2">${e.name}</td><td class="p-2">${e.role}</td><td class="p-2">${e.phone}</td><td class="p-2">${e.totalOrders || 0}</td><td class="p-2 text-emerald-600 font-bold">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td><td class="p-2"><button onclick="showEditEmployeeModal('${e.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></tr>`).join('')}</tbody></table></div></div>`;
 }
 
-// ======================== القاعات (تحديد متعدد) ========================
+// ======================== القاعات ========================
 function toggleSelectHall(id, checked) { checked ? selectedHalls.add(id) : selectedHalls.delete(id); renderHalls(); }
 function selectAllHalls() { selectedHalls.size === halls.length ? selectedHalls.clear() : halls.forEach(h => selectedHalls.add(h.id)); renderHalls(); }
 function bulkDeleteHalls() { if (!selectedHalls.size) return showMsg('⚠️ اختر قاعات أولاً'); if (confirm(`حذف ${selectedHalls.size} قاعة؟`)) { halls = halls.filter(h => !selectedHalls.has(h.id)); selectedHalls.clear(); saveToFirebase('halls', halls); renderHalls(); showMsg('🗑️ تم الحذف الجماعي'); } }
@@ -196,10 +196,10 @@ function showAddHallModal() { openModal(`<h3 class="text-xl font-bold mb-4">➕ 
 function saveNewHall() { const name = document.getElementById('newHallName').value.trim(); if (!name) return showMsg('⚠️ أدخل اسم القاعة'); halls.push({ id: 'h' + Date.now(), name, type: document.getElementById('newHallType').value, active: document.getElementById('newHallActive').checked }); saveToFirebase('halls', halls); closeModal(); renderHalls(); showMsg('✅ تمت إضافة القاعة'); }
 function renderHalls() {
     const container = document.getElementById('halls'); if (!container) return;
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">🏛️ القاعات</h2><div><button onclick="selectAllHalls()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteHalls()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="showAddHallModal()" class="btn-primary px-3 py-1 rounded text-sm">+ قاعة</button></div></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th><input type="checkbox" id="selectAllHallsCheck" onchange="selectAllHalls()"></th><th>الاسم</th><th>النوع</th><th>الحالة</th><th>الحجوزات</th><th></th></tr></thead><tbody>${halls.map(h => `<tr><td class="p-2"><input type="checkbox" class="hall-check" value="${h.id}" ${selectedHalls.has(h.id) ? 'checked' : ''} onchange="toggleSelectHall('${h.id}',this.checked)"></td><td class="p-2">${h.name}</td><td class="p-2">${h.type === 'closed' ? 'مغلقة' : h.type === 'open' ? 'مفتوحة' : 'كافيه'}</td><td class="p-2">${h.active ? '✅ نشطة' : '❌ غير نشطة'}</td><td class="p-2">${bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length}</td><td class="p-2"><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">🏛️ القاعات</h2><div><button onclick="selectAllHalls()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteHalls()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="showAddHallModal()" class="btn-primary px-3 py-1 rounded text-sm">+ قاعة</button></div></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th><input type="checkbox" id="selectAllHallsCheck" onchange="selectAllHalls()"></th><th>الاسم</th><th>النوع</th><th>الحالة</th><th>الحجوزات</th><th></th></tr></thead><tbody>${halls.map(h => `<tr><td class="p-2"><input type="checkbox" class="hall-check" value="${h.id}" ${selectedHalls.has(h.id) ? 'checked' : ''} onchange="toggleSelectHall('${h.id}',this.checked)"></td><td class="p-2">${h.name}</td><td class="p-2">${h.type === 'closed' ? 'مغلقة' : h.type === 'open' ? 'مفتوحة' : 'كافيه'}</td><td class="p-2">${h.active ? '✅ نشطة' : '❌ غير نشطة'}</td><td class="p-2">${bookings.filter(b => b.hallId === h.id && b.status !== 'cancelled').length}</td><td class="p-2"><button onclick="showEditHallModal('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></tr>`).join('')}</tbody></table></div></div>`;
 }
 
-// ======================== العملاء (تحديد متعدد) ========================
+// ======================== العملاء ========================
 function toggleSelectClient(id, checked) { checked ? selectedClients.add(id) : selectedClients.delete(id); renderClients(); }
 function selectAllClients() { selectedClients.size === clients.length ? selectedClients.clear() : clients.forEach(c => selectedClients.add(c.id)); renderClients(); }
 function bulkDeleteClients() { if (!selectedClients.size) return showMsg('⚠️ اختر عملاء أولاً'); if (confirm(`حذف ${selectedClients.size} عميل؟`)) { clients = clients.filter(c => !selectedClients.has(c.id)); selectedClients.clear(); saveToFirebase('clients', clients); renderClients(); showMsg('🗑️ تم الحذف الجماعي'); } }
@@ -207,7 +207,7 @@ function addClient() { const name = prompt('الاسم'), phone = prompt('اله
 function deleteClient(id) { if (confirm('حذف العميل؟')) { clients = clients.filter(c => c.id !== id); saveToFirebase('clients', clients); renderClients(); showMsg('🗑️ تم الحذف'); } }
 function renderClients() {
     const container = document.getElementById('clients'); if (!container) return;
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">👥 العملاء</h2><div><button onclick="selectAllClients()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteClients()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="addClient()" class="btn-primary px-3 py-1 rounded text-sm">+ عميل</button></div></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th><input type="checkbox" id="selectAllClientsCheck" onchange="selectAllClients()"></th><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>الحجوزات</th><th></th></td></thead><tbody>${clients.map(c => `<tr><td class="p-2"><input type="checkbox" class="client-check" value="${c.id}" ${selectedClients.has(c.id) ? 'checked' : ''} onchange="toggleSelectClient('${c.id}',this.checked)"></td><td class="p-2">${c.name}</td><td class="p-2">${c.phone}</td><td class="p-2">${c.email || '-'}</td><td class="p-2">${bookings.filter(b => b.phone === c.phone).length}</td><td class="p-2"><button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody><td></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">👥 العملاء</h2><div><button onclick="selectAllClients()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteClients()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button><button onclick="addClient()" class="btn-primary px-3 py-1 rounded text-sm">+ عميل</button></div></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th><input type="checkbox" id="selectAllClientsCheck" onchange="selectAllClients()"></th><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>الحجوزات</th><th></th></tr></thead><tbody>${clients.map(c => `<tr><td class="p-2"><input type="checkbox" class="client-check" value="${c.id}" ${selectedClients.has(c.id) ? 'checked' : ''} onchange="toggleSelectClient('${c.id}',this.checked)"></td><td class="p-2">${c.name}</td><td class="p-2">${c.phone}</td><td class="p-2">${c.email || '-'}</td><td class="p-2">${bookings.filter(b => b.phone === c.phone).length}</td><td class="p-2"><button onclick="deleteClient('${c.id}')" class="text-red-600"><i class="fas fa-trash"></i></button></tr>`).join('')}</tbody></table></div></div>`;
 }
 
 // ======================== المعدات ========================
@@ -263,14 +263,14 @@ function showQrModal(empId, empName) {
 function renderAttendance() {
     const container = document.getElementById('attendance'); if (!container) return;
     const allRecords = attendanceRecords.sort((a,b) => b.date.localeCompare(a.date));
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📋 سجل الحضور والانصراف (جميع الموظفين)</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${allRecords.map(a => { const emp = employees.find(e => e.id === a.empId); return `<tr><td class="p-2">${emp?.name || a.empId}</td><td class="p-2">${a.date}</td><td class="p-2">${a.checkIn || '-'}</td><td class="p-2">${a.checkOut || '-'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="text-center">لا توجد سجلات</td>`}</tbody></table></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📋 سجل الحضور والانصراف (جميع الموظفين)</h2><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></td></thead><tbody>${allRecords.map(a => { const emp = employees.find(e => e.id === a.empId); return `<tr><td class="p-2">${emp?.name || a.empId}</td><td class="p-2">${a.date}</td><td class="p-2">${a.checkIn || '-'}</td><td class="p-2">${a.checkOut || '-'}</td></tr>`; }).join('') || '}<tr><td colspan="4" class="text-center">لا توجد سجلات</td></tr>'}</tbody></table></div></div>`;
 }
 function renderEmployeeAttendance() {
     const container = document.getElementById('employeeAttendance'); if (!container) return;
     const emp = employees.find(e => e.id === currentUser?.employeeId);
     const myAttendance = attendanceRecords.filter(a => a.empId === emp?.id).sort((a,b) => b.date.localeCompare(a.date));
     const todayRec = emp ? getTodayAttendance(emp.id) : null;
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📋 سجل حضوري</h2><div class="mb-4 p-3 border rounded-xl bg-green-50"><div class="flex gap-2 flex-wrap"><button onclick="showQrModal('${emp.id}','${emp.name}')" class="btn-primary text-sm">📱 عرض QR</button><button onclick="checkIn('${emp.id}')" class="btn-primary">حضور</button><button onclick="checkOut('${emp.id}')" class="bg-amber-600 text-white px-4 py-2 rounded">انصراف</button></div><div class="mt-2">حالة اليوم: ${todayRec ? (todayRec.checkOut ? '✅ تم الحضور والانصراف' : '🟢 تم الحضور فقط') : '❌ لم يتم التسجيل'}</div></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>${myAttendance.map(a => `<tr><td class="p-2">${a.date}</td><td class="p-2">${a.checkIn || '-'}</td><td class="p-2">${a.checkOut || '-'}</td></tr>`).join('') || '<tr><td colspan="3" class="text-center">لا توجد سجلات</td>`}</tbody></table></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📋 سجل حضوري</h2><div class="mb-4 p-3 border rounded-xl bg-green-50"><div class="flex gap-2 flex-wrap"><button onclick="showQrModal('${emp.id}','${emp.name}')" class="btn-primary text-sm">📱 عرض QR</button><button onclick="checkIn('${emp.id}')" class="btn-primary">حضور</button><button onclick="checkOut('${emp.id}')" class="bg-amber-600 text-white px-4 py-2 rounded">انصراف</button></div><div class="mt-2">حالة اليوم: ${todayRec ? (todayRec.checkOut ? '✅ تم الحضور والانصراف' : '🟢 تم الحضور فقط') : '❌ لم يتم التسجيل'}</div></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>التاريخ</th><th>الحضور</th><th>الانصراف</th><tr></thead><tbody>${myAttendance.map(a => `<tr><td class="p-2">${a.date}</td><td class="p-2">${a.checkIn || '-'}</td><td class="p-2">${a.checkOut || '-'}</td></tr>`).join('') || '}<tr><td colspan="3" class="text-center">لا توجد سجلات</td></tr>'}</tbody></table></div></div>`;
 }
 
 // ======================== المرتبات والسلف ========================
@@ -287,7 +287,7 @@ function renderPayroll() {
         const emp = employees.find(e => e.id === p.empId);
         archiveHtml += `<div class="border-b py-1 flex justify-between"><span>${emp?.name || p.empId}</span><span>${p.date}</span><span>${p.amount.toLocaleString()} ج.م</span><span>أوردرات: ${p.orders}</span></div>`;
     });
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">💰 المرتبات والسلف</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"><div class="payroll-card"><h3 class="font-bold mb-2">👥 الموظفين والمستحقات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الموظف</th><th>الأوردرات</th><th>سعر الأوردر</th><th>الإجمالي</th><th>صرف</th></tr></thead><tbody>${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.totalOrders || 0}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="font-bold">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td><td class="p-2"><button onclick="promptPayroll('${e.id}')" class="bg-blue-600 text-white px-2 py-1 rounded text-xs">صرف</button></td></tr>`).join('')}</tbody></table></div></div><div class="payroll-card"><h3 class="font-bold mb-2">💵 السلف المسجلة</h3>${loansHtml || 'لا توجد سلف'}<button onclick="showAddLoanModal()" class="btn-primary mt-2 w-full">+ تسجيل سلفة</button></div></div><div class="payroll-card mb-4"><h3 class="font-bold mb-2">📅 صرف المرتبات حسب الفترة</h3><div class="flex gap-2 flex-wrap mb-3"><button onclick="renderPayrollPeriod(0)" class="btn-primary text-sm">1-10</button><button onclick="renderPayrollPeriod(1)" class="btn-primary text-sm">11-20</button><button onclick="renderPayrollPeriod(2)" class="btn-primary text-sm">21-نهاية الشهر</button></div><div id="payrollPeriodDetail"></div></div><div class="payroll-card"><h3 class="font-bold mb-2">📜 سجل المرتبات المصروفة (أرشيف)</h3><div class="max-h-60 overflow-y-auto border rounded p-2">${archiveHtml || 'لا توجد صرفيات سابقة'}</div></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">💰 المرتبات والسلف</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"><div class="payroll-card"><h3 class="font-bold mb-2">👥 الموظفين والمستحقات</h3><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>الموظف</th><th>الأوردرات</th><th>سعر الأوردر</th><th>الإجمالي</th><th>صرف</th></tr></thead><tbody>${employees.map(e => `<tr><td class="p-2">${e.name}</td><td class="p-2">${e.totalOrders || 0}</td><td class="p-2">${e.salaryPerOrder} ج.م</td><td class="font-bold">${((e.totalOrders || 0) * e.salaryPerOrder).toLocaleString()} ج.م</td><td><button onclick="promptPayroll('${e.id}')" class="bg-blue-600 text-white px-2 py-1 rounded text-xs">صرف</button></tr>`).join('')}</tbody></table></div></div><div class="payroll-card"><h3 class="font-bold mb-2">💵 السلف المسجلة</h3>${loansHtml || 'لا توجد سلف'}<button onclick="showAddLoanModal()" class="btn-primary mt-2 w-full">+ تسجيل سلفة</button></div></div><div class="payroll-card mb-4"><h3 class="font-bold mb-2">📅 صرف المرتبات حسب الفترة</h3><div class="flex gap-2 flex-wrap mb-3"><button onclick="renderPayrollPeriod(0)" class="btn-primary text-sm">1-10</button><button onclick="renderPayrollPeriod(1)" class="btn-primary text-sm">11-20</button><button onclick="renderPayrollPeriod(2)" class="btn-primary text-sm">21-نهاية الشهر</button></div><div id="payrollPeriodDetail"></div></div><div class="payroll-card"><h3 class="font-bold mb-2">📜 سجل المرتبات المصروفة (أرشيف)</h3><div class="max-h-60 overflow-y-auto border rounded p-2">${archiveHtml || 'لا توجد صرفيات سابقة'}</div></div></div>`;
 }
 function promptPayroll(empId) {
     const emp = employees.find(e => e.id === empId);
@@ -314,14 +314,34 @@ function renderPayrollPeriod(pi) {
         const salary = orders * e.salaryPerOrder;
         const loans = (employeeLoans[e.id] || []).reduce((s,l) => s + l.amount, 0);
         const net = salary - loans;
-        html += `<tr><td class="p-2">${e.name}</td><td class="p-2">${orders}</td><td class="p-2">${salary.toLocaleString()} ج.م</td><td class="p-2 text-red-500">${loans.toLocaleString()} ج.م</td><td class="p-2 font-bold ${net < 0 ? 'text-red-600' : 'text-green-600'}">${net.toLocaleString()} ج.م</td><td class="p-2"><button onclick="payEmployee('${e.id}',${pi})" class="btn-primary text-white px-2 py-1 rounded text-xs">صرف</button></td>`);
+        html += `<tr><td class="p-2">${e.name}</td><td class="p-2">${orders}</td><td class="p-2">${salary.toLocaleString()} ج.م</td><td class="p-2 text-red-500">${loans.toLocaleString()} ج.م</td><td class="p-2 font-bold ${net < 0 ? 'text-red-600' : 'text-green-600'}">${net.toLocaleString()} ج.م</td><td><button onclick="payEmployee('${e.id}',${pi})" class="btn-primary text-white px-2 py-1 rounded text-xs">صرف</button></tr>`);
     });
     html += `</tbody></table></div>`;
     document.getElementById('payrollPeriodDetail').innerHTML = html;
 }
 function showAddLoanModal() { openModal(`<h3 class="text-xl font-bold mb-4">➕ تسجيل سلفة</h3><select id="loanEmpId">${employees.map(e => `<option value="${e.id}">${e.name}</option>`).join('')}</select><input type="number" id="loanAmount" placeholder="المبلغ"><input type="date" id="loanDate"><input id="loanReason" placeholder="السبب"><button onclick="saveLoan()" class="btn-primary w-full py-2 rounded-xl mt-2">تسجيل</button>`); }
 function saveLoan() { const empId = document.getElementById('loanEmpId').value, amount = parseInt(document.getElementById('loanAmount').value), date = document.getElementById('loanDate').value || new Date().toISOString().slice(0,10); if (!empId || !amount) return showMsg('⚠️ أكمل البيانات'); if (!employeeLoans[empId]) employeeLoans[empId] = []; employeeLoans[empId].push({ id: Date.now(), amount, date, reason: document.getElementById('loanReason').value }); saveToFirebase('employeeLoans', employeeLoans); closeModal(); renderPayroll(); showMsg('✅ تم تسجيل السلفة'); }
-function payEmployee(empId, pi) { /* كما سبق */ alert('تم الصرف'); }
+function payEmployee(empId, pi) {
+    const now = new Date(); let start, end, label;
+    if (pi === 0) { start = new Date(now.getFullYear(), now.getMonth(), 1); end = new Date(now.getFullYear(), now.getMonth(), 10); label = '1-10'; }
+    else if (pi === 1) { start = new Date(now.getFullYear(), now.getMonth(), 11); end = new Date(now.getFullYear(), now.getMonth(), 20); label = '11-20'; }
+    else { start = new Date(now.getFullYear(), now.getMonth(), 21); end = new Date(now.getFullYear(), now.getMonth() + 1, 0); label = '21-نهاية'; }
+    const emp = employees.find(e => e.id === empId);
+    const orders = getEmployeeOrdersInPeriod(empId, start, end);
+    const salary = orders * emp.salaryPerOrder;
+    const loans = (employeeLoans[empId] || []).reduce((s,l) => s + l.amount, 0);
+    const net = salary - loans;
+    if (confirm(`صرف ${net.toLocaleString()} ج.م لـ ${emp.name}؟`)) {
+        payrollArchive.push({ id: Date.now(), empId, period: pi, month: now.getMonth(), year: now.getFullYear(), amount: net, orders, date: now.toISOString().slice(0,10) });
+        if (employeeLoans[empId]) delete employeeLoans[empId];
+        saveToFirebase('payrollArchive', payrollArchive);
+        saveToFirebase('employeeLoans', employeeLoans);
+        renderPayrollPeriod(pi);
+        renderPayroll();
+        showMsg(`✅ تم صرف ${net.toLocaleString()} ج.م للموظف ${emp.name}`);
+        sendEmployeeNotification(emp, 'صرف مرتب', `تم صرف مرتبك: ${net.toLocaleString()} ج.م`);
+    }
+}
 
 // ======================== التوزيع العادل ========================
 function autoDistribute() {
@@ -360,7 +380,11 @@ function autoDistribute() {
                     let tried = 0;
                     while (tried < phs.length && dailyAssignments[date].phs.has(phs[phIndex % phs.length].id)) { phIndex++; tried++; }
                     const ph = phs[phIndex % phs.length];
-                    if (!dailyAssignments[date].phs.has(ph.id)) { assigned.push(ph.id); dailyAssignments[date].phs.add(ph.id); addedPh++; }
+                    if (!dailyAssignments[date].phs.has(ph.id)) {
+                        assigned.push(ph.id);
+                        dailyAssignments[date].phs.add(ph.id);
+                        addedPh++;
+                    }
                     phIndex++;
                 }
             }
@@ -381,8 +405,7 @@ function autoDistribute() {
     sendNotification('توزيع المهام', 'تم توزيع الأوردرات تلقائياً');
 }
 function renderDistribution() {
-    const container = document.getElementById('distribution');
-    if (!container) return;
+    const container = document.getElementById('distribution'); if (!container) return;
     const pending = bookings.filter(b => b.status === 'pending').sort((a,b) => new Date(a.date) - new Date(b.date));
     let html = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">⚙️ توزيع المهام</h2><button onclick="autoDistribute();renderDistribution();renderBookings();" class="btn-primary mb-4">🔄 توزيع ذكي عادل (بدون تكرار)</button><div class="space-y-4">`;
     const grouped = {};
@@ -430,7 +453,7 @@ function renderSwapRequests() { document.getElementById('swap').innerHTML = `<di
 // ======================== الأرشيف ========================
 function renderArchive() {
     const comp = bookings.filter(b => b.status === 'completed');
-    document.getElementById('archive').innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📁 الأرشيف (${comp.length})</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>${comp.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}<tr><td class="p-2">${b.price.toLocaleString()} ج.م</td>`).join('') || '}<tr><td colspan="4" class="text-center">لا توجد حجوزات مكتملة</td></tr>'}</tbody></table></div></div>`;
+    document.getElementById('archive').innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><h2 class="text-xl font-bold mb-4">📁 الأرشيف (${comp.length})</h2><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><tr></thead><tbody>${comp.map(b => `<tr><td class="p-2">${b.clientName}</td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price.toLocaleString()} ج.م</tr>`).join('') || '}<tr><td colspan="4" class="text-center">لا توجد حجوزات مكتملة</td></tr>'}</tbody></table></div></div>`;
 }
 
 // ======================== التقارير ========================
@@ -489,7 +512,7 @@ function deleteUser(username) { if (username === 'ahmed') return showMsg('⚠️
 function linkUserToEmployee(username, empId) { const u = users.find(x => x.username === username); if (u) { u.employeeId = empId || null; saveToFirebase('users', users); showMsg('✅ تم الربط'); } }
 function renderUsers() {
     const container = document.getElementById('users'); if (!container) return;
-    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">🔐 المستخدمين</h2><div><button onclick="addUser()" class="btn-primary px-3 py-1 rounded text-sm">+ مستخدم</button><button onclick="selectAllUsers()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteUsers()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button></div></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th><input type="checkbox" id="selectAllUsersCheck" onchange="selectAllUsers()"></th><th>اسم المستخدم</th><th>الصلاحية</th><th>الموظف المرتبط</th><th>الإجراءات</th></tr></thead><tbody>${users.map(u => `<tr><td class="p-2"><input type="checkbox" class="user-check" value="${u.username}" ${selectedUsers.has(u.username) ? 'checked' : ''} onchange="toggleSelectUser('${u.username}',this.checked)"></td><td class="p-2">${u.username}</td><td class="p-2">${u.role === 'admin' ? 'مدير' : 'موظف'}</td><td class="p-2"><select onchange="linkUserToEmployee('${u.username}',this.value)" class="border rounded p-1">${employees.map(e => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${e.name}</option>`).join('')}<option value="">-- غير مرتبط --</option></select></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash"></i></button></td>`).join('')}</tbody></table></div></div>`;
+    container.innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold">🔐 المستخدمين</h2><div><button onclick="addUser()" class="btn-primary px-3 py-1 rounded text-sm">+ مستخدم</button><button onclick="selectAllUsers()" class="bg-gray-500 text-white px-3 py-1 rounded text-sm">تحديد الكل</button><button onclick="bulkDeleteUsers()" class="bg-red-600 text-white px-3 py-1 rounded text-sm">حذف المحدد</button></div></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th><input type="checkbox" id="selectAllUsersCheck" onchange="selectAllUsers()"></th><th>اسم المستخدم</th><th>الصلاحية</th><th>الموظف المرتبط</th><th>الإجراءات</th></tr></thead><tbody>${users.map(u => `<tr><td class="p-2"><input type="checkbox" class="user-check" value="${u.username}" ${selectedUsers.has(u.username) ? 'checked' : ''} onchange="toggleSelectUser('${u.username}',this.checked)"></td><td class="p-2">${u.username}</td><td class="p-2">${u.role === 'admin' ? 'مدير' : 'موظف'}</td><td class="p-2"><select onchange="linkUserToEmployee('${u.username}',this.value)" class="border rounded p-1">${employees.map(e => `<option value="${e.id}" ${u.employeeId === e.id ? 'selected' : ''}>${e.name}</option>`).join('')}<option value="">-- غير مرتبط --</option></select></td><td class="p-2"><button onclick="showEditUserModal('${u.username}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="deleteUser('${u.username}')" class="text-red-600"><i class="fas fa-trash"></i></button></tr>`).join('')}</tbody></td></div></div>`;
 }
 
 // ======================== تحديث النظام ========================
@@ -584,10 +607,29 @@ function renderEmployeeDashboard() {
 function showLogin() {
     document.getElementById('app').innerHTML = `<div class="min-h-screen flex flex-col justify-between bg-gradient-to-br from-emerald-800 to-teal-700"><div class="flex-1 flex items-center justify-center p-4"><div class="bg-white p-6 rounded-2xl w-full max-w-md text-center shadow-2xl"><h1 class="text-3xl font-bold text-emerald-700 mb-2">${companyLogo.includes('data:image') ? `<img src="${companyLogo}" class="w-10 h-10 inline-block rounded-full ml-2">` : companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات الذكي مع Firebase</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2"><button onclick="doLogin()" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">دخول</button><div class="mt-4 text-sm text-gray-400"><p>المدير: <strong>ahmed</strong> / <strong>1994</strong></p><p>الموظف: <strong>ahmed_emp</strong> / <strong>emp123</strong></p></div></div></div><footer>جميع الحقوق محفوظة &copy; 2026 ${companyName} | تصميم وتطوير Ahmed Shreif</footer></div>`;
 }
-function doLogin() { const un = document.getElementById('loginUser').value.trim(); const pw = document.getElementById('loginPass').value; const user = users.find(u => u.username === un && u.password === pw); if (user) { currentUser = user; sessionStorage.setItem('drmedia_user', JSON.stringify(user)); if (user.role === 'admin') renderAdminDashboard(); else renderEmployeeDashboard(); showMsg(`مرحباً ${user.name}`); requestNotificationPermission(); } else { showMsg('❌ اسم المستخدم أو كلمة المرور غير صحيحة'); } }
-function logout() { sessionStorage.removeItem('drmedia_user'); currentUser = null; showLogin(); showMsg('👋 تم تسجيل الخروج'); }
+function doLogin() { 
+    const un = document.getElementById('loginUser').value.trim(); 
+    const pw = document.getElementById('loginPass').value; 
+    const user = users.find(u => u.username === un && u.password === pw); 
+    if (user) { 
+        currentUser = user; 
+        sessionStorage.setItem('drmedia_user', JSON.stringify(user)); 
+        if (user.role === 'admin') renderAdminDashboard(); 
+        else renderEmployeeDashboard(); 
+        showMsg(`مرحباً ${user.name}`); 
+        requestNotificationPermission(); 
+    } else { 
+        showMsg('❌ اسم المستخدم أو كلمة المرور غير صحيحة'); 
+    } 
+}
+function logout() { 
+    sessionStorage.removeItem('drmedia_user'); 
+    currentUser = null; 
+    showLogin(); 
+    showMsg('👋 تم تسجيل الخروج'); 
+}
 
-// ======================== بدء التحميل ========================
+// ======================== بدء التحميل (ضمان ظهور شاشة الدخول) ========================
 let loadedCount = 0;
 const totalRefs = 12;
 const refs = ['users', 'bookings', 'employees', 'halls', 'clients', 'equipmentInventory', 'attendanceRecords', 'swapRequests', 'payrollArchive', 'employeeLoans', 'notifications', 'companySettings'];
@@ -630,6 +672,14 @@ refs.forEach(path => {
         }
     });
 });
+
+// Fallback: في حالة عدم اكتمال البيانات خلال 3 ثوانٍ، اعرض شاشة الدخول يدوياً
+setTimeout(() => {
+    if (!dataLoaded) {
+        dataLoaded = true;
+        if (!currentUser) showLogin();
+    }
+}, 3000);
 </script>
 </body>
 </html>
