@@ -12,13 +12,14 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; transition: 0.2s; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; transition: 0.2s; margin:0; padding:0; }
         .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 20px; border-radius: 40px; z-index: 10000; display: none; white-space: nowrap; }
         .toast.show { display: block; }
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1100; visibility: hidden; opacity: 0; transition: 0.2s; backdrop-filter: blur(4px); }
         .modal.show { visibility: visible; opacity: 1; }
-        .modal-content { background: white; border-radius: 28px; max-width: 650px; width: 95%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.3); }
+        .modal-content { background: white; border-radius: 28px; max-width: 750px; width: 95%; max-height: 85vh; overflow-y: auto; padding: 28px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.3); }
         .tab-btn { padding: 8px 18px; border-radius: 16px 16px 0 0; cursor: pointer; background: #e5e7eb; margin-left: 4px; transition: 0.2s; }
         .tab-btn.active { background-color: #16a34a; color: white; }
         .btn-primary { background-color: #16a34a; color: white; padding: 8px 18px; border-radius: 30px; border: none; cursor: pointer; }
@@ -38,8 +39,11 @@
         .online-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-left: 6px; }
         .online { background-color: #22c55e; }
         .offline { background-color: #ef4444; }
-        .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; margin: 15px 0; }
+        .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; margin: 15px 0; align-items: center; }
         .search-input { border: 1px solid #d1d5db; border-radius: 40px; padding: 6px 16px; width: 220px; }
+        .preview-table { max-height: 400px; overflow: auto; font-size: 13px; }
+        .preview-table table { width: 100%; border-collapse: collapse; }
+        .preview-table th, .preview-table td { border: 1px solid #ddd; padding: 6px; text-align: right; }
     </style>
     <style id="theme-style"></style>
 </head>
@@ -49,7 +53,7 @@
 <div id="app"></div>
 
 <script>
-// ========== Firebase Configuration ==========
+// ==================== FIREBASE CONFIG ====================
 const firebaseConfig = {
   apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
   authDomain: "drmedia-vpms.firebaseapp.com",
@@ -69,7 +73,7 @@ try {
     console.log("✅ Firebase متصل");
 } catch(e) { console.warn(e); online = false; }
 
-// ========== Global Data ==========
+// ==================== GLOBAL DATA ====================
 let USERS = [
     { id: 'admin1', username: 'ahmed', password: '1994', role: 'admin', name: 'مدير النظام' },
     { id: 'emp1', username: 'ahmed_emp', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'أحمد الموظف' },
@@ -84,21 +88,20 @@ let bookings = [], employees = [], halls = [], clients = [], equipmentInventory 
 let browserNotifications = false;
 let distributionMode = 'smart';
 let rotationCounters = { dir:0, ph:0, cr:0 };
-
-// WhatsApp & Theme & Language
 let whatsappEnabled = true;
 let whatsappBusinessNumber = "201001234567";
 let whatsappMessageTemplate = "مرحباً {name}، تم توزيع أوردر {client} في {date} بقاعة {hall}";
 let appTheme = "light";
 let appLanguage = "ar";
 
+// ==================== TRANSLATIONS ====================
 const translations = {
     ar: { dashboard: "📊 الرئيسية", bookings: "📅 الحجوزات", employees: "👥 الموظفين", halls: "🏛️ القاعات", clients: "👥 العملاء", equipment: "📦 المعدات", attendance: "📋 الحضور", payroll: "💰 المرتبات", calendar: "📆 التقويم", distribution: "⚙️ التوزيع", reports: "📊 التقارير", advancedReports: "📈 تقارير متقدمة", notifications: "🔔 الإشعارات", users: "👥 المستخدمين", trash: "🗑️ سلة المحذوفات", internet: "🌐 الإنترنت", settings: "⚙️ الإعدادات", myOrders: "أوردراتي", hallType: "نوع القاعة", date: "التاريخ", salaryPaid: "تم صرف المرتب", reminder: "تذكير بأوردر اليوم", orderDistributed: "تم توزيع أوردر عليك" },
     en: { dashboard: "📊 Dashboard", bookings: "📅 Bookings", employees: "👥 Employees", halls: "🏛️ Halls", clients: "👥 Clients", equipment: "📦 Equipment", attendance: "📋 Attendance", payroll: "💰 Payroll", calendar: "📆 Calendar", distribution: "⚙️ Distribution", reports: "📊 Reports", advancedReports: "📈 Advanced Reports", notifications: "🔔 Notifications", users: "👥 Users", trash: "🗑️ Trash", internet: "🌐 Internet", settings: "⚙️ Settings", myOrders: "My Orders", hallType: "Hall Type", date: "Date", salaryPaid: "Salary paid", reminder: "Order reminder today", orderDistributed: "New order assigned" }
 };
 function t(key) { return (translations[appLanguage]?.[key] || translations.ar[key] || key); }
 
-// ========== Storage Helpers ==========
+// ==================== STORAGE HELPERS ====================
 async function saveAllData() {
     const fullData = { bookings, employees, halls, clients, equipmentInventory, attendanceRecords, payrollArchive, employeeLoans, notifications, trashBin, companyName, companyLogo: companyLogoBase64 || companyLogo, USERS, rotationCounters, whatsappEnabled, whatsappBusinessNumber, whatsappMessageTemplate, appTheme, appLanguage };
     if (useFirebase && db && online) { try { await db.ref('/').set(fullData); lastSync = new Date(); } catch(e) { online = false; } }
@@ -123,7 +126,7 @@ function fallbackLocalLoad() {
 function updateEmployeeOrders() {
     employees.forEach(emp => { let count = 0; bookings.forEach(b => { if (b.status !== 'cancelled' && !b.deleted && (b.assignedEmployees || []).includes(emp.id)) { const attended = attendanceRecords.some(a => a.empId === emp.id && a.date === b.date && a.checkIn); if (attended) count++; } }); emp.totalOrders = count; });
 }
-function showMsg(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+function showMsg(msg) { const tEl = document.getElementById('toast'); tEl.textContent = msg; tEl.classList.add('show'); setTimeout(() => tEl.classList.remove('show'), 3000); }
 function closeModal() { document.getElementById('modal').classList.remove('show'); document.body.style.overflow = ''; }
 function openModal(content) { document.getElementById('modalContent').innerHTML = content; document.getElementById('modal').classList.add('show'); document.body.style.overflow = 'auto'; }
 function applyTheme(theme) {
@@ -168,7 +171,7 @@ async function afterDistributionNotify(booking, oldAssigned, newAssigned) {
     }
 }
 
-// ========== Attendance & QR ==========
+// ==================== ATTENDANCE & QR ====================
 function getTodayDateStr() { return new Date().toISOString().slice(0,10); }
 async function checkIn(empId) {
     const today = getTodayDateStr();
@@ -208,7 +211,7 @@ function stopScannerAndClose() { if (html5QrCode) html5QrCode.stop().then(() => 
 async function performCheckInFromQR(empId) { await checkIn(empId); closeModal(); renderAttendance(); if (currentUser.role === 'employee') renderEmployeeDashboard(); }
 async function performCheckOutFromQR(empId) { await checkOut(empId); closeModal(); renderAttendance(); if (currentUser.role === 'employee') renderEmployeeDashboard(); }
 
-// ========== Distribution ==========
+// ==================== DISTRIBUTION ====================
 async function autoDistributeWithNotify() {
     const pending = bookings.filter(b => b.status === 'pending');
     const oldAssignments = pending.map(b => ({ id: b.id, assigned: [...(b.assignedEmployees || [])] }));
@@ -266,7 +269,128 @@ function renderDistribution() {
     c.innerHTML = `<div class="bg-card p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">⚙️ ${t('distribution')}</h2><div class="flex gap-2 my-3"><button onclick="setDistributionMode('smart')" class="btn-secondary">ذكي</button><button onclick="setDistributionMode('rotation')" class="btn-secondary">تدوير</button><button onclick="setDistributionMode('manual')" class="btn-secondary">يدوي</button><button onclick="autoDistributeWithNotify()" class="btn-primary">تطبيق التوزيع</button></div><div>${bookings.filter(b=>b.status==='pending').map(b=>`<div class="border p-2 my-1"><strong>${b.clientName}</strong> (${b.date}) - الموظفون: ${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')} <button onclick="manualAssign('${b.id}')" class="text-blue-600 text-sm">تعيين يدوي</button></div>`).join('')}</div></div>`;
 }
 
-// ========== Bookings ==========
+// ==================== IMPORT BOOKINGS (EXCEL / PDF) ====================
+let importedDataRows = [];
+async function importBookingsFromFile() {
+    openModal(`
+        <h3 class="text-xl font-bold mb-4">📂 استيراد حجوزات من ملف</h3>
+        <p class="text-sm text-gray-600 mb-3">قم باختيار ملف Excel (.xlsx, .xls) أو PDF (.pdf). يجب أن يحتوي الملف على أعمدة: رقم الحجز (اختياري)، اسم العميل، التاريخ (YYYY-MM-DD)، القاعة، السعر، الحالة (optional)، ملاحظات (optional).</p>
+        <input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border p-2 rounded my-2">
+        <div id="importPreview" class="preview-table mt-3"></div>
+        <div class="flex gap-2 mt-4">
+            <button onclick="processImportFile()" class="btn-primary">استيراد</button>
+            <button onclick="closeModal()" class="btn-danger">إلغاء</button>
+        </div>
+    `);
+    document.getElementById('importFileInput').addEventListener('change', previewImportFile);
+}
+async function previewImportFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    let rows = [];
+    if (ext === 'xlsx' || ext === 'xls') {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(sheet);
+    } else if (ext === 'csv') {
+        const text = await file.text();
+        const lines = text.split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        rows = lines.slice(1).filter(l => l.trim()).map(line => {
+            const vals = line.split(',');
+            let obj = {};
+            headers.forEach((h, idx) => obj[h] = vals[idx]?.trim());
+            return obj;
+        });
+    } else if (ext === 'pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const strings = textContent.items.map(item => item.str);
+            fullText += strings.join(' ') + '\n';
+        }
+        const lines = fullText.split(/\r?\n/);
+        const dateRegex = /\d{4}-\d{2}-\d{2}/;
+        rows = [];
+        for (let line of lines) {
+            if (dateRegex.test(line)) {
+                const parts = line.split(/\s{2,}|\t/);
+                if (parts.length >= 4) {
+                    rows.push({
+                        'رقم الحجز': parts[0] || '',
+                        'اسم العميل': parts[1] || '',
+                        'التاريخ': parts[2] || '',
+                        'القاعة': parts[3] || '',
+                        'السعر': parts[4] || '0',
+                        'الحالة': parts[5] || 'pending',
+                        'ملاحظات': parts[6] || ''
+                    });
+                }
+            }
+        }
+        if (rows.length === 0) showMsg("لم يتم العثور على بيانات جدول في PDF. تأكد من أن النص يحتوي على تواريخ وأسماء عملاء.");
+    } else {
+        showMsg("نوع الملف غير مدعوم");
+        return;
+    }
+    importedDataRows = rows;
+    const previewHtml = `<h4 class="font-bold mb-2">تم العثور على ${rows.length} حجز</h4>
+    <div class="overflow-auto"><table><thead><tr>${Object.keys(rows[0] || {}).map(k => `<th>${k}</th>`).join('')}</tr></thead>
+    <tbody>${rows.slice(0, 10).map(r => `<tr>${Object.values(r).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    ${rows.length > 10 ? '<p class="text-xs">... معاينة أول 10 صفوف</p>' : ''}`;
+    document.getElementById('importPreview').innerHTML = previewHtml;
+}
+async function processImportFile() {
+    if (!importedDataRows.length) { showMsg("لا توجد بيانات للاستيراد"); return; }
+    let added = 0, skipped = 0;
+    for (let row of importedDataRows) {
+        let serial = row['رقم الحجز'] || row['serial'] || row['رقم'] || '';
+        let clientName = row['اسم العميل'] || row['client'] || row['العميل'] || '';
+        let date = row['التاريخ'] || row['date'] || '';
+        let hallName = row['القاعة'] || row['hall'] || '';
+        let price = parseFloat(row['السعر'] || row['price'] || 0);
+        let status = row['الحالة'] || row['status'] || 'pending';
+        let notes = row['ملاحظات'] || row['notes'] || '';
+        let phone = row['الهاتف'] || row['phone'] || '';
+        if (!clientName || !date || !hallName) continue;
+        let hall = halls.find(h => h.name === hallName);
+        if (!hall) {
+            hall = { id: 'h'+Date.now()+Math.random(), name: hallName, type: 'open', basePrice: price || 2000, active: true };
+            halls.push(hall);
+            await saveAllData();
+        }
+        if (serial && bookings.some(b => b.id === serial)) { skipped++; continue; }
+        let newId = serial || ('b'+Date.now()+Math.random());
+        let newBooking = {
+            id: newId,
+            clientName: clientName,
+            clientId: null,
+            phone: phone,
+            hallId: hall.id,
+            hallName: hall.name,
+            date: date,
+            price: price,
+            status: status === 'completed' ? 'completed' : 'pending',
+            paymentStatus: 'pending',
+            assignedEmployees: [],
+            notes: notes
+        };
+        bookings.push(newBooking);
+        added++;
+    }
+    await saveAllData();
+    renderBookings();
+    closeModal();
+    showMsg(`تم استيراد ${added} حجز بنجاح، تخطي ${skipped} مكرر`);
+    importedDataRows = [];
+}
+
+// ==================== BOOKINGS (CRUD) ====================
 async function addBooking() {
     let form = `<h3 class="text-xl font-bold mb-4">➕ حجز جديد</h3><div><select id="clientSelect" class="w-full border p-2 rounded my-2"><option value="new">+ عميل جديد</option>${clients.map(c=>`<option value="${c.id}">${c.name} (${c.phone})</option>`).join('')}</select><div id="newClientDiv" class="hidden"><input id="newName" placeholder="الاسم" class="w-full border p-2 rounded my-2"><input id="newPhone" placeholder="الهاتف" class="w-full border p-2 rounded my-2"></div><select id="hallSelect" class="w-full border p-2 rounded my-2">${halls.filter(h=>h.active).map(h=>`<option value="${h.id}" data-price="${h.basePrice}">${h.name} - ${h.basePrice}</option>`).join('')}</select><input type="date" id="bookingDate" class="w-full border p-2 rounded my-2" value="${getTodayDateStr()}"><input type="number" id="bookingPrice" placeholder="السعر" class="w-full border p-2 rounded my-2"><textarea id="bookingNotes" placeholder="ملاحظات" class="w-full border p-2 rounded my-2"></textarea><div class="flex gap-2 mt-4"><button onclick="saveNewBooking()" class="btn-primary">حفظ</button><button onclick="closeModal()" class="btn-danger">إلغاء</button></div></div>`;
     openModal(form);
@@ -336,11 +460,11 @@ function renderBookings() {
     let search = document.getElementById('bookSearch')?.value.toLowerCase() || '';
     let filtered = bookings.filter(b => b.status !== 'cancelled');
     if (search) filtered = filtered.filter(b => b.clientName.toLowerCase().includes(search) || b.phone.includes(search));
-    c.innerHTML = `<div class="bg-card p-4 rounded-2xl shadow"><div class="flex justify-between"><h2 class="text-xl font-bold">📅 ${t('bookings')} (${filtered.length})</h2><button onclick="addBooking()" class="btn-primary">+ حجز</button></div><div class="filter-bar"><input type="text" id="bookSearch" placeholder="بحث" class="search-input"><button onclick="renderBookings()" class="btn-secondary">بحث</button></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفون</th><th></th></tr></thead><tbody>${filtered.map(b => `<tr><td class="p-2">${b.clientName}<br><span class="text-xs">${b.phone}</span><tr><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price}</td><td class="p-2"><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')}</td><td class="p-2"><button onclick="editBooking('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check"></i></button> <button onclick="deleteBookingSoft('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button> <button onclick="manualAssign('${b.id}')" class="text-blue-600"><i class="fas fa-user-plus"></i></button></td></tr>`).join('')}</tbody>}</table></div></div>`;
+    c.innerHTML = `<div class="bg-card p-4 rounded-2xl shadow"><div class="flex justify-between flex-wrap"><h2 class="text-xl font-bold">📅 ${t('bookings')} (${filtered.length})</h2><div><button onclick="addBooking()" class="btn-primary">+ حجز</button><button onclick="importBookingsFromFile()" class="btn-secondary mr-2">📂 استيراد</button></div></div><div class="filter-bar"><input type="text" id="bookSearch" placeholder="بحث" class="search-input"><button onclick="renderBookings()" class="btn-secondary">بحث</button></div><div class="overflow-x-auto"><table class="w-full"><thead><tr><th>رقم/العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفون</th><th></th></tr></thead><tbody>${filtered.map(b => `<tr><td class="p-2">${b.id}<br>${b.clientName}<br><span class="text-xs">${b.phone}</span></td><td class="p-2">${b.date}</td><td class="p-2">${b.hallName}</td><td class="p-2">${b.price}</td><td class="p-2"><span class="status-badge ${b.status==='pending'?'status-pending':'status-completed'}">${b.status}</span></td><td class="p-2">${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name).join(', ')}</td><td class="p-2"><button onclick="editBooking('${b.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button> <button onclick="markComplete('${b.id}')" class="text-green-600"><i class="fas fa-check"></i></button> <button onclick="deleteBookingSoft('${b.id}')" class="text-red-600"><i class="fas fa-trash"></i></button> <button onclick="manualAssign('${b.id}')" class="text-blue-600"><i class="fas fa-user-plus"></i></button></td></tr>`).join('')}</tbody></table></div></div>`;
     document.getElementById('bookSearch')?.addEventListener('keyup', () => renderBookings());
 }
 
-// ========== Employees & Loans & Payroll ==========
+// ==================== EMPLOYEES, LOANS, PAYROLL ====================
 async function addEmployee() {
     const name = prompt('الاسم'), role = prompt('الدور (مخرج/مصور/كرين)'), phone = prompt('الهاتف'), salary = parseInt(prompt('راتب الأوردر'));
     if (name && role) {
@@ -401,21 +525,17 @@ async function processPayrollForEmp(empId, net) {
     }
 }
 
-// ========== Halls ==========
+// ==================== HALLS, CLIENTS, EQUIPMENT ====================
 function renderHalls() { const c = document.getElementById('halls'); if (!c) return; c.innerHTML = `<div class="bg-card p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">🏛️ ${t('halls')}</h2><button onclick="addHall()" class="btn-primary my-2">+ قاعة</button><div>${halls.map(h=>`<div class="border p-2 my-1 flex justify-between"><span>${h.name} (${h.type}) - ${h.basePrice} ج.م</span><button onclick="editHall('${h.id}')" class="text-amber-600"><i class="fas fa-edit"></i></button></div>`).join('')}</div></div>`; }
 async function addHall() { const n=prompt('الاسم'), t=prompt('النوع'), p=parseInt(prompt('السعر الافتراضي')); if(n && t && p) { halls.push({ id:'h'+Date.now(), name:n, type:t, basePrice:p, active:true }); await saveAllData(); renderHalls(); } }
 async function editHall(id) { const h = halls.find(h=>h.id===id); if(!h) return; const newPrice = parseInt(prompt('السعر الجديد', h.basePrice)); if(newPrice) { h.basePrice = newPrice; await saveAllData(); renderHalls(); } }
-
-// ========== Clients ==========
 function renderClients() { const c = document.getElementById('clients'); if(!c) return; c.innerHTML = `<div class="bg-card p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">👥 ${t('clients')}</h2><button onclick="addClient()" class="btn-primary my-2">+ عميل</button><div>${clients.map(cl=>`<div>${cl.name} - ${cl.phone} (${bookings.filter(b=>b.clientId===cl.id).length} حجز)</div>`).join('')}</div></div>`; }
 async function addClient() { const n=prompt('الاسم'), p=prompt('الهاتف'); if(n && p) { clients.push({ id:'c'+Date.now(), name:n, phone:p, email:'', address:'' }); await saveAllData(); renderClients(); } }
-
-// ========== Equipment ==========
 function renderEquipment() { const c = document.getElementById('equipment'); if(!c) return; let html = `<div class="bg-card p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">📦 ${t('equipment')}</h2><button onclick="addEquipmentItem()" class="btn-primary my-2">+ معدة</button><div class="grid grid-cols-2 gap-2">`; for(let id in equipmentInventory) { const eq = equipmentInventory[id]; html += `<div class="border p-2"><strong>${eq.name}</strong> (${eq.quantity}) <button onclick="adjustInv('${id}',-1)" class="bg-gray-300 px-2 rounded">-</button> <button onclick="adjustInv('${id}',1)" class="bg-gray-300 px-2 rounded">+</button></div>`; } html += `</div></div>`; c.innerHTML = html; }
 async function addEquipmentItem() { const n=prompt('الاسم'), q=parseInt(prompt('الكمية')); if(n && q) { const id='eq'+Date.now(); equipmentInventory[id]={ name:n, quantity:q, minStock:1, category:'عام' }; await saveAllData(); renderEquipment(); } }
 function adjustInv(id, delta) { if(equipmentInventory[id]) { equipmentInventory[id].quantity = Math.max(0, equipmentInventory[id].quantity+delta); saveAllData(); renderEquipment(); } }
 
-// ========== Attendance View ==========
+// ==================== ATTENDANCE VIEW ====================
 function renderAttendance() {
     const c = document.getElementById('attendance');
     if (!c) return;
@@ -429,7 +549,7 @@ function renderAttendance() {
     if(isAdmin && document.getElementById('attendanceQrContainer')) renderManagerQR();
 }
 
-// ========== Calendar ==========
+// ==================== CALENDAR ====================
 function renderCalendar() {
     const year = new Date().getFullYear(), month = new Date().getMonth();
     const firstDay = new Date(year, month, 1).getDay();
@@ -443,7 +563,7 @@ function renderCalendar() {
 }
 function showDayBookings(dateStr) { const dayBookings = bookings.filter(b=>b.date===dateStr); if(dayBookings.length) openModal(`<h3 class="font-bold">حجوزات يوم ${dateStr}</h3>${dayBookings.map(b=>`<div>${b.clientName} - ${b.hallName} - ${b.price}</div>`).join('')}<button onclick="closeModal()" class="btn-primary mt-3">إغلاق</button>`); else showMsg("لا توجد حجوزات"); }
 
-// ========== Reports, Backup, Notifications, Users, Trash, Internet, Settings ==========
+// ==================== REPORTS, BACKUP, NOTIFICATIONS, USERS, TRASH, INTERNET, SETTINGS ====================
 function exportBackup() { const dataStr = JSON.stringify({ bookings, employees, halls, clients, equipmentInventory, attendanceRecords, payrollArchive, employeeLoans, notifications, trashBin, companyName, USERS }, null, 2); const blob = new Blob([dataStr], {type: 'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup_${new Date().toISOString().slice(0,19)}.json`; a.click(); URL.revokeObjectURL(url); showMsg("تم تصدير النسخة الاحتياطية"); }
 function exportToExcel() { const ws = XLSX.utils.json_to_sheet(bookings.map(b=>({العميل:b.clientName,التاريخ:b.date,القاعة:b.hallName,السعر:b.price,الحالة:b.status}))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'الحجوزات'); XLSX.writeFile(wb,`bookings_${new Date().toISOString().slice(0,10)}.xlsx`); showMsg("تم التصدير"); }
 function renderReports() { document.getElementById('reports').innerHTML = `<div class="bg-card p-4 rounded-2xl shadow"><h2 class="text-xl font-bold">📊 ${t('reports')}</h2><button onclick="exportToExcel()" class="btn-primary">تقرير الحجوزات Excel</button><button onclick="exportBackup()" class="btn-secondary mr-2">نسخة احتياطية (JSON)</button></div>`; }
@@ -488,7 +608,7 @@ async function saveSettings() { companyName = document.getElementById('compName'
 let backupIntervalIdGlobal = null;
 function setBackupPeriod(period) { if(backupIntervalIdGlobal) clearInterval(backupIntervalIdGlobal); let hours = period === '12h' ? 12 : period === 'day' ? 24 : period === 'week' ? 168 : 720; backupIntervalIdGlobal = setInterval(() => { showMsg("🔁 تذكير: قم بعمل نسخة احتياطية"); exportBackup(); }, hours * 3600000); showMsg(`تم ضبط النسخ الاحتياطي كل ${period}`); }
 
-// ========== Employee Dashboard ==========
+// ==================== DASHBOARDS ====================
 function renderEmployeeDashboard() {
     const emp = employees.find(e=>e.id===currentUser.employeeId);
     const myBookings = bookings.filter(b => (b.assignedEmployees || []).includes(emp.id) && b.status !== 'cancelled');
@@ -499,8 +619,6 @@ function renderAgentDashboard() {
     document.getElementById('app').innerHTML = `<div class="min-h-screen bg-gray-100"><header class="bg-white p-3 flex justify-between items-center"><h1 class="text-xl font-bold">${companyLogoBase64 ? `<img src="${companyLogoBase64}" class="h-8 inline ml-2">` : companyLogo} ${companyName} (وكيل)</h1><button onclick="logout()" class="btn-danger">خروج</button></header><main class="p-4"><div class="bg-card p-4 rounded-2xl"><h2 class="text-xl font-bold mb-3">لوحة الوكيل</h2><button onclick="addBooking()" class="btn-primary mb-3">➕ إضافة حجز</button><div id="agentBookings"></div></div></main></div>`;
     renderBookings();
 }
-
-// ========== Admin Dashboard ==========
 function renderAdminDashboard() {
     document.getElementById('app').innerHTML = `<div class="min-h-screen bg-gray-100"><div class="bg-white shadow-md p-3 flex justify-between items-center sticky top-0 z-50"><h1 class="text-xl font-bold">${companyLogoBase64 ? `<img src="${companyLogoBase64}" class="h-8 inline ml-2">` : companyLogo} ${companyName}</h1><button onclick="logout()" class="bg-red-600 text-white px-4 py-2 rounded-full">خروج</button></div><div class="flex overflow-x-auto border-b bg-white px-2 sticky top-16 z-40">${['dashboard','bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','internet','settings'].map(tab => `<button data-tab="${tab}" class="tab-btn px-4 py-2 rounded-t-lg">${tab === 'dashboard' ? t('dashboard') : tab === 'bookings' ? t('bookings') : tab === 'employees' ? t('employees') : tab === 'halls' ? t('halls') : tab === 'clients' ? t('clients') : tab === 'equipment' ? t('equipment') : tab === 'attendance' ? t('attendance') : tab === 'payroll' ? t('payroll') : tab === 'calendar' ? t('calendar') : tab === 'distribution' ? t('distribution') : tab === 'reports' ? t('reports') : tab === 'advancedReports' ? t('advancedReports') : tab === 'notifications' ? t('notifications') : tab === 'users' ? t('users') : tab === 'trash' ? t('trash') : tab === 'internet' ? t('internet') : t('settings')}</button>`).join('')}</div><main class="p-4"><div id="dashboard" class="tab-pane"><div class="grid grid-cols-1 md:grid-cols-4 gap-4"><div class="stat-card">${t('bookings')}: ${bookings.length}</div><div class="stat-card">${t('employees')}: ${employees.length}</div><div class="stat-card">${t('clients')}: ${clients.length}</div><div class="stat-card">الإيرادات: ${bookings.reduce((s,b)=>s+b.price,0)}</div></div><canvas id="dashboardChart" height="80"></canvas></div>${['bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','internet','settings'].map(tab => `<div id="${tab}" class="tab-pane hidden"></div>`).join('')}</main><footer>درميديا برو بلس 2026 - نظام إدارة متكامل مع Firebase</footer></div>`;
     document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click',()=>{ document.querySelectorAll('.tab-pane').forEach(p=>p.classList.add('hidden')); const tab=btn.dataset.tab; document.getElementById(tab).classList.remove('hidden'); if(tab==='bookings') renderBookings(); else if(tab==='employees') renderEmployees(); else if(tab==='halls') renderHalls(); else if(tab==='clients') renderClients(); else if(tab==='equipment') renderEquipment(); else if(tab==='attendance') renderAttendance(); else if(tab==='payroll') renderPayroll(); else if(tab==='calendar') renderCalendar(); else if(tab==='distribution') renderDistribution(); else if(tab==='reports') renderReports(); else if(tab==='advancedReports') renderAdvancedReports(); else if(tab==='notifications') renderNotificationsTab(); else if(tab==='users') renderUsers(); else if(tab==='trash') renderTrash(); else if(tab==='internet') renderInternet(); else if(tab==='settings') renderSettings(); }));
@@ -508,7 +626,7 @@ function renderAdminDashboard() {
     setTimeout(()=>{ try{ new Chart(document.getElementById('dashboardChart'), { type: 'bar', data: { labels: ['يناير','فبراير','مارس','أبريل','مايو','يونيو'], datasets: [{ label: 'عدد الحجوزات', data: [5,8,12,15,20,25] }] } }); }catch(e){} },200);
 }
 
-// ========== Login ==========
+// ==================== LOGIN ====================
 function renderLogin() {
     document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700"><div class="bg-white p-6 rounded-2xl w-96 text-center shadow-xl"><h1 class="text-3xl font-bold text-emerald-700">${companyLogoBase64 ? `<img src="${companyLogoBase64}" class="h-12 mx-auto">` : companyLogo} ${companyName}</h1><p class="text-gray-500 mb-4">نظام إدارة القاعات المتكامل</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-2 my-2 rounded-xl"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-2 my-2 rounded-xl"><button id="loginBtn" class="w-full bg-emerald-600 text-white py-2 rounded-xl">دخول</button><div class="text-sm mt-4 text-gray-500">admin: ahmed/1994 | employee: ahmed_emp/emp123 | agent: agent/agent123</div></div></div>`;
     document.getElementById('loginBtn').addEventListener('click', doLogin);
@@ -531,8 +649,8 @@ function doLogin() {
 function logout() { sessionStorage.removeItem('drmedia_user'); currentUser = null; renderLogin(); }
 function requestNotificationPermission() { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }
 
-// ========== Start App ==========
-window.onload = async () => {
+// ==================== START APPLICATION ====================
+window.addEventListener('DOMContentLoaded', async () => {
     await loadAllData();
     const savedUser = sessionStorage.getItem('drmedia_user');
     if (savedUser && savedUser !== 'undefined') {
@@ -546,7 +664,7 @@ window.onload = async () => {
     requestNotificationPermission();
     setInterval(checkReminders, 6*3600000);
     setBackupPeriod('day');
-};
+});
 </script>
 </body>
 </html>
