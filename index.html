@@ -48,7 +48,6 @@
 <div id="app"></div>
 <div id="onlineStatus" class="online-status">🟢 متصل</div>
 
-<script>
 // ======================== Firebase Config ========================
 const firebaseConfig = {
   apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
@@ -340,7 +339,7 @@ function renderEmployeeDashboard() {
 }
 
 function renderLogin() {
-    document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4"><div class="bg-white p-6 rounded-2xl w-full max-w-md text-center shadow-2xl"><h1 class="text-3xl font-bold text-emerald-700">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-12 mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6">نظام إدارة القاعات الذكي</p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2"><button onclick="doLogin()" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">دخول</button><div class="mt-4 text-sm text-gray-400"><p>المدير: ahmed / 1994</p><p>الموظف: ahmed_emp / emp123</p><p>الوكيل: agent / agent123</p></div></div></div>`;
+    document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-800 to-teal-700 p-4"><div class="bg-white p-6 rounded-2xl w-full max-w-md text-center shadow-2xl"><h1 class="text-3xl font-bold text-emerald-700">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-12 mx-auto">`:companyLogo} ${companyName}</h1><p class="text-gray-500 mb-6"> إدارة القاعات </p><input type="text" id="loginUser" placeholder="اسم المستخدم" class="w-full border p-3 rounded-xl mb-3"><input type="password" id="loginPass" placeholder="كلمة المرور" class="w-full border p-3 rounded-xl mb-2"><button onclick="doLogin()" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">دخول</button><div class="mt-4 text-sm text-gray-400"><p>المدير: ahmed / 1994</p><p>الموظف: ahmed_emp / emp123</p><p>الوكيل: agent / agent123</p></div></div></div>`;
 }
 
 function doLogin() { const un=document.getElementById('loginUser').value.trim(), pw=document.getElementById('loginPass').value; const user=USERS.find(u=>u.username===un && u.password===pw); if(user){ currentUser=user; sessionStorage.setItem('drmedia_user', JSON.stringify(user)); if(user.role==='admin') renderAdminDashboard(); else if(user.role==='agent') renderAgentDashboard(); else renderEmployeeDashboard(); showMsg(`مرحباً ${user.name}`); if(Notification.permission==='default') Notification.requestPermission(); } else showMsg('خطأ في بيانات الدخول'); }
