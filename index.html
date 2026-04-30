@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>درميديا برو بلس – النظام المتكامل</title>
+    <title>Dr Media Pro – إدارة القاعات</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
@@ -96,7 +96,7 @@ const firebaseConfig = {
 };
 let useFirebase = false, db = null, online = true, lastSync = null;
 let currentUser = null;
-let companyName = 'درميديا برو بلس', companyLogo = '📷', companyLogoBase64 = null;
+let companyName = 'Dr Media Pro', companyLogo = '📷', companyLogoBase64 = null;
 let bookings = [], employees = [], halls = [], clients = [], equipmentInventory = {};
 let attendanceRecords = [], payrollArchive = [], employeeLoans = {}, notifications = [], trashBin = [], activityLog = [];
 let USERS = [
@@ -401,7 +401,7 @@ function renderAgentDashboard(){
 // ==================== Admin Dashboard ====================
 function renderAdminDashboard(){
     const tabs=['dashboard','bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','activityLog','internet','settings'];
-    document.getElementById('app').innerHTML=`<div class="min-h-screen bg-gray-100"><header class="bg-white shadow p-3 flex justify-between sticky top-0 z-50"><h1 class="text-xl font-bold">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-8 rounded ml-2">`:companyLogo} ${companyName}</h1><button onclick="logout()" class="btn-danger">🚪 خروج</button></header><div class="overflow-x-auto border-b bg-white px-2 sticky top-[57px] z-40"><div class="flex">${tabs.map(tab=>`<button data-tab="${tab}" class="tab-btn ${tab==='dashboard'?'active':''}">${t(tab)}</button>`).join('')}</div></div><main class="p-4"><div id="dashboard" class="tab-pane"><div class="grid grid-cols-2 md:grid-cols-4 gap-3"><div class="stat-card"><div class="stat-value">${bookings.length}</div><div>${t('bookings')}</div></div><div class="stat-card"><div class="stat-value">${employees.length}</div><div>${t('employees')}</div></div><div class="stat-card"><div class="stat-value">${clients.length}</div><div>${t('clients')}</div></div><div class="stat-card"><div class="stat-value text-green-600">${bookings.reduce((s,b)=>s+(b.price||0),0).toLocaleString()}</div><div>الإيرادات</div></div></div><canvas id="dashboardChart" height="80"></canvas></div>${tabs.filter(t=>t!=='dashboard').map(tab=>`<div id="${tab}" class="tab-pane hidden"></div>`).join('')}</main><footer>© 2026 درميديا برو بلس</footer></div>`;
+    document.getElementById('app').innerHTML=`<div class="min-h-screen bg-gray-100"><header class="bg-white shadow p-3 flex justify-between sticky top-0 z-50"><h1 class="text-xl font-bold">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-8 rounded ml-2">`:companyLogo} ${companyName}</h1><button onclick="logout()" class="btn-danger">🚪 خروج</button></header><div class="overflow-x-auto border-b bg-white px-2 sticky top-[57px] z-40"><div class="flex">${tabs.map(tab=>`<button data-tab="${tab}" class="tab-btn ${tab==='dashboard'?'active':''}">${t(tab)}</button>`).join('')}</div></div><main class="p-4"><div id="dashboard" class="tab-pane"><div class="grid grid-cols-2 md:grid-cols-4 gap-3"><div class="stat-card"><div class="stat-value">${bookings.length}</div><div>${t('bookings')}</div></div><div class="stat-card"><div class="stat-value">${employees.length}</div><div>${t('employees')}</div></div><div class="stat-card"><div class="stat-value">${clients.length}</div><div>${t('clients')}</div></div><div class="stat-card"><div class="stat-value text-green-600">${bookings.reduce((s,b)=>s+(b.price||0),0).toLocaleString()}</div><div>الإيرادات</div></div></div><canvas id="dashboardChart" height="80"></canvas></div>${tabs.filter(t=>t!=='dashboard').map(tab=>`<div id="${tab}" class="tab-pane hidden"></div>`).join('')}</main><footer> Dr Media pro تصميم وتطوير Ahmed shreif© 2026 جميع الحقوق محفوظة</footer></div>`;
     
     document.querySelectorAll('.tab-btn').forEach(btn=>{
         btn.addEventListener('click', function(){
