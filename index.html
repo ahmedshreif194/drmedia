@@ -169,6 +169,9 @@ function restoreFromBackup(event){ const file=event.target.files[0]; if(!file) r
 
 // ========== Logo Upload ==========
 function uploadLogo(){ const input=document.createElement('input'); input.type='file'; input.accept='image/*'; input.onchange=function(e){ const file=e.target.files[0]; const reader=new FileReader(); reader.onload=function(ev){ companyLogoBase64=ev.target.result; saveAllData(); showMsg("تم رفع الشعار"); if(currentUser.role==='admin') renderAdminDashboard(); else renderEmployeeDashboard(); }; reader.readAsDataURL(file); }; input.click(); }
+
+// باقي الدوال (المساعدة، التبويبات، الإدارة) سأكملها في الجزء الثاني لتجنب قطع الكود.
+// يرجى نسخ الجزء الثاني بعد هذا مباشرة.
 <script>
 // ========== Bookings CRUD with Cancel button ==========
 async function addBooking() {
