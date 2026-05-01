@@ -1532,166 +1532,180 @@
     }
 
     window.importExcel = async () => {
-        const file = document.getElementById('fileInput').files[0];
-        if (!file) {
-            alert('❌ الرجاء اختيار ملف Excel');
-            return;
-        }
+    const file = document.getElementById('fileInput').files[0];
+    if (!file) {
+        alert('❌ الرجاء اختيار ملف Excel');
+        return;
+    }
 
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+            
+            let successCount = 0;
+            let skippedCount = 0;
+            let errorCount = 0;
+            const importedList = [];
+            const skippedList = [];
+
+            // تخطي الصف الأول (عناوين الأعمدة)
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
                 
-                let successCount = 0;
-                let errorCount = 0;
-                const errors = [];
+                // تجاهل الصفوف الفارغة أو صف الإجمالي
+                if (!row || row.length < 3) continue;
+                
+                const firstCell = String(row[0] || '').trim();
+                if (firstCell.includes('اجمال') || firstCell.includes('إجمال') || firstCell.includes('الاجمال')) {
+                    continue; // تجاهل صف الإجمالي
+                }
 
-                // تخطي الصف الأول إذا كان عنواناً
-                const startRow = rows.length > 0 && isNaN(Date.parse(rows[0][1])) ? 1 : 0;
+                // الأعمدة حسب ترتيب الملف:
+                // A=مسلسل, B=اليوم, C=التاريخ, D=اسم العريس, E=نوع الباكدج, F=عدد الأفراد
+                const serial = row[0] || '';
+                const dayName = row[1] || '';
+                const dateRaw = row[2]; // العمود C هو التاريخ
+                const clientNameRaw = row[3]; // العمود D اسم العريس
+                const packageType = row[4] || '';
+                const guests = row[5] || 0;
 
-                for (let i = startRow; i < rows.length; i++) {
-                    const row = rows[i];
-                    if (!row || row.length < 3) {
-                        errorCount++;
-                        continue;
-                    }
+                // ===== التحقق من اسم العريس (لو "-" أو فاضي = أجازة) =====
+                const clientName = String(clientNameRaw || '').trim();
+                if (clientName === '-' || clientName === '' || clientName === '--' || clientName === '---') {
+                    skippedCount++;
+                    skippedList.push(`صف ${i + 1}: ${dayName} - أجازة`);
+                    continue; // نتخطى الصف ده
+                }
 
-                    // الترتيب: A=مسلسل, B=تاريخ, C=يوم, D=اسم العريس, E=باكدج, F=أفراد
-                    const serial = row[0] || '';
-                    const dateRaw = row[1]; // العمود B هو التاريخ
-                    const day = row[2] || '';
-                    const clientName = row[3] || 'عميل';
-                    const packageType = row[4] || '';
-                    const guests = row[5] || 0;
-                    
-                    let dateStr = '';
-                    let dateParsed = false;
+                // ===== تحويل التاريخ =====
+                let dateStr = '';
+                let dateParsed = false;
 
-                    // محاولة تحويل التاريخ بأي صيغة
-                    if (dateRaw !== undefined && dateRaw !== null && dateRaw !== '') {
-                        // إذا كان التاريخ رقمياً (صيغة Excel)
-                        if (typeof dateRaw === 'number') {
-                            try {
-                                const d = XLSX.SSF.parse_date_code(dateRaw);
-                                if (d && d.y && d.m && d.d) {
-                                    dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
-                                    dateParsed = true;
-                                }
-                            } catch (ex) {
-                                // محاولة بديلة
-                                const excelEpoch = new Date(1899, 11, 30);
-                                const date = new Date(excelEpoch.getTime() + dateRaw * 86400000);
-                                if (!isNaN(date.getTime())) {
-                                    dateStr = date.toISOString().split('T')[0];
-                                    dateParsed = true;
-                                }
+                if (dateRaw !== undefined && dateRaw !== null && dateRaw !== '') {
+                    // التاريخ رقمي (صيغة Excel)
+                    if (typeof dateRaw === 'number') {
+                        try {
+                            const d = XLSX.SSF.parse_date_code(dateRaw);
+                            if (d && d.y && d.m && d.d) {
+                                dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+                                dateParsed = true;
                             }
-                        } 
-                        // إذا كان التاريخ نصياً
-                        else if (typeof dateRaw === 'string') {
-                            const trimmed = dateRaw.trim();
-                            
-                            // محاولة تحويل صيغ مختلفة
-                            // صيغة عربية: ٢٠٢٦/٠٤/٣٠
-                            const arabicNumerals = trimmed.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-                            const parsed = new Date(arabicNumerals);
+                        } catch (ex) {
+                            const excelEpoch = new Date(1899, 11, 30);
+                            const date = new Date(excelEpoch.getTime() + dateRaw * 86400000);
+                            if (!isNaN(date.getTime())) {
+                                dateStr = date.toISOString().split('T')[0];
+                                dateParsed = true;
+                            }
+                        }
+                    } 
+                    // التاريخ نصي
+                    else if (typeof dateRaw === 'string') {
+                        const trimmed = dateRaw.trim();
+                        
+                        // صيغة "2026-05-01 00:00:00" أو "2026-05-01"
+                        const dateOnlyMatch = trimmed.match(/(\d{4}-\d{2}-\d{2})/);
+                        if (dateOnlyMatch) {
+                            const parsed = new Date(dateOnlyMatch[1]);
+                            if (!isNaN(parsed.getTime())) {
+                                dateStr = dateOnlyMatch[1];
+                                dateParsed = true;
+                            }
+                        }
+                        
+                        if (!dateParsed) {
+                            const parsed = new Date(trimmed);
                             if (!isNaN(parsed.getTime())) {
                                 dateStr = parsed.toISOString().split('T')[0];
                                 dateParsed = true;
-                            } else {
-                                // محاولة تحويل صيغ أخرى (DD-MM-YYYY, MM/DD/YYYY, إلخ)
-                                const formats = [
-                                    /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/,
-                                    /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/
-                                ];
-                                
-                                for (let regex of formats) {
-                                    const match = trimmed.match(regex);
-                                    if (match) {
-                                        let [_, p1, p2, p3] = match;
-                                        let year, month, day;
-                                        
-                                        if (p1.length === 4) {
-                                            year = p1;
-                                            month = p2;
-                                            day = p3;
-                                        } else if (p3.length === 4) {
-                                            year = p3;
-                                            month = p2;
-                                            day = p1;
-                                        } else {
-                                            year = '20' + (p3.length === 2 ? p3 : p1);
-                                            month = p2;
-                                            day = p1;
-                                        }
-                                        
-                                        const dateObj = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-                                        if (!isNaN(dateObj.getTime())) {
-                                            dateStr = dateObj.toISOString().split('T')[0];
-                                            dateParsed = true;
-                                            break;
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
-
-                    if (!dateParsed || !dateStr) {
-                        errorCount++;
-                        errors.push(`صف ${i + 1}: تعذر تحويل التاريخ "${dateRaw}"`);
-                        continue;
-                    }
-
-                    // حفظ الحجز في قاعدة البيانات
-                    await push(ref(db, 'bookings'), {
-                        serial: String(serial),
-                        clientName: String(clientName),
-                        phone: '',
-                        date: dateStr,
-                        hallName: '',
-                        price: 0,
-                        deposit: 0,
-                        status: 'pending',
-                        assignedEmployees: [],
-                        notes: `باكدج: ${packageType} | عدد الأفراد: ${guests} | يوم: ${day}`
-                    });
-                    successCount++;
                 }
 
-                let resultHTML = `
-                    <div class="alert alert-success">
-                        ✅ تم استيراد ${successCount} حجز بنجاح
-                    </div>`;
-                
-                if (errorCount > 0) {
-                    resultHTML += `
-                        <div class="alert alert-danger">
-                            ❌ فشل استيراد ${errorCount} صف
-                            ${errors.length > 0 ? '<br><small>' + errors.slice(0, 5).join('<br>') + (errors.length > 5 ? '<br>...والمزيد' : '') + '</small>' : ''}
-                        </div>`;
+                if (!dateParsed || !dateStr) {
+                    errorCount++;
+                    console.warn(`تعذر تحويل التاريخ في صف ${i + 1}:`, dateRaw);
+                    continue;
                 }
 
-                document.getElementById('importResult').innerHTML = resultHTML;
+                // ===== حفظ الحجز =====
+                await push(ref(db, 'bookings'), {
+                    serial: String(serial),
+                    clientName: clientName,
+                    phone: '',
+                    date: dateStr,
+                    dayName: String(dayName),
+                    hallName: 'الأوبن', // لأن الملف خاص بالقاعة المفتوحة
+                    packageType: String(packageType),
+                    guests: Number(guests) || 0,
+                    price: 0,
+                    deposit: 0,
+                    status: 'pending',
+                    assignedEmployees: [],
+                    notes: `يوم: ${dayName} | باكدج: ${packageType} | أفراد: ${guests}`
+                });
                 
-                await initializeAppData();
-                await loadAdminStats();
-                
-            } catch (error) {
-                console.error('Import error:', error);
-                document.getElementById('importResult').innerHTML = `
-                    <div class="alert alert-danger">
-                        ❌ خطأ في قراءة الملف: ${error.message}
-                        <br>تأكد من أن الملف بصيغة .xlsx أو .xls
+                successCount++;
+                importedList.push(`${clientName} - ${dateStr} (${dayName})`);
+            }
+
+            // ===== عرض النتيجة =====
+            let resultHTML = `
+                <div class="alert alert-success">
+                    ✅ تم استيراد <strong>${successCount}</strong> حجز بنجاح
+                    ${importedList.length > 0 ? `
+                        <details style="margin-top:10px;">
+                            <summary style="cursor:pointer; font-weight:600;">📋 عرض الحجوزات المستوردة</summary>
+                            <ul style="margin-top:8px; padding-right:20px;">
+                                ${importedList.map(item => `<li>${item}</li>`).join('')}
+                            </ul>
+                        </details>
+                    ` : ''}
+                </div>`;
+
+            if (skippedCount > 0) {
+                resultHTML += `
+                    <div class="alert alert-warning">
+                        ⏭️ تم تخطي <strong>${skippedCount}</strong> يوم أجازة
+                        ${skippedList.length > 0 ? `
+                            <details style="margin-top:10px;">
+                                <summary style="cursor:pointer; font-weight:600;">📋 عرض الأيام المتخطاة</summary>
+                                <ul style="margin-top:8px; padding-right:20px;">
+                                    ${skippedList.map(item => `<li>${item}</li>`).join('')}
+                                </ul>
+                            </details>
+                        ` : ''}
                     </div>`;
             }
-        };
-        reader.readAsArrayBuffer(file);
+
+            if (errorCount > 0) {
+                resultHTML += `
+                    <div class="alert alert-danger">
+                        ❌ فشل استيراد ${errorCount} صف (خطأ في التاريخ)
+                    </div>`;
+            }
+
+            document.getElementById('importResult').innerHTML = resultHTML;
+            
+            await initializeAppData();
+            await loadAdminStats();
+            
+        } catch (error) {
+            console.error('Import error:', error);
+            document.getElementById('importResult').innerHTML = `
+                <div class="alert alert-danger">
+                    ❌ خطأ في قراءة الملف: ${error.message}
+                    <br>تأكد من أن الملف بصيغة .xlsx أو .xls
+                </div>`;
+        }
     };
+    reader.readAsArrayBuffer(file);
+};
 
     // ============ التقارير ============
     function renderReports(container) {
