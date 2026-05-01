@@ -4,15 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>نظام توزيع الأوردرات</title>
-  <!-- Font Awesome 6 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <!-- Google Fonts (Tajawal) -->
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-  <!-- html5-qrcode -->
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-
   <style>
     :root {
       --primary: #2563eb;
@@ -28,7 +23,6 @@
       --radius: 16px;
       --transition: all 0.3s ease;
     }
-
     .dark-theme {
       --bg: #0f172a;
       --card: #1e293b;
@@ -36,7 +30,6 @@
       --text-light: #94a3b8;
       --shadow: 0 4px 6px -1px rgba(255,255,255,0.05);
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Tajawal', sans-serif;
@@ -45,7 +38,6 @@
       direction: rtl;
       transition: background 0.3s, color 0.3s;
     }
-
     .screen {
       display: none;
       min-height: 100vh;
@@ -53,10 +45,7 @@
       animation: fadeIn 0.4s ease;
     }
     .screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; }
-
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-    /* بطاقات */
     .card {
       background: var(--card);
       border-radius: var(--radius);
@@ -67,8 +56,6 @@
       margin: 20px auto;
       transition: var(--transition);
     }
-
-    /* أزرار */
     .btn {
       background: var(--primary);
       color: white;
@@ -94,8 +81,6 @@
     .btn-sm { padding: 8px 16px; font-size: 14px; }
     .btn-danger { background: var(--danger); color: white; border: none; }
     .btn-success { background: var(--secondary); color: white; border: none; }
-
-    /* حقول */
     input, select, textarea {
       width: 100%;
       padding: 12px;
@@ -108,8 +93,6 @@
       color: var(--text);
     }
     label { font-weight: 500; display: block; margin-top: 8px; }
-
-    /* قائمة التنقل */
     .nav {
       display: flex;
       gap: 8px;
@@ -127,8 +110,6 @@
       color: var(--text);
     }
     .nav button:hover { background: var(--primary); color: white; }
-
-    /* جداول */
     table {
       width: 100%;
       border-collapse: collapse;
@@ -143,13 +124,8 @@
       border-bottom: 1px solid #e2e8f0;
     }
     th { background: var(--primary); color: white; }
-
     .hidden { display: none !important; }
-
-    /* QR reader */
     #qr-reader { width: 100%; max-width: 400px; margin: auto; }
-
-    /* للشاشات الصغيرة */
     @media (max-width: 768px) {
       .card { padding: 20px; }
     }
@@ -158,13 +134,13 @@
 <body>
 
 <div id="app">
-  <!-- شاشة تسجيل الدخول -->
+  <!-- شاشة تسجيل الدخول (يوزر وباسورد) -->
   <div id="login-screen" class="screen active">
     <div class="card">
       <h2><i class="fas fa-sign-in-alt"></i> تسجيل الدخول</h2>
       <form id="login-form">
-        <label>البريد الإلكتروني</label>
-        <input type="email" id="login-email" placeholder="user@example.com" required>
+        <label>اسم المستخدم</label>
+        <input type="text" id="login-username" placeholder="أدخل اسم المستخدم" required>
         <label>كلمة المرور</label>
         <input type="password" id="login-password" placeholder="••••••" required>
         <button type="submit" class="btn" style="width:100%"><i class="fas fa-arrow-left"></i> دخول</button>
@@ -172,7 +148,6 @@
       <div style="margin-top: 16px; text-align: center;">
         <button id="biometric-login-btn" class="btn btn-outline btn-sm"><i class="fas fa-fingerprint"></i> دخول بالبصمة</button>
       </div>
-      <p style="margin-top:12px; text-align:center; color:var(--text-light);">لإنشاء حساب جديد، استخدم لوحة الأدمن</p>
     </div>
   </div>
 
@@ -188,7 +163,6 @@
       <button onclick="showAdminSection('settings')"><i class="fas fa-cog"></i> إعدادات</button>
       <button id="logout-btn" class="btn btn-danger btn-sm"><i class="fas fa-sign-out-alt"></i> خروج</button>
     </div>
-
     <div id="admin-content" class="card" style="max-width: 900px;"></div>
   </div>
 
@@ -205,92 +179,120 @@
   </div>
 </div>
 
-<!-- Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { 
-    getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, 
-    createUserWithEmailAndPassword, browserLocalPersistence, setPersistence
-  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { 
     getFirestore, collection, doc, setDoc, getDoc, getDocs, 
-    query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc,
-    Timestamp, writeBatch, serverTimestamp 
+    query, where, orderBy, addDoc, updateDoc, deleteDoc,
+    Timestamp, writeBatch, serverTimestamp, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // ======== إعدادات Firebase (غيّرها بمشروعك) ========
+  // ======== إعدادات Firebase (استبدلها بمشروعك) ========
   const firebaseConfig = {
-  apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
-  authDomain: "drmedia-vpms.firebaseapp.com",
-  databaseURL: "https://drmedia-vpms-default-rtdb.firebaseio.com",
-  projectId: "drmedia-vpms",
-  storageBucket: "drmedia-vpms.firebasestorage.app",
-  messagingSenderId: "681162512380",
-  appId: "1:681162512380:web:ab2482f3234d8b59fc4479",
-  measurementId: "G-9KHN6N33FX"
-};
+    apiKey: "AIzaSyDummyKey123456789",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:abcdef"
+  };
 
   const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
   const db = getFirestore(app);
 
-  // تفعيل استمرار الجلسة محليًا
-  setPersistence(auth, browserLocalPersistence);
+  // ======== نظام إدارة الجلسة (localStorage) ========
+  const sessionKey = 'currentUser';
+  let currentUser = null;
 
-  // ======== نظام الصفحات ========
+  // محاولة استعادة الجلسة عند التحميل
+  const savedUser = localStorage.getItem(sessionKey);
+  if (savedUser) {
+    try {
+      currentUser = JSON.parse(savedUser);
+      navigateToDashboard(currentUser);
+    } catch (e) {
+      localStorage.removeItem(sessionKey);
+    }
+  }
+
+  // ======== دوال الصفحات ========
   const screens = document.querySelectorAll('.screen');
   window.showScreen = (screenId) => {
     screens.forEach(s => s.classList.remove('active'));
     document.getElementById(screenId).classList.add('active');
   };
 
-  // ======== مراقبة حالة المستخدم ========
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData.role === 'admin') {
-          showScreen('admin-screen');
-          loadAdminDashboard(userData);
-        } else {
-          showScreen('employee-screen');
-          loadEmployeeDashboard(userData);
-        }
-      } else {
-        await auth.signOut();
-        showScreen('login-screen');
-      }
+  function navigateToDashboard(user) {
+    if (user.role === 'admin') {
+      showScreen('admin-screen');
+      loadAdminDashboard(user);
     } else {
-      showScreen('login-screen');
+      showScreen('employee-screen');
+      loadEmployeeDashboard(user);
     }
-  });
+  }
 
-  // ======== تسجيل الدخول ========
+  // ======== تسجيل الدخول (يوزر وباسورد) ========
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = document.getElementById('login-email').value;
+    const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // البحث عن المستخدم بواسطة اسم المستخدم
+      const q = query(collection(db, "users"), where("username", "==", username));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        throw new Error("اسم المستخدم غير موجود");
+      }
+
+      const userDoc = snapshot.docs[0];
+      const userData = userDoc.data();
+      
+      // مقارنة كلمة المرور (مشفرة بـ btoa)
+      if (userData.password !== btoa(password)) {
+        throw new Error("كلمة المرور غير صحيحة");
+      }
+
+      // تسجيل الدخول ناجح
+      currentUser = {
+        uid: userDoc.id,
+        name: userData.name,
+        username: userData.username,
+        role: userData.role,
+        department: userData.department,
+        salaryPerOrder: userData.salaryPerOrder,
+        advance: userData.advance,
+        deductions: userData.deductions
+      };
+      
+      localStorage.setItem(sessionKey, JSON.stringify(currentUser));
+      navigateToDashboard(currentUser);
+      
     } catch (error) {
       alert('فشل الدخول: ' + error.message);
     }
   });
 
   // بصمة وهمية
-  document.getElementById('biometric-login-btn').addEventListener('click', async () => {
-    alert('ميزة البصمة تحتاج HTTPS ومتصفح داعم. استخدم تسجيل الدخول العادي الآن.');
-    // هنا يُضاف WebAuthn لاحقًا
+  document.getElementById('biometric-login-btn').addEventListener('click', () => {
+    alert('خاصية البصمة قيد التطوير');
   });
 
   // تسجيل الخروج
-  document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
-  document.getElementById('emp-logout-btn').addEventListener('click', () => auth.signOut());
+  function logout() {
+    localStorage.removeItem(sessionKey);
+    currentUser = null;
+    showScreen('login-screen');
+  }
+  document.getElementById('logout-btn').addEventListener('click', logout);
+  document.getElementById('emp-logout-btn').addEventListener('click', logout);
 
-  // ======== الأدمن ========
+  // ======== الأدمن: تهيئة المحتوى ========
   window.showAdminSection = (section) => {
     const content = document.getElementById('admin-content');
+    if (!currentUser || currentUser.role !== 'admin') return;
     switch(section) {
       case 'users': renderAdminUsers(content); break;
       case 'orders': renderAdminOrders(content); break;
@@ -308,11 +310,11 @@
   // ----- إدارة الموظفين -----
   async function renderAdminUsers(container) {
     container.innerHTML = `<h3>إدارة الموظفين</h3>
-      <button class="btn btn-sm" onclick="document.getElementById('addUserForm').classList.toggle('hidden')"><i class="fas fa-plus"></i> إضافة موظف</button>
+      <button class="btn btn-sm" onclick="toggleAddUserForm()"><i class="fas fa-plus"></i> إضافة موظف</button>
       <div id="addUserForm" class="hidden card" style="max-width:400px;">
-        <input type="text" id="newUserName" placeholder="الاسم">
-        <input type="email" id="newUserEmail" placeholder="بريد إلكتروني">
-        <input type="password" id="newUserPassword" placeholder="كلمة مرور">
+        <input type="text" id="newUserName" placeholder="الاسم الكامل">
+        <input type="text" id="newUserUsername" placeholder="اسم المستخدم">
+        <input type="password" id="newUserPassword" placeholder="كلمة المرور">
         <select id="newUserRole">
           <option value="employee">موظف</option>
           <option value="admin">أدمن</option>
@@ -322,36 +324,107 @@
           <option value="مصور">مصور</option>
           <option value="كرين">كرين</option>
         </select>
+        <label>سعر الأوردر</label>
+        <input type="number" id="newUserSalaryPerOrder" value="0" min="0">
+        <label>سلفة</label>
+        <input type="number" id="newUserAdvance" value="0" min="0">
+        <label>خصومات</label>
+        <input type="number" id="newUserDeductions" value="0" min="0">
         <button class="btn btn-success btn-sm" onclick="addUser()">حفظ</button>
       </div>
       <div id="usersTable"></div>`;
 
+    await refreshUsersTable();
+  }
+
+  window.toggleAddUserForm = () => {
+    document.getElementById('addUserForm').classList.toggle('hidden');
+  };
+
+  async function refreshUsersTable() {
     const q = query(collection(db, "users"));
     const snapshot = await getDocs(q);
-    let html = `<table><tr><th>الاسم</th><th>البريد</th><th>الدور</th><th>القسم</th></tr>`;
+    let html = `<table><tr><th>الاسم</th><th>اسم المستخدم</th><th>الدور</th><th>القسم</th><th>سعر الأوردر</th></tr>`;
     snapshot.forEach(doc => {
       const u = doc.data();
-      html += `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td><td>${u.department}</td></tr>`;
+      html += `<tr>
+        <td>${u.name}</td>
+        <td>${u.username || '-'}</td>
+        <td>${u.role}</td>
+        <td>${u.department}</td>
+        <td>${u.salaryPerOrder || 0}</td>
+      </tr>`;
     });
     html += `</table>`;
     document.getElementById('usersTable').innerHTML = html;
   }
 
   window.addUser = async () => {
-    const name = document.getElementById('newUserName').value;
-    const email = document.getElementById('newUserEmail').value;
+    const name = document.getElementById('newUserName').value.trim();
+    const username = document.getElementById('newUserUsername').value.trim();
     const password = document.getElementById('newUserPassword').value;
     const role = document.getElementById('newUserRole').value;
-    const dept = document.getElementById('newUserDept').value;
+    const department = document.getElementById('newUserDept').value;
+    const salaryPerOrder = Number(document.getElementById('newUserSalaryPerOrder').value);
+    const advance = Number(document.getElementById('newUserAdvance').value);
+    const deductions = Number(document.getElementById('newUserDeductions').value);
+
+    if (!name || !username || !password) {
+      alert('الرجاء ملء الحقول المطلوبة');
+      return;
+    }
+
+    // التأكد من عدم وجود اسم مستخدم مكرر
+    const checkQuery = query(collection(db, "users"), where("username", "==", username));
+    const checkSnap = await getDocs(checkQuery);
+    if (!checkSnap.empty) {
+      alert('اسم المستخدم موجود مسبقاً');
+      return;
+    }
+
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await setDoc(doc(db, "users", userCredential.user.uid), {
-        name, email, role, department: dept, salaryPerOrder: 0, advance: 0, deductions: 0
+      const userRef = doc(collection(db, "users"));
+      await setDoc(userRef, {
+        name,
+        username,
+        password: btoa(password), // تشفير بسيط
+        role,
+        department,
+        salaryPerOrder,
+        advance,
+        deductions
       });
-      alert('تم إضافة الموظف');
-      renderAdminUsers(document.getElementById('admin-content'));
-    } catch (e) { alert(e.message); }
+      alert('تم إضافة المستخدم بنجاح');
+      document.getElementById('newUserName').value = '';
+      document.getElementById('newUserUsername').value = '';
+      document.getElementById('newUserPassword').value = '';
+      document.getElementById('addUserForm').classList.add('hidden');
+      await refreshUsersTable();
+    } catch (e) {
+      alert('خطأ: ' + e.message);
+    }
   };
+
+  // ----- عرض الأوردرات (للأدمن) -----
+  async function renderAdminOrders(container) {
+    container.innerHTML = `<h3>كل الأوردرات</h3><div id="adminOrdersTable"></div>`;
+    const q = query(collection(db, "orders"), orderBy("date", "desc"));
+    const snapshot = await getDocs(q);
+    let html = `<table><tr><th>الرقم</th><th>التاريخ</th><th>العريس</th><th>القاعة</th><th>الموظفين</th></tr>`;
+    snapshot.forEach(doc => {
+      const o = doc.data();
+      const assigned = o.assignedEmployees ? o.assignedEmployees.join(', ') : 'غير محدد';
+      html += `<tr>
+        <td>${o.serial}</td>
+        <td>${o.date?.toDate().toLocaleDateString() || ''}</td>
+        <td>${o.groomName}</td>
+        <td>${o.hallType || ''}</td>
+        <td>${assigned}</td>
+      </tr>`;
+    });
+    html += '</table>';
+    document.getElementById('adminOrdersTable').innerHTML = html;
+  }
 
   // ----- استيراد إكسيل -----
   function renderImport(container) {
@@ -376,9 +449,8 @@
         const row = rows[i];
         if (row.length < 6) continue;
         const [serial, dateStr, day, groom, packageType, guests] = row;
-        // محاولة تحويل أي صيغة تاريخ
         const dateObj = new Date(dateStr);
-        if (isNaN(dateObj.getTime())) continue; // تجاهل الصفوف بدون تاريخ صحيح
+        if (isNaN(dateObj.getTime())) continue;
         const orderData = {
           serial: serial.toString(),
           date: Timestamp.fromDate(dateObj),
@@ -386,20 +458,19 @@
           groomName: groom || '',
           packageType: packageType || '',
           guestsCount: Number(guests) || 0,
-          hallType: '', // ستحدد لاحقًا يدويًا أو بقاعدة
+          hallType: '',
           assignedEmployees: [],
           status: 'pending'
         };
         await addDoc(collection(db, "orders"), orderData);
         count++;
       }
-      document.getElementById('importResult').innerHTML = `<p class="text-success">تم استيراد ${count} حجز بنجاح</p>`;
-      alert('تم استيراد ' + count + ' صف');
+      document.getElementById('importResult').innerHTML = `<p class="text-success">تم استيراد ${count} حجز</p>`;
     };
     reader.readAsArrayBuffer(file);
   };
 
-  // ----- توزيع الأوردرات -----
+  // ----- توزيع ذكي (نفس السابق) -----
   async function renderDistribution(container) {
     container.innerHTML = `<h3>توزيع الأوردرات</h3>
       <label>اختر القاعة:</label>
@@ -408,14 +479,12 @@
         <option value="قاعة_مفتوحة">قاعة مفتوحة</option>
         <option value="كافيه">كافيه</option>
       </select>
-      <label>اختر التاريخ (أو اتركه للكل)</label>
+      <label>اختر التاريخ (اختياري)</label>
       <input type="date" id="distDate">
       <button class="btn" onclick="distributeSmart()"><i class="fas fa-magic"></i> توزيع ذكي</button>
-      <button class="btn btn-outline" onclick="manualDistribute()"><i class="fas fa-hand-pointer"></i> يدوي</button>
       <div id="distResult"></div>`;
   }
 
-  // توزيع ذكي بالتساوي
   window.distributeSmart = async () => {
     const hall = document.getElementById('distHall').value;
     const dateVal = document.getElementById('distDate').value;
@@ -433,9 +502,7 @@
     const orders = [];
     ordersSnap.forEach(d => orders.push({id: d.id, ...d.data()}));
 
-    // تحديد الأدوار المطلوبة حسب القاعة
     const requiredRoles = hall === 'كافيه' ? ['مصور'] : ['مخرج','مصور','مصور','كرين'];
-    // جلب الموظفين حسب الأدوار المطلوبة
     const roleSet = [...new Set(requiredRoles)];
     const usersSnap = await getDocs(query(collection(db, "users"), where('role','==','employee')));
     const employees = [];
@@ -444,15 +511,11 @@
       if (roleSet.includes(u.department)) employees.push({id: d.id, ...u});
     });
 
-    // حساب عدد الأوردرات الحالية لكل موظف (بسيط)
     const counts = {};
     employees.forEach(e => counts[e.id] = 0);
-    // (هنا يمكن تحسينها بقاعدة بيانات حقيقية)
 
-    // توزيع بالتساوي
     let result = '';
     for (let order of orders) {
-      // اختر موظفًا من كل دور مطلوب (أقلهم أوردرات)
       const assigned = [];
       for (let role of requiredRoles) {
         const candidates = employees.filter(e => e.department === role && !assigned.includes(e.id));
@@ -468,26 +531,20 @@
     document.getElementById('distResult').innerText = result || 'لا يوجد أوردرات مطابقة.';
   };
 
-  window.manualDistribute = () => {
-    // للتطبيق اليدوي: فتح نافذة اختيار الموظفين لكل أوردر
-    alert('سيتم تطوير التوزيع اليدوي في نسخة قادمة');
-  };
-
   // ----- إشعارات -----
   function renderNotifications(container) {
     container.innerHTML = `
       <h3>إرسال إشعار</h3>
-      <textarea id="notifMsg" placeholder="اكتب الإشعار هنا..."></textarea>
+      <textarea id="notifMsg" placeholder="نص الإشعار"></textarea>
       <select id="notifTarget">
         <option value="all">كل الموظفين</option>
         <option value="specific">موظف محدد</option>
       </select>
       <div id="specificUserSelect" class="hidden">
-        <label>معرف الموظف (UID)</label>
-        <input type="text" id="specificUserId" placeholder="أدخل UID">
+        <label>اسم المستخدم</label>
+        <input type="text" id="specificUsername" placeholder="أدخل اسم المستخدم">
       </div>
-      <button class="btn" onclick="sendNotification()">إرسال</button>
-      <div id="notifResult"></div>`;
+      <button class="btn" onclick="sendNotification()">إرسال</button>`;
     document.getElementById('notifTarget').addEventListener('change', function(){
       document.getElementById('specificUserSelect').classList.toggle('hidden', this.value !== 'specific');
     });
@@ -501,48 +558,30 @@
         message: msg, target: 'all', sentAt: serverTimestamp()
       });
     } else {
-      const uid = document.getElementById('specificUserId').value;
+      const username = document.getElementById('specificUsername').value;
       await addDoc(collection(db, "notifications"), {
-        message: msg, target: uid, sentAt: serverTimestamp()
+        message: msg, target: username, sentAt: serverTimestamp()
       });
     }
-    alert('تم إرسال الإشعار');
+    alert('تم الإرسال');
   };
 
-  // ----- إعدادات -----
+  // ----- إعدادات (مبسطة) -----
   function renderSettings(container) {
     container.innerHTML = `
-      <h3>إعدادات التطبيق</h3>
+      <h3>إعدادات</h3>
       <label>اسم الشركة</label>
-      <input type="text" id="companyName" placeholder="اسم الشركة">
+      <input type="text" id="companyName">
       <label>رابط اللوجو</label>
-      <input type="text" id="logoUrl" placeholder="https://...">
-      <label>رقم الواتساب للدعم</label>
-      <input type="text" id="whatsappNumber" placeholder="+966...">
+      <input type="text" id="logoUrl">
       <button class="btn" onclick="saveSettings()">حفظ</button>
-      <hr>
-      <h3>تغيير الثيم</h3>
-      <button class="btn btn-sm" onclick="toggleTheme()">تبديل الوضع الليلي</button>
-      <h3>نسخ احتياطي</h3>
-      <button class="btn btn-sm" onclick="exportBackup()">تصدير</button>
-      <input type="file" id="importBackupFile" accept=".json" style="margin-top:8px">
-      <button class="btn btn-sm" onclick="importBackup()">استيراد نسخة</button>`;
-    // تحميل الإعدادات الحالية
-    getDoc(doc(db, "settings", "global")).then(docSnap => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        document.getElementById('companyName').value = data.companyName || '';
-        document.getElementById('logoUrl').value = data.logoUrl || '';
-        document.getElementById('whatsappNumber').value = data.whatsappNumber || '';
-      }
-    });
+      <button class="btn btn-outline btn-sm" onclick="toggleTheme()">تبديل الثيم</button>`;
   }
 
   window.saveSettings = async () => {
     const companyName = document.getElementById('companyName').value;
     const logoUrl = document.getElementById('logoUrl').value;
-    const whatsappNumber = document.getElementById('whatsappNumber').value;
-    await setDoc(doc(db, "settings", "global"), { companyName, logoUrl, whatsappNumber });
+    await setDoc(doc(db, "settings", "global"), { companyName, logoUrl });
     alert('تم الحفظ');
   };
 
@@ -550,37 +589,10 @@
     document.body.classList.toggle('dark-theme');
   };
 
-  window.exportBackup = async () => {
-    const data = { users: [], orders: [], attendance: [] };
-    const usersSnap = await getDocs(collection(db, "users"));
-    usersSnap.forEach(d => data.users.push(d.data()));
-    const ordersSnap = await getDocs(collection(db, "orders"));
-    ordersSnap.forEach(d => data.orders.push({id: d.id, ...d.data()}));
-    const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'backup.json'; a.click();
-  };
-
-  window.importBackup = async () => {
-    const file = document.getElementById('importBackupFile').files[0];
-    if (!file) return;
-    const text = await file.text();
-    const data = JSON.parse(text);
-    const batch = writeBatch(db);
-    data.users.forEach(u => {
-      // لا يمكن استيراد كلمة مرور auth مباشرة، هذا مثال فقط
-    });
-    data.orders.forEach(o => {
-      const ref = doc(collection(db, "orders"));
-      batch.set(ref, o);
-    });
-    await batch.commit();
-    alert('تم الاستيراد');
-  };
-
   // ======== الموظف ========
   window.showEmployeeSection = (section) => {
     const content = document.getElementById('employee-content');
+    if (!currentUser) return;
     switch(section) {
       case 'attendance': renderAttendance(content); break;
       case 'myorders': renderMyOrders(content); break;
@@ -592,18 +604,13 @@
     showEmployeeSection('attendance');
   }
 
-  // حضور بـ QR سكان
   function renderAttendance(container) {
     container.innerHTML = `
       <h3>تسجيل الحضور</h3>
-      <p>استخدم QR المخصص للأوردر أو زر الكاميرا</p>
       <div id="qr-reader"></div>
-      <div id="attendanceResult" class="text-success"></div>
       <button class="btn btn-sm" onclick="startQR()">تشغيل الكاميرا</button>
       <button class="btn btn-sm btn-outline" onclick="stopQR()">إيقاف</button>
-      <hr>
-      <h4>محاكاة QR</h4>
-      <button class="btn btn-sm" onclick="mockAttendance()">تسجيل حضور يدوي (تجربة)</button>`;
+      <div id="attendanceResult"></div>`;
   }
 
   let html5QrCode;
@@ -613,12 +620,11 @@
       { facingMode: "environment" },
       { fps: 10, qrbox: 250 },
       (decodedText) => {
-        // يفترض أن النص هو orderId
         registerAttendance(decodedText);
         html5QrCode.stop();
       },
-      (errorMessage) => { /* ignore */ }
-    ).catch(err => alert("خطأ في الكاميرا: " + err));
+      () => {}
+    ).catch(err => alert("خطأ: " + err));
   };
 
   window.stopQR = () => {
@@ -626,27 +632,19 @@
   };
 
   async function registerAttendance(orderId) {
-    const user = auth.currentUser;
-    if (!user) return;
-    // سجل في Firestore
+    if (!currentUser) return;
     await addDoc(collection(db, "attendance"), {
-      userId: user.uid,
+      userId: currentUser.uid,
+      username: currentUser.username,
       orderId: orderId,
       timestamp: serverTimestamp()
     });
     document.getElementById('attendanceResult').innerText = 'تم تسجيل حضورك للأوردر: ' + orderId;
   }
 
-  window.mockAttendance = async () => {
-    const orderId = prompt("أدخل معرف الأوردر (أو رقم مسلسل):");
-    if (orderId) await registerAttendance(orderId);
-  };
-
-  // عرض أوردرات الموظف
   async function renderMyOrders(container) {
-    const user = auth.currentUser;
-    if (!user) return;
-    const q = query(collection(db, "orders"), where("assignedEmployees", "array-contains", user.uid));
+    if (!currentUser) return;
+    const q = query(collection(db, "orders"), where("assignedEmployees", "array-contains", currentUser.uid));
     const snapshot = await getDocs(q);
     let html = '<table><tr><th>الرقم</th><th>التاريخ</th><th>العريس</th><th>القاعة</th></tr>';
     snapshot.forEach(doc => {
@@ -657,30 +655,24 @@
     container.innerHTML = `<h3>أوردراتي</h3> ${html}`;
   }
 
-  // المرتب
   async function renderSalary(container) {
-    const user = auth.currentUser;
-    if (!user) return;
-    const userDoc = await getDoc(doc(db, "users", user.uid));
-    const uData = userDoc.data() || {};
-    const ordersCount = (await getDocs(query(collection(db, "orders"), where("assignedEmployees", "array-contains", user.uid)))).size;
-    const totalSalary = ordersCount * (uData.salaryPerOrder || 0);
-    const net = totalSalary + (uData.advance || 0) - (uData.deductions || 0);
+    if (!currentUser) return;
+    const ordersSnap = await getDocs(query(collection(db, "orders"), where("assignedEmployees", "array-contains", currentUser.uid)));
+    const ordersCount = ordersSnap.size;
+    const total = ordersCount * (currentUser.salaryPerOrder || 0);
+    const net = total + (currentUser.advance || 0) - (currentUser.deductions || 0);
     container.innerHTML = `
       <h3>مرتبي</h3>
       <p>عدد الأوردرات: ${ordersCount}</p>
-      <p>سعر الأوردر: ${uData.salaryPerOrder || 0} ريال</p>
-      <p>الإجمالي: ${totalSalary} ريال</p>
-      <p>سلف: ${uData.advance || 0} | خصومات: ${uData.deductions || 0}</p>
-      <p><strong>الصافي: ${net} ريال</strong></p>`;
+      <p>سعر الأوردر: ${currentUser.salaryPerOrder || 0}</p>
+      <p>الإجمالي: ${total}</p>
+      <p>الصافي: ${net}</p>`;
   }
 
-  // ======== PWA ========
+  // ======== PWA (اختياري) ========
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').then(reg => {
-        console.log('Service Worker جاهز');
-      }).catch(err => console.log('SW فشل', err));
+      navigator.serviceWorker.register('/sw.js').then(() => console.log('SW جاهز'));
     });
   }
 </script>
