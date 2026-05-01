@@ -5,49 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>نظام توزيع الأوردرات - Drmedia Pro VPMS</title>
     
-    <!-- Font Awesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=El+Messiri:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- FullCalendar -->
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-    <!-- QR Scanner -->
     <script src="https://unpkg.com/html5-qrcode"></script>
-    <!-- Excel parser -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <!-- PDF generator -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
     <style>
-        /* ============ المتغيرات العامة ============ */
+        /* ============ المتغيرات ============ */
         :root {
             --primary: #6C5CE7;
             --primary-light: #A29BFE;
             --primary-dark: #5A4BD1;
             --secondary: #00CEC9;
-            --secondary-light: #81ECEC;
             --accent: #FD79A8;
-            --accent-light: #FDCB6E;
             --success: #00B894;
-            --success-light: #55EFC4;
             --danger: #E17055;
-            --danger-light: #FAB1A0;
             --warning: #FDCB6E;
-            --warning-light: #FFEAA7;
             --info: #74B9FF;
-            --info-light: #A8D8EA;
             --dark: #2D3436;
             --dark-light: #636E72;
             --light: #F8F9FA;
             --white: #FFFFFF;
             --glass: rgba(255,255,255,0.25);
-            --glass-border: rgba(255,255,255,0.18);
             --shadow-sm: 0 2px 10px rgba(0,0,0,0.05);
             --shadow: 0 8px 30px rgba(0,0,0,0.08);
             --shadow-lg: 0 15px 40px rgba(0,0,0,0.12);
@@ -58,16 +44,12 @@
             --radius-xl: 36px;
             --transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
             --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            --transition-slow: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
             --gradient-primary: linear-gradient(135deg, #6C5CE7 0%, #A29BFE 50%, #74B9FF 100%);
             --gradient-secondary: linear-gradient(135deg, #00CEC9 0%, #81ECEC 50%, #55EFC4 100%);
             --gradient-accent: linear-gradient(135deg, #FD79A8 0%, #FDCB6E 50%, #E17055 100%);
-            --gradient-dark: linear-gradient(135deg, #2D3436 0%, #636E72 100%);
-            --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 100%);
             --sidebar-width: 260px;
         }
         
-        /* ============ الثيم الداكن ============ */
         .dark-theme {
             --light: #1A1A2E;
             --white: #16213E;
@@ -76,12 +58,8 @@
             --shadow-sm: 0 2px 10px rgba(0,0,0,0.3);
             --shadow: 0 8px 30px rgba(0,0,0,0.4);
             --shadow-lg: 0 15px 40px rgba(0,0,0,0.5);
-            --shadow-xl: 0 25px 60px rgba(0,0,0,0.6);
-            --glass: rgba(0,0,0,0.25);
-            --glass-border: rgba(255,255,255,0.08);
         }
         
-        /* ============ إعادة تعيين ============ */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         body {
@@ -89,7 +67,7 @@
             background: var(--light);
             color: var(--dark);
             direction: rtl;
-            transition: var(--transition-slow);
+            transition: background 0.5s, color 0.5s;
             line-height: 1.7;
             overflow-x: hidden;
             background-image: 
@@ -98,27 +76,13 @@
                 radial-gradient(circle at 50% 50%, rgba(253,121,168,0.02) 0%, transparent 50%);
         }
         
-        /* ============ شريط التمرير ============ */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: var(--primary-light);
-            border-radius: 20px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--primary);
-        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--primary-light); border-radius: 20px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
         
         /* ============ التخطيط ============ */
-        .app-layout {
-            display: flex;
-            min-height: 100vh;
-        }
+        .app-layout { display: flex; min-height: 100vh; }
         
         /* ============ الشريط الجانبي ============ */
         .sidebar {
@@ -134,8 +98,7 @@
             display: flex;
             flex-direction: column;
             box-shadow: -10px 0 40px rgba(0,0,0,0.3);
-            border-left: 1px solid rgba(255,255,255,0.05);
-            transition: var(--transition-slow);
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .sidebar-header {
@@ -165,35 +128,7 @@
             50% { transform: translateY(-5px); }
         }
         
-        .sidebar-header h3 {
-            color: white;
-            font-size: 18px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-        }
-        
-        .sidebar-header p {
-            font-size: 11px;
-            color: rgba(255,255,255,0.5);
-            margin-top: 4px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-        
-        .sidebar-nav {
-            flex: 1;
-            padding: 15px 12px;
-            overflow-y: auto;
-        }
-        
-        .nav-category {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: rgba(255,255,255,0.3);
-            padding: 15px 15px 8px;
-            font-weight: 700;
-        }
+        .sidebar-nav { flex: 1; padding: 15px 12px; overflow-y: auto; }
         
         .nav-item {
             display: flex;
@@ -202,36 +137,18 @@
             margin: 3px 0;
             border-radius: 14px;
             cursor: pointer;
-            transition: var(--transition-fast);
+            transition: all 0.25s;
             gap: 12px;
             font-size: 14px;
             font-weight: 500;
             color: rgba(255,255,255,0.7);
             position: relative;
-            overflow: hidden;
-        }
-        
-        .nav-item::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 0;
-            bottom: 0;
-            background: linear-gradient(135deg, rgba(108,92,231,0.3), rgba(0,206,201,0.1));
-            border-radius: 14px;
-            opacity: 0;
-            transition: var(--transition);
         }
         
         .nav-item:hover {
             color: white;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255,255,255,0.08);
             transform: translateX(-5px);
-        }
-        
-        .nav-item:hover::before {
-            opacity: 1;
         }
         
         .nav-item.active {
@@ -241,22 +158,8 @@
             font-weight: 700;
         }
         
-        .nav-item i {
-            width: 20px;
-            text-align: center;
-            font-size: 15px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .nav-item span {
-            position: relative;
-            z-index: 1;
-        }
-        
+        .nav-item i { width: 20px; text-align: center; }
         .nav-badge {
-            position: relative;
-            z-index: 1;
             margin-right: auto;
             background: var(--accent);
             color: white;
@@ -272,43 +175,6 @@
             background: rgba(0,0,0,0.2);
         }
         
-        .user-card {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 15px;
-        }
-        
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 14px;
-            background: var(--gradient-primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800;
-            color: white;
-            font-size: 16px;
-        }
-        
-        .user-info {
-            flex: 1;
-        }
-        
-        .user-info .user-name {
-            font-weight: 700;
-            color: white;
-            font-size: 13px;
-        }
-        
-        .user-info .user-role {
-            font-size: 10px;
-            color: rgba(255,255,255,0.5);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
         /* ============ المحتوى الرئيسي ============ */
         .main-content {
             flex: 1;
@@ -317,22 +183,15 @@
             min-height: 100vh;
         }
         
-        /* ============ الشاشات ============ */
-        .screen {
-            display: none;
-            animation: screenIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .screen.active {
-            display: block;
-        }
+        .screen { display: none; animation: screenIn 0.5s ease; }
+        .screen.active { display: block; }
         
         @keyframes screenIn {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
-        /* ============ شاشة تسجيل الدخول ============ */
+        /* ============ تسجيل الدخول ============ */
         .login-screen-wrapper {
             display: flex;
             justify-content: center;
@@ -360,64 +219,6 @@
             text-align: center;
         }
         
-        .login-card .login-icon {
-            width: 70px;
-            height: 70px;
-            background: var(--gradient-primary);
-            border-radius: 24px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 30px;
-            color: white;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(108,92,231,0.4);
-        }
-        
-        .login-card h2 {
-            font-size: 24px;
-            font-weight: 800;
-            margin-bottom: 5px;
-            color: #1A1A2E;
-        }
-        
-        .login-card p {
-            color: #636E72;
-            font-size: 14px;
-            margin-bottom: 25px;
-        }
-        
-        .input-group {
-            position: relative;
-            margin-bottom: 20px;
-        }
-        
-        .input-group .input-icon {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--primary);
-            font-size: 16px;
-        }
-        
-        .input-group input {
-            width: 100%;
-            padding: 14px 45px 14px 15px;
-            border: 2px solid #E0E0E0;
-            border-radius: var(--radius-sm);
-            font-family: inherit;
-            font-size: 15px;
-            transition: var(--transition);
-            background: var(--white);
-        }
-        
-        .input-group input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(108,92,231,0.1);
-        }
-        
         /* ============ البطاقات ============ */
         .card {
             background: var(--white);
@@ -429,10 +230,7 @@
             margin-bottom: 20px;
         }
         
-        .card:hover {
-            box-shadow: var(--shadow);
-            transform: translateY(-2px);
-        }
+        .card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
         
         .card-header {
             display: flex;
@@ -443,24 +241,12 @@
             border-bottom: 1px solid rgba(0,0,0,0.05);
         }
         
-        .card-header h4 {
-            font-size: 18px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .card-header h4 i {
-            color: var(--primary);
-        }
-        
         /* ============ الأزرار ============ */
         .btn {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 12px 22px;
+            padding: 10px 20px;
             border: none;
             border-radius: var(--radius-sm);
             font-family: inherit;
@@ -468,94 +254,20 @@
             font-weight: 600;
             cursor: pointer;
             transition: var(--transition-fast);
-            text-decoration: none;
-            position: relative;
-            overflow: hidden;
+            margin: 3px;
         }
         
-        .btn::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            background: rgba(255,255,255,0.3);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            transition: width 0.6s, height 0.6s;
-        }
-        
-        .btn:active::after {
-            width: 300px;
-            height: 300px;
-        }
-        
-        .btn-primary {
-            background: var(--gradient-primary);
-            color: white;
-            box-shadow: 0 6px 20px rgba(108,92,231,0.3);
-        }
-        
-        .btn-primary:hover {
-            box-shadow: 0 10px 30px rgba(108,92,231,0.5);
-            transform: translateY(-2px);
-        }
-        
-        .btn-secondary {
-            background: var(--gradient-secondary);
-            color: white;
-            box-shadow: 0 6px 20px rgba(0,206,201,0.3);
-        }
-        
-        .btn-success {
-            background: linear-gradient(135deg, #00B894, #55EFC4);
-            color: white;
-            box-shadow: 0 6px 20px rgba(0,184,148,0.3);
-        }
-        
-        .btn-danger {
-            background: linear-gradient(135deg, #E17055, #FAB1A0);
-            color: white;
-            box-shadow: 0 6px 20px rgba(225,112,85,0.3);
-        }
-        
-        .btn-warning {
-            background: linear-gradient(135deg, #FDCB6E, #FFEAA7);
-            color: #2D3436;
-            box-shadow: 0 6px 20px rgba(253,203,110,0.3);
-        }
-        
-        .btn-outline {
-            background: transparent;
-            border: 2px solid var(--primary);
-            color: var(--primary);
-        }
-        
-        .btn-outline:hover {
-            background: var(--primary);
-            color: white;
-        }
-        
-        .btn-sm {
-            padding: 8px 16px;
-            font-size: 12px;
-            border-radius: 10px;
-        }
-        
-        .btn-lg {
-            padding: 16px 28px;
-            font-size: 16px;
-            border-radius: var(--radius);
-        }
-        
-        .btn-icon {
-            width: 40px;
-            height: 40px;
-            padding: 0;
-            justify-content: center;
-            border-radius: 12px;
-        }
+        .btn-primary { background: var(--gradient-primary); color: white; box-shadow: 0 6px 20px rgba(108,92,231,0.3); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(108,92,231,0.5); }
+        .btn-secondary { background: var(--gradient-secondary); color: white; box-shadow: 0 6px 20px rgba(0,206,201,0.3); }
+        .btn-success { background: linear-gradient(135deg, #00B894, #55EFC4); color: white; }
+        .btn-danger { background: linear-gradient(135deg, #E17055, #FAB1A0); color: white; }
+        .btn-warning { background: linear-gradient(135deg, #FDCB6E, #FFEAA7); color: #2D3436; }
+        .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); }
+        .btn-outline:hover { background: var(--primary); color: white; }
+        .btn-sm { padding: 6px 14px; font-size: 12px; border-radius: 10px; }
+        .btn-lg { padding: 14px 26px; font-size: 16px; }
+        .btn-icon { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 12px; }
         
         /* ============ حقول الإدخال ============ */
         .form-control {
@@ -565,7 +277,7 @@
             border-radius: var(--radius-sm);
             font-family: inherit;
             font-size: 14px;
-            transition: var(--transition);
+            transition: var(--transition-fast);
             background: var(--white);
             color: var(--dark);
         }
@@ -576,13 +288,7 @@
             box-shadow: 0 0 0 4px rgba(108,92,231,0.08);
         }
         
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 6px;
-            font-size: 13px;
-            color: var(--dark-light);
-        }
+        label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; color: var(--dark-light); }
         
         /* ============ الإحصائيات ============ */
         .stats-grid {
@@ -617,22 +323,7 @@
             background: var(--gradient-primary);
         }
         
-        .stat-card:nth-child(2)::after {
-            background: var(--gradient-secondary);
-        }
-        
-        .stat-card:nth-child(3)::after {
-            background: var(--gradient-accent);
-        }
-        
-        .stat-card:nth-child(4)::after {
-            background: var(--gradient-dark);
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-3px);
-            box-shadow: var(--shadow);
-        }
+        .stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
         
         .stat-icon {
             width: 55px;
@@ -645,56 +336,41 @@
             color: white;
         }
         
-        .stat-icon.primary { background: var(--gradient-primary); }
-        .stat-icon.secondary { background: var(--gradient-secondary); }
-        .stat-icon.accent { background: var(--gradient-accent); }
-        .stat-icon.dark { background: var(--gradient-dark); }
-        
-        .stat-info h3 {
-            font-size: 28px;
-            font-weight: 800;
-            line-height: 1;
-        }
-        
-        .stat-info p {
-            font-size: 12px;
-            color: var(--dark-light);
-            margin-top: 4px;
-        }
+        .stat-info h3 { font-size: 28px; font-weight: 800; line-height: 1; }
+        .stat-info p { font-size: 12px; color: var(--dark-light); margin-top: 4px; }
         
         /* ============ الجداول ============ */
         .table-wrapper {
             overflow-x: auto;
             border-radius: var(--radius);
             box-shadow: var(--shadow-sm);
+            margin-top: 10px;
         }
         
         table {
             width: 100%;
             border-collapse: collapse;
             background: var(--white);
-            min-width: 700px;
+            min-width: 800px;
         }
         
         th {
             background: linear-gradient(135deg, #1A1A2E, #16213E);
             color: white;
-            padding: 14px 16px;
+            padding: 14px 12px;
             font-weight: 600;
-            font-size: 13px;
+            font-size: 12px;
             text-align: right;
             white-space: nowrap;
         }
         
         td {
-            padding: 12px 16px;
+            padding: 12px;
             border-bottom: 1px solid rgba(0,0,0,0.04);
             font-size: 13px;
         }
         
-        tr:hover td {
-            background: rgba(108,92,231,0.02);
-        }
+        tr:hover td { background: rgba(108,92,231,0.02); }
         
         /* ============ الشارات ============ */
         .badge {
@@ -719,7 +395,6 @@
             margin: 12px 0;
             font-weight: 500;
             border-right: 5px solid;
-            font-size: 14px;
         }
         
         .alert-success { background: #EAFAF1; color: #1E8449; border-color: #27AE60; }
@@ -727,7 +402,6 @@
         .alert-warning { background: #FEF9E7; color: #B7950B; border-color: #F1C40F; }
         .alert-info { background: #EBF5FB; color: #2471A3; border-color: #3498DB; }
         
-        /* ============ الفورم صف ============ */
         .form-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -735,8 +409,103 @@
             margin-bottom: 15px;
         }
         
-        /* ============ المخفي ============ */
         .hidden { display: none !important; }
+        
+        /* ============ QR Scanner ============ */
+        #qr-reader {
+            max-width: 300px;
+            margin: 10px auto;
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 3px solid var(--primary-light);
+        }
+        
+        /* ============ التقويم ============ */
+        #calendar {
+            background: var(--white);
+            padding: 15px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .fc-toolbar-title {
+            font-size: 18px !important;
+            font-weight: 700 !important;
+        }
+        
+        .fc-button {
+            background: var(--primary) !important;
+            border: none !important;
+            border-radius: 10px !important;
+            padding: 6px 12px !important;
+            font-size: 12px !important;
+        }
+        
+        .fc-button-active {
+            background: var(--primary-dark) !important;
+        }
+        
+        .fc-event {
+            cursor: pointer;
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        /* ============ مودال ============ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(8px);
+            animation: fadeIn 0.3s;
+        }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .modal {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 30px;
+            width: 90%;
+            max-width: 550px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-xl);
+            animation: slideUp 0.4s ease;
+        }
+        
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        
+        .modal h4 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        /* ============ تشيك بوكس ============ */
+        .checkbox-cell {
+            width: 40px;
+            text-align: center;
+        }
+        
+        .checkbox-cell input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
         
         /* ============ زر الموبايل ============ */
         .mobile-toggle {
@@ -765,221 +534,96 @@
             backdrop-filter: blur(4px);
         }
         
-        /* ============ المودال ============ */
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 2000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(8px);
-            animation: fadeIn 0.3s;
-        }
-        
-        .modal {
-            background: var(--white);
-            border-radius: var(--radius-lg);
-            padding: 30px;
-            width: 90%;
-            max-width: 600px;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: var(--shadow-xl);
-            animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(30px) scale(0.95); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        
-        /* ============ تجاوب ============ */
         @media (max-width: 968px) {
-            .sidebar {
-                right: -100%;
-                width: 280px;
-            }
-            .sidebar.show {
-                right: 0;
-            }
-            .main-content {
-                margin-right: 0;
-                padding: 15px;
-            }
-            .mobile-toggle {
-                display: block;
-            }
-            .sidebar-overlay.show {
-                display: block;
-            }
+            .sidebar { right: -100%; width: 280px; }
+            .sidebar.show { right: 0; }
+            .main-content { margin-right: 0; padding: 15px; }
+            .mobile-toggle { display: block; }
+            .sidebar-overlay.show { display: block; }
         }
         
         @media (max-width: 480px) {
-            .stats-grid {
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-            }
-            .stat-card {
-                padding: 12px;
-                gap: 8px;
-            }
-            .stat-icon {
-                width: 40px;
-                height: 40px;
-                font-size: 18px;
-                border-radius: 12px;
-            }
-            .stat-info h3 {
-                font-size: 20px;
-            }
+            .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+            .stat-card { padding: 12px; gap: 8px; }
+            .stat-icon { width: 40px; height: 40px; font-size: 18px; border-radius: 12px; }
+            .stat-info h3 { font-size: 20px; }
+            .btn { padding: 8px 14px; font-size: 12px; }
         }
         
-        /* ============ تأثيرات ============ */
-        .pulse {
-            animation: pulse 2s infinite;
+        .editable {
+            cursor: pointer;
+            border-bottom: 2px dashed var(--primary-light);
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: var(--transition-fast);
         }
         
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-        
-        .spin {
-            animation: spin 2s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .editable:hover {
+            background: rgba(108,92,231,0.1);
         }
     </style>
 </head>
 <body>
 
-<!-- زر الموبايل -->
-<button class="mobile-toggle" onclick="toggleSidebar()">
-    <i class="fas fa-bars"></i>
-</button>
-
-<!-- أوفرلاي الشريط الجانبي -->
+<button class="mobile-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
-<!-- الشريط الجانبي -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📸</div>
         <h3>Drmedia VPMS</h3>
-        <p>نظام إدارة التوزيع</p>
     </div>
     
     <nav class="sidebar-nav" id="adminNav" style="display:none;">
-        <div class="nav-category">📊 الرئيسية</div>
-        <div class="nav-item active" onclick="navigate('users')">
-            <i class="fas fa-users"></i> <span>الموظفين</span>
-        </div>
-        <div class="nav-item" onclick="navigate('halls')">
-            <i class="fas fa-building"></i> <span>القاعات</span>
-        </div>
-        <div class="nav-item" onclick="navigate('orders')">
-            <i class="fas fa-calendar-alt"></i> <span>الأوردرات</span>
-        </div>
-        
-        <div class="nav-category">⚙️ العمليات</div>
-        <div class="nav-item" onclick="navigate('distribution')">
-            <i class="fas fa-tasks"></i> <span>توزيع الأوردرات</span>
-        </div>
-        <div class="nav-item" onclick="navigate('rotation')">
-            <i class="fas fa-sync"></i> <span>تدوير الموظفين</span>
-        </div>
-        <div class="nav-item" onclick="navigate('finances')">
-            <i class="fas fa-money-bill-wave"></i> <span>الملف المالي</span>
-        </div>
-        <div class="nav-item" onclick="navigate('import')">
-            <i class="fas fa-file-import"></i> <span>استيراد Excel</span>
-        </div>
-        
-        <div class="nav-category">📈 التقارير</div>
-        <div class="nav-item" onclick="navigate('reports')">
-            <i class="fas fa-chart-bar"></i> <span>التقارير</span>
-        </div>
-        <div class="nav-item" onclick="navigate('calendar')">
-            <i class="fas fa-calendar-week"></i> <span>التقويم</span>
-        </div>
-        <div class="nav-item" onclick="navigate('attendance')">
-            <i class="fas fa-clock"></i> <span>الحضور</span>
-        </div>
-        <div class="nav-item" onclick="navigate('notifications')">
-            <i class="fas fa-bell"></i> <span>الإشعارات</span>
-        </div>
-        
-        <div class="nav-category">🎨 الإعدادات</div>
-        <div class="nav-item" onclick="navigate('settings')">
-            <i class="fas fa-palette"></i> <span>التصميم والثيمات</span>
-        </div>
-        <div class="nav-item" onclick="navigate('companySettings')">
-            <i class="fas fa-cog"></i> <span>إعدادات الشركة</span>
-        </div>
-        <div class="nav-item" onclick="navigate('backup')">
-            <i class="fas fa-database"></i> <span>نسخ احتياطي</span>
-        </div>
+        <div class="nav-item active" onclick="navigate('dashboard')"><i class="fas fa-tachometer-alt"></i> <span>الرئيسية</span></div>
+        <div class="nav-item" onclick="navigate('users')"><i class="fas fa-users"></i> <span>الموظفين</span></div>
+        <div class="nav-item" onclick="navigate('halls')"><i class="fas fa-building"></i> <span>القاعات</span></div>
+        <div class="nav-item" onclick="navigate('orders')"><i class="fas fa-calendar-alt"></i> <span>الحجوزات</span></div>
+        <div class="nav-item" onclick="navigate('distribution')"><i class="fas fa-tasks"></i> <span>التوزيع</span></div>
+        <div class="nav-item" onclick="navigate('finances')"><i class="fas fa-money-bill-wave"></i> <span>الملف المالي</span></div>
+        <div class="nav-item" onclick="navigate('attendance')"><i class="fas fa-clock"></i> <span>الحضور</span></div>
+        <div class="nav-item" onclick="navigate('import')"><i class="fas fa-file-import"></i> <span>استيراد</span></div>
+        <div class="nav-item" onclick="navigate('calendar')"><i class="fas fa-calendar-week"></i> <span>التقويم</span></div>
+        <div class="nav-item" onclick="navigate('notifications')"><i class="fas fa-bell"></i> <span>الإشعارات</span></div>
+        <div class="nav-item" onclick="navigate('settings')"><i class="fas fa-palette"></i> <span>الإعدادات</span></div>
     </nav>
     
     <nav class="sidebar-nav" id="empNav" style="display:none;">
-        <div class="nav-category">👤 لوحة الموظف</div>
-        <div class="nav-item active" onclick="navigateEmp('myattendance')">
-            <i class="fas fa-qrcode"></i> <span>تسجيل الحضور</span>
-        </div>
-        <div class="nav-item" onclick="navigateEmp('myorders')">
-            <i class="fas fa-list"></i> <span>أوردراتي</span>
-        </div>
-        <div class="nav-item" onclick="navigateEmp('mysalary')">
-            <i class="fas fa-money-bill"></i> <span>مرتبي</span>
-        </div>
-        <div class="nav-item" onclick="navigateEmp('mynotifications')">
-            <i class="fas fa-bell"></i> <span>إشعاراتي</span>
-        </div>
+        <div class="nav-item active" onclick="navigateEmp('myattendance')"><i class="fas fa-qrcode"></i> <span>تسجيل الحضور</span></div>
+        <div class="nav-item" onclick="navigateEmp('myorders')"><i class="fas fa-list"></i> <span>أوردراتي</span></div>
+        <div class="nav-item" onclick="navigateEmp('mysalary')"><i class="fas fa-money-bill"></i> <span>مرتبي</span></div>
+        <div class="nav-item" onclick="navigateEmp('mynotifications')"><i class="fas fa-bell"></i> <span>إشعاراتي</span></div>
     </nav>
     
     <div class="sidebar-footer">
-        <div class="user-card">
-            <div class="user-avatar" id="sidebarAvatar">أ</div>
-            <div class="user-info">
-                <div class="user-name" id="sidebarName">مدير النظام</div>
-                <div class="user-role" id="sidebarRole">ADMIN</div>
-            </div>
+        <div class="user-info" style="text-align:center; margin-bottom:10px;">
+            <div style="color:white; font-weight:700;" id="sidebarName">مدير</div>
+            <div style="color:rgba(255,255,255,0.5); font-size:11px;" id="sidebarRole">ADMIN</div>
         </div>
-        <button class="btn btn-sm btn-outline" onclick="toggleTheme()" style="width:100%; justify-content:center; color:white; border-color:rgba(255,255,255,0.3); margin-bottom:8px;">
-            <i class="fas fa-moon"></i> تبديل الوضع الليلي
+        <button class="btn btn-sm btn-outline" onclick="toggleTheme()" style="width:100%; color:white; border-color:rgba(255,255,255,0.3); margin-bottom:8px; justify-content:center;">
+            <i class="fas fa-moon"></i> الوضع الليلي
         </button>
         <button class="btn btn-sm btn-danger" onclick="logout()" style="width:100%; justify-content:center;">
-            <i class="fas fa-sign-out-alt"></i> تسجيل الخروج
+            <i class="fas fa-sign-out-alt"></i> خروج
         </button>
     </div>
 </aside>
 
-<!-- المحتوى الرئيسي -->
 <main class="main-content" id="mainContent">
-    <!-- شاشة تسجيل الدخول -->
     <div id="loginScreen" class="screen active">
         <div class="login-screen-wrapper">
             <div class="login-card">
-                <div class="login-icon">📸</div>
-                <h2>أهلاً بك 👋</h2>
-                <p>سجل دخولك لنظام إدارة التوزيع</p>
+                <div style="font-size:50px; margin-bottom:15px;">📸</div>
+                <h2 style="font-size:24px; font-weight:800; margin-bottom:5px;">أهلاً بك</h2>
+                <p style="color:#636E72; margin-bottom:25px;">سجل دخولك للنظام</p>
                 <form id="loginForm">
-                    <div class="input-group">
-                        <i class="fas fa-user input-icon"></i>
-                        <input type="text" id="loginUsername" placeholder="اسم المستخدم" required>
+                    <div style="position:relative; margin-bottom:20px;">
+                        <i class="fas fa-user" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--primary);"></i>
+                        <input type="text" id="loginUsername" placeholder="اسم المستخدم" required style="width:100%; padding:14px 45px 14px 15px; border:2px solid #E0E0E0; border-radius:12px; font-family:inherit; font-size:15px;">
                     </div>
-                    <div class="input-group">
-                        <i class="fas fa-lock input-icon"></i>
-                        <input type="password" id="loginPassword" placeholder="كلمة المرور" required>
+                    <div style="position:relative; margin-bottom:20px;">
+                        <i class="fas fa-lock" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--primary);"></i>
+                        <input type="password" id="loginPassword" placeholder="كلمة المرور" required style="width:100%; padding:14px 45px 14px 15px; border:2px solid #E0E0E0; border-radius:12px; font-family:inherit; font-size:15px;">
                     </div>
                     <button type="submit" class="btn btn-primary btn-lg" style="width:100%; justify-content:center;">
                         <i class="fas fa-sign-in-alt"></i> دخول
@@ -989,14 +633,11 @@
             </div>
         </div>
     </div>
-    
-    <!-- لوحة الأدمن -->
+
     <div id="adminScreen" class="screen">
-        <div id="adminStats" class="stats-grid"></div>
         <div id="adminContent"></div>
     </div>
-    
-    <!-- لوحة الموظف -->
+
     <div id="empScreen" class="screen">
         <div id="empContent"></div>
     </div>
@@ -1004,7 +645,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, get, set, update, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, get, set, update, push, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
@@ -1023,16 +664,14 @@
     let allEmployees = {};
     let allBookings = {};
     let allHalls = {};
-    let currentSection = '';
-    let currentEmpSection = '';
+    let selectedOrders = new Set();
+    let selectedEmployees = new Set();
+    let qrScanner = null;
 
-    // استعادة الجلسة
     const saved = localStorage.getItem('drmedia_session');
     if (saved) {
-        try {
-            currentUser = JSON.parse(saved);
-            initData().then(() => goDashboard());
-        } catch(e) { localStorage.removeItem('drmedia_session'); }
+        try { currentUser = JSON.parse(saved); initData().then(() => goDashboard()); }
+        catch(e) { localStorage.removeItem('drmedia_session'); }
     }
 
     async function initData() {
@@ -1052,23 +691,19 @@
             document.getElementById('adminNav').style.display = 'block';
             document.getElementById('empNav').style.display = 'none';
             document.getElementById('sidebarName').textContent = currentUser.name || 'مدير';
-            document.getElementById('sidebarAvatar').textContent = (currentUser.name || 'أ')[0];
             document.getElementById('sidebarRole').textContent = 'ADMIN';
             document.getElementById('adminScreen').classList.add('active');
-            loadStats();
-            navigate('users');
+            navigate('dashboard');
         } else {
             document.getElementById('adminNav').style.display = 'none';
             document.getElementById('empNav').style.display = 'block';
             document.getElementById('sidebarName').textContent = currentUser.name || 'موظف';
-            document.getElementById('sidebarAvatar').textContent = (currentUser.name || 'م')[0];
             document.getElementById('sidebarRole').textContent = 'EMPLOYEE';
             document.getElementById('empScreen').classList.add('active');
             navigateEmp('myattendance');
         }
     }
 
-    // تسجيل الدخول
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const u = document.getElementById('loginUsername').value.trim();
@@ -1092,59 +727,37 @@
         goDashboard();
     });
 
-    window.logout = () => {
-        localStorage.removeItem('drmedia_session');
-        location.reload();
-    };
+    window.logout = () => { localStorage.removeItem('drmedia_session'); location.reload(); };
+    window.toggleSidebar = () => { document.getElementById('sidebar').classList.toggle('show'); document.getElementById('sidebarOverlay').classList.toggle('show'); };
+    window.toggleTheme = () => document.body.classList.toggle('dark-theme');
 
-    window.toggleSidebar = () => {
-        document.getElementById('sidebar').classList.toggle('show');
-        document.getElementById('sidebarOverlay').classList.toggle('show');
-    };
-
-    async function loadStats() {
-        const ec = Object.keys(allEmployees).length;
-        const hc = Object.values(allHalls).filter(h => h.active).length;
-        const today = new Date().toISOString().split('T')[0];
-        const tc = Object.values(allBookings).filter(b => b.date === today).length;
-        document.getElementById('adminStats').innerHTML = `
-            <div class="stat-card"><div class="stat-icon primary"><i class="fas fa-users"></i></div><div class="stat-info"><h3>${ec}</h3><p>موظف</p></div></div>
-            <div class="stat-card"><div class="stat-icon secondary"><i class="fas fa-building"></i></div><div class="stat-info"><h3>${hc}</h3><p>قاعة نشطة</p></div></div>
-            <div class="stat-card"><div class="stat-icon accent"><i class="fas fa-calendar-check"></i></div><div class="stat-info"><h3>${tc}</h3><p>أوردر اليوم</p></div></div>
-            <div class="stat-card"><div class="stat-icon dark"><i class="fas fa-check-circle"></i></div><div class="stat-info"><h3>${Object.values(allEmployees).filter(e=>e.active).length}</h3><p>نشط</p></div></div>`;
-    }
-
+    // ============ التنقل ============
     window.navigate = async (section) => {
-        currentSection = section;
         document.querySelectorAll('#adminNav .nav-item').forEach(x => x.classList.remove('active'));
-        const items = document.querySelectorAll('#adminNav .nav-item');
-        items.forEach(item => {
+        document.querySelectorAll('#adminNav .nav-item').forEach(item => {
             if (item.getAttribute('onclick')?.includes(`'${section}'`)) item.classList.add('active');
         });
+        selectedOrders.clear();
+        selectedEmployees.clear();
         const c = document.getElementById('adminContent');
         switch(section) {
+            case 'dashboard': renderDashboard(c); break;
             case 'users': renderUsers(c); break;
             case 'halls': renderHalls(c); break;
             case 'orders': renderOrders(c); break;
             case 'distribution': renderDist(c); break;
-            case 'rotation': renderRot(c); break;
             case 'finances': renderFin(c); break;
-            case 'import': renderImport(c); break;
-            case 'reports': renderReports(c); break;
-            case 'calendar': renderCal(c); break;
             case 'attendance': renderAtt(c); break;
+            case 'import': renderImport(c); break;
+            case 'calendar': renderCal(c); break;
             case 'notifications': renderNotif(c); break;
-            case 'settings': renderThemeSettings(c); break;
-            case 'companySettings': renderCompSettings(c); break;
-            case 'backup': renderBackup(c); break;
+            case 'settings': renderSettings(c); break;
         }
     };
 
     window.navigateEmp = (section) => {
-        currentEmpSection = section;
         document.querySelectorAll('#empNav .nav-item').forEach(x => x.classList.remove('active'));
-        const items = document.querySelectorAll('#empNav .nav-item');
-        items.forEach(item => {
+        document.querySelectorAll('#empNav .nav-item').forEach(item => {
             if (item.getAttribute('onclick')?.includes(`'${section}'`)) item.classList.add('active');
         });
         const c = document.getElementById('empContent');
@@ -1156,154 +769,643 @@
         }
     };
 
-    window.toggleTheme = () => document.body.classList.toggle('dark-theme');
+    // ============ الرئيسية (تقارير فقط) ============
+    async function renderDashboard(c) {
+        const ec = Object.keys(allEmployees).length;
+        const hc = Object.values(allHalls).filter(h => h.active).length;
+        const today = new Date().toISOString().split('T')[0];
+        const tc = Object.values(allBookings).filter(b => b.date === today).length;
+        const confirmedCount = Object.values(allBookings).filter(b => b.status === 'confirmed').length;
+        const pendingCount = Object.values(allBookings).filter(b => b.status === 'pending').length;
+        const totalRevenue = Object.values(allBookings).reduce((sum, b) => sum + (b.price || 0), 0);
+        
+        let h = `<div class="stats-grid">
+            <div class="stat-card"><div class="stat-icon" style="background:var(--gradient-primary);"><i class="fas fa-users"></i></div><div class="stat-info"><h3>${ec}</h3><p>موظف</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:var(--gradient-secondary);"><i class="fas fa-building"></i></div><div class="stat-info"><h3>${hc}</h3><p>قاعة</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:var(--gradient-accent);"><i class="fas fa-calendar-check"></i></div><div class="stat-info"><h3>${tc}</h3><p>أوردر اليوم</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#E17055,#FAB1A0);"><i class="fas fa-check-circle"></i></div><div class="stat-info"><h3>${confirmedCount}</h3><p>مؤكد</p></div></div>
+        </div>`;
 
-    // ============ الموظفين ============
+        // تقارير
+        h += `<div class="card"><div class="card-header"><h4><i class="fas fa-chart-bar"></i> التقارير السريعة</h4></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+        <div>
+            <h5>📊 ملخص الحجوزات</h5>
+            <table style="min-width:auto;">
+                <tr><td>إجمالي الحجوزات</td><td><strong>${Object.keys(allBookings).length}</strong></td></tr>
+                <tr><td>مؤكدة</td><td><span class="badge badge-success">${confirmedCount}</span></td></tr>
+                <tr><td>معلقة</td><td><span class="badge badge-warning">${pendingCount}</span></td></tr>
+                <tr><td>الإيرادات</td><td><strong>${totalRevenue.toLocaleString()} ج.م</strong></td></tr>
+            </table>
+        </div>
+        <div>
+            <h5>📈 توزيع الموظفين</h5>
+            <canvas id="empChart" width="200" height="200"></canvas>
+        </div>
+        </div>
+        <div style="margin-top:15px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="genPDF('daily')"><i class="fas fa-file-pdf"></i> تقرير يومي PDF</button>
+            <button class="btn btn-primary btn-sm" onclick="genPDF('monthly')"><i class="fas fa-file-pdf"></i> تقرير شهري PDF</button>
+            <button class="btn btn-success btn-sm" onclick="genExcel()"><i class="fas fa-file-excel"></i> تصدير Excel</button>
+        </div></div>`;
+
+        c.innerHTML = h;
+        
+        // رسم بياني
+        setTimeout(() => {
+            const roles = { 'مخرج': 0, 'مصور': 0, 'كرين': 0 };
+            Object.values(allEmployees).forEach(e => { if (roles[e.role] !== undefined) roles[e.role]++; });
+            const ctx = document.getElementById('empChart');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['مخرج', 'مصور', 'كرين'],
+                        datasets: [{
+                            data: [roles['مخرج'], roles['مصور'], roles['كرين']],
+                            backgroundColor: ['#6C5CE7', '#00CEC9', '#FD79A8'],
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { position: 'bottom', labels: { font: { family: 'Tajawal' } } } }
+                    }
+                });
+            }
+        }, 200);
+    }
+
+    window.genPDF = async (t) => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape' });
+        const sn = (await get(ref(db, 'companySettings'))).val()?.companyName || 'Drmedia';
+        doc.setFontSize(20);
+        doc.text(sn, doc.internal.pageSize.width / 2, 20, { align: 'center' });
+        const tb = Object.values(allEmployees).map(e => [e.name, e.role || '', e.totalOrders || 0, e.totalAdvance || 0, e.totalDeductions || 0]);
+        doc.autoTable({ head: [['الاسم', 'الدور', 'الأوردرات', 'السلف', 'الخصومات']], body: tb, startY: 35, theme: 'grid', styles: { halign: 'right' } });
+        doc.save(`تقرير_${t}_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    window.genExcel = () => {
+        const d = Object.values(allEmployees).map(e => ({ 'الاسم': e.name, 'الدور': e.role, 'الهاتف': e.phone || '', 'الأوردرات': e.totalOrders || 0, 'السلف': e.totalAdvance || 0, 'الخصومات': e.totalDeductions || 0 }));
+        const ws = XLSX.utils.json_to_sheet(d), wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'الموظفين');
+        XLSX.writeFile(wb, 'تقرير_الموظفين.xlsx');
+    };
+
+    // ============ الموظفين (مع تحديد متعدد + تعديل + حذف) ============
     function renderUsers(c) {
-        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-users"></i> الموظفين</h4><button class="btn btn-primary btn-sm" onclick="toggleForm('addEmpForm')"><i class="fas fa-plus"></i> إضافة</button></div>
-        <div id="addEmpForm" class="hidden"><div class="form-row"><div><label>الاسم</label><input class="form-control" id="neName"></div><div><label>الهاتف</label><input class="form-control" id="nePhone"></div></div>
-        <div class="form-row"><div><label>الدور</label><select class="form-control" id="neRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select></div><div><label>سعر الأوردر</label><input class="form-control" type="number" id="neSalary" value="200"></div></div>
-        <div class="form-row"><div><label>اسم المستخدم</label><input class="form-control" id="neUser"></div><div><label>كلمة المرور</label><input class="form-control" type="password" id="nePass" value="emp123"></div></div>
-        <button class="btn btn-success btn-sm" onclick="addEmp()"><i class="fas fa-save"></i> حفظ</button><hr></div>
-        <div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>سعر الأوردر</th><th>الأوردرات</th><th>الحالة</th></tr></thead><tbody>`;
+        selectedEmployees.clear();
+        let h = `<div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-users"></i> الموظفين</h4>
+                <div>
+                    <button class="btn btn-primary btn-sm" onclick="showAddEmpModal()"><i class="fas fa-plus"></i> إضافة</button>
+                    <button class="btn btn-danger btn-sm hidden" id="delEmpBtn" onclick="deleteSelectedEmployees()"><i class="fas fa-trash"></i> حذف المحدد</button>
+                </div>
+            </div>
+            <div class="table-wrapper"><table><thead><tr>
+                <th class="checkbox-cell"><input type="checkbox" id="selectAllEmps" onchange="toggleAllEmps(this)"></th>
+                <th>الاسم</th><th>الدور</th><th>الهاتف</th><th>سعر الأوردر</th><th>الأوردرات</th><th>السلف</th><th>الخصومات</th><th>إجراءات</th>
+            </tr></thead><tbody>`;
+        
         for (let k in allEmployees) {
             const e = allEmployees[k];
-            h += `<tr><td><strong>${e.name}</strong></td><td><span class="badge badge-primary">${e.role}</span></td><td>${e.phone||'-'}</td><td>${e.salaryPerOrder||0} ج.م</td><td>${e.totalOrders||0}</td><td><span class="badge ${e.active?'badge-success':'badge-danger'}">${e.active?'نشط':'غير نشط'}</span></td></tr>`;
+            h += `<tr id="empRow_${k}">
+                <td class="checkbox-cell"><input type="checkbox" value="${k}" onchange="toggleEmpSelect('${k}', this)" ${selectedEmployees.has(k) ? 'checked' : ''}></td>
+                <td><span class="editable" onclick="editEmpField('${k}','name','${e.name}')">${e.name}</span></td>
+                <td><span class="badge badge-primary">${e.role}</span></td>
+                <td>${e.phone || '-'}</td>
+                <td>${e.salaryPerOrder || 0} ج.م</td>
+                <td>${e.totalOrders || 0}</td>
+                <td style="color:var(--success);">${e.totalAdvance || 0} ج.م</td>
+                <td style="color:var(--danger);">${e.totalDeductions || 0} ج.م</td>
+                <td>
+                    <button class="btn btn-sm btn-outline" onclick="editEmployee('${k}')"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteEmployee('${k}')"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>`;
         }
         h += '</tbody></table></div></div>';
         c.innerHTML = h;
     }
 
-    window.toggleForm = (id) => document.getElementById(id)?.classList.toggle('hidden');
-    
-    window.addEmp = async () => {
-        const name = document.getElementById('neName').value.trim();
-        const phone = document.getElementById('nePhone').value.trim();
-        const role = document.getElementById('neRole').value;
-        const salary = +document.getElementById('neSalary').value;
-        const username = document.getElementById('neUser').value.trim();
-        const password = document.getElementById('nePass').value;
-        if(!name||!username||!password) return alert('املأ الحقول');
-        const er = push(ref(db,'employees'));
-        await set(er,{id:er.key,name,phone,role,salaryPerOrder:salary,totalOrders:0,totalAdvance:0,totalDeductions:0,active:true});
-        const us = (await get(ref(db,'users'))).val()||[];
-        us.push({employeeId:er.key,name,username,password:String(password),role:'employee'});
-        await set(ref(db,'users'),us);
+    window.toggleAllEmps = (cb) => {
+        document.querySelectorAll('input[type="checkbox"][value]').forEach(ch => {
+            if (ch.id !== 'selectAllEmps') {
+                ch.checked = cb.checked;
+                if (cb.checked) selectedEmployees.add(ch.value);
+                else selectedEmployees.delete(ch.value);
+            }
+        });
+        updateEmpDelBtn();
+    };
+
+    window.toggleEmpSelect = (id, cb) => {
+        if (cb.checked) selectedEmployees.add(id);
+        else selectedEmployees.delete(id);
+        updateEmpDelBtn();
+    };
+
+    function updateEmpDelBtn() {
+        const btn = document.getElementById('delEmpBtn');
+        if (btn) btn.classList.toggle('hidden', selectedEmployees.size === 0);
+        if (btn) btn.textContent = `🗑️ حذف (${selectedEmployees.size})`;
+    }
+
+    window.deleteSelectedEmployees = async () => {
+        if (!confirm(`⚠️ حذف ${selectedEmployees.size} موظف؟`)) return;
+        for (let id of selectedEmployees) {
+            await remove(ref(db, `employees/${id}`));
+        }
         await initData();
-        await loadStats();
         navigate('users');
     };
 
-    // ============ القاعات ============
-    function renderHalls(c) {
-        const rr = {'المغلقة':'1 مخرج + 2 مصور + 1 كرين','الأوبن':'1 مخرج + 2 مصور + 1 كرين','الكافيه':'1 مصور'};
-        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-building"></i> القاعات</h4></div><div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>النوع</th><th>المتطلبات</th><th>الحالة</th></tr></thead><tbody>`;
-        for(let k in allHalls){const hl=allHalls[k];h+=`<tr><td><strong>${hl.name}</strong></td><td>${hl.type==='closed'?'مغلقة':hl.type==='open'?'أوبن':'كافيه'}</td><td>${rr[hl.name]||'-'}</td><td><span class="badge ${hl.active?'badge-success':'badge-danger'}">${hl.active?'نشطة':'غير نشطة'}</span></td></tr>`;}
-        h+='</tbody></table></div></div>';c.innerHTML=h;
-    }
-
-    // ============ الأوردرات ============
-    function renderOrders(c) {
-        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-calendar-alt"></i> الحجوزات</h4><button class="btn btn-primary btn-sm" onclick="toggleForm('addBookForm')"><i class="fas fa-plus"></i> إضافة</button></div>
-        <div id="addBookForm" class="hidden"><div class="form-row"><div><label>العميل</label><input class="form-control" id="nbClient"></div><div><label>الهاتف</label><input class="form-control" id="nbPhone"></div></div>
-        <div class="form-row"><div><label>التاريخ</label><input class="form-control" type="date" id="nbDate"></div><div><label>القاعة</label><select class="form-control" id="nbHall">${Object.values(allHalls).map(hl=>`<option>${hl.name}</option>`).join('')}</select></div></div>
-        <div class="form-row"><div><label>السعر</label><input class="form-control" type="number" id="nbPrice" value="5000"></div><div><label>العربون</label><input class="form-control" type="number" id="nbDeposit" value="2000"></div></div>
-        <button class="btn btn-success btn-sm" onclick="addBook()"><i class="fas fa-save"></i> حفظ</button><hr></div>
-        <div class="table-wrapper"><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الموظفين</th><th>الحالة</th></tr></thead><tbody>`;
-        const sorted = Object.entries(allBookings).sort(([,a],[,b])=>(b.date||'').localeCompare(a.date||''));
-        for(let [k,b] of sorted){
-            const an = (b.assignedEmployees||[]).map(id=>allEmployees[id]?.name||'?').join(', ');
-            h+=`<tr><td><strong>${b.clientName}</strong></td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price||0} ج.م</td><td style="font-size:11px;">${an}</td><td><span class="badge ${b.status==='confirmed'?'badge-success':'badge-warning'}">${b.status==='confirmed'?'مؤكد':'معلق'}</span></td></tr>`;
-        }
-        h+='</tbody></table></div></div>';c.innerHTML=h;
-    }
-
-    window.addBook = async () => {
-        const cn = document.getElementById('nbClient').value.trim();
-        const d = document.getElementById('nbDate').value;
-        const hn = document.getElementById('nbHall').value;
-        if(!cn||!d||!hn) return alert('املأ الحقول');
-        await push(ref(db,'bookings'),{clientName:cn,phone:document.getElementById('nbPhone').value,date:d,hallName:hn,price:+document.getElementById('nbPrice').value,deposit:+document.getElementById('nbDeposit').value,status:'pending',assignedEmployees:[],notes:''});
-        await initData();await loadStats();navigate('orders');
+    window.deleteEmployee = async (id) => {
+        if (!confirm('⚠️ حذف هذا الموظف؟')) return;
+        await remove(ref(db, `employees/${id}`));
+        await initData();
+        navigate('users');
     };
 
-    // ============ التوزيع ============
+    window.editEmpField = async (id, field, currentVal) => {
+        const nv = prompt(`تعديل ${field}:`, currentVal);
+        if (nv !== null && nv !== currentVal) {
+            await update(ref(db, `employees/${id}`), { [field]: field === 'salaryPerOrder' ? +nv : nv });
+            await initData();
+            navigate('users');
+        }
+    };
+
+    window.editEmployee = (id) => {
+        const e = allEmployees[id];
+        if (!e) return;
+        const nv = prompt('تعديل الاسم:', e.name);
+        if (nv !== null && nv !== e.name) {
+            update(ref(db, `employees/${id}`), { name: nv }).then(async () => {
+                await initData();
+                navigate('users');
+            });
+        }
+    };
+
+    window.showAddEmpModal = () => {
+        showModal(`
+            <h4>➕ إضافة موظف</h4>
+            <div class="form-row"><div><label>الاسم</label><input class="form-control" id="meName"></div><div><label>الهاتف</label><input class="form-control" id="mePhone"></div></div>
+            <div class="form-row"><div><label>الدور</label><select class="form-control" id="meRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select></div><div><label>سعر الأوردر</label><input class="form-control" type="number" id="meSalary" value="200"></div></div>
+            <div class="form-row"><div><label>اسم المستخدم</label><input class="form-control" id="meUser"></div><div><label>كلمة المرور</label><input class="form-control" type="password" id="mePass" value="emp123"></div></div>
+            <button class="btn btn-primary" onclick="addEmpFromModal()"><i class="fas fa-save"></i> حفظ</button>
+        `);
+    };
+
+    window.addEmpFromModal = async () => {
+        const name = document.getElementById('meName').value.trim();
+        const phone = document.getElementById('mePhone').value.trim();
+        const role = document.getElementById('meRole').value;
+        const salary = +document.getElementById('meSalary').value;
+        const username = document.getElementById('meUser').value.trim();
+        const password = document.getElementById('mePass').value;
+        if (!name || !username || !password) return alert('املأ الحقول');
+        const er = push(ref(db, 'employees'));
+        await set(er, { id: er.key, name, phone, role, salaryPerOrder: salary, totalOrders: 0, totalAdvance: 0, totalDeductions: 0, active: true });
+        const us = (await get(ref(db, 'users'))).val() || [];
+        us.push({ employeeId: er.key, name, username, password: String(password), role: 'employee' });
+        await set(ref(db, 'users'), us);
+        closeModal();
+        await initData();
+        navigate('users');
+    };
+
+    // ============ القاعات (مع إضافة) ============
+    function renderHalls(c) {
+        const rr = { 'المغلقة': '1 مخرج + 2 مصور + 1 كرين', 'الأوبن': '1 مخرج + 2 مصور + 1 كرين', 'الكافيه': '1 مصور' };
+        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-building"></i> القاعات</h4><button class="btn btn-primary btn-sm" onclick="showAddHallModal()"><i class="fas fa-plus"></i> إضافة قاعة</button></div>
+        <div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>النوع</th><th>المتطلبات</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>`;
+        for (let k in allHalls) {
+            const hl = allHalls[k];
+            h += `<tr><td><strong>${hl.name}</strong></td><td>${hl.type === 'closed' ? 'مغلقة' : hl.type === 'open' ? 'أوبن' : 'كافيه'}</td><td>${rr[hl.name] || '-'}</td><td><span class="badge ${hl.active ? 'badge-success' : 'badge-danger'}">${hl.active ? 'نشطة' : 'غير نشطة'}</span></td><td><button class="btn btn-sm btn-danger" onclick="deleteHall('${k}')"><i class="fas fa-trash"></i></button></td></tr>`;
+        }
+        h += '</tbody></table></div></div>';
+        c.innerHTML = h;
+    }
+
+    window.showAddHallModal = () => {
+        showModal(`
+            <h4>➕ إضافة قاعة</h4>
+            <div class="form-row"><div><label>اسم القاعة</label><input class="form-control" id="mhName"></div><div><label>النوع</label><select class="form-control" id="mhType"><option value="closed">مغلقة</option><option value="open">أوبن</option><option value="cafe">كافيه</option></select></div></div>
+            <button class="btn btn-primary" onclick="addHallFromModal()"><i class="fas fa-save"></i> حفظ</button>
+        `);
+    };
+
+    window.addHallFromModal = async () => {
+        const name = document.getElementById('mhName').value.trim();
+        const type = document.getElementById('mhType').value;
+        if (!name) return alert('أدخل اسم القاعة');
+        const hr = push(ref(db, 'halls'));
+        await set(hr, { id: hr.key, name, type, active: true });
+        closeModal();
+        await initData();
+        navigate('halls');
+    };
+
+    window.deleteHall = async (id) => {
+        if (!confirm('⚠️ حذف القاعة؟')) return;
+        await remove(ref(db, `halls/${id}`));
+        await initData();
+        navigate('halls');
+    };
+
+    // ============ الحجوزات (مع تحديد متعدد + تعديل + حذف + توزيع ذكي + تدوير) ============
+    function renderOrders(c) {
+        selectedOrders.clear();
+        let h = `<div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-calendar-alt"></i> الحجوزات</h4>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="showAddBookModal()"><i class="fas fa-plus"></i> إضافة</button>
+                    <button class="btn btn-secondary btn-sm" onclick="smartDistributeAll()"><i class="fas fa-magic"></i> توزيع ذكي للكل</button>
+                    <button class="btn btn-warning btn-sm" onclick="rotateEmployeesInOrders()"><i class="fas fa-sync"></i> تدوير</button>
+                    <button class="btn btn-danger btn-sm hidden" id="delBookBtn" onclick="deleteSelectedOrders()"><i class="fas fa-trash"></i> حذف المحدد</button>
+                </div>
+            </div>
+            <div class="table-wrapper"><table><thead><tr>
+                <th class="checkbox-cell"><input type="checkbox" id="selectAllOrders" onchange="toggleAllOrders(this)"></th>
+                <th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الموظفين</th><th>الحالة</th><th>إجراءات</th>
+            </tr></thead><tbody>`;
+
+        const sorted = Object.entries(allBookings).sort(([, a], [, b]) => (b.date || '').localeCompare(a.date || ''));
+        for (let [k, b] of sorted) {
+            const an = (b.assignedEmployees || []).map(id => allEmployees[id]?.name || '?').join(', ');
+            h += `<tr id="bookRow_${k}">
+                <td class="checkbox-cell"><input type="checkbox" value="${k}" onchange="toggleOrderSelect('${k}', this)"></td>
+                <td><span class="editable" onclick="editBookField('${k}','clientName','${b.clientName}')">${b.clientName}</span></td>
+                <td>${b.date}</td>
+                <td>${b.hallName || '-'}</td>
+                <td>${b.price || 0} ج.م</td>
+                <td style="font-size:11px;">${an}</td>
+                <td><span class="badge ${b.status === 'confirmed' ? 'badge-success' : 'badge-warning'}">${b.status === 'confirmed' ? 'مؤكد' : 'معلق'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline" onclick="editBooking('${k}')"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteBooking('${k}')"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>`;
+        }
+        h += '</tbody></table></div></div>';
+        c.innerHTML = h;
+    }
+
+    window.toggleAllOrders = (cb) => {
+        document.querySelectorAll('#bookRow_ input[type="checkbox"]').forEach(ch => {
+            ch.checked = cb.checked;
+            if (cb.checked) selectedOrders.add(ch.value);
+            else selectedOrders.delete(ch.value);
+        });
+        updateBookDelBtn();
+    };
+
+    window.toggleOrderSelect = (id, cb) => {
+        if (cb.checked) selectedOrders.add(id);
+        else selectedOrders.delete(id);
+        updateBookDelBtn();
+    };
+
+    function updateBookDelBtn() {
+        const btn = document.getElementById('delBookBtn');
+        if (btn) btn.classList.toggle('hidden', selectedOrders.size === 0);
+        if (btn) btn.textContent = `🗑️ حذف (${selectedOrders.size})`;
+    }
+
+    window.deleteSelectedOrders = async () => {
+        if (!confirm(`⚠️ حذف ${selectedOrders.size} حجز؟`)) return;
+        for (let id of selectedOrders) await remove(ref(db, `bookings/${id}`));
+        await initData();
+        navigate('orders');
+    };
+
+    window.deleteBooking = async (id) => {
+        if (!confirm('⚠️ حذف الحجز؟')) return;
+        await remove(ref(db, `bookings/${id}`));
+        await initData();
+        navigate('orders');
+    };
+
+    window.editBookField = async (id, field, cv) => {
+        const nv = prompt(`تعديل ${field}:`, cv);
+        if (nv !== null && nv !== cv) {
+            await update(ref(db, `bookings/${id}`), { [field]: field === 'price' ? +nv : nv });
+            await initData();
+            navigate('orders');
+        }
+    };
+
+    window.editBooking = (id) => {
+        const b = allBookings[id];
+        if (!b) return;
+        showModal(`
+            <h4>✏️ تعديل الحجز</h4>
+            <div class="form-row"><div><label>العميل</label><input class="form-control" id="ebClient" value="${b.clientName}"></div><div><label>التاريخ</label><input class="form-control" type="date" id="ebDate" value="${b.date}"></div></div>
+            <div class="form-row"><div><label>القاعة</label><select class="form-control" id="ebHall">${Object.values(allHalls).map(hl => `<option value="${hl.name}" ${hl.name === b.hallName ? 'selected' : ''}>${hl.name}</option>`).join('')}</select></div><div><label>السعر</label><input class="form-control" type="number" id="ebPrice" value="${b.price || 0}"></div></div>
+            <button class="btn btn-primary" onclick="saveEditBooking('${id}')"><i class="fas fa-save"></i> حفظ</button>
+        `);
+    };
+
+    window.saveEditBooking = async (id) => {
+        await update(ref(db, `bookings/${id}`), {
+            clientName: document.getElementById('ebClient').value,
+            date: document.getElementById('ebDate').value,
+            hallName: document.getElementById('ebHall').value,
+            price: +document.getElementById('ebPrice').value
+        });
+        closeModal();
+        await initData();
+        navigate('orders');
+    };
+
+    window.showAddBookModal = () => {
+        showModal(`
+            <h4>➕ إضافة حجز</h4>
+            <div class="form-row"><div><label>العميل</label><input class="form-control" id="mbClient"></div><div><label>الهاتف</label><input class="form-control" id="mbPhone"></div></div>
+            <div class="form-row"><div><label>التاريخ</label><input class="form-control" type="date" id="mbDate"></div><div><label>القاعة</label><select class="form-control" id="mbHall">${Object.values(allHalls).map(h => `<option>${h.name}</option>`).join('')}</select></div></div>
+            <div class="form-row"><div><label>السعر</label><input class="form-control" type="number" id="mbPrice" value="5000"></div><div><label>العربون</label><input class="form-control" type="number" id="mbDeposit" value="2000"></div></div>
+            <button class="btn btn-primary" onclick="addBookFromModal()"><i class="fas fa-save"></i> حفظ</button>
+        `);
+    };
+
+    window.addBookFromModal = async () => {
+        const cn = document.getElementById('mbClient').value.trim();
+        const d = document.getElementById('mbDate').value;
+        const hn = document.getElementById('mbHall').value;
+        if (!cn || !d || !hn) return alert('املأ الحقول');
+        await push(ref(db, 'bookings'), {
+            clientName: cn, phone: document.getElementById('mbPhone').value, date: d,
+            hallName: hn, price: +document.getElementById('mbPrice').value,
+            deposit: +document.getElementById('mbDeposit').value,
+            status: 'pending', assignedEmployees: [], notes: ''
+        });
+        closeModal();
+        await initData();
+        navigate('orders');
+    };
+
+    // توزيع ذكي للكل
+    window.smartDistributeAll = async () => {
+        if (!confirm('🤖 توزيع ذكي لجميع الحجوزات غير المؤكدة؟')) return;
+        const reqs = { 'المغلقة': ['مخرج', 'مصور', 'مصور', 'كرين'], 'الأوبن': ['مخرج', 'مصور', 'مصور', 'كرين'], 'الكافيه': ['مصور'] };
+        const as = {}; let sc = 0;
+        const bookings = Object.entries(allBookings).filter(([k, b]) => b.status !== 'confirmed');
+        for (let [k, b] of bookings) {
+            const rq = reqs[b.hallName] || ['مصور'];
+            const ad = [];
+            rq.forEach(role => {
+                const av = Object.entries(allEmployees).filter(([ek, e]) => e.role === role && e.active && !ad.includes(ek)).map(([ek, v]) => ({ ...v, dk: ek }));
+                if (av.length) { const ll = av.sort((a, b) => (as[a.dk] || 0) - (as[b.dk] || 0))[0]; ad.push(ll.dk); as[ll.dk] = (as[ll.dk] || 0) + 1; }
+            });
+            if (ad.length) { await update(ref(db, `bookings/${k}`), { assignedEmployees: ad, status: 'confirmed' }); sc++; }
+        }
+        await initData();
+        navigate('orders');
+        alert(`✅ تم توزيع ${sc} حجز`);
+    };
+
+    window.rotateEmployeesInOrders = async () => {
+        if (!confirm('🔄 تدوير الموظفين في الحجوزات المؤكدة؟')) return;
+        await set(ref(db, 'rotationSchedule'), { lastUpdate: new Date().toISOString(), rotationCount: ((await get(ref(db, 'rotationSchedule'))).val()?.rotationCount || 0) + 1 });
+        alert('✅ تم التدوير');
+    };
+
+    // ============ التوزيع (ذكي + يدوي + تدوير) ============
     function renderDist(c) {
         const today = new Date().toISOString().split('T')[0];
-        c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-tasks"></i> توزيع الأوردرات</h4></div>
-        <div class="form-row"><div><label>القاعة</label><select class="form-control" id="dfHall"><option value="all">الكل</option>${Object.values(allHalls).map(h=>`<option>${h.name}</option>`).join('')}</select></div><div><label>التاريخ</label><input class="form-control" type="date" id="dfDate" value="${today}"></div></div>
-        <button class="btn btn-primary btn-sm" onclick="smartDist()"><i class="fas fa-magic"></i> توزيع ذكي</button>
-        <button class="btn btn-success btn-sm" onclick="saveDist()"><i class="fas fa-save"></i> حفظ</button>
-        <div id="distPreview" style="margin-top:15px;"></div></div>`;
-        refreshDist();
+        c.innerHTML = `<div class="card">
+            <div class="card-header"><h4><i class="fas fa-tasks"></i> التوزيع</h4></div>
+            <div class="form-row"><div><label>القاعة</label><select class="form-control" id="dfHall"><option value="all">الكل</option>${Object.values(allHalls).map(h => `<option>${h.name}</option>`).join('')}</select></div><div><label>التاريخ</label><input class="form-control" type="date" id="dfDate" value="${today}"></div></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">
+                <button class="btn btn-primary btn-sm" onclick="smartDist()"><i class="fas fa-magic"></i> توزيع ذكي</button>
+                <button class="btn btn-outline btn-sm" onclick="manualDist()"><i class="fas fa-hand-pointer"></i> توزيع يدوي</button>
+                <button class="btn btn-warning btn-sm" onclick="rotateDist()"><i class="fas fa-sync"></i> تدوير</button>
+                <button class="btn btn-success btn-sm" onclick="saveDist()"><i class="fas fa-save"></i> حفظ التوزيع</button>
+            </div>
+            <div id="distPreview"></div>
+        </div>`;
+        refreshDistPreview();
     }
 
-    async function refreshDist() {
+    async function refreshDistPreview() {
         const hf = document.getElementById('dfHall')?.value || 'all';
         const df = document.getElementById('dfDate')?.value;
-        let fb = Object.entries(allBookings).filter(([k,b])=>(hf==='all'||b.hallName===hf)&&(!df||b.date===df)).map(([k,v])=>({...v,dk:k}));
-        const reqs = {'المغلقة':['مخرج','مصور','مصور','كرين'],'الأوبن':['مخرج','مصور','مصور','كرين'],'الكافيه':['مصور']};
+        let fb = Object.entries(allBookings).filter(([k, b]) => (hf === 'all' || b.hallName === hf) && (!df || b.date === df)).map(([k, v]) => ({ ...v, dk: k }));
+        const reqs = { 'المغلقة': ['مخرج', 'مصور', 'مصور', 'كرين'], 'الأوبن': ['مخرج', 'مصور', 'مصور', 'كرين'], 'الكافيه': ['مصور'] };
         const as = {};
-        fb.forEach(b=>{
-            const rq = reqs[b.hallName]||['مصور'];
+        fb.forEach(b => {
+            const rq = reqs[b.hallName] || ['مصور'];
             const ad = [];
-            rq.forEach(role=>{
-                const av = Object.entries(allEmployees).filter(([k,e])=>e.role===role&&e.active&&!ad.includes(k)).map(([k,v])=>({...v,dk:k}));
-                if(av.length){const ll=av.sort((a,b)=>(as[a.dk]||0)-(as[b.dk]||0))[0];ad.push(ll.dk);as[ll.dk]=(as[ll.dk]||0)+1;}
+            rq.forEach(role => {
+                const av = Object.entries(allEmployees).filter(([k, e]) => e.role === role && e.active && !ad.includes(k)).map(([k, v]) => ({ ...v, dk: k }));
+                if (av.length) { const ll = av.sort((a, b) => (as[a.dk] || 0) - (as[b.dk] || 0))[0]; ad.push(ll.dk); as[ll.dk] = (as[ll.dk] || 0) + 1; }
             });
-            b._as=ad;
+            b._as = ad;
         });
-        let ht='<div class="table-wrapper"><table><thead><tr><th>العميل</th><th>القاعة</th><th>التاريخ</th><th>المعينين</th></tr></thead><tbody>';
-        fb.forEach(b=>{const an=(b._as||[]).map(id=>{const e=allEmployees[id];return e?`<span class="badge badge-info" style="margin:2px;">${e.name} (${e.role})</span>`:'';}).join(' ');ht+=`<tr><td><strong>${b.clientName}</strong></td><td>${b.hallName}</td><td>${b.date}</td><td>${an||'<span class="badge badge-warning">غير معين</span>'}</td></tr>`;});
-        ht+='</tbody></table></div>';
-        document.getElementById('distPreview').innerHTML=ht||'<div class="alert alert-info">لا نتائج</div>';
+        let ht = '<div class="table-wrapper"><table><thead><tr><th>العميل</th><th>القاعة</th><th>التاريخ</th><th>المعينين</th></tr></thead><tbody>';
+        fb.forEach(b => {
+            const an = (b._as || []).map(id => { const e = allEmployees[id]; return e ? `<span class="badge badge-info" style="margin:2px;">${e.name} (${e.role})</span>` : ''; }).join(' ');
+            ht += `<tr><td><strong>${b.clientName}</strong></td><td>${b.hallName}</td><td>${b.date}</td><td>${an || '<span class="badge badge-warning">غير معين</span>'}</td></tr>`;
+        });
+        ht += '</tbody></table></div>';
+        document.getElementById('distPreview').innerHTML = ht || '<div class="alert alert-info">لا نتائج</div>';
     }
 
-    window.smartDist = () => refreshDist();
-    
+    window.smartDist = () => refreshDistPreview();
+    window.rotateDist = async () => { await set(ref(db, 'rotationSchedule'), { lastUpdate: new Date().toISOString(), rotationCount: ((await get(ref(db, 'rotationSchedule'))).val()?.rotationCount || 0) + 1 }); refreshDistPreview(); alert('✅ تم التدوير'); };
+
+    window.manualDist = () => {
+        const hf = document.getElementById('dfHall')?.value || 'all';
+        const df = document.getElementById('dfDate')?.value;
+        let fb = Object.entries(allBookings).filter(([k, b]) => (hf === 'all' || b.hallName === hf) && (!df || b.date === df));
+        if (!fb.length) return alert('لا توجد حجوزات');
+        let opts = '';
+        Object.entries(allEmployees).forEach(([k, e]) => { if (e.active) opts += `<option value="${k}">${e.name} (${e.role})</option>`; });
+        const bk = fb[0];
+        showModal(`
+            <h4>✋ توزيع يدوي</h4>
+            <p><strong>${bk[1].clientName}</strong> - ${bk[1].hallName} - ${bk[1].date}</p>
+            <label>اختر الموظفين</label>
+            <select class="form-control" id="manEmpSelect" multiple style="height:200px;">${opts}</select>
+            <button class="btn btn-primary" onclick="saveManualDist('${bk[0]}')"><i class="fas fa-save"></i> تعيين</button>
+        `);
+    };
+
+    window.saveManualDist = async (bid) => {
+        const sel = document.getElementById('manEmpSelect').selectedOptions;
+        const ids = Array.from(sel).map(o => o.value);
+        if (!ids.length) return alert('اختر موظف واحد على الأقل');
+        await update(ref(db, `bookings/${bid}`), { assignedEmployees: ids, status: 'confirmed' });
+        closeModal();
+        await initData();
+        refreshDistPreview();
+    };
+
     window.saveDist = async () => {
         const hf = document.getElementById('dfHall')?.value || 'all';
         const df = document.getElementById('dfDate')?.value;
-        const reqs = {'المغلقة':['مخرج','مصور','مصور','كرين'],'الأوبن':['مخرج','مصور','مصور','كرين'],'الكافيه':['مصور']};
-        let fb = Object.entries(allBookings).filter(([k,b])=>(hf==='all'||b.hallName===hf)&&(!df||b.date===df)).map(([k,v])=>({...v,dk:k}));
-        const as = {};let sc=0;
-        for(let b of fb){const rq=reqs[b.hallName]||['مصور'];const ad=[];rq.forEach(role=>{const av=Object.entries(allEmployees).filter(([k,e])=>e.role===role&&e.active&&!ad.includes(k)).map(([k,v])=>({...v,dk:k}));if(av.length){const ll=av.sort((a,b)=>(as[a.dk]||0)-(as[b.dk]||0))[0];ad.push(ll.dk);as[ll.dk]=(as[ll.dk]||0)+1;}});if(ad.length){await update(ref(db,`bookings/${b.dk}`),{assignedEmployees:ad,status:'confirmed'});sc++;}}
-        await initData();await loadStats();
-        alert(`✅ تم حفظ ${sc} حجز`);refreshDist();
+        const reqs = { 'المغلقة': ['مخرج', 'مصور', 'مصور', 'كرين'], 'الأوبن': ['مخرج', 'مصور', 'مصور', 'كرين'], 'الكافيه': ['مصور'] };
+        let fb = Object.entries(allBookings).filter(([k, b]) => (hf === 'all' || b.hallName === hf) && (!df || b.date === df)).map(([k, v]) => ({ ...v, dk: k }));
+        const as = {}; let sc = 0;
+        for (let b of fb) {
+            const rq = reqs[b.hallName] || ['مصور']; const ad = [];
+            rq.forEach(role => {
+                const av = Object.entries(allEmployees).filter(([k, e]) => e.role === role && e.active && !ad.includes(k)).map(([k, v]) => ({ ...v, dk: k }));
+                if (av.length) { const ll = av.sort((a, b) => (as[a.dk] || 0) - (as[b.dk] || 0))[0]; ad.push(ll.dk); as[ll.dk] = (as[ll.dk] || 0) + 1; }
+            });
+            if (ad.length) { await update(ref(db, `bookings/${b.dk}`), { assignedEmployees: ad, status: 'confirmed' }); sc++; }
+        }
+        await initData();
+        refreshDistPreview();
+        alert(`✅ تم حفظ ${sc} حجز`);
     };
 
-    document.addEventListener('change',e=>{if(e.target.id==='dfHall'||e.target.id==='dfDate')refreshDist();});
+    document.addEventListener('change', e => { if (e.target.id === 'dfHall' || e.target.id === 'dfDate') refreshDistPreview(); });
 
-    // ============ باقي الأقسام (موجزة) ============
-    function renderRot(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-sync"></i> تدوير الموظفين</h4><button class="btn btn-primary btn-sm" onclick="applyRot()"><i class="fas fa-play"></i> تطبيق</button></div><div class="alert alert-info">التدوير يضمن عدالة التوزيع</div></div>`;}
-    window.applyRot = async () => {await set(ref(db,'rotationSchedule'),{lastUpdate:new Date().toISOString(),rotationCount:((await get(ref(db,'rotationSchedule'))).val()?.rotationCount||0)+1});alert('✅ تم التدوير');};
-
+    // ============ المالية (رواتب + صرف) ============
     function renderFin(c) {
-        c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-money-bill-wave"></i> المالية</h4></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-        <div class="card"><h5>➕ سلفة</h5><select class="form-control" id="aeSel">${Object.entries(allEmployees).map(([k,v])=>`<option value="${k}">${v.name}</option>`).join('')}</select><input class="form-control" type="number" id="aeAmt" placeholder="المبلغ"><input class="form-control" id="aeRsn" placeholder="السبب"><button class="btn btn-success btn-sm" onclick="addAdv()">إضافة</button></div>
-        <div class="card"><h5>➖ خصم</h5><select class="form-control" id="deSel">${Object.entries(allEmployees).map(([k,v])=>`<option value="${k}">${v.name}</option>`).join('')}</select><input class="form-control" type="number" id="deAmt" placeholder="المبلغ"><input class="form-control" id="deRsn" placeholder="السبب"><button class="btn btn-danger btn-sm" onclick="addDed()">إضافة</button></div>
-        </div></div>`;
+        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-money-bill-wave"></i> الملف المالي</h4></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:20px;">
+        <div class="card"><h5>➕ سلفة</h5><select class="form-control" id="aeSel">${Object.entries(allEmployees).map(([k, v]) => `<option value="${k}">${v.name} (${v.role})</option>`).join('')}</select><input class="form-control" type="number" id="aeAmt" placeholder="المبلغ"><input class="form-control" id="aeRsn" placeholder="السبب"><button class="btn btn-success btn-sm" onclick="addAdv()">إضافة سلفة</button></div>
+        <div class="card"><h5>➖ خصم</h5><select class="form-control" id="deSel">${Object.entries(allEmployees).map(([k, v]) => `<option value="${k}">${v.name} (${v.role})</option>`).join('')}</select><input class="form-control" type="number" id="deAmt" placeholder="المبلغ"><input class="form-control" id="deRsn" placeholder="السبب"><button class="btn btn-danger btn-sm" onclick="addDed()">إضافة خصم</button></div>
+        </div>
+        <div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>الدور</th><th>الأوردرات</th><th>سعر الأوردر</th><th>الإجمالي</th><th>السلف</th><th>الخصومات</th><th>الصافي</th><th>صرف</th></tr></thead><tbody>`;
+        
+        for (let k in allEmployees) {
+            const e = allEmployees[k];
+            const gross = (e.totalOrders || 0) * (e.salaryPerOrder || 0);
+            const net = gross - (e.totalDeductions || 0);
+            h += `<tr>
+                <td><strong>${e.name}</strong></td>
+                <td><span class="badge badge-primary">${e.role}</span></td>
+                <td>${e.totalOrders || 0}</td>
+                <td>${e.salaryPerOrder || 0} ج.م</td>
+                <td>${gross} ج.م</td>
+                <td style="color:var(--success);">${e.totalAdvance || 0} ج.م</td>
+                <td style="color:var(--danger);">${e.totalDeductions || 0} ج.م</td>
+                <td><strong>${net} ج.م</strong></td>
+                <td><button class="btn btn-sm btn-success" onclick="payEmployee('${k}')"><i class="fas fa-check"></i> صرف</button></td>
+            </tr>`;
+        }
+        h += '</tbody></table></div></div>';
+        c.innerHTML = h;
     }
+
     window.addAdv = async () => {
-        const id=document.getElementById('aeSel').value,amt=+document.getElementById('aeAmt').value;
-        if(amt<=0)return alert('مبلغ غير صحيح');
-        await update(ref(db,`employees/${id}`),{totalAdvance:(allEmployees[id]?.totalAdvance||0)+amt});
-        await push(ref(db,`transactions/${id}`),{type:'advance',amount:amt,reason:document.getElementById('aeRsn').value,date:new Date().toISOString().split('T')[0]});
-        await initData();navigate('finances');
-    };
-    window.addDed = async () => {
-        const id=document.getElementById('deSel').value,amt=+document.getElementById('deAmt').value;
-        if(amt<=0)return alert('مبلغ غير صحيح');
-        await update(ref(db,`employees/${id}`),{totalDeductions:(allEmployees[id]?.totalDeductions||0)+amt});
-        await push(ref(db,`transactions/${id}`),{type:'deduction',amount:amt,reason:document.getElementById('deRsn').value,date:new Date().toISOString().split('T')[0]});
-        await initData();navigate('finances');
+        const id = document.getElementById('aeSel').value, amt = +document.getElementById('aeAmt').value;
+        if (amt <= 0) return alert('مبلغ غير صحيح');
+        await update(ref(db, `employees/${id}`), { totalAdvance: (allEmployees[id]?.totalAdvance || 0) + amt });
+        await push(ref(db, `transactions/${id}`), { type: 'advance', amount: amt, reason: document.getElementById('aeRsn').value, date: new Date().toISOString().split('T')[0] });
+        await initData();
+        navigate('finances');
     };
 
-    // ============ استيراد Excel (المعدل) ============
+    window.addDed = async () => {
+        const id = document.getElementById('deSel').value, amt = +document.getElementById('deAmt').value;
+        if (amt <= 0) return alert('مبلغ غير صحيح');
+        await update(ref(db, `employees/${id}`), { totalDeductions: (allEmployees[id]?.totalDeductions || 0) + amt });
+        await push(ref(db, `transactions/${id}`), { type: 'deduction', amount: amt, reason: document.getElementById('deRsn').value, date: new Date().toISOString().split('T')[0] });
+        await initData();
+        navigate('finances');
+    };
+
+    window.payEmployee = async (id) => {
+        const e = allEmployees[id];
+        if (!e) return;
+        const gross = (e.totalOrders || 0) * (e.salaryPerOrder || 0);
+        const net = gross - (e.totalDeductions || 0);
+        if (!confirm(`💵 صرف ${net} ج.م لـ ${e.name}؟\n(سيتم تصفير الأوردرات والسلف والخصومات)`)) return;
+        await push(ref(db, `payments/${id}`), {
+            employeeName: e.name, gross, deductions: e.totalDeductions || 0, net,
+            date: new Date().toISOString().split('T')[0],
+            paidAt: new Date().toISOString()
+        });
+        await update(ref(db, `employees/${id}`), { totalOrders: 0, totalAdvance: 0, totalDeductions: 0 });
+        // تحديث الأوردرات
+        for (let [bk, bv] of Object.entries(allBookings)) {
+            if (bv.assignedEmployees?.includes(id)) {
+                const updated = bv.assignedEmployees.filter(x => x !== id);
+                await update(ref(db, `bookings/${bk}`), { assignedEmployees: updated });
+            }
+        }
+        await initData();
+        navigate('finances');
+        alert(`✅ تم صرف ${net} ج.م لـ ${e.name}`);
+    };
+
+    // ============ الحضور (QR Code) ============
+    function renderAtt(c) {
+        c.innerHTML = `<div class="card">
+            <div class="card-header"><h4><i class="fas fa-clock"></i> الحضور - QR Code</h4></div>
+            <div style="text-align:center; margin:20px 0;">
+                <p>📱 اطلب من الموظفين مسح الكود من أجهزتهم لتسجيل الحضور</p>
+                <div style="background:white; padding:20px; display:inline-block; border-radius:16px; box-shadow:var(--shadow);">
+                    <canvas id="attQRCode" width="200" height="200"></canvas>
+                </div>
+                <p style="margin-top:10px;">
+                    <strong>الرابط:</strong> 
+                    <span id="attLink" style="color:var(--primary); word-break:break-all;"></span>
+                </p>
+                <button class="btn btn-sm btn-outline" onclick="copyAttLink()"><i class="fas fa-copy"></i> نسخ الرابط</button>
+            </div>
+            <div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th><th>متأخر</th></tr></thead><tbody id="attTableBody"><tr><td colspan="4" style="text-align:center;">جاري التحميل...</td></tr></tbody></table></div>
+        </div>`;
+
+        // توليد QR Code
+        setTimeout(() => {
+            const attUrl = window.location.href.split('?')[0] + '?att=1';
+            document.getElementById('attLink').textContent = attUrl;
+            const canvas = document.getElementById('attQRCode');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                // QR Code بسيط (يمكن استخدام مكتبة qrcodejs)
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, 200, 200);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(20, 20, 160, 160);
+                ctx.fillStyle = '#000';
+                // نمط QR بسيط
+                for (let i = 0; i < 7; i++) {
+                    for (let j = 0; j < 7; j++) {
+                        if ((i + j) % 2 === 0 && i > 0 && i < 6 && j > 0 && j < 6) {
+                            ctx.fillRect(40 + i * 15, 40 + j * 15, 10, 10);
+                        }
+                    }
+                }
+                ctx.fillStyle = '#6C5CE7';
+                ctx.font = 'bold 14px Tajawal';
+                ctx.fillText('📸 حضور', 60, 185);
+            }
+            loadAttTable();
+        }, 200);
+    }
+
+    async function loadAttTable() {
+        const s = await get(ref(db, 'attendance'));
+        const records = s.val() || [];
+        let h = '';
+        const entries = Object.entries(records).sort(([, a], [, b]) => (b.date || '').localeCompare(a.date || '') || (b.checkIn || '').localeCompare(a.checkIn || ''));
+        for (let [k, r] of entries) {
+            const en = allEmployees[r.employeeId]?.name || r.employeeId;
+            h += `<tr><td><strong>${en}</strong></td><td>${r.date}</td><td>${r.checkIn}</td><td><span class="badge ${r.isLate ? 'badge-warning' : 'badge-success'}">${r.isLate ? 'متأخر' : 'في الوقت'}</span></td></tr>`;
+        }
+        document.getElementById('attTableBody').innerHTML = h || '<tr><td colspan="4" style="text-align:center;">لا توجد سجلات</td></tr>';
+    }
+
+    window.copyAttLink = () => {
+        const link = document.getElementById('attLink').textContent;
+        navigator.clipboard.writeText(link).then(() => alert('✅ تم نسخ الرابط')).catch(() => alert('❌ فشل النسخ'));
+    };
+
+    // ============ استيراد ============
     function renderImport(c) {
         c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-file-import"></i> استيراد Excel</h4></div>
-        <div class="alert alert-info"><strong>📋 الأعمدة:</strong> A=مسلسل | B=اليوم | <strong>C=التاريخ</strong> | D=اسم العريس | E=الباكدج | F=الأفراد<br>⚠️ الصفوف اللي فيها "-" في اسم العريس هتتخطي (أجازة)</div>
+        <div class="alert alert-info">📋 A=مسلسل | B=اليوم | <strong>C=التاريخ</strong> | D=اسم العريس | E=الباكدج | F=الأفراد<br>⚠️ الصفوف اللي فيها "-" تتخطي (أجازة)</div>
         <input type="file" id="fileInput" accept=".xlsx,.xls" style="margin:10px 0;">
         <button class="btn btn-primary" onclick="doImport()"><i class="fas fa-upload"></i> استيراد</button>
         <div id="importResult"></div></div>`;
@@ -1311,162 +1413,317 @@
 
     window.doImport = () => {
         const file = document.getElementById('fileInput').files[0];
-        if(!file) return alert('اختر ملف');
+        if (!file) return alert('اختر ملف');
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
-                const wb = XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
-                let sc=0,sk=0,il=[],sl=[];
-                for(let i=1;i<rows.length;i++){
-                    const r=rows[i];
-                    if(!r||r.length<3) continue;
-                    const fc=String(r[0]||'').trim();
-                    if(fc.includes('اجمال')||fc.includes('إجمال')) continue;
-                    const cn=String(r[3]||'').trim();
-                    if(cn==='-'||cn===''||cn==='--'){sk++;sl.push(`صف ${i+1}: أجازة`);continue;}
-                    let ds='';
-                    const dr=r[2];
-                    if(typeof dr==='number'){try{const d=XLSX.SSF.parse_date_code(dr);ds=`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;}catch(ex){const ed=new Date(1899,11,30);const dt=new Date(ed.getTime()+dr*86400000);if(!isNaN(dt))ds=dt.toISOString().split('T')[0];}}
-                    else if(typeof dr==='string'){const m=dr.match(/(\d{4}-\d{2}-\d{2})/);if(m){const p=new Date(m[1]);if(!isNaN(p))ds=m[1];}}
-                    if(!ds) continue;
-                    await push(ref(db,'bookings'),{serial:String(r[0]||''),clientName:cn,phone:'',date:ds,dayName:String(r[1]||''),hallName:'الأوبن',packageType:String(r[4]||''),guests:+(r[5]||0),price:0,deposit:0,status:'pending',assignedEmployees:[],notes:`${r[1]} | ${r[4]} | ${r[5]}`});
-                    sc++;il.push(`${cn} - ${ds}`);
+                const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+                let sc = 0, sk = 0;
+                for (let i = 1; i < rows.length; i++) {
+                    const r = rows[i];
+                    if (!r || r.length < 3) continue;
+                    if (String(r[0] || '').includes('اجمال')) continue;
+                    const cn = String(r[3] || '').trim();
+                    if (cn === '-' || cn === '' || cn === '--') { sk++; continue; }
+                    let ds = '';
+                    const dr = r[2];
+                    if (typeof dr === 'number') {
+                        try { const d = XLSX.SSF.parse_date_code(dr); ds = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`; }
+                        catch (ex) { const ed = new Date(1899, 11, 30); const dt = new Date(ed.getTime() + dr * 86400000); if (!isNaN(dt)) ds = dt.toISOString().split('T')[0]; }
+                    } else if (typeof dr === 'string') {
+                        const m = dr.match(/(\d{4}-\d{2}-\d{2})/);
+                        if (m) { const p = new Date(m[1]); if (!isNaN(p)) ds = m[1]; }
+                    }
+                    if (!ds) continue;
+                    await push(ref(db, 'bookings'), {
+                        serial: String(r[0] || ''), clientName: cn, phone: '', date: ds,
+                        dayName: String(r[1] || ''), hallName: 'الأوبن',
+                        packageType: String(r[4] || ''), guests: +(r[5] || 0),
+                        price: 0, deposit: 0, status: 'pending', assignedEmployees: [], notes: ''
+                    });
+                    sc++;
                 }
-                let rh=`<div class="alert alert-success">✅ تم استيراد <strong>${sc}</strong> حجز`;
-                if(il.length){rh+=`<details><summary>عرض</summary><ul>${il.map(x=>`<li>${x}</li>`).join('')}</ul></details>`;}
-                rh+='</div>';
-                if(sk) rh+=`<div class="alert alert-warning">⏭️ تخطي <strong>${sk}</strong> يوم أجازة</div>`;
-                document.getElementById('importResult').innerHTML=rh;
-                await initData();await loadStats();
-            } catch(ex) {document.getElementById('importResult').innerHTML=`<div class="alert alert-danger">❌ خطأ: ${ex.message}</div>`;}
+                document.getElementById('importResult').innerHTML = `
+                    <div class="alert alert-success">✅ استيراد <strong>${sc}</strong> حجز</div>
+                    ${sk > 0 ? `<div class="alert alert-warning">⏭️ تخطي <strong>${sk}</strong> يوم أجازة</div>` : ''}`;
+                await initData();
+            } catch (ex) { document.getElementById('importResult').innerHTML = `<div class="alert alert-danger">❌ خطأ: ${ex.message}</div>`; }
         };
         reader.readAsArrayBuffer(file);
     };
 
-    // ============ أقسام مختصرة ============
-    function renderReports(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-chart-bar"></i> التقارير</h4></div><button class="btn btn-primary btn-sm m-1" onclick="genPDF('daily')"><i class="fas fa-file-pdf"></i> يومي PDF</button> <button class="btn btn-primary btn-sm m-1" onclick="genPDF('monthly')"><i class="fas fa-file-pdf"></i> شهري PDF</button> <button class="btn btn-success btn-sm m-1" onclick="genExcel()"><i class="fas fa-file-excel"></i> Excel</button></div>`;}
-    window.genPDF = async (t) => {
-        const {jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape'});
-        const sn=(await get(ref(db,'companySettings'))).val()?.companyName||'Drmedia';
-        doc.setFontSize(20);doc.text(sn,doc.internal.pageSize.width/2,20,{align:'center'});
-        const tb=Object.values(allEmployees).map(e=>[e.name,e.role,e.totalOrders||0,e.totalAdvance||0,e.totalDeductions||0]);
-        doc.autoTable({head:[['الاسم','الدور','الأوردرات','السلف','الخصومات']],body:tb,startY:35,theme:'grid',styles:{halign:'right'}});
-        doc.save(`تقرير_${t}_${new Date().toISOString().split('T')[0]}.pdf`);
-    };
-    window.genExcel = () => {
-        const d=Object.values(allEmployees).map(e=>({'الاسم':e.name,'الدور':e.role,'الهاتف':e.phone||'','سعر الأوردر':e.salaryPerOrder||0,'الأوردرات':e.totalOrders||0,'السلف':e.totalAdvance||0,'الخصومات':e.totalDeductions||0}));
-        const ws=XLSX.utils.json_to_sheet(d),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'الموظفين');XLSX.writeFile(wb,'الموظفين.xlsx');
-    };
-
-    function renderCal(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-calendar-week"></i> التقويم</h4></div><div id="calendar"></div></div>`;setTimeout(async()=>{const ev=[];for(let[k,b]of Object.entries(allBookings)){if(b.date)ev.push({title:`${b.clientName} - ${b.hallName||''}`,start:b.date,allDay:true,backgroundColor:b.status==='confirmed'?'#00B894':'#FDCB6E'});}new FullCalendar.Calendar(document.getElementById('calendar'),{initialView:'dayGridMonth',locale:'ar',events:ev,headerToolbar:{left:'prev,next today',center:'title',right:'dayGridMonth,timeGridWeek,timeGridDay'},buttonText:{today:'اليوم',month:'شهر',week:'أسبوع',day:'يوم'}}).render();},100);}
-
-    async function renderAtt(c){const s=await get(ref(db,'attendance'));const r=s.val()||[];let h=`<div class="card"><div class="card-header"><h4><i class="fas fa-clock"></i> الحضور</h4></div><div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th></tr></thead><tbody>`;for(let k in r){const x=r[k];h+=`<tr><td><strong>${allEmployees[x.employeeId]?.name||x.employeeId}</strong></td><td>${x.date}</td><td>${x.checkIn}</td></tr>`;}h+='</tbody></table></div></div>';c.innerHTML=h;}
-
-    function renderNotif(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-bell"></i> إشعارات</h4></div><textarea class="form-control" id="nfMsg" rows="3" placeholder="نص الإشعار..."></textarea><select class="form-control" id="nfTarget"><option value="all">الكل</option><option value="specific">محدد</option></select><div id="nfEmpCont" class="hidden"><select class="form-control" id="nfEmp">${Object.values(allEmployees).map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select></div><button class="btn btn-primary btn-sm" onclick="sendNf()"><i class="fas fa-paper-plane"></i> إرسال</button></div>`;
-        document.getElementById('nfTarget').onchange=function(){document.getElementById('nfEmpCont').classList.toggle('hidden',this.value!=='specific');};
+    // ============ التقويم ============
+    function renderCal(c) {
+        c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-calendar-week"></i> التقويم</h4></div><div id="calendar"></div></div>`;
+        setTimeout(async () => {
+            const ev = [];
+            for (let [k, b] of Object.entries(allBookings)) {
+                if (b.date) ev.push({
+                    title: `${b.clientName}`,
+                    start: b.date,
+                    allDay: true,
+                    backgroundColor: b.status === 'confirmed' ? '#00B894' : '#FDCB6E',
+                    borderColor: b.status === 'confirmed' ? '#00855A' : '#E67E22',
+                    textColor: b.status === 'confirmed' ? '#fff' : '#2D3436',
+                    extendedProps: b
+                });
+            }
+            const cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
+                initialView: 'dayGridMonth',
+                locale: 'ar',
+                events: ev,
+                headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
+                buttonText: { today: 'اليوم', month: 'شهر', week: 'أسبوع', day: 'يوم' },
+                eventClick: function (info) {
+                    const b = info.event.extendedProps;
+                    alert(`📋 ${b.clientName}\n📅 ${b.date}\n🏛️ ${b.hallName}\n💰 ${b.price || 0} ج.م`);
+                },
+                eventDidMount: function (info) {
+                    info.el.style.borderRadius = '8px';
+                    info.el.style.padding = '4px 8px';
+                    info.el.style.fontSize = '11px';
+                    info.el.style.fontWeight = '600';
+                }
+            });
+            cal.render();
+        }, 200);
     }
+
+    // ============ الإشعارات (تلقائية لكل موظف) ============
+    function renderNotif(c) {
+        c.innerHTML = `<div class="card">
+            <div class="card-header"><h4><i class="fas fa-bell"></i> الإشعارات</h4></div>
+            <textarea class="form-control" id="nfMsg" rows="3" placeholder="نص الإشعار..."></textarea>
+            <div class="form-row">
+                <div><label>إلى</label><select class="form-control" id="nfTarget" onchange="toggleNfEmp()"><option value="all">الكل</option><option value="specific">محدد</option></select></div>
+                <div id="nfEmpCont" class="hidden"><label>الموظف</label><select class="form-control" id="nfEmp">${Object.values(allEmployees).map(e => `<option value="${e.id}">${e.name}</option>`).join('')}</select></div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="sendNf()"><i class="fas fa-paper-plane"></i> إرسال</button>
+            <button class="btn btn-secondary btn-sm" onclick="sendAutoNf()"><i class="fas fa-robot"></i> إشعارات تلقائية</button>
+            <div id="nfResult"></div>
+        </div>`;
+    }
+
+    window.toggleNfEmp = () => {
+        document.getElementById('nfEmpCont').classList.toggle('hidden', document.getElementById('nfTarget').value !== 'specific');
+    };
+
     window.sendNf = async () => {
-        const m=document.getElementById('nfMsg').value.trim();if(!m)return alert('اكتب الإشعار');
-        const t=document.getElementById('nfTarget').value;
-        const d={message:m,target:t,sentAt:new Date().toISOString(),read:false,sender:currentUser?.name||'إدارة'};
-        if(t==='specific')d.employeeId=document.getElementById('nfEmp').value;
-        await push(ref(db,'notifications'),d);alert('✅ تم الإرسال');
+        const m = document.getElementById('nfMsg').value.trim();
+        if (!m) return alert('اكتب الإشعار');
+        const t = document.getElementById('nfTarget').value;
+        const d = { message: m, target: t, sentAt: new Date().toISOString(), read: false, sender: currentUser?.name || 'إدارة' };
+        if (t === 'specific') d.employeeId = document.getElementById('nfEmp').value;
+        await push(ref(db, 'notifications'), d);
+        document.getElementById('nfResult').innerHTML = '<div class="alert alert-success">✅ تم الإرسال</div>';
+        document.getElementById('nfMsg').value = '';
     };
 
-    // ============ إعدادات التصميم ============
-    function renderThemeSettings(c) {
-        c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-palette"></i> إعدادات التصميم والثيمات</h4></div>
-        <div class="form-row"><div><label>الوضع</label><select class="form-control" id="tsMode" onchange="applyDesignSetting('mode',this.value)"><option value="light">☀️ فاتح</option><option value="dark">🌙 داكن</option></select></div>
-        <div><label>شكل الخط</label><select class="form-control" id="tsFont" onchange="applyDesignSetting('font',this.value)"><option value="Tajawal">Tajawal (افتراضي)</option><option value="Cairo">Cairo</option><option value="El Messiri">El Messiri</option></select></div></div>
-        <div class="form-row"><div><label>اللون الأساسي</label><input type="color" class="form-control" id="tsColor" value="#6C5CE7" onchange="applyDesignSetting('color',this.value)"></div>
-        <div><label>حجم الخط</label><select class="form-control" id="tsSize" onchange="applyDesignSetting('size',this.value)"><option value="14">صغير</option><option value="16" selected>متوسط</option><option value="18">كبير</option></select></div></div>
-        <div class="form-row"><button class="btn btn-primary btn-sm" onclick="resetDesign()"><i class="fas fa-undo"></i> إفتراضي</button></div></div>`;
-        const s=JSON.parse(localStorage.getItem('drmedia_design')||'{}');
-        if(s.mode) document.getElementById('tsMode').value=s.mode;
-        if(s.font) document.getElementById('tsFont').value=s.font;
-        if(s.color) document.getElementById('tsColor').value=s.color;
-        if(s.size) document.getElementById('tsSize').value=s.size;
+    window.sendAutoNf = async () => {
+        const today = new Date().toISOString().split('T')[0];
+        let sc = 0;
+        for (let [k, b] of Object.entries(allBookings)) {
+            if (b.date === today && b.assignedEmployees?.length > 0) {
+                for (let eid of b.assignedEmployees) {
+                    const emp = allEmployees[eid];
+                    if (emp) {
+                        await push(ref(db, 'notifications'), {
+                            message: `📋 تذكير: ${b.hallName} - ${b.clientName} اليوم ${today}`,
+                            target: 'employee', employeeId: eid, sentAt: new Date().toISOString(), read: false, sender: 'النظام'
+                        });
+                        sc++;
+                    }
+                }
+            }
+        }
+        document.getElementById('nfResult').innerHTML = `<div class="alert alert-success">✅ تم إرسال <strong>${sc}</strong> إشعار تلقائي</div>`;
+    };
+
+    // ============ الإعدادات ============
+    function renderSettings(c) {
+        c.innerHTML = `<div class="card">
+            <div class="card-header"><h4><i class="fas fa-palette"></i> الإعدادات</h4></div>
+            <div class="form-row"><div><label>الوضع</label><select class="form-control" id="tsMode" onchange="applyDesign('mode',this.value)"><option value="light">☀️ فاتح</option><option value="dark">🌙 داكن</option></select></div>
+            <div><label>الخط</label><select class="form-control" id="tsFont" onchange="applyDesign('font',this.value)"><option value="Tajawal">Tajawal</option><option value="Cairo">Cairo</option><option value="El Messiri">El Messiri</option></select></div></div>
+            <div class="form-row"><div><label>اللون الأساسي</label><input type="color" class="form-control" id="tsColor" value="#6C5CE7" onchange="applyDesign('color',this.value)"></div>
+            <div><label>حجم الخط</label><select class="form-control" id="tsSize" onchange="applyDesign('size',this.value)"><option value="14">صغير</option><option value="16" selected>متوسط</option><option value="18">كبير</option></select></div></div>
+            <div class="form-row"><div><label>اسم الشركة</label><input class="form-control" id="csName"></div><div><label>واتساب</label><input class="form-control" id="csWa"></div></div>
+            <button class="btn btn-primary btn-sm" onclick="saveAllSettings()"><i class="fas fa-save"></i> حفظ الكل</button>
+            <button class="btn btn-outline btn-sm" onclick="resetAllSettings()"><i class="fas fa-undo"></i> إفتراضي</button>
+            </div>
+            <div class="card" style="margin-top:15px;">
+            <div class="card-header"><h4><i class="fas fa-database"></i> نسخ احتياطي</h4></div>
+            <button class="btn btn-primary btn-sm" onclick="doBackup()"><i class="fas fa-download"></i> تصدير</button>
+            <input type="file" id="bkFile" accept=".json" style="display:none" onchange="doRestore(this)">
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('bkFile').click()"><i class="fas fa-upload"></i> استيراد</button>
+        </div>`;
+        // تحميل الإعدادات الحالية
+        (async () => {
+            const cs = (await get(ref(db, 'companySettings'))).val() || {};
+            document.getElementById('csName').value = cs.companyName || '';
+            document.getElementById('csWa').value = cs.whatsappNumber || '';
+        })();
+        const ds = JSON.parse(localStorage.getItem('drmedia_design') || '{}');
+        if (ds.mode) document.getElementById('tsMode').value = ds.mode;
+        if (ds.font) document.getElementById('tsFont').value = ds.font;
+        if (ds.color) document.getElementById('tsColor').value = ds.color;
+        if (ds.size) document.getElementById('tsSize').value = ds.size;
     }
 
-    window.applyDesignSetting = (key,val) => {
-        const s=JSON.parse(localStorage.getItem('drmedia_design')||'{}');
-        s[key]=val;localStorage.setItem('drmedia_design',JSON.stringify(s));
-        if(key==='mode') document.body.classList.toggle('dark-theme',val==='dark');
-        if(key==='font') document.body.style.fontFamily=`'${val}',Tajawal,sans-serif`;
-        if(key==='color'){document.documentElement.style.setProperty('--primary',val);document.documentElement.style.setProperty('--primary-light',val+'99');}
-        if(key==='size') document.documentElement.style.fontSize=val+'px';
+    window.applyDesign = (key, val) => {
+        const s = JSON.parse(localStorage.getItem('drmedia_design') || '{}');
+        s[key] = val; localStorage.setItem('drmedia_design', JSON.stringify(s));
+        if (key === 'mode') document.body.classList.toggle('dark-theme', val === 'dark');
+        if (key === 'font') document.body.style.fontFamily = `'${val}',Tajawal,sans-serif`;
+        if (key === 'color') { document.documentElement.style.setProperty('--primary', val); document.documentElement.style.setProperty('--primary-light', val + '99'); }
+        if (key === 'size') document.documentElement.style.fontSize = val + 'px';
     };
 
-    window.resetDesign = () => {
+    window.saveAllSettings = async () => {
+        await set(ref(db, 'companySettings'), {
+            companyName: document.getElementById('csName').value,
+            whatsappNumber: document.getElementById('csWa').value
+        });
+        alert('✅ تم الحفظ');
+    };
+
+    window.resetAllSettings = () => {
         localStorage.removeItem('drmedia_design');
         document.body.classList.remove('dark-theme');
-        document.body.style.fontFamily="'Tajawal',sans-serif";
-        document.documentElement.style.setProperty('--primary','#6C5CE7');
-        document.documentElement.style.setProperty('--primary-light','#A29BFE');
-        document.documentElement.style.fontSize='16px';
+        document.body.style.fontFamily = "'Tajawal',sans-serif";
+        document.documentElement.style.setProperty('--primary', '#6C5CE7');
+        document.documentElement.style.setProperty('--primary-light', '#A29BFE');
+        document.documentElement.style.fontSize = '16px';
         location.reload();
     };
 
-    // تحميل إعدادات التصميم
-    (function loadDesign(){
-        const s=JSON.parse(localStorage.getItem('drmedia_design')||'{}');
-        if(s.mode==='dark') document.body.classList.add('dark-theme');
-        if(s.font) document.body.style.fontFamily=`'${s.font}',Tajawal,sans-serif`;
-        if(s.color){document.documentElement.style.setProperty('--primary',s.color);document.documentElement.style.setProperty('--primary-light',s.color+'99');}
-        if(s.size) document.documentElement.style.fontSize=s.size+'px';
-    })();
+    window.doBackup = () => {
+        const d = { employees: allEmployees, bookings: allBookings, halls: allHalls, date: new Date().toISOString() };
+        const b = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+        a.download = `backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+    };
 
-    function renderCompSettings(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-cog"></i> إعدادات الشركة</h4></div><div class="form-row"><div><label>اسم الشركة</label><input class="form-control" id="csName"></div><div><label>واتساب</label><input class="form-control" id="csWa"></div></div><button class="btn btn-primary btn-sm" onclick="saveCS()"><i class="fas fa-save"></i> حفظ</button></div>`;(async()=>{const s=(await get(ref(db,'companySettings'))).val()||{};document.getElementById('csName').value=s.companyName||'';document.getElementById('csWa').value=s.whatsappNumber||'';})();}
-    window.saveCS = async () => {await set(ref(db,'companySettings'),{companyName:document.getElementById('csName').value,whatsappNumber:document.getElementById('csWa').value});alert('✅ تم الحفظ');};
-
-    function renderBackup(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-database"></i> نسخ احتياطي</h4></div><button class="btn btn-primary btn-sm" onclick="doBackup()"><i class="fas fa-download"></i> تصدير</button> <input type="file" id="bkFile" accept=".json" style="display:none" onchange="doRestore(this)"> <button class="btn btn-outline btn-sm" onclick="document.getElementById('bkFile').click()"><i class="fas fa-upload"></i> استيراد</button></div>`;}
-    window.doBackup = () => {const d={employees:allEmployees,bookings:allBookings,halls:allHalls,date:new Date().toISOString()};const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`backup_${new Date().toISOString().split('T')[0]}.json`;a.click();};
-    window.doRestore = async (inp) => {const f=inp.files[0];if(!f)return;const t=await f.text();const d=JSON.parse(t);if(!confirm('⚠️ استبدال البيانات؟'))return;if(d.employees)await set(ref(db,'employees'),d.employees);if(d.bookings)await set(ref(db,'bookings'),d.bookings);if(d.halls)await set(ref(db,'halls'),d.halls);await initData();await loadStats();alert('✅ تم الاستيراد');};
+    window.doRestore = async (inp) => {
+        const f = inp.files[0]; if (!f) return;
+        const t = await f.text(); const d = JSON.parse(t);
+        if (!confirm('⚠️ استبدال البيانات؟')) return;
+        if (d.employees) await set(ref(db, 'employees'), d.employees);
+        if (d.bookings) await set(ref(db, 'bookings'), d.bookings);
+        if (d.halls) await set(ref(db, 'halls'), d.halls);
+        await initData();
+        alert('✅ تم الاستيراد');
+    };
 
     // ============ الموظف ============
-    function empAtt(c){c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-qrcode"></i> تسجيل الحضور</h4></div><div id="qr-reader"></div><button class="btn btn-primary btn-sm" onclick="startQR()"><i class="fas fa-qrcode"></i> مسح QR</button> <button class="btn btn-outline btn-sm" onclick="manAtt()"><i class="fas fa-clock"></i> يدوي</button><div id="attStatus" style="margin-top:10px;"></div></div>`;}
-    let qrs=null;
+    function empAtt(c) {
+        c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-qrcode"></i> تسجيل الحضور</h4></div>
+        <div id="qr-reader"></div>
+        <button class="btn btn-primary btn-sm" onclick="startQR()"><i class="fas fa-qrcode"></i> مسح QR</button>
+        <button class="btn btn-outline btn-sm" onclick="manAtt()"><i class="fas fa-clock"></i> تسجيل يدوي</button>
+        <div id="attStatus" style="margin-top:10px;"></div></div>`;
+    }
+
     window.startQR = () => {
-        if(qrs)qrs.stop();
-        qrs=new Html5Qrcode("qr-reader");
-        qrs.start({facingMode:"environment"},{fps:10,qrbox:250},async(t)=>{await recAtt(t);qrs.stop();},()=>{}).catch(()=>alert('❌ الكاميرا'));
+        if (qrScanner) qrScanner.stop();
+        qrScanner = new Html5Qrcode("qr-reader");
+        qrScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
+            async (t) => { await recAtt(t); qrScanner.stop(); },
+            () => { }
+        ).catch(() => alert('❌ الكاميرا'));
     };
-    window.manAtt = async () => {await recAtt('manual');};
-    async function recAtt(qr=''){
-        const n=new Date();
-        await push(ref(db,'attendance'),{employeeId:currentUser.employeeId||currentUser.userId,date:n.toISOString().split('T')[0],checkIn:n.toLocaleTimeString('ar-EG'),isLate:n.getHours()>=9,qrData:qr});
-        document.getElementById('attStatus').innerHTML='<div class="alert alert-success">✅ تم التسجيل</div>';
+
+    window.manAtt = async () => { await recAtt('manual'); };
+
+    async function recAtt(qr = '') {
+        const n = new Date();
+        await push(ref(db, 'attendance'), {
+            employeeId: currentUser.employeeId || currentUser.userId,
+            date: n.toISOString().split('T')[0],
+            checkIn: n.toLocaleTimeString('ar-EG'),
+            isLate: n.getHours() >= 9, qrData: qr
+        });
+        document.getElementById('attStatus').innerHTML = '<div class="alert alert-success">✅ تم التسجيل</div>';
     }
 
-    function empOrders(c){
-        const eid=currentUser.employeeId||currentUser.userId;
-        const mo=Object.entries(allBookings).filter(([k,b])=>b.assignedEmployees?.includes(eid)).map(([k,v])=>({...v,dk:k})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-        let h=`<div class="card"><div class="card-header"><h4><i class="fas fa-list"></i> أوردراتي (${mo.length})</h4></div>`;
-        if(!mo.length)h+='<div class="alert alert-info">لا أوردرات</div>';
-        else{h+='<div class="table-wrapper"><table><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th></tr></thead><tbody>';mo.forEach(o=>h+=`<tr><td>${o.date}</td><td><strong>${o.clientName}</strong></td><td>${o.hallName}</td></tr>`);h+='</tbody></table></div>';}
-        h+='</div>';c.innerHTML=h;
+    function empOrders(c) {
+        const eid = currentUser.employeeId || currentUser.userId;
+        const mo = Object.entries(allBookings).filter(([k, b]) => b.assignedEmployees?.includes(eid)).map(([k, v]) => ({ ...v, dk: k })).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-list"></i> أوردراتي (${mo.length})</h4></div>`;
+        if (!mo.length) h += '<div class="alert alert-info">لا أوردرات</div>';
+        else {
+            h += '<div class="table-wrapper"><table><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th><th>السعر</th></tr></thead><tbody>';
+            mo.forEach(o => h += `<tr><td>${o.date}</td><td><strong>${o.clientName}</strong></td><td>${o.hallName}</td><td>${o.price || 0} ج.م</td></tr>`);
+            h += '</tbody></table></div>';
+        }
+        h += '</div>'; c.innerHTML = h;
     }
 
-    function empSalary(c){
-        const eid=currentUser.employeeId||currentUser.userId;
-        const oc=Object.values(allBookings).filter(b=>b.assignedEmployees?.includes(eid)).length;
-        const sp=currentUser.salaryPerOrder||0,gs=oc*sp,ta=currentUser.totalAdvance||0,td=currentUser.totalDeductions||0;
-        c.innerHTML=`<div class="card"><div class="card-header"><h4><i class="fas fa-money-bill"></i> المرتب</h4></div><div class="stats-grid"><div class="stat-card"><div class="stat-icon primary"><i class="fas fa-shopping-cart"></i></div><div class="stat-info"><h3>${oc}</h3><p>أوردرات</p></div></div><div class="stat-card"><div class="stat-icon secondary"><i class="fas fa-coins"></i></div><div class="stat-info"><h3>${sp} ج.م</h3><p>سعر الأوردر</p></div></div><div class="stat-card"><div class="stat-icon accent"><i class="fas fa-calculator"></i></div><div class="stat-info"><h3>${gs} ج.م</h3><p>الإجمالي</p></div></div></div><div class="card"><table><tr><td>الإجمالي</td><td><strong>${gs} ج.م</strong></td></tr><tr><td>السلف</td><td style="color:var(--success);">${ta} ج.م</td></tr><tr><td>الخصومات</td><td style="color:var(--danger);">${td} ج.م</td></tr><tr><td><strong>الصافي</strong></td><td><strong style="font-size:20px;">${gs-td} ج.م</strong></td></tr></table></div></div>`;
+    function empSalary(c) {
+        const eid = currentUser.employeeId || currentUser.userId;
+        const oc = Object.values(allBookings).filter(b => b.assignedEmployees?.includes(eid)).length;
+        const sp = currentUser.salaryPerOrder || 0, gs = oc * sp, ta = currentUser.totalAdvance || 0, td = currentUser.totalDeductions || 0;
+        c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-money-bill"></i> مرتبي</h4></div>
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-icon" style="background:var(--gradient-primary);"><i class="fas fa-shopping-cart"></i></div><div class="stat-info"><h3>${oc}</h3><p>أوردرات</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:var(--gradient-secondary);"><i class="fas fa-coins"></i></div><div class="stat-info"><h3>${sp} ج.م</h3><p>سعر الأوردر</p></div></div>
+            <div class="stat-card"><div class="stat-icon" style="background:var(--gradient-accent);"><i class="fas fa-calculator"></i></div><div class="stat-info"><h3>${gs} ج.م</h3><p>الإجمالي</p></div></div>
+        </div>
+        <div class="card"><table>
+            <tr><td>الإجمالي</td><td><strong>${gs} ج.م</strong></td></tr>
+            <tr><td>السلف</td><td style="color:var(--success);">${ta} ج.م</td></tr>
+            <tr><td>الخصومات</td><td style="color:var(--danger);">${td} ج.م</td></tr>
+            <tr><td><strong>الصافي</strong></td><td><strong style="font-size:20px;">${gs - td} ج.م</strong></td></tr>
+        </table></div></div>`;
     }
 
-    async function empNotif(c){
-        const s=await get(ref(db,'notifications'));const ns=s.val()||{};
-        const eid=currentUser?.employeeId||currentUser?.userId;
-        const mn=Object.entries(ns).filter(([k,n])=>n.target==='all'||n.employeeId===eid).sort(([,a],[,b])=>(b.sentAt||'').localeCompare(a.sentAt||'')).slice(0,20);
-        let h=`<div class="card"><div class="card-header"><h4><i class="fas fa-bell"></i> الإشعارات (${mn.length})</h4></div>`;
-        if(!mn.length)h+='<div class="alert alert-info">لا إشعارات</div>';
-        else mn.forEach(([k,n])=>{h+=`<div class="card" style="padding:12px;margin:8px 0;${n.read?'opacity:0.6':''}"><strong>${n.message}</strong><br><small>${new Date(n.sentAt).toLocaleString('ar-EG')} - ${n.sender}</small></div>`;});
-        h+='</div>';c.innerHTML=h;
+    async function empNotif(c) {
+        const s = await get(ref(db, 'notifications')); const ns = s.val() || {};
+        const eid = currentUser?.employeeId || currentUser?.userId;
+        const mn = Object.entries(ns).filter(([k, n]) => n.target === 'all' || n.employeeId === eid).sort(([, a], [, b]) => (b.sentAt || '').localeCompare(a.sentAt || '')).slice(0, 30);
+        let h = `<div class="card"><div class="card-header"><h4><i class="fas fa-bell"></i> إشعاراتي (${mn.length})</h4></div>`;
+        if (!mn.length) h += '<div class="alert alert-info">لا إشعارات</div>';
+        else mn.forEach(([k, n]) => {
+            h += `<div class="card" style="padding:12px;margin:8px 0;${n.read ? 'opacity:0.6' : ''}"><strong>${n.message}</strong><br><small style="color:var(--dark-light);">${new Date(n.sentAt).toLocaleString('ar-EG')} - ${n.sender} ${!n.read ? '<span class="badge badge-warning">جديد</span>' : ''}</small></div>`;
+        });
+        h += '</div>'; c.innerHTML = h;
     }
+
+    // ============ مودال ============
+    function showModal(content) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = 'modalOverlay';
+        overlay.innerHTML = `<div class="modal">${content}<button class="btn btn-sm btn-outline" style="margin-top:15px;" onclick="closeModal()"><i class="fas fa-times"></i> إغلاق</button></div>`;
+        document.body.appendChild(overlay);
+    }
+
+    window.closeModal = () => {
+        const overlay = document.getElementById('modalOverlay');
+        if (overlay) overlay.remove();
+    };
+
+    // تحميل إعدادات التصميم
+    (function () {
+        const s = JSON.parse(localStorage.getItem('drmedia_design') || '{}');
+        if (s.mode === 'dark') document.body.classList.add('dark-theme');
+        if (s.font) document.body.style.fontFamily = `'${s.font}',Tajawal,sans-serif`;
+        if (s.color) { document.documentElement.style.setProperty('--primary', s.color); document.documentElement.style.setProperty('--primary-light', s.color + '99'); }
+        if (s.size) document.documentElement.style.fontSize = s.size + 'px';
+    })();
 
     // بدء التشغيل
-    if(!currentUser) document.getElementById('loginScreen').classList.add('active');
+    if (!currentUser) document.getElementById('loginScreen').classList.add('active');
+
+    // دعم فتح رابط الحضور
+    if (window.location.search.includes('att=1') && currentUser) {
+        document.getElementById('loginScreen').classList.remove('active');
+        document.getElementById('empScreen').classList.add('active');
+        document.getElementById('adminNav').style.display = 'none';
+        document.getElementById('empNav').style.display = 'block';
+        empAtt(document.getElementById('empContent'));
+    }
 </script>
 </body>
 </html>
