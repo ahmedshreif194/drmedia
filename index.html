@@ -3,18 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>درميديا برو بلس – الأداء العالي</title>
+    <title>Drmedia Pro – نظام التوزيع المتكامل</title>
     <meta name="theme-color" content="#16a34a">
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cairo:wght@400;600;700;900&family=El+Messiri:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-
     <style>
         :root {
             --primary: #16a34a;
@@ -78,14 +77,27 @@
         }
         .nav-item:hover { background: rgba(255,255,255,0.08); color: white; transform: translateX(-5px); }
         .nav-item.active { background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; font-weight: 700; }
+        .sidebar-footer { padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
+        .user-card { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
+        .user-avatar {
+            width: 42px; height: 42px; border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 800; font-size: 18px;
+        }
+        .user-info .user-name { color: white; font-weight: 700; font-size: 14px; }
+        .user-info .user-role { color: rgba(255,255,255,0.5); font-size: 11px; }
+
         .main-content { flex: 1; margin-right: 280px; padding: 30px; min-height: 100vh; transition: margin 0.4s ease; }
         .screen { display: none; animation: fadeIn 0.4s ease; }
         .screen.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
         .card {
             background: var(--card-bg); border-radius: var(--radius); padding: 25px;
             box-shadow: var(--shadow); margin-bottom: 20px; border: 1px solid var(--border);
         }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border); }
         .btn {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 10px 20px; border: none; border-radius: 12px;
@@ -94,14 +106,18 @@
         }
         .btn-primary { background: var(--primary); color: white; }
         .btn-primary:hover { background: var(--primary-dark); }
+        .btn-secondary { background: #3b82f6; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
         .btn-sm { padding: 6px 14px; font-size: 12px; }
         .table-wrapper { overflow-x: auto; border-radius: var(--radius); box-shadow: var(--shadow); }
         table { width: 100%; border-collapse: collapse; background: var(--card-bg); min-width: 800px; }
-        th { background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 14px 12px; font-size: 12px; }
+        th { background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 14px 12px; font-size: 12px; text-align: right; }
         td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
         .badge { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; }
         .badge-success { background: #dcfce7; color: #166534; }
         .badge-warning { background: #fef9c3; color: #854d0e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
         .alert { padding: 14px 20px; border-radius: 12px; margin: 12px 0; font-weight: 500; }
         .alert-info { background: #eff6ff; color: #1e40af; }
         .hidden { display: none !important; }
@@ -117,17 +133,112 @@
             background: var(--card-bg); border-radius: var(--radius); padding: 30px;
             width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto;
         }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: #1e293b; color: white; padding: 14px 28px;
+            border-radius: 14px; font-weight: 600; z-index: 3000;
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .toast.show { opacity: 1; }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        #qr-reader { max-width: 350px; margin: 15px auto; border-radius: 16px; overflow: hidden; border: 3px solid var(--primary-light); }
+        .mobile-toggle { display: none; position: fixed; top: 15px; right: 15px; z-index: 1100; width: 45px; height: 45px; border-radius: 14px; background: var(--primary); color: white; border: none; font-size: 20px; cursor: pointer; box-shadow: var(--shadow); }
+        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; backdrop-filter: blur(4px); }
         @media (max-width: 968px) {
             .sidebar { right: -100%; width: 100%; max-width: 300px; }
             .sidebar.show { right: 0; }
             .main-content { margin-right: 0; padding: 15px; }
+            .mobile-toggle { display: block; }
+            .sidebar-overlay.show { display: block; }
+        }
+        @media (max-width: 480px) {
+            .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
         }
     </style>
 </head>
 <body>
-<div id="app"></div>
+<button class="mobile-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">📸</div>
+        <h3>Drmedia Pro</h3>
+        <p>نظام التوزيع المتكامل</p>
+    </div>
+    <nav class="sidebar-nav" id="adminNav" style="display:none;">
+        <div class="nav-section" style="padding:15px 15px 8px;color:rgba(255,255,255,0.3);font-size:10px;text-transform:uppercase;letter-spacing:2px;">الرئيسية</div>
+        <div class="nav-item active" onclick="navigate('dashboard'); closeSidebar();"><i class="fas fa-tachometer-alt"></i> الرئيسية</div>
+        <div class="nav-item" onclick="navigate('bookings'); closeSidebar();"><i class="fas fa-calendar-alt"></i> الحجوزات</div>
+        <div class="nav-item" onclick="navigate('employees'); closeSidebar();"><i class="fas fa-users"></i> الموظفين</div>
+        <div class="nav-item" onclick="navigate('halls'); closeSidebar();"><i class="fas fa-building"></i> القاعات</div>
+        <div class="nav-item" onclick="navigate('clients'); closeSidebar();"><i class="fas fa-address-book"></i> العملاء</div>
+        <div class="nav-section" style="padding:15px 15px 8px;color:rgba(255,255,255,0.3);font-size:10px;text-transform:uppercase;letter-spacing:2px;">العمليات</div>
+        <div class="nav-item" onclick="navigate('distribution'); closeSidebar();"><i class="fas fa-tasks"></i> التوزيع</div>
+        <div class="nav-item" onclick="navigate('attendance'); closeSidebar();"><i class="fas fa-clock"></i> الحضور</div>
+        <div class="nav-item" onclick="navigate('payroll'); closeSidebar();"><i class="fas fa-money-bill-wave"></i> المالية</div>
+        <div class="nav-item" onclick="navigate('import'); closeSidebar();"><i class="fas fa-file-import"></i> استيراد Excel</div>
+        <div class="nav-section" style="padding:15px 15px 8px;color:rgba(255,255,255,0.3);font-size:10px;text-transform:uppercase;letter-spacing:2px;">أدوات</div>
+        <div class="nav-item" onclick="navigate('calendar'); closeSidebar();"><i class="fas fa-calendar-week"></i> التقويم</div>
+        <div class="nav-item" onclick="navigate('notifications'); closeSidebar();"><i class="fas fa-bell"></i> الإشعارات</div>
+        <div class="nav-item" onclick="navigate('reports'); closeSidebar();"><i class="fas fa-chart-bar"></i> التقارير</div>
+        <div class="nav-item" onclick="navigate('trash'); closeSidebar();"><i class="fas fa-trash"></i> سلة المحذوفات</div>
+        <div class="nav-section" style="padding:15px 15px 8px;color:rgba(255,255,255,0.3);font-size:10px;text-transform:uppercase;letter-spacing:2px;">النظام</div>
+        <div class="nav-item" onclick="navigate('users'); closeSidebar();"><i class="fas fa-user-cog"></i> المستخدمين</div>
+        <div class="nav-item" onclick="navigate('settings'); closeSidebar();"><i class="fas fa-cog"></i> الإعدادات</div>
+    </nav>
+    <nav class="sidebar-nav" id="empNav" style="display:none;">
+        <div class="nav-section" style="padding:15px 15px 8px;color:rgba(255,255,255,0.3);font-size:10px;text-transform:uppercase;letter-spacing:2px;">لوحة الموظف</div>
+        <div class="nav-item active" onclick="navigateEmp('attendance'); closeSidebar();"><i class="fas fa-qrcode"></i> تسجيل الحضور</div>
+        <div class="nav-item" onclick="navigateEmp('myOrders'); closeSidebar();"><i class="fas fa-list"></i> أوردراتي</div>
+        <div class="nav-item" onclick="navigateEmp('mySalary'); closeSidebar();"><i class="fas fa-money-bill"></i> مرتبي</div>
+        <div class="nav-item" onclick="navigateEmp('myNotifications'); closeSidebar();"><i class="fas fa-bell"></i> إشعاراتي</div>
+    </nav>
+    <div class="sidebar-footer">
+        <div class="user-card">
+            <div class="user-avatar" id="sidebarAvatar">أ</div>
+            <div class="user-info">
+                <div class="user-name" id="sidebarName">مدير النظام</div>
+                <div class="user-role" id="sidebarRole">ADMIN</div>
+            </div>
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="toggleTheme()" style="color:white; border-color:rgba(255,255,255,0.3); width:100%; justify-content:center;"><i class="fas fa-moon"></i> الوضع الليلي</button>
+        <button class="btn btn-sm btn-danger" onclick="logout()" style="width:100%; justify-content:center; margin-top:8px;"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</button>
+    </div>
+</aside>
+
+<main class="main-content" id="mainContent">
+    <div id="loginScreen" class="screen active">
+        <div style="display:flex; justify-content:center; align-items:center; min-height:100vh; background:linear-gradient(135deg,#16a34a,#047857);">
+            <div class="card" style="max-width:420px; width:100%; text-align:center;">
+                <div class="sidebar-logo" style="margin:0 auto 15px;">📸</div>
+                <h2>أهلاً بك 👋</h2>
+                <p style="color:var(--text-light); margin-bottom:20px;">سجل دخولك لنظام درميديا برو بلس</p>
+                <form id="loginForm">
+                    <div class="input-group" style="position:relative; margin-bottom:15px;">
+                        <i class="fas fa-user" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--primary);"></i>
+                        <input type="text" id="loginUsername" placeholder="اسم المستخدم" class="form-control" style="padding-right:40px;" required>
+                    </div>
+                    <div class="input-group" style="position:relative; margin-bottom:15px;">
+                        <i class="fas fa-lock" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--primary);"></i>
+                        <input type="password" id="loginPassword" placeholder="كلمة المرور" class="form-control" style="padding-right:40px;" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;"><i class="fas fa-sign-in-alt"></i> دخول</button>
+                </form>
+                <div id="loginError" class="hidden alert alert-danger" style="margin-top:15px;"></div>
+            </div>
+        </div>
+    </div>
+    <div id="adminScreen" class="screen">
+        <div id="adminContent"></div>
+    </div>
+    <div id="empScreen" class="screen">
+        <div id="empContent"></div>
+    </div>
+</main>
+
 <script>
-// ========== IndexedDB Database ==========
+// ==================== IndexedDB ====================
 const DB_NAME = 'drmedia-db', STORE_NAME = 'appData';
 function openDB() {
     return new Promise((resolve, reject) => {
@@ -161,7 +272,7 @@ async function loadFromIDB() {
     });
 }
 
-// ========== Firebase ==========
+// ==================== Firebase ====================
 const firebaseConfig = {
     apiKey: "AIzaSyApb4Nl_ktkVCkuz7DsR8kDdimSPT9uhmQ",
     authDomain: "drmedia-vpms.firebaseapp.com",
@@ -177,82 +288,24 @@ try {
     db = firebase.database();
 } catch(e) { console.warn('Firebase offline'); }
 
-// ========== Global State ==========
+// ==================== Global State ====================
 let currentUser = null;
-let USERS = [ { id: 'admin1', username: 'ahmed', password: '1994', role: 'admin', name: 'مدير النظام' }, { id: 'emp1', username: 'emp1', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'موظف' } ];
-let bookings = [], employees = [], halls = [], clients = [], attendanceRecords = [], payrollArchive = [], notifications = [], trashBin = [];
-let appTheme = 'light', whatsappEnabled = true;
+let USERS = [
+    { id: 'admin1', username: 'ahmed', password: '1994', role: 'admin', name: 'مدير النظام' },
+    { id: 'emp1', username: 'emp1', password: 'emp123', role: 'employee', employeeId: 'emp1', name: 'موظف تجريبي' }
+];
+let bookings = [], employees = [], halls = [], clients = [];
+let attendanceRecords = [], payrollArchive = [], notifications = [], trashBin = [];
+let employeeLoans = {};
+let rotationCounters = { dir: 0, ph: 0, cr: 0 };
+let companyName = 'Drmedia Pro', companyLogo = '📸';
+let appTheme = 'light', appLanguage = 'ar';
+let whatsappEnabled = true;
+let whatsappBusinessNumber = '201001234567';
+let whatsappMessageTemplate = 'مرحباً {name}، تم توزيع أوردر {client} في {date} بقاعة {hall}';
 let searchTerm = '';
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
-
-async function saveAllData() {
-    const data = { bookings, employees, halls, clients, attendanceRecords, payrollArchive, notifications, trashBin, USERS, appTheme, whatsappEnabled };
-    localStorage.setItem('drmedia_data', JSON.stringify(data));
-    await saveToIDB(data);
-    if (db) db.ref('/').set(data).catch(()=>{});
-}
-async function loadAllData() {
-    let data = null;
-    const idbData = await loadFromIDB();
-    if (idbData) {
-        data = idbData;
-    } else {
-        const local = localStorage.getItem('drmedia_data');
-        if (local) data = JSON.parse(local);
-    }
-    if (db) {
-        try {
-            const snap = await db.ref('/').get();
-            if (snap.exists()) data = snap.val();
-        } catch(e) {}
-    }
-    if (data) {
-        bookings = data.bookings || []; employees = data.employees || []; halls = data.halls || []; clients = data.clients || [];
-        attendanceRecords = data.attendanceRecords || []; payrollArchive = data.payrollArchive || []; notifications = data.notifications || [];
-        trashBin = data.trashBin || []; USERS = data.USERS || USERS; appTheme = data.appTheme || 'light'; whatsappEnabled = data.whatsappEnabled !== false;
-    }
-    if (!halls.length) halls = [ { id:'h1', name:'المغلقة', type:'closed', basePrice:5000, active:true }, { id:'h2', name:'الأوبن', type:'open', basePrice:4000, active:true }, { id:'h3', name:'الكافيه', type:'cafe', basePrice:2000, active:true } ];
-    if (!employees.length) employees = [ { id:'emp1', name:'مخرج 1', role:'مخرج', phone:'01001234567', salaryPerOrder:300, active:true, totalOrders:0, totalAdvance:0, totalDeductions:0 } ];
-    if (!bookings.length) bookings = [ { id:'b1', clientName:'عميل تجريبي', phone:'01012345678', hallId:'h1', hallName:'المغلقة', date:new Date().toISOString().slice(0,10), price:5000, deposit:2000, status:'pending', assignedEmployees:[], notes:'', deleted:false } ];
-    if (!clients.length) clients = [ { id:'c1', name:'عميل تجريبي', phone:'01012345678' } ];
-    updateEmployeeOrders();
-}
-
-function updateEmployeeOrders() {
-    employees.forEach(emp => {
-        let count = 0;
-        bookings.forEach(b => {
-            if (!b.deleted && b.status !== 'cancelled' && (b.assignedEmployees || []).includes(emp.id)) {
-                const attended = attendanceRecords.some(a => a.empId === emp.id && a.date === b.date && a.checkIn);
-                if (attended) count++;
-            }
-        });
-        emp.totalOrders = count;
-    });
-}
-function filterData(list, fields, term) {
-    if (!term) return list;
-    const low = term.toLowerCase();
-    return list.filter(item => fields.some(f => String(item[f] || '').toLowerCase().includes(low)));
-}
-
-// ========== Keyboard Shortcuts ==========
-document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-    if (e.ctrlKey || e.metaKey) {
-        if (e.shiftKey) {
-            e.preventDefault();
-            if (e.key === 'D' || e.key === 'د') navigate('dashboard');
-            else if (e.key === 'B' || e.key === 'ب') navigate('bookings');
-            else if (e.key === 'E' || e.key === 'ث') navigate('employees');
-            else if (e.key === 'N' || e.key === 'ن') { navigate('bookings'); setTimeout(() => showAddBookingModal(), 100); }
-            else if (e.key === 'F' || e.key === 'ف') document.getElementById('globalSearch')?.focus();
-        }
-    }
-});
-
-// ========== UI helpers ==========
 function showMsg(msg) {
     const t = document.createElement('div');
     t.className = 'toast show'; t.textContent = msg;
@@ -270,10 +323,106 @@ function closeModal() {
     const overlay = document.querySelector('.modal-overlay');
     if (overlay) overlay.remove();
 }
+function filterData(list, fields, term) {
+    if (!term) return list;
+    const low = term.toLowerCase();
+    return list.filter(item => fields.some(f => String(item[f] || '').toLowerCase().includes(low)));
+}
+
+// ==================== Data Persistence ====================
+async function saveAllData() {
+    const data = { bookings, employees, halls, clients, attendanceRecords, payrollArchive, employeeLoans, notifications, trashBin, companyName, companyLogo, USERS, rotationCounters, whatsappEnabled, whatsappBusinessNumber, whatsappMessageTemplate, appTheme, appLanguage };
+    localStorage.setItem('drmedia_data', JSON.stringify(data));
+    await saveToIDB(data);
+    if (db) db.ref('/').set(data).catch(()=>{});
+}
+async function loadAllData() {
+    let data = null;
+    const idbData = await loadFromIDB();
+    if (idbData) data = idbData;
+    else {
+        const local = localStorage.getItem('drmedia_data');
+        if (local) data = JSON.parse(local);
+    }
+    if (db) {
+        try {
+            const snap = await db.ref('/').get();
+            if (snap.exists()) data = snap.val();
+        } catch(e) {}
+    }
+    if (data) {
+        bookings = data.bookings || []; employees = data.employees || []; halls = data.halls || []; clients = data.clients || [];
+        attendanceRecords = data.attendanceRecords || []; payrollArchive = data.payrollArchive || [];
+        employeeLoans = data.employeeLoans || {}; notifications = data.notifications || [];
+        trashBin = data.trashBin || []; companyName = data.companyName || 'Drmedia Pro'; companyLogo = data.companyLogo || '📸';
+        USERS = data.USERS || USERS; rotationCounters = data.rotationCounters || { dir:0, ph:0, cr:0 };
+        whatsappEnabled = data.whatsappEnabled !== undefined ? data.whatsappEnabled : true;
+        whatsappBusinessNumber = data.whatsappBusinessNumber || '201001234567';
+        whatsappMessageTemplate = data.whatsappMessageTemplate || 'مرحباً {name}، تم توزيع أوردر {client} في {date} بقاعة {hall}';
+        appTheme = data.appTheme || 'light'; appLanguage = data.appLanguage || 'ar';
+    }
+    if (!halls.length) halls = [
+        { id:'h1', name:'المغلقة', type:'closed', basePrice:5000, active:true },
+        { id:'h2', name:'الأوبن', type:'open', basePrice:4000, active:true },
+        { id:'h3', name:'الكافيه', type:'cafe', basePrice:2000, active:true }
+    ];
+    if (!employees.length) employees = [
+        { id:'emp1', name:'مخرج 1', role:'مخرج', phone:'01001234567', salaryPerOrder:300, active:true, totalOrders:0, totalAdvance:0, totalDeductions:0 },
+        { id:'emp2', name:'مصور 1', role:'مصور', phone:'01002345678', salaryPerOrder:200, active:true, totalOrders:0, totalAdvance:0, totalDeductions:0 },
+        { id:'emp3', name:'كرين 1', role:'كرين', phone:'01003456789', salaryPerOrder:250, active:true, totalOrders:0, totalAdvance:0, totalDeductions:0 }
+    ];
+    if (!bookings.length) bookings = [
+        { id:'b1', clientName:'عميل تجريبي', phone:'01012345678', hallId:'h1', hallName:'المغلقة', date:new Date().toISOString().slice(0,10), price:5000, deposit:2000, status:'pending', assignedEmployees:[], notes:'', deleted:false }
+    ];
+    if (!clients.length) clients = [{ id:'c1', name:'عميل تجريبي', phone:'01012345678' }];
+    updateEmployeeOrders();
+}
+function updateEmployeeOrders() {
+    employees.forEach(emp => {
+        let count = 0;
+        bookings.forEach(b => {
+            if (!b.deleted && b.status !== 'cancelled' && (b.assignedEmployees || []).includes(emp.id)) {
+                const attended = attendanceRecords.some(a => a.empId === emp.id && a.date === b.date && a.checkIn);
+                if (attended) count++;
+            }
+        });
+        emp.totalOrders = count;
+    });
+}
+
+// ==================== Keyboard Shortcuts ====================
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if (e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        if (e.key === 'D') navigate('dashboard');
+        else if (e.key === 'B') navigate('bookings');
+        else if (e.key === 'E') navigate('employees');
+        else if (e.key === 'N') { navigate('bookings'); setTimeout(() => showAddBookingModal(), 100); }
+        else if (e.key === 'F') document.getElementById('globalSearch')?.focus();
+    }
+});
+
+// ==================== Theme ====================
+function applyTheme(theme) {
+    appTheme = theme;
+    document.body.className = '';
+    if (theme === 'dark') document.body.classList.add('theme-dark');
+    else if (theme === 'blue') document.body.classList.add('theme-blue');
+    else if (theme === 'green') document.body.classList.add('theme-green');
+    localStorage.setItem('appTheme', theme);
+}
+function toggleTheme() {
+    const next = appTheme === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+}
+
+// ==================== Navigation ====================
 function navigate(section) {
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    const items = document.querySelectorAll('.nav-item');
-    items.forEach(el => { if (el.getAttribute('onclick')?.includes(`'${section}'`)) el.classList.add('active'); });
+    document.querySelectorAll('#adminNav .nav-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('#adminNav .nav-item').forEach(el => {
+        if (el.getAttribute('onclick')?.includes(`'${section}'`)) el.classList.add('active');
+    });
     const c = document.getElementById('adminContent');
     switch(section) {
         case 'dashboard': renderDashboard(c); break;
@@ -293,17 +442,92 @@ function navigate(section) {
         case 'settings': renderSettings(c); break;
     }
 }
+function navigateEmp(section) {
+    document.querySelectorAll('#empNav .nav-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('#empNav .nav-item').forEach(el => {
+        if (el.getAttribute('onclick')?.includes(`'${section}'`)) el.classList.add('active');
+    });
+    const c = document.getElementById('empContent');
+    switch(section) {
+        case 'attendance': renderEmpAttendance(c); break;
+        case 'myOrders': renderEmpOrders(c); break;
+        case 'mySalary': renderEmpSalary(c); break;
+        case 'myNotifications': renderEmpNotifications(c); break;
+    }
+}
+
+// ==================== Auth ====================
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const u = document.getElementById('loginUsername').value.trim();
+    const p = document.getElementById('loginPassword').value;
+    const user = USERS.find(x => x.username === u && x.password == p);
+    if (!user) {
+        document.getElementById('loginError').classList.remove('hidden');
+        document.getElementById('loginError').textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
+        return;
+    }
+    document.getElementById('loginError').classList.add('hidden');
+    currentUser = { ...user };
+    if (user.employeeId) {
+        const emp = employees.find(e => e.id === user.employeeId);
+        if (emp) currentUser = { ...currentUser, ...emp, id: emp.id };
+    }
+    localStorage.setItem('drmedia_session', JSON.stringify(currentUser));
+    await loadAllData();
+    document.getElementById('loginScreen').classList.remove('active');
+    if (currentUser.role === 'admin') {
+        document.getElementById('adminNav').style.display = '';
+        document.getElementById('empNav').style.display = 'none';
+        document.getElementById('adminScreen').classList.add('active');
+        document.getElementById('sidebarName').textContent = currentUser.name || 'مدير';
+        document.getElementById('sidebarRole').textContent = 'ADMIN';
+        navigate('dashboard');
+    } else {
+        document.getElementById('adminNav').style.display = 'none';
+        document.getElementById('empNav').style.display = '';
+        document.getElementById('empScreen').classList.add('active');
+        document.getElementById('sidebarName').textContent = currentUser.name || 'موظف';
+        document.getElementById('sidebarRole').textContent = 'EMPLOYEE';
+        navigateEmp('attendance');
+    }
+});
+function logout() { localStorage.removeItem('drmedia_session'); location.reload(); }
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('show');
+    document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('show');
+    document.getElementById('sidebarOverlay').classList.remove('show');
+}
+
+// ==================== WhatsApp ====================
+function sendWhatsApp(phone, message) {
+    if (!whatsappEnabled) return;
+    let clean = phone.replace(/[^0-9+]/g, '');
+    if (clean.startsWith('0')) clean = '2' + clean;
+    if (!clean.startsWith('+')) clean = '+' + clean;
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`, '_blank');
+}
+function notifyEmployee(emp, title, body, sendWA = true) {
+    notifications.unshift({ id: Date.now(), title, body, date: new Date().toLocaleString(), recipient: emp.id, read: false });
+    if (sendWA && emp.phone) sendWhatsApp(emp.phone, `${title}\n${body}`);
+    saveAllData();
+}
+
+// ==================== Render Functions ====================
 function renderDashboard(c) {
-    const total = bookings.filter(b=>!b.deleted&&b.status!=='cancelled').length;
-    const confirmed = bookings.filter(b=>b.status==='confirmed'&&!b.deleted).length;
-    const pending = bookings.filter(b=>b.status==='pending'&&!b.deleted).length;
-    const revenue = bookings.reduce((s,b)=>!b.deleted&&b.status!=='cancelled'?s+(b.price||0):s,0);
+    const totalBookings = bookings.filter(b => !b.deleted && b.status !== 'cancelled').length;
+    const confirmed = bookings.filter(b => b.status === 'confirmed' && !b.deleted).length;
+    const pending = bookings.filter(b => b.status === 'pending' && !b.deleted).length;
+    const revenue = bookings.reduce((s, b) => !b.deleted && b.status !== 'cancelled' ? s + (b.price || 0) : s, 0);
     c.innerHTML = `
         <div class="stats-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:15px;">
-            <div class="stat-card"><h3>${total}</h3><p>إجمالي الحجوزات</p></div>
-            <div class="stat-card"><h3>${confirmed}</h3><p>مؤكدة</p></div>
-            <div class="stat-card"><h3>${pending}</h3><p>معلقة</p></div>
-            <div class="stat-card"><h3>${revenue.toLocaleString()} ج.م</h3><p>الإيرادات</p></div>
+            <div class="card" style="text-align:center;"><h3 style="font-size:28px;">${totalBookings}</h3><p>إجمالي الحجوزات</p></div>
+            <div class="card" style="text-align:center;"><h3 style="font-size:28px;">${confirmed}</h3><p>مؤكدة</p></div>
+            <div class="card" style="text-align:center;"><h3 style="font-size:28px;">${pending}</h3><p>معلقة</p></div>
+            <div class="card" style="text-align:center;"><h3 style="font-size:28px;">${revenue.toLocaleString()} ج.م</h3><p>الإيرادات</p></div>
         </div>
         <div class="card"><canvas id="dashboardChart" height="100"></canvas></div>`;
     setTimeout(() => {
@@ -313,20 +537,102 @@ function renderDashboard(c) {
 }
 function renderBookings(c) {
     let rows = '';
-    const filtered = filterData(bookings.filter(b=>!b.deleted), ['clientName','phone','hallName','date'], searchTerm);
+    const filtered = filterData(bookings.filter(b => !b.deleted), ['clientName','phone','hallName','date'], searchTerm);
     filtered.forEach(b => {
-        const assigned = (b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ');
-        rows += `<tr><td>${b.clientName}</td><td>${b.phone||''}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price||0}</td><td><span class="badge ${b.status==='confirmed'?'badge-success':'badge-warning'}">${b.status==='confirmed'?'مؤكد':'معلق'}</span></td><td>${assigned||'-'}</td><td><button class="btn btn-sm" onclick="editBooking('${b.id}')"><i class="fas fa-edit"></i></button></td></tr>`;
+        const assigned = (b.assignedEmployees || []).map(id => employees.find(e => e.id === id)?.name || id).join(', ');
+        rows += `<tr><td>${b.clientName}</td><td>${b.phone||''}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price||0}</td><td><span class="badge ${b.status==='confirmed'?'badge-success':'badge-warning'}">${b.status==='confirmed'?'مؤكد':'معلق'}</span></td><td>${assigned||'-'}</td><td><button class="btn btn-sm" onclick="editBooking('${b.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteBooking('${b.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
     });
     c.innerHTML = `
         <div class="card">
-            <div class="card-header"><h4>الحجوزات</h4>
-                <input class="form-control" id="globalSearch" placeholder="بحث سريع (Ctrl+Shift+F)" style="max-width:250px;" oninput="searchTerm = this.value; renderBookings(document.getElementById('adminContent'))">
+            <div class="card-header"><h4><i class="fas fa-calendar-alt"></i> الحجوزات</h4>
+                <div style="display:flex; gap:10px;">
+                    <input class="form-control" id="globalSearch" placeholder="بحث سريع (Ctrl+Shift+F)" style="max-width:250px;" oninput="searchTerm = this.value; renderBookings(document.getElementById('adminContent'))">
+                    <button class="btn btn-primary btn-sm" onclick="showAddBookingModal()"><i class="fas fa-plus"></i> إضافة</button>
+                    <button class="btn btn-secondary btn-sm" onclick="smartDistributeAll()"><i class="fas fa-magic"></i> توزيع ذكي للكل</button>
+                </div>
             </div>
-            <div class="table-wrapper"><table><thead><tr><th>العميل</th><th>الهاتف</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفين</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+            <div class="table-wrapper"><table><thead><tr><th>العميل</th><th>الهاتف</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفين</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8">لا توجد حجوزات</td></tr>'}</tbody></table></div>
         </div>`;
 }
-function renderEmployees(c) { /* ... مختصر للتركيز على الميزات الجديدة */ }
+function showAddBookingModal() {
+    openModal(`
+        <h4>➕ إضافة حجز</h4>
+        <div class="form-row"><div><label>العميل</label><input class="form-control" id="newBookClient"></div><div><label>الهاتف</label><input class="form-control" id="newBookPhone"></div></div>
+        <div class="form-row"><div><label>التاريخ</label><input class="form-control" type="date" id="newBookDate"></div><div><label>القاعة</label><select class="form-control" id="newBookHall">${halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select></div></div>
+        <div class="form-row"><div><label>السعر</label><input class="form-control" type="number" id="newBookPrice" value="5000"></div><div><label>العربون</label><input class="form-control" type="number" id="newBookDeposit" value="2000"></div></div>
+        <button class="btn btn-primary" onclick="addBooking()"><i class="fas fa-save"></i> حفظ</button>
+    `);
+}
+function addBooking() {
+    const client = document.getElementById('newBookClient').value.trim();
+    const date = document.getElementById('newBookDate').value;
+    const hallId = document.getElementById('newBookHall').value;
+    const hall = halls.find(h=>h.id===hallId);
+    if(!client||!date||!hall) return showMsg('املأ الحقول');
+    bookings.push({ id: generateId(), clientName: client, phone: document.getElementById('newBookPhone').value, date, hallId, hallName: hall.name, price: +document.getElementById('newBookPrice').value||0, deposit: +document.getElementById('newBookDeposit').value||0, status:'pending', assignedEmployees:[], notes:'', deleted:false });
+    saveAllData(); closeModal(); navigate('bookings'); showMsg('تمت الإضافة');
+}
+function editBooking(id) { /* ... similar edit modal ... */ }
+function deleteBooking(id) {
+    if(!confirm('حذف الحجز؟')) return;
+    const b = bookings.find(x=>x.id===id);
+    if(b) { b.deleted = true; trashBin.push({...b, deletedAt: new Date().toISOString(), type:'booking'}); }
+    saveAllData(); navigate('bookings'); showMsg('تم النقل لسلة المحذوفات');
+}
+function smartDistributeAll() {
+    const pending = bookings.filter(b=>b.status==='pending' && !b.deleted);
+    if(!pending.length) return showMsg('لا توجد حجوزات معلقة');
+    autoDistributeBookings(pending);
+    navigate('bookings'); showMsg('✅ تم التوزيع الذكي');
+}
+function autoDistributeBookings(bookingList) {
+    const dirs = employees.filter(e=>e.role==='مخرج'&&e.active);
+    const phs = employees.filter(e=>e.role==='مصور'&&e.active);
+    const crs = employees.filter(e=>e.role==='كرين'&&e.active);
+    let di=rotationCounters.dir, pi=rotationCounters.ph, ci=rotationCounters.cr;
+    const daily = {};
+    bookingList.forEach(b => {
+        const date = b.date;
+        if(!daily[date]) daily[date] = {dir:new Set(), ph:new Set(), cr:new Set()};
+        const type = halls.find(h=>h.id===b.hallId)?.type || (b.hallName==='الكافيه'?'cafe':'closed');
+        let assigned = [];
+        if(type==='cafe') {
+            if(phs.length) {
+                while(daily[date].ph.has(phs[pi%phs.length].id)) pi++;
+                assigned.push(phs[pi%phs.length].id);
+                daily[date].ph.add(phs[pi%phs.length].id); pi++;
+            }
+        } else {
+            if(dirs.length) {
+                while(daily[date].dir.has(dirs[di%dirs.length].id)) di++;
+                assigned.push(dirs[di%dirs.length].id);
+                daily[date].dir.add(dirs[di%dirs.length].id); di++;
+            }
+            if(phs.length) {
+                let added=0;
+                for(let i=0; i<phs.length*2 && added<2; i++) {
+                    while(daily[date].ph.has(phs[pi%phs.length].id)) pi++;
+                    const p = phs[pi%phs.length];
+                    if(!daily[date].ph.has(p.id)) { assigned.push(p.id); daily[date].ph.add(p.id); added++; } pi++;
+                }
+            }
+            if(crs.length) {
+                while(daily[date].cr.has(crs[ci%crs.length].id)) ci++;
+                assigned.push(crs[ci%crs.length].id);
+                daily[date].cr.add(crs[ci%crs.length].id); ci++;
+            }
+        }
+        b.assignedEmployees = assigned; b.status = 'confirmed';
+        assigned.forEach(empId => {
+            const emp = employees.find(e=>e.id===empId);
+            if(emp) notifyEmployee(emp, '📋 أوردر جديد', `تم تعيينك لـ ${b.clientName} في ${b.date} ${b.hallName}`, true);
+        });
+    });
+    rotationCounters = {dir:di, ph:pi, cr:ci};
+    updateEmployeeOrders(); saveAllData();
+}
+
+function renderEmployees(c) { /* ... */ }
 function renderHalls(c) { /* ... */ }
 function renderClients(c) { /* ... */ }
 function renderDistribution(c) { /* ... */ }
@@ -340,61 +646,49 @@ function renderTrash(c) { /* ... */ }
 function renderUsers(c) { /* ... */ }
 function renderSettings(c) { /* ... */ }
 
-// ========== Quick Add Booking Modal ==========
-window.showAddBookingModal = () => {
-    openModal(`
-        <h4>إضافة حجز سريع</h4>
-        <div class="form-row"><div><label>العميل</label><input class="form-control" id="qcName"></div><div><label>الهاتف</label><input class="form-control" id="qcPhone"></div></div>
-        <div class="form-row"><div><label>التاريخ</label><input class="form-control" type="date" id="qcDate"></div><div><label>القاعة</label><select class="form-control" id="qcHall">${halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select></div></div>
-        <button class="btn btn-primary" onclick="quickAddBooking()">حفظ</button>
-    `);
-};
-window.quickAddBooking = () => {
-    const client = document.getElementById('qcName').value.trim();
-    const date = document.getElementById('qcDate').value;
-    const hallId = document.getElementById('qcHall').value;
-    const hall = halls.find(h=>h.id===hallId);
-    if(!client||!date||!hall) return showMsg('املأ الحقول');
-    bookings.push({ id: generateId(), clientName: client, phone: document.getElementById('qcPhone').value, date, hallId, hallName: hall.name, price: hall.basePrice, deposit:0, status:'pending', assignedEmployees:[], notes:'', deleted:false });
-    saveAllData(); closeModal(); navigate('bookings'); showMsg('تمت الإضافة');
-};
+// ==================== Employee Views (dummy) ====================
+function renderEmpAttendance(c) { c.innerHTML = `<div class="card"><h4>تسجيل الحضور</h4><div id="qr-reader"></div><button class="btn btn-primary btn-sm" onclick="startEmpQR()">مسح QR</button></div>`; }
+function startEmpQR() { /* ... */ }
+function renderEmpOrders(c) { /* ... */ }
+function renderEmpSalary(c) { /* ... */ }
+function renderEmpNotifications(c) { /* ... */ }
 
-// ========== PWA Service Worker ==========
+// ==================== PWA ====================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').then(reg => {
-            console.log('SW registered');
-        }).catch(err => console.log('SW failed', err));
+        navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW registered')).catch(err => console.log('SW failed', err));
     });
 }
 
-// ========== Init App ==========
+// ==================== Init ====================
 (async function init() {
-    await loadAllData();
-    // login screen (simplified)
-    document.getElementById('app').innerHTML = `
-        <div id="loginScreen" class="screen active" style="display:flex; justify-content:center; align-items:center; min-height:100vh; background:linear-gradient(135deg,#16a34a,#047857);">
-            <div class="card" style="max-width:400px; width:100%;">
-                <h2 style="text-align:center;">تسجيل الدخول</h2>
-                <input class="form-control" id="loginUser" placeholder="اسم المستخدم">
-                <input class="form-control" type="password" id="loginPass" placeholder="كلمة المرور" style="margin:10px 0;">
-                <button class="btn btn-primary" style="width:100%;" onclick="doLogin()">دخول</button>
-            </div>
-        </div>
-        <div id="adminScreen" class="screen" style="display:none;">
-            <div class="sidebar"><!-- sidebar nav as before --></div>
-            <div class="main-content" id="adminContent"></div>
-        </div>`;
-    window.doLogin = () => {
-        const u = document.getElementById('loginUser').value.trim();
-        const p = document.getElementById('loginPass').value.trim();
-        const user = USERS.find(x => x.username === u && x.password == p);
-        if (!user) return alert('بيانات خاطئة');
-        currentUser = user;
-        document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('adminScreen').style.display = 'block';
-        navigate('dashboard');
-    };
+    const session = localStorage.getItem('drmedia_session');
+    if (session) {
+        currentUser = JSON.parse(session);
+        await loadAllData();
+        document.getElementById('loginScreen').classList.remove('active');
+        if (currentUser.role === 'admin') {
+            document.getElementById('adminNav').style.display = '';
+            document.getElementById('adminScreen').classList.add('active');
+            document.getElementById('sidebarName').textContent = currentUser.name || 'مدير';
+            document.getElementById('sidebarRole').textContent = 'ADMIN';
+            navigate('dashboard');
+        } else {
+            document.getElementById('empNav').style.display = '';
+            document.getElementById('empScreen').classList.add('active');
+            document.getElementById('sidebarName').textContent = currentUser.name || 'موظف';
+            document.getElementById('sidebarRole').textContent = 'EMPLOYEE';
+            navigateEmp('attendance');
+        }
+    }
+    if (window.location.search.includes('att=1') && currentUser) {
+        document.getElementById('adminScreen').classList.remove('active');
+        document.getElementById('loginScreen').classList.remove('active');
+        document.getElementById('empScreen').classList.add('active');
+        document.getElementById('adminNav').style.display = 'none';
+        document.getElementById('empNav').style.display = '';
+        renderEmpAttendance(document.getElementById('empContent'));
+    }
 })();
 </script>
 </body>
