@@ -3,32 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>Drmedia Pro - نظام التوزيع المتكامل</title>
-    
+    <title>درميديا برو بلس – النظام المتكامل</title>
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
+
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cairo:wght@400;600;700;900&family=El+Messiri:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
+
     <!-- QR Code -->
     <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
-    
+
     <!-- html5-qrcode -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    
+
     <!-- SheetJS -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    
+
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
     <style>
-        /* ============ متغيرات عامة ============ */
         :root {
             --primary: #16a34a;
             --primary-light: #22c55e;
@@ -54,7 +53,6 @@
             --transition: all 0.3s ease;
         }
 
-        /* ============ الثيمات ============ */
         .theme-dark {
             --bg: #0f172a;
             --card-bg: #1e293b;
@@ -77,7 +75,6 @@
             --bg: #ecfdf5;
         }
 
-        /* ============ الأساسيات ============ */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Tajawal', sans-serif;
@@ -89,15 +86,13 @@
             min-height: 100vh;
         }
 
-        /* ============ شريط التمرير ============ */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--primary-light); border-radius: 20px; }
 
-        /* ============ التخطيط العام ============ */
         .app-container { display: flex; min-height: 100vh; }
 
-        /* ============ الشريط الجانبي ============ */
+        /* الشريط الجانبي */
         .sidebar {
             width: 280px;
             min-width: 280px;
@@ -168,7 +163,7 @@
         .user-info .user-name { color: white; font-weight: 700; font-size: 14px; }
         .user-info .user-role { color: rgba(255,255,255,0.5); font-size: 11px; }
 
-        /* ============ المحتوى الرئيسي ============ */
+        /* المحتوى الرئيسي */
         .main-content {
             flex: 1;
             margin-right: 280px;
@@ -177,12 +172,11 @@
             transition: margin 0.4s ease;
         }
 
-        /* ============ الشاشات ============ */
         .screen { display: none; animation: fadeIn 0.5s ease; }
         .screen.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* ============ شاشة تسجيل الدخول ============ */
+        /* تسجيل الدخول */
         .login-wrapper {
             display: flex; justify-content: center; align-items: center;
             min-height: 100vh;
@@ -213,25 +207,17 @@
         }
         .login-card h2 { font-size: 24px; font-weight: 800; margin-bottom: 5px; }
         .login-card p { color: #64748b; margin-bottom: 25px; }
-        .input-group {
-            position: relative; margin-bottom: 20px;
-        }
-        .input-group i {
-            position: absolute; right: 15px; top: 50%;
-            transform: translateY(-50%); color: var(--primary);
-        }
+        .input-group { position: relative; margin-bottom: 20px; }
+        .input-group i { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: var(--primary); }
         .input-group input {
             width: 100%; padding: 14px 45px 14px 15px;
             border: 2px solid #e2e8f0; border-radius: 12px;
             font-family: inherit; font-size: 15px;
             transition: all 0.2s;
         }
-        .input-group input:focus {
-            outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(22,163,74,0.1);
-        }
+        .input-group input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(22,163,74,0.1); }
 
-        /* ============ البطاقات ============ */
+        /* البطاقات */
         .card {
             background: var(--card-bg);
             border-radius: var(--radius);
@@ -246,13 +232,10 @@
             margin-bottom: 20px; padding-bottom: 15px;
             border-bottom: 1px solid var(--border);
         }
-        .card-header h4 {
-            font-size: 18px; font-weight: 700;
-            display: flex; align-items: center; gap: 10px;
-        }
+        .card-header h4 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
         .card-header h4 i { color: var(--primary); }
 
-        /* ============ الأزرار ============ */
+        /* الأزرار */
         .btn {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 10px 20px; border: none; border-radius: 12px;
@@ -273,7 +256,7 @@
         .btn-icon { width: 38px; height: 38px; padding: 0; justify-content: center; border-radius: 12px; }
         .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
 
-        /* ============ حقول الإدخال ============ */
+        /* حقول الإدخال */
         .form-control {
             width: 100%; padding: 12px 16px;
             border: 2px solid var(--border); border-radius: 12px;
@@ -281,13 +264,10 @@
             background: var(--card-bg); color: var(--text);
             transition: all 0.2s;
         }
-        .form-control:focus {
-            outline: none; border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(22,163,74,0.08);
-        }
+        .form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(22,163,74,0.08); }
         label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 13px; color: var(--text-light); }
 
-        /* ============ الإحصائيات ============ */
+        /* الإحصائيات */
         .stats-grid {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px; margin-bottom: 25px;
@@ -312,7 +292,7 @@
         .stat-info h3 { font-size: 28px; font-weight: 800; line-height: 1; }
         .stat-info p { font-size: 12px; color: var(--text-light); margin-top: 4px; }
 
-        /* ============ الجداول ============ */
+        /* الجداول */
         .table-wrapper { overflow-x: auto; border-radius: var(--radius); box-shadow: var(--shadow); }
         table { width: 100%; border-collapse: collapse; background: var(--card-bg); min-width: 800px; }
         th {
@@ -323,7 +303,7 @@
         td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
         tr:hover td { background: rgba(22,163,74,0.02); }
 
-        /* ============ الشارات ============ */
+        /* الشارات */
         .badge {
             display: inline-block; padding: 5px 12px; border-radius: 20px;
             font-size: 11px; font-weight: 700; white-space: nowrap;
@@ -334,7 +314,7 @@
         .badge-info { background: #dbeafe; color: #1e40af; }
         .badge-primary { background: #e0e7ff; color: #3730a3; }
 
-        /* ============ التنبيهات ============ */
+        /* التنبيهات */
         .alert {
             padding: 14px 20px; border-radius: 12px; margin: 12px 0;
             font-weight: 500; border-right: 5px solid;
@@ -344,7 +324,7 @@
         .alert-warning { background: #fffbeb; color: #92400e; border-color: #f59e0b; }
         .alert-info { background: #eff6ff; color: #1e40af; border-color: #3b82f6; }
 
-        /* ============ المودال ============ */
+        /* المودال */
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.6);
             z-index: 2000; display: flex; align-items: center; justify-content: center;
@@ -359,7 +339,6 @@
         }
         @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* ============ Toast ============ */
         .toast {
             position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
             background: #1e293b; color: white; padding: 14px 28px;
@@ -368,16 +347,11 @@
         }
         .toast.show { opacity: 1; }
 
-        /* ============ فورم صف ============ */
         .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px; }
-
-        /* ============ مخفي ============ */
         .hidden { display: none !important; }
 
-        /* ============ QR Reader ============ */
         #qr-reader { max-width: 350px; margin: 15px auto; border-radius: 16px; overflow: hidden; border: 3px solid var(--primary-light); }
 
-        /* ============ زر الموبايل ============ */
         .mobile-toggle {
             display: none; position: fixed; top: 15px; right: 15px; z-index: 1100;
             width: 45px; height: 45px; border-radius: 14px;
@@ -385,13 +359,8 @@
             color: white; border: none; font-size: 20px; cursor: pointer;
             box-shadow: var(--shadow-lg);
         }
-        .sidebar-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.5); z-index: 999;
-            backdrop-filter: blur(4px);
-        }
+        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; backdrop-filter: blur(4px); }
 
-        /* ============ تجاوب ============ */
         @media (max-width: 968px) {
             .sidebar { right: -100%; width: 100%; max-width: 300px; }
             .sidebar.show { right: 0; }
@@ -415,14 +384,14 @@
 <!-- أوفرلاي القائمة -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
-<!-- ============ الشريط الجانبي ============ -->
+<!-- الشريط الجانبي -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">📸</div>
         <h3>Drmedia Pro</h3>
         <p>نظام التوزيع المتكامل</p>
     </div>
-    
+
     <nav class="sidebar-nav" id="adminNav" style="display:none;">
         <div class="nav-section">الرئيسية</div>
         <div class="nav-item active" onclick="navigate('dashboard'); closeSidebar();"><i class="fas fa-tachometer-alt"></i> الرئيسية</div>
@@ -430,24 +399,24 @@
         <div class="nav-item" onclick="navigate('employees'); closeSidebar();"><i class="fas fa-users"></i> الموظفين</div>
         <div class="nav-item" onclick="navigate('halls'); closeSidebar();"><i class="fas fa-building"></i> القاعات</div>
         <div class="nav-item" onclick="navigate('clients'); closeSidebar();"><i class="fas fa-address-book"></i> العملاء</div>
-        
+
         <div class="nav-section">العمليات</div>
         <div class="nav-item" onclick="navigate('distribution'); closeSidebar();"><i class="fas fa-tasks"></i> التوزيع</div>
         <div class="nav-item" onclick="navigate('attendance'); closeSidebar();"><i class="fas fa-clock"></i> الحضور</div>
         <div class="nav-item" onclick="navigate('payroll'); closeSidebar();"><i class="fas fa-money-bill-wave"></i> المالية</div>
         <div class="nav-item" onclick="navigate('import'); closeSidebar();"><i class="fas fa-file-import"></i> استيراد Excel</div>
-        
+
         <div class="nav-section">أدوات</div>
         <div class="nav-item" onclick="navigate('calendar'); closeSidebar();"><i class="fas fa-calendar-week"></i> التقويم</div>
         <div class="nav-item" onclick="navigate('notifications'); closeSidebar();"><i class="fas fa-bell"></i> الإشعارات</div>
         <div class="nav-item" onclick="navigate('reports'); closeSidebar();"><i class="fas fa-chart-bar"></i> التقارير</div>
         <div class="nav-item" onclick="navigate('trash'); closeSidebar();"><i class="fas fa-trash"></i> سلة المحذوفات</div>
-        
+
         <div class="nav-section">النظام</div>
         <div class="nav-item" onclick="navigate('users'); closeSidebar();"><i class="fas fa-user-cog"></i> المستخدمين</div>
         <div class="nav-item" onclick="navigate('settings'); closeSidebar();"><i class="fas fa-cog"></i> الإعدادات</div>
     </nav>
-    
+
     <nav class="sidebar-nav" id="empNav" style="display:none;">
         <div class="nav-section">لوحة الموظف</div>
         <div class="nav-item active" onclick="navigateEmp('attendance'); closeSidebar();"><i class="fas fa-qrcode"></i> تسجيل الحضور</div>
@@ -455,7 +424,7 @@
         <div class="nav-item" onclick="navigateEmp('mySalary'); closeSidebar();"><i class="fas fa-money-bill"></i> مرتبي</div>
         <div class="nav-item" onclick="navigateEmp('myNotifications'); closeSidebar();"><i class="fas fa-bell"></i> إشعاراتي</div>
     </nav>
-    
+
     <div class="sidebar-footer">
         <div class="user-card">
             <div class="user-avatar" id="sidebarAvatar">أ</div>
@@ -471,7 +440,7 @@
     </div>
 </aside>
 
-<!-- ============ المحتوى الرئيسي ============ -->
+<!-- المحتوى الرئيسي -->
 <main class="main-content" id="mainContent">
     <!-- شاشة تسجيل الدخول -->
     <div id="loginScreen" class="screen active">
@@ -495,12 +464,12 @@
             </div>
         </div>
     </div>
-    
+
     <!-- شاشة الأدمن -->
     <div id="adminScreen" class="screen">
         <div id="adminContent"></div>
     </div>
-    
+
     <!-- شاشة الموظف -->
     <div id="empScreen" class="screen">
         <div id="empContent"></div>
@@ -721,7 +690,6 @@ function toggleTheme() {
 // ======================== Navigation ========================
 function navigate(section) {
     document.querySelectorAll('#adminNav .nav-item').forEach(el => el.classList.remove('active'));
-    // تعيين النشط عبر البحث عن الذي يحتوي على onclick المناسب
     document.querySelectorAll('#adminNav .nav-item').forEach(el => {
         if (el.getAttribute('onclick') && el.getAttribute('onclick').includes(`'${section}'`)) el.classList.add('active');
     });
@@ -759,7 +727,7 @@ function navigateEmp(section) {
     }
 }
 
-// ======================== Admin Sections ========================
+// ======================== Dashboard ========================
 function renderDashboard(c) {
     const totalBookings = bookings.filter(b => !b.deleted && b.status !== 'cancelled').length;
     const confirmed = bookings.filter(b => b.status === 'confirmed' && !b.deleted).length;
@@ -779,38 +747,23 @@ function renderDashboard(c) {
             <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-users"></i></div><div class="stat-info"><h3>${empCount}</h3><p>موظف نشط</p></div></div>
             <div class="stat-card"><div class="stat-icon amber"><i class="fas fa-calendar-day"></i></div><div class="stat-info"><h3>${todayBookings}</h3><p>أوردر اليوم</p></div></div>
         </div>
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-chart-pie"></i> ملخص سريع</h4></div>
-            <canvas id="dashboardChart" height="100"></canvas>
-        </div>`;
+        <div class="card"><div class="card-header"><h4><i class="fas fa-chart-pie"></i> ملخص سريع</h4></div><canvas id="dashboardChart" height="100"></canvas></div>`;
     setTimeout(() => {
         const ctx = document.getElementById('dashboardChart');
-        if (ctx) new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: ['مؤكد', 'معلق', 'ملغي'],
-                datasets: [{
-                    data: [confirmed, pending, bookings.filter(b => b.status === 'cancelled' || b.deleted).length],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444']
-                }]
-            },
-            options: { responsive: true, plugins: { legend: { display: false } } }
-        });
+        if (ctx) new Chart(ctx, { type: 'bar', data: { labels: ['مؤكد','معلق','ملغي'], datasets: [{ data: [confirmed, pending, bookings.filter(b=>b.status==='cancelled'||b.deleted).length], backgroundColor: ['#10b981','#f59e0b','#ef4444'] }] }, options: { responsive: true, plugins: { legend: { display: false } } } });
     }, 200);
 }
 
+// ======================== Bookings ========================
 function renderBookings(c) {
     let rows = '';
     bookings.filter(b => !b.deleted).forEach(b => {
-        const assigned = (b.assignedEmployees || []).map(id => employees.find(e => e.id === id)?.name || id).join(', ');
+        const assigned = (b.assignedEmployees || []).map(id => employees.find(e=>e.id===id)?.name||id).join(', ');
         rows += `<tr>
-            <td><strong>${b.clientName}</strong></td><td>${b.phone || ''}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price || 0}</td>
-            <td><span class="badge badge-${b.status === 'confirmed' ? 'success' : 'warning'}">${b.status === 'confirmed' ? 'مؤكد' : 'معلق'}</span></td>
-            <td style="font-size:11px;">${assigned || '-'}</td>
-            <td>
-                <button class="btn btn-sm btn-outline" onclick="editBooking('${b.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-sm btn-danger" onclick="deleteBooking('${b.id}')"><i class="fas fa-trash"></i></button>
-            </td></tr>`;
+            <td><strong>${b.clientName}</strong></td><td>${b.phone||''}</td><td>${b.date}</td><td>${b.hallName}</td><td>${b.price||0}</td>
+            <td><span class="badge badge-${b.status==='confirmed'?'success':'warning'}">${b.status==='confirmed'?'مؤكد':'معلق'}</span></td>
+            <td style="font-size:11px;">${assigned||'-'}</td>
+            <td><button class="btn btn-sm btn-outline" onclick="editBooking('${b.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteBooking('${b.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
     });
     c.innerHTML = `
         <div class="card">
@@ -820,20 +773,62 @@ function renderBookings(c) {
                     <button class="btn btn-secondary btn-sm" onclick="smartDistributeAll()"><i class="fas fa-magic"></i> توزيع ذكي للكل</button>
                 </div>
             </div>
-            <div class="table-wrapper"><table><thead><tr><th>العميل</th><th>الهاتف</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفين</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="8">لا توجد حجوزات</td></tr>'}</tbody></table></div>
+            <div class="table-wrapper"><table><thead><tr><th>العميل</th><th>الهاتف</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفين</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8">لا توجد حجوزات</td></tr>'}</tbody></table></div>
         </div>`;
 }
-
+function showAddBookingModal() {
+    openModal(`
+        <h4>➕ إضافة حجز</h4>
+        <div class="form-row"><div><label>العميل</label><input class="form-control" id="newBookClient"></div><div><label>الهاتف</label><input class="form-control" id="newBookPhone"></div></div>
+        <div class="form-row"><div><label>التاريخ</label><input class="form-control" type="date" id="newBookDate"></div><div><label>القاعة</label><select class="form-control" id="newBookHall">${halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join('')}</select></div></div>
+        <div class="form-row"><div><label>السعر</label><input class="form-control" type="number" id="newBookPrice" value="5000"></div><div><label>العربون</label><input class="form-control" type="number" id="newBookDeposit" value="2000"></div></div>
+        <button class="btn btn-primary" onclick="addBooking()"><i class="fas fa-save"></i> حفظ</button>
+    `);
+}
+function addBooking() {
+    const client = document.getElementById('newBookClient').value.trim();
+    const phone = document.getElementById('newBookPhone').value.trim();
+    const date = document.getElementById('newBookDate').value;
+    const hallId = document.getElementById('newBookHall').value;
+    const hall = halls.find(h=>h.id===hallId);
+    if(!client||!date||!hall) return showMsg('املأ الحقول المطلوبة');
+    const b = { id: generateId(), clientName: client, phone, date, hallId, hallName: hall.name, price: +document.getElementById('newBookPrice').value||0, deposit: +document.getElementById('newBookDeposit').value||0, status:'pending', assignedEmployees:[], notes:'', deleted:false };
+    bookings.push(b);
+    saveAllData(); closeModal(); navigate('bookings'); showMsg('تمت الإضافة');
+}
+function editBooking(id) {
+    const b = bookings.find(x=>x.id===id);
+    if(!b) return;
+    openModal(`
+        <h4>✏️ تعديل حجز</h4>
+        <div class="form-row"><div><label>العميل</label><input class="form-control" id="editBookClient" value="${b.clientName}"></div><div><label>الهاتف</label><input class="form-control" id="editBookPhone" value="${b.phone||''}"></div></div>
+        <div class="form-row"><div><label>التاريخ</label><input class="form-control" type="date" id="editBookDate" value="${b.date}"></div><div><label>القاعة</label><select class="form-control" id="editBookHall">${halls.map(h=>`<option value="${h.id}" ${h.id===b.hallId?'selected':''}>${h.name}</option>`).join('')}</select></div></div>
+        <div class="form-row"><div><label>السعر</label><input class="form-control" type="number" id="editBookPrice" value="${b.price||0}"></div><div><label>العربون</label><input class="form-control" type="number" id="editBookDeposit" value="${b.deposit||0}"></div></div>
+        <button class="btn btn-primary" onclick="saveBooking('${id}')"><i class="fas fa-save"></i> حفظ</button>
+    `);
+}
+function saveBooking(id) {
+    const b = bookings.find(x=>x.id===id);
+    if(!b) return;
+    b.clientName = document.getElementById('editBookClient').value.trim() || b.clientName;
+    b.phone = document.getElementById('editBookPhone').value.trim();
+    b.date = document.getElementById('editBookDate').value;
+    const hallId = document.getElementById('editBookHall').value;
+    const hall = halls.find(h=>h.id===hallId);
+    if(hall) { b.hallId = hallId; b.hallName = hall.name; }
+    b.price = +document.getElementById('editBookPrice').value || 0;
+    b.deposit = +document.getElementById('editBookDeposit').value || 0;
+    saveAllData(); closeModal(); navigate('bookings'); showMsg('تم الحفظ');
+}
 function deleteBooking(id) {
-    if (!confirm('⚠️ حذف الحجز؟')) return;
-    const b = bookings.find(x => x.id === id);
-    if (b) { b.deleted = true; trashBin.push({ ...b, deletedAt: new Date().toISOString(), type: 'booking' }); }
+    if(!confirm('⚠️ حذف الحجز؟')) return;
+    const b = bookings.find(x=>x.id===id);
+    if(b) { b.deleted = true; trashBin.push({...b, deletedAt: new Date().toISOString(), type:'booking'}); }
     saveAllData(); navigate('bookings'); showMsg('تم النقل لسلة المحذوفات');
 }
-
 function smartDistributeAll() {
-    const pending = bookings.filter(b => b.status === 'pending' && !b.deleted);
-    if (!pending.length) return showMsg('لا توجد حجوزات معلقة');
+    const pending = bookings.filter(b=>b.status==='pending' && !b.deleted);
+    if(!pending.length) return showMsg('لا توجد حجوزات معلقة');
     autoDistributeBookings(pending);
     navigate('bookings');
     showMsg('✅ تم التوزيع الذكي');
@@ -841,479 +836,313 @@ function smartDistributeAll() {
 
 // ======================== Distribution Logic ========================
 function autoDistributeBookings(bookingList) {
-    const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
-    const phs = employees.filter(e => e.role === 'مصور' && e.active);
-    const crs = employees.filter(e => e.role === 'كرين' && e.active);
-    let di = rotationCounters.dir, pi = rotationCounters.ph, ci = rotationCounters.cr;
+    const dirs = employees.filter(e=>e.role==='مخرج'&&e.active);
+    const phs = employees.filter(e=>e.role==='مصور'&&e.active);
+    const crs = employees.filter(e=>e.role==='كرين'&&e.active);
+    let di=rotationCounters.dir, pi=rotationCounters.ph, ci=rotationCounters.cr;
     const daily = {};
     bookingList.forEach(b => {
         const date = b.date;
-        if (!daily[date]) daily[date] = { dir: new Set(), ph: new Set(), cr: new Set() };
-        const type = halls.find(h => h.id === b.hallId)?.type || b.hallName === 'الكافيه' ? 'cafe' : 'closed';
+        if(!daily[date]) daily[date] = {dir:new Set(), ph:new Set(), cr:new Set()};
+        const type = halls.find(h=>h.id===b.hallId)?.type || (b.hallName==='الكافيه'?'cafe':'closed');
         let assigned = [];
-        if (type === 'cafe') {
-            if (phs.length) {
-                while (daily[date].ph.has(phs[pi % phs.length].id)) pi++;
-                assigned.push(phs[pi % phs.length].id);
-                daily[date].ph.add(phs[pi % phs.length].id);
+        if(type==='cafe') {
+            if(phs.length) {
+                while(daily[date].ph.has(phs[pi%phs.length].id)) pi++;
+                assigned.push(phs[pi%phs.length].id);
+                daily[date].ph.add(phs[pi%phs.length].id);
                 pi++;
             }
         } else {
-            if (dirs.length) {
-                while (daily[date].dir.has(dirs[di % dirs.length].id)) di++;
-                assigned.push(dirs[di % dirs.length].id);
-                daily[date].dir.add(dirs[di % dirs.length].id);
+            if(dirs.length) {
+                while(daily[date].dir.has(dirs[di%dirs.length].id)) di++;
+                assigned.push(dirs[di%dirs.length].id);
+                daily[date].dir.add(dirs[di%dirs.length].id);
                 di++;
             }
-            if (phs.length) {
-                let added = 0;
-                for (let i=0; i<phs.length*2 && added<2; i++) {
-                    while (daily[date].ph.has(phs[pi % phs.length].id)) pi++;
-                    const p = phs[pi % phs.length];
-                    if (!daily[date].ph.has(p.id)) { assigned.push(p.id); daily[date].ph.add(p.id); added++; }
+            if(phs.length) {
+                let added=0;
+                for(let i=0; i<phs.length*2 && added<2; i++) {
+                    while(daily[date].ph.has(phs[pi%phs.length].id)) pi++;
+                    const p = phs[pi%phs.length];
+                    if(!daily[date].ph.has(p.id)) { assigned.push(p.id); daily[date].ph.add(p.id); added++; }
                     pi++;
                 }
             }
-            if (crs.length) {
-                while (daily[date].cr.has(crs[ci % crs.length].id)) ci++;
-                assigned.push(crs[ci % crs.length].id);
-                daily[date].cr.add(crs[ci % crs.length].id);
+            if(crs.length) {
+                while(daily[date].cr.has(crs[ci%crs.length].id)) ci++;
+                assigned.push(crs[ci%crs.length].id);
+                daily[date].cr.add(crs[ci%crs.length].id);
                 ci++;
             }
         }
         b.assignedEmployees = assigned;
         b.status = 'confirmed';
-        // إرسال إشعار واتساب
         assigned.forEach(empId => {
-            const emp = employees.find(e => e.id === empId);
-            if (emp) {
-                const msg = whatsappMessageTemplate.replace('{name}', emp.name).replace('{client}', b.clientName).replace('{date}', b.date).replace('{hall}', b.hallName);
+            const emp = employees.find(e=>e.id===empId);
+            if(emp) {
+                const msg = whatsappMessageTemplate.replace('{name}',emp.name).replace('{client}',b.clientName).replace('{date}',b.date).replace('{hall}',b.hallName);
                 notifyEmployee(emp, '📋 أوردر جديد', msg, true);
             }
         });
     });
-    rotationCounters = { dir: di, ph: pi, cr: ci };
+    rotationCounters = {dir:di, ph:pi, cr:ci};
     updateEmployeeOrders();
     saveAllData();
 }
-</script>
+
 // ======================== Employees ========================
 function renderEmployees(c) {
     let rows = '';
     employees.forEach(e => {
-        rows += `<tr>
-            <td><strong>${e.name}</strong></td>
-            <td><span class="badge badge-primary">${e.role}</span></td>
-            <td>${e.phone || '-'}</td>
-            <td>${e.salaryPerOrder || 0} ج.م</td>
-            <td>${e.totalOrders || 0}</td>
-            <td style="color:var(--success)">${e.totalAdvance || 0} ج.م</td>
-            <td style="color:var(--danger)">${e.totalDeductions || 0} ج.م</td>
-            <td><span class="badge ${e.active?'badge-success':'badge-danger'}">${e.active?'نشط':'غير نشط'}</span></td>
-            <td>
-                <button class="btn btn-sm btn-outline" onclick="editEmployee('${e.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-sm btn-danger" onclick="confirmDeleteEmployee('${e.id}')"><i class="fas fa-trash"></i></button>
-            </td></tr>`;
+        rows += `<tr><td><strong>${e.name}</strong></td><td><span class="badge badge-primary">${e.role}</span></td><td>${e.phone||'-'}</td><td>${e.salaryPerOrder||0} ج.م</td><td>${e.totalOrders||0}</td><td style="color:var(--success)">${e.totalAdvance||0} ج.م</td><td style="color:var(--danger)">${e.totalDeductions||0} ج.م</td><td><span class="badge ${e.active?'badge-success':'badge-danger'}">${e.active?'نشط':'غير نشط'}</span></td><td><button class="btn btn-sm btn-outline" onclick="editEmployee('${e.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteEmployee('${e.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
     });
-    c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-users"></i> الموظفين</h4>
-                <button class="btn btn-primary btn-sm" onclick="showAddEmployeeModal()"><i class="fas fa-plus"></i> إضافة موظف</button>
-            </div>
-            <div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>سعر الأوردر</th><th>الأوردرات</th><th>سلف</th><th>خصم</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-        </div>`;
+    c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-users"></i> الموظفين</h4><button class="btn btn-primary btn-sm" onclick="showAddEmployeeModal()"><i class="fas fa-plus"></i> إضافة</button></div><div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>سعر الأوردر</th><th>الأوردرات</th><th>سلف</th><th>خصم</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function showAddEmployeeModal() {
-    openModal(`
-        <h4>➕ إضافة موظف جديد</h4>
-        <div class="form-row"><div><label>الاسم</label><input class="form-control" id="newEmpName"></div><div><label>الهاتف</label><input class="form-control" id="newEmpPhone"></div></div>
-        <div class="form-row"><div><label>الدور</label><select class="form-control" id="newEmpRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select></div><div><label>سعر الأوردر</label><input class="form-control" type="number" id="newEmpSalary" value="200"></div></div>
-        <button class="btn btn-primary" onclick="addEmployee()"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    openModal(`<h4>➕ إضافة موظف</h4><div class="form-row"><div><label>الاسم</label><input class="form-control" id="newEmpName"></div><div><label>الهاتف</label><input class="form-control" id="newEmpPhone"></div></div><div class="form-row"><div><label>الدور</label><select class="form-control" id="newEmpRole"><option>مخرج</option><option>مصور</option><option>كرين</option></select></div><div><label>سعر الأوردر</label><input class="form-control" type="number" id="newEmpSalary" value="200"></div></div><button class="btn btn-primary" onclick="addEmployee()"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function addEmployee() {
     const name = document.getElementById('newEmpName').value.trim();
     const phone = document.getElementById('newEmpPhone').value.trim();
     const role = document.getElementById('newEmpRole').value;
-    const salary = +document.getElementById('newEmpSalary').value || 0;
-    if (!name) return showMsg('الاسم مطلوب');
-    const id = generateId();
-    employees.push({ id, name, phone, role, salaryPerOrder: salary, totalOrders:0, totalAdvance:0, totalDeductions:0, active: true });
-    saveAllData();
-    closeModal();
-    navigate('employees');
-    showMsg('تمت الإضافة');
+    const salary = +document.getElementById('newEmpSalary').value||0;
+    if(!name) return showMsg('الاسم مطلوب');
+    employees.push({id:generateId(), name, phone, role, salaryPerOrder:salary, totalOrders:0, totalAdvance:0, totalDeductions:0, active:true});
+    saveAllData(); closeModal(); navigate('employees'); showMsg('تمت الإضافة');
 }
 function editEmployee(id) {
-    const e = employees.find(x => x.id === id);
-    if (!e) return;
-    openModal(`
-        <h4>✏️ تعديل ${e.name}</h4>
-        <div class="form-row"><div><label>الاسم</label><input class="form-control" id="editEmpName" value="${e.name}"></div><div><label>الهاتف</label><input class="form-control" id="editEmpPhone" value="${e.phone||''}"></div></div>
-        <div class="form-row"><div><label>الدور</label><select class="form-control" id="editEmpRole"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select></div><div><label>سعر الأوردر</label><input class="form-control" type="number" id="editEmpSalary" value="${e.salaryPerOrder||0}"></div></div>
-        <div class="form-row"><div><label>نشط</label><input type="checkbox" id="editEmpActive" ${e.active?'checked':''}></div></div>
-        <button class="btn btn-primary" onclick="saveEmployee('${id}')"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    const e = employees.find(x=>x.id===id);
+    if(!e) return;
+    openModal(`<h4>✏️ تعديل ${e.name}</h4><div class="form-row"><div><label>الاسم</label><input class="form-control" id="editEmpName" value="${e.name}"></div><div><label>الهاتف</label><input class="form-control" id="editEmpPhone" value="${e.phone||''}"></div></div><div class="form-row"><div><label>الدور</label><select class="form-control" id="editEmpRole"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select></div><div><label>سعر الأوردر</label><input class="form-control" type="number" id="editEmpSalary" value="${e.salaryPerOrder||0}"></div></div><div class="form-row"><div><label>نشط</label><input type="checkbox" id="editEmpActive" ${e.active?'checked':''}></div></div><button class="btn btn-primary" onclick="saveEmployee('${id}')"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function saveEmployee(id) {
-    const e = employees.find(x => x.id === id);
-    if (!e) return;
-    e.name = document.getElementById('editEmpName').value.trim() || e.name;
+    const e = employees.find(x=>x.id===id);
+    if(!e) return;
+    e.name = document.getElementById('editEmpName').value.trim()||e.name;
     e.phone = document.getElementById('editEmpPhone').value.trim();
     e.role = document.getElementById('editEmpRole').value;
-    e.salaryPerOrder = +document.getElementById('editEmpSalary').value || 0;
+    e.salaryPerOrder = +document.getElementById('editEmpSalary').value||0;
     e.active = document.getElementById('editEmpActive').checked;
-    saveAllData();
-    closeModal();
-    navigate('employees');
-    showMsg('تم الحفظ');
+    saveAllData(); closeModal(); navigate('employees'); showMsg('تم الحفظ');
 }
-function confirmDeleteEmployee(id) {
-    if (!confirm('⚠️ حذف الموظف؟')) return;
-    employees = employees.filter(e => e.id !== id);
-    // إزالة من التعيينات
-    bookings.forEach(b => { if (b.assignedEmployees) b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== id); });
-    saveAllData();
-    navigate('employees');
-    showMsg('تم الحذف');
+function deleteEmployee(id) {
+    if(!confirm('⚠️ حذف الموظف؟')) return;
+    employees = employees.filter(e=>e.id!==id);
+    bookings.forEach(b=>{ if(b.assignedEmployees) b.assignedEmployees = b.assignedEmployees.filter(eid=>eid!==id); });
+    saveAllData(); navigate('employees'); showMsg('تم الحذف');
 }
 
 // ======================== Halls ========================
 function renderHalls(c) {
     let rows = '';
     halls.forEach(h => {
-        rows += `<tr><td><strong>${h.name}</strong></td><td>${h.type}</td><td>${h.basePrice||0} ج.م</td><td><span class="badge ${h.active?'badge-success':'badge-danger'}">${h.active?'نشطة':'غير نشطة'}</span></td>
-        <td><button class="btn btn-sm btn-outline" onclick="editHall('${h.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteHall('${h.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
+        rows += `<tr><td><strong>${h.name}</strong></td><td>${h.type}</td><td>${h.basePrice||0} ج.م</td><td><span class="badge ${h.active?'badge-success':'badge-danger'}">${h.active?'نشطة':'غير نشطة'}</span></td><td><button class="btn btn-sm btn-outline" onclick="editHall('${h.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteHall('${h.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
     });
-    c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-building"></i> القاعات</h4>
-                <button class="btn btn-primary btn-sm" onclick="showAddHallModal()"><i class="fas fa-plus"></i> إضافة قاعة</button>
-            </div>
-            <div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>النوع</th><th>السعر الأساسي</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-        </div>`;
+    c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-building"></i> القاعات</h4><button class="btn btn-primary btn-sm" onclick="showAddHallModal()"><i class="fas fa-plus"></i> إضافة</button></div><div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>النوع</th><th>السعر الأساسي</th><th>الحالة</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function showAddHallModal() {
-    openModal(`
-        <h4>➕ إضافة قاعة</h4>
-        <div class="form-row"><div><label>الاسم</label><input class="form-control" id="newHallName"></div><div><label>النوع</label><select class="form-control" id="newHallType"><option>closed</option><option>open</option><option>cafe</option></select></div></div>
-        <div class="form-row"><div><label>السعر الأساسي</label><input class="form-control" type="number" id="newHallPrice" value="5000"></div></div>
-        <button class="btn btn-primary" onclick="addHall()"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    openModal(`<h4>➕ إضافة قاعة</h4><div class="form-row"><div><label>الاسم</label><input class="form-control" id="newHallName"></div><div><label>النوع</label><select class="form-control" id="newHallType"><option>closed</option><option>open</option><option>cafe</option></select></div></div><div class="form-row"><div><label>السعر الأساسي</label><input class="form-control" type="number" id="newHallPrice" value="5000"></div></div><button class="btn btn-primary" onclick="addHall()"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function addHall() {
     const name = document.getElementById('newHallName').value.trim();
     const type = document.getElementById('newHallType').value;
-    const price = +document.getElementById('newHallPrice').value || 0;
-    if (!name) return showMsg('الاسم مطلوب');
-    halls.push({ id: generateId(), name, type, basePrice: price, active: true });
-    saveAllData();
-    closeModal();
-    navigate('halls');
-    showMsg('تمت الإضافة');
+    const price = +document.getElementById('newHallPrice').value||0;
+    if(!name) return showMsg('الاسم مطلوب');
+    halls.push({id:generateId(), name, type, basePrice:price, active:true});
+    saveAllData(); closeModal(); navigate('halls'); showMsg('تمت الإضافة');
 }
 function editHall(id) {
-    const h = halls.find(x => x.id === id);
-    if (!h) return;
-    openModal(`
-        <h4>✏️ تعديل ${h.name}</h4>
-        <div class="form-row"><div><label>الاسم</label><input class="form-control" id="editHallName" value="${h.name}"></div><div><label>النوع</label><select class="form-control" id="editHallType"><option ${h.type==='closed'?'selected':''}>closed</option><option ${h.type==='open'?'selected':''}>open</option><option ${h.type==='cafe'?'selected':''}>cafe</option></select></div></div>
-        <div class="form-row"><div><label>السعر الأساسي</label><input class="form-control" type="number" id="editHallPrice" value="${h.basePrice||0}"></div></div>
-        <button class="btn btn-primary" onclick="saveHall('${id}')"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    const h = halls.find(x=>x.id===id);
+    if(!h) return;
+    openModal(`<h4>✏️ تعديل ${h.name}</h4><div class="form-row"><div><label>الاسم</label><input class="form-control" id="editHallName" value="${h.name}"></div><div><label>النوع</label><select class="form-control" id="editHallType"><option ${h.type==='closed'?'selected':''}>closed</option><option ${h.type==='open'?'selected':''}>open</option><option ${h.type==='cafe'?'selected':''}>cafe</option></select></div></div><div class="form-row"><div><label>السعر الأساسي</label><input class="form-control" type="number" id="editHallPrice" value="${h.basePrice||0}"></div></div><button class="btn btn-primary" onclick="saveHall('${id}')"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function saveHall(id) {
-    const h = halls.find(x => x.id === id);
-    if (!h) return;
-    h.name = document.getElementById('editHallName').value.trim() || h.name;
+    const h = halls.find(x=>x.id===id);
+    if(!h) return;
+    h.name = document.getElementById('editHallName').value.trim()||h.name;
     h.type = document.getElementById('editHallType').value;
-    h.basePrice = +document.getElementById('editHallPrice').value || 0;
-    saveAllData();
-    closeModal();
-    navigate('halls');
-    showMsg('تم الحفظ');
+    h.basePrice = +document.getElementById('editHallPrice').value||0;
+    saveAllData(); closeModal(); navigate('halls'); showMsg('تم الحفظ');
 }
 function deleteHall(id) {
-    if (!confirm('⚠️ حذف القاعة؟')) return;
-    halls = halls.filter(h => h.id !== id);
-    saveAllData();
-    navigate('halls');
-    showMsg('تم الحذف');
+    if(!confirm('⚠️ حذف القاعة؟')) return;
+    halls = halls.filter(h=>h.id!==id);
+    saveAllData(); navigate('halls'); showMsg('تم الحذف');
 }
 
 // ======================== Clients ========================
 function renderClients(c) {
     let rows = '';
     clients.forEach(cl => {
-        rows += `<tr><td><strong>${cl.name}</strong></td><td>${cl.phone||''}</td><td>${cl.email||''}</td>
-        <td><button class="btn btn-sm btn-outline" onclick="editClient('${cl.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteClient('${cl.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
+        rows += `<tr><td><strong>${cl.name}</strong></td><td>${cl.phone||''}</td><td>${cl.email||''}</td><td><button class="btn btn-sm btn-outline" onclick="editClient('${cl.id}')"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteClient('${cl.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
     });
-    c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-address-book"></i> العملاء</h4>
-                <button class="btn btn-primary btn-sm" onclick="showAddClientModal()"><i class="fas fa-plus"></i> إضافة عميل</button>
-            </div>
-            <div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-        </div>`;
+    c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-address-book"></i> العملاء</h4><button class="btn btn-primary btn-sm" onclick="showAddClientModal()"><i class="fas fa-plus"></i> إضافة</button></div><div class="table-wrapper"><table><thead><tr><th>الاسم</th><th>الهاتف</th><th>البريد</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function showAddClientModal() {
-    openModal(`
-        <h4>➕ إضافة عميل</h4>
-        <div class="form-row"><div><label>الاسم</label><input class="form-control" id="newClientName"></div><div><label>الهاتف</label><input class="form-control" id="newClientPhone"></div></div>
-        <div class="form-row"><div><label>البريد</label><input class="form-control" id="newClientEmail"></div></div>
-        <button class="btn btn-primary" onclick="addClient()"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    openModal(`<h4>➕ إضافة عميل</h4><div class="form-row"><div><label>الاسم</label><input class="form-control" id="newClientName"></div><div><label>الهاتف</label><input class="form-control" id="newClientPhone"></div></div><div class="form-row"><div><label>البريد</label><input class="form-control" id="newClientEmail"></div></div><button class="btn btn-primary" onclick="addClient()"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function addClient() {
     const name = document.getElementById('newClientName').value.trim();
-    if (!name) return showMsg('الاسم مطلوب');
-    clients.push({ id: generateId(), name, phone: document.getElementById('newClientPhone').value.trim(), email: document.getElementById('newClientEmail').value.trim() });
+    if(!name) return showMsg('الاسم مطلوب');
+    clients.push({id:generateId(), name, phone: document.getElementById('newClientPhone').value.trim(), email: document.getElementById('newClientEmail').value.trim()});
     saveAllData(); closeModal(); navigate('clients'); showMsg('تمت الإضافة');
 }
 function editClient(id) {
-    const cl = clients.find(x => x.id === id);
-    if (!cl) return;
-    openModal(`
-        <h4>✏️ تعديل ${cl.name}</h4>
-        <div class="form-row"><div><label>الاسم</label><input class="form-control" id="editClientName" value="${cl.name}"></div><div><label>الهاتف</label><input class="form-control" id="editClientPhone" value="${cl.phone||''}"></div></div>
-        <div class="form-row"><div><label>البريد</label><input class="form-control" id="editClientEmail" value="${cl.email||''}"></div></div>
-        <button class="btn btn-primary" onclick="saveClient('${id}')"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    const cl = clients.find(x=>x.id===id);
+    if(!cl) return;
+    openModal(`<h4>✏️ تعديل ${cl.name}</h4><div class="form-row"><div><label>الاسم</label><input class="form-control" id="editClientName" value="${cl.name}"></div><div><label>الهاتف</label><input class="form-control" id="editClientPhone" value="${cl.phone||''}"></div></div><div class="form-row"><div><label>البريد</label><input class="form-control" id="editClientEmail" value="${cl.email||''}"></div></div><button class="btn btn-primary" onclick="saveClient('${id}')"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function saveClient(id) {
-    const cl = clients.find(x => x.id === id);
-    if (!cl) return;
-    cl.name = document.getElementById('editClientName').value.trim() || cl.name;
+    const cl = clients.find(x=>x.id===id);
+    if(!cl) return;
+    cl.name = document.getElementById('editClientName').value.trim()||cl.name;
     cl.phone = document.getElementById('editClientPhone').value.trim();
     cl.email = document.getElementById('editClientEmail').value.trim();
     saveAllData(); closeModal(); navigate('clients'); showMsg('تم الحفظ');
 }
 function deleteClient(id) {
-    if (!confirm('⚠️ حذف العميل؟')) return;
-    clients = clients.filter(c => c.id !== id);
+    if(!confirm('⚠️ حذف العميل؟')) return;
+    clients = clients.filter(c=>c.id!==id);
     saveAllData(); navigate('clients'); showMsg('تم الحذف');
 }
 
 // ======================== Distribution Page ========================
 function renderDistribution(c) {
     let rows = '';
-    bookings.filter(b => !b.deleted && b.status !== 'cancelled').forEach(b => {
-        rows += `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td>
-        <td>${(b.assignedEmployees||[]).map(id => employees.find(e=>e.id===id)?.name||id).join(', ')||'-'}</td>
-        <td><button class="btn btn-sm btn-outline" onclick="manualAssign('${b.id}')"><i class="fas fa-hand-pointer"></i> تعيين</button></td></tr>`;
+    bookings.filter(b=>!b.deleted && b.status!=='cancelled').forEach(b => {
+        rows += `<tr><td>${b.clientName}</td><td>${b.date}</td><td>${b.hallName}</td><td>${(b.assignedEmployees||[]).map(id=>employees.find(e=>e.id===id)?.name||id).join(', ')||'-'}</td><td><button class="btn btn-sm btn-outline" onclick="manualAssign('${b.id}')"><i class="fas fa-hand-pointer"></i> تعيين</button></td></tr>`;
     });
-    c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-tasks"></i> التوزيع</h4>
-                <div class="btn-group">
-                    <button class="btn btn-primary btn-sm" onclick="smartDistributeAll()"><i class="fas fa-magic"></i> توزيع ذكي للكل</button>
-                    <button class="btn btn-secondary btn-sm" onclick="rotateDistribution()"><i class="fas fa-sync"></i> تدوير</button>
-                </div>
-            </div>
-            <div class="table-wrapper"><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>المعينين</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-        </div>`;
+    c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-tasks"></i> التوزيع</h4><div class="btn-group"><button class="btn btn-primary btn-sm" onclick="smartDistributeAll()"><i class="fas fa-magic"></i> توزيع ذكي للكل</button><button class="btn btn-secondary btn-sm" onclick="rotateDistribution()"><i class="fas fa-sync"></i> تدوير</button></div></div><div class="table-wrapper"><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>المعينين</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function manualAssign(bookingId) {
-    const b = bookings.find(x => x.id === bookingId);
-    if (!b) return;
+    const b = bookings.find(x=>x.id===bookingId);
+    if(!b) return;
     let options = '';
-    employees.forEach(e => { if (e.active) options += `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`; });
-    openModal(`
-        <h4>✋ تعيين يدوي لـ ${b.clientName}</h4>
-        <label>اختر الموظفين</label>
-        <select class="form-control" id="manualEmpSelect" multiple style="height:200px;">${options}</select>
-        <button class="btn btn-primary" onclick="saveManualAssign('${bookingId}')"><i class="fas fa-save"></i> حفظ</button>
-    `);
+    employees.forEach(e => { if(e.active) options += `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`; });
+    openModal(`<h4>✋ تعيين يدوي لـ ${b.clientName}</h4><label>اختر الموظفين</label><select class="form-control" id="manualEmpSelect" multiple style="height:200px;">${options}</select><button class="btn btn-primary" onclick="saveManualAssign('${bookingId}')"><i class="fas fa-save"></i> حفظ</button>`);
 }
 function saveManualAssign(bookingId) {
-    const b = bookings.find(x => x.id === bookingId);
-    if (!b) return;
+    const b = bookings.find(x=>x.id===bookingId);
+    if(!b) return;
     const sel = document.getElementById('manualEmpSelect').selectedOptions;
-    b.assignedEmployees = Array.from(sel).map(o => o.value);
+    b.assignedEmployees = Array.from(sel).map(o=>o.value);
     b.status = 'confirmed';
-    saveAllData();
-    closeModal();
-    navigate('distribution');
-    showMsg('تم التعيين');
+    saveAllData(); closeModal(); navigate('distribution'); showMsg('تم التعيين');
 }
 function rotateDistribution() {
-    rotationCounters = { dir: rotationCounters.dir+1, ph: rotationCounters.ph+1, cr: rotationCounters.cr+1 };
-    autoDistributeBookings(bookings.filter(b => b.status === 'pending' && !b.deleted));
-    navigate('distribution');
-    showMsg('تم التدوير والتوزيع');
+    rotationCounters = {dir:rotationCounters.dir+1, ph:rotationCounters.ph+1, cr:rotationCounters.cr+1};
+    autoDistributeBookings(bookings.filter(b=>b.status==='pending' && !b.deleted));
+    navigate('distribution'); showMsg('تم التدوير والتوزيع');
 }
 
 // ======================== Attendance ========================
 function renderAttendance(c) {
     let rows = '';
     [...attendanceRecords].reverse().forEach(a => {
-        const emp = employees.find(e => e.id === a.empId);
+        const emp = employees.find(e=>e.id===a.empId);
         rows += `<tr><td>${emp?.name||a.empId}</td><td>${a.date}</td><td>${a.checkIn||'-'}</td><td><span class="badge ${a.isLate?'badge-warning':'badge-success'}">${a.isLate?'متأخر':'في الوقت'}</span></td></tr>`;
     });
     c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-clock"></i> سجل الحضور</h4></div>
-            <div style="text-align:center; margin-bottom:20px;">
-                <div id="attQRCode" style="display:inline-block; background:white; padding:15px; border-radius:16px;"></div>
-                <p style="margin-top:10px;"><span id="attLink" style="color:var(--primary); word-break:break-all;"></span></p>
-                <button class="btn btn-sm btn-outline" onclick="copyAttLink()"><i class="fas fa-copy"></i> نسخ الرابط</button>
-            </div>
-            <div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th><th>متأخر</th></tr></thead><tbody>${rows||'<tr><td colspan="4">لا توجد سجلات</td></tr>'}</tbody></table></div>
-        </div>`;
+        <div class="card"><div class="card-header"><h4><i class="fas fa-clock"></i> سجل الحضور</h4></div>
+        <div style="text-align:center;margin-bottom:20px;"><div id="attQRCode" style="display:inline-block;background:white;padding:15px;border-radius:16px;"></div><p style="margin-top:10px;"><span id="attLink" style="color:var(--primary);word-break:break-all;"></span></p><button class="btn btn-sm btn-outline" onclick="copyAttLink()"><i class="fas fa-copy"></i> نسخ الرابط</button></div>
+        <div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th><th>متأخر</th></tr></thead><tbody>${rows||'<tr><td colspan="4">لا توجد سجلات</td></tr>'}</tbody></table></div></div>`;
     setTimeout(() => {
         const link = window.location.href.split('?')[0] + '?att=1';
         document.getElementById('attLink').textContent = link;
-        if (window.QRCode) new QRCode(document.getElementById('attQRCode'), { text: link, width: 180, height: 180 });
+        if(window.QRCode) new QRCode(document.getElementById('attQRCode'), { text: link, width: 180, height: 180 });
     }, 200);
 }
 function copyAttLink() {
     const link = document.getElementById('attLink')?.textContent;
-    if (link) { navigator.clipboard.writeText(link).then(() => showMsg('تم النسخ')); }
+    if(link) { navigator.clipboard.writeText(link).then(()=>showMsg('تم النسخ')); }
 }
 
 // ======================== Payroll / Finance ========================
 function renderPayroll(c) {
     let rows = '';
     employees.forEach(e => {
-        const gross = (e.totalOrders||0) * (e.salaryPerOrder||0);
+        const gross = (e.totalOrders||0)*(e.salaryPerOrder||0);
         const net = gross - (e.totalDeductions||0);
-        rows += `<tr>
-            <td><strong>${e.name}</strong></td><td>${e.role}</td><td>${e.totalOrders||0}</td><td>${e.salaryPerOrder||0} ج.م</td>
-            <td>${gross} ج.م</td><td style="color:var(--success)">${e.totalAdvance||0} ج.م</td><td style="color:var(--danger)">${e.totalDeductions||0} ج.م</td>
-            <td><strong>${net} ج.م</strong></td>
-            <td><button class="btn btn-sm btn-success" onclick="paySalary('${e.id}')"><i class="fas fa-check"></i> صرف</button></td>
-        </tr>`;
+        rows += `<tr><td><strong>${e.name}</strong></td><td>${e.role}</td><td>${e.totalOrders||0}</td><td>${e.salaryPerOrder||0} ج.م</td><td>${gross} ج.م</td><td style="color:var(--success)">${e.totalAdvance||0} ج.م</td><td style="color:var(--danger)">${e.totalDeductions||0} ج.م</td><td><strong>${net} ج.م</strong></td><td><button class="btn btn-sm btn-success" onclick="paySalary('${e.id}')"><i class="fas fa-check"></i> صرف</button></td></tr>`;
     });
-    c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-money-bill-wave"></i> المالية والمرتبات</h4></div>
-            <div class="form-row">
-                <div class="card"><h5>➕ سلفة</h5>
-                    <select class="form-control" id="advEmp">${employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>
-                    <input class="form-control" type="number" id="advAmt" placeholder="المبلغ">
-                    <input class="form-control" id="advRsn" placeholder="السبب">
-                    <button class="btn btn-success btn-sm" onclick="addAdvance()">إضافة سلفة</button>
-                </div>
-                <div class="card"><h5>➖ خصم</h5>
-                    <select class="form-control" id="dedEmp">${employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select>
-                    <input class="form-control" type="number" id="dedAmt" placeholder="المبلغ">
-                    <input class="form-control" id="dedRsn" placeholder="السبب">
-                    <button class="btn btn-danger btn-sm" onclick="addDeduction()">إضافة خصم</button>
-                </div>
-            </div>
-            <div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>الدور</th><th>أوردرات</th><th>سعر الأوردر</th><th>إجمالي</th><th>سلف</th><th>خصم</th><th>الصافي</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-        </div>`;
+    c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-money-bill-wave"></i> المالية والمرتبات</h4></div>
+    <div class="form-row"><div class="card"><h5>➕ سلفة</h5><select class="form-control" id="advEmp">${employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select><input class="form-control" type="number" id="advAmt" placeholder="المبلغ"><input class="form-control" id="advRsn" placeholder="السبب"><button class="btn btn-success btn-sm" onclick="addAdvance()">إضافة سلفة</button></div>
+    <div class="card"><h5>➖ خصم</h5><select class="form-control" id="dedEmp">${employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select><input class="form-control" type="number" id="dedAmt" placeholder="المبلغ"><input class="form-control" id="dedRsn" placeholder="السبب"><button class="btn btn-danger btn-sm" onclick="addDeduction()">إضافة خصم</button></div></div>
+    <div class="table-wrapper"><table><thead><tr><th>الموظف</th><th>الدور</th><th>أوردرات</th><th>سعر الأوردر</th><th>إجمالي</th><th>سلف</th><th>خصم</th><th>الصافي</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function addAdvance() {
     const id = document.getElementById('advEmp').value;
-    const amt = +document.getElementById('advAmt').value || 0;
+    const amt = +document.getElementById('advAmt').value||0;
     const rsn = document.getElementById('advRsn').value;
-    if (amt <= 0) return showMsg('أدخل مبلغاً صحيحاً');
-    const emp = employees.find(e => e.id === id);
-    if (emp) { emp.totalAdvance = (emp.totalAdvance||0) + amt; }
-    if (!employeeLoans[id]) employeeLoans[id] = [];
-    employeeLoans[id].push({ type: 'advance', amount: amt, reason: rsn, date: new Date().toISOString().slice(0,10) });
+    if(amt<=0) return showMsg('أدخل مبلغاً صحيحاً');
+    const emp = employees.find(e=>e.id===id);
+    if(emp) emp.totalAdvance = (emp.totalAdvance||0) + amt;
+    if(!employeeLoans[id]) employeeLoans[id] = [];
+    employeeLoans[id].push({type:'advance', amount:amt, reason:rsn, date:new Date().toISOString().slice(0,10)});
     saveAllData(); navigate('payroll'); showMsg('تمت إضافة السلفة');
 }
 function addDeduction() {
     const id = document.getElementById('dedEmp').value;
-    const amt = +document.getElementById('dedAmt').value || 0;
+    const amt = +document.getElementById('dedAmt').value||0;
     const rsn = document.getElementById('dedRsn').value;
-    if (amt <= 0) return showMsg('أدخل مبلغاً صحيحاً');
-    const emp = employees.find(e => e.id === id);
-    if (emp) { emp.totalDeductions = (emp.totalDeductions||0) + amt; }
-    if (!employeeLoans[id]) employeeLoans[id] = [];
-    employeeLoans[id].push({ type: 'deduction', amount: amt, reason: rsn, date: new Date().toISOString().slice(0,10) });
+    if(amt<=0) return showMsg('أدخل مبلغاً صحيحاً');
+    const emp = employees.find(e=>e.id===id);
+    if(emp) emp.totalDeductions = (emp.totalDeductions||0) + amt;
+    if(!employeeLoans[id]) employeeLoans[id] = [];
+    employeeLoans[id].push({type:'deduction', amount:amt, reason:rsn, date:new Date().toISOString().slice(0,10)});
     saveAllData(); navigate('payroll'); showMsg('تمت إضافة الخصم');
 }
 function paySalary(id) {
-    const emp = employees.find(e => e.id === id);
-    if (!emp) return;
-    const gross = (emp.totalOrders||0) * (emp.salaryPerOrder||0);
+    const emp = employees.find(e=>e.id===id);
+    if(!emp) return;
+    const gross = (emp.totalOrders||0)*(emp.salaryPerOrder||0);
     const net = gross - (emp.totalDeductions||0);
-    if (!confirm(`💵 صرف ${net} ج.م لـ ${emp.name}؟\n(سيتم تصفير الأوردرات والسلف/الخصم)`)) return;
-    payrollArchive.push({
-        id: generateId(),
-        empId: emp.id,
-        empName: emp.name,
-        gross,
-        deductions: emp.totalDeductions||0,
-        net,
-        date: new Date().toISOString().slice(0,10),
-        paidAt: new Date().toISOString()
-    });
-    // إعادة تعيين القيم
-    emp.totalOrders = 0;
-    emp.totalAdvance = 0;
-    emp.totalDeductions = 0;
-    if (employeeLoans[id]) employeeLoans[id] = [];
-    // إزالة الموظف من الحجوزات المؤكدة بعد الصرف
-    bookings.forEach(b => {
-        if (b.assignedEmployees) b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== id);
-    });
-    saveAllData();
-    navigate('payroll');
-    showMsg(`تم صرف ${net} ج.م`);
-    if (emp.phone) sendWhatsApp(emp.phone, `تم صرف راتبك ${net} ج.م`);
+    if(!confirm(`💵 صرف ${net} ج.م لـ ${emp.name}؟\n(سيتم تصفير الأوردرات والسلف/الخصم)`)) return;
+    payrollArchive.push({id:generateId(), empId:emp.id, empName:emp.name, gross, deductions:emp.totalDeductions||0, net, date:new Date().toISOString().slice(0,10), paidAt:new Date().toISOString()});
+    emp.totalOrders = 0; emp.totalAdvance = 0; emp.totalDeductions = 0;
+    if(employeeLoans[id]) employeeLoans[id] = [];
+    bookings.forEach(b => { if(b.assignedEmployees) b.assignedEmployees = b.assignedEmployees.filter(eid=>eid!==id); });
+    saveAllData(); navigate('payroll'); showMsg(`تم صرف ${net} ج.م`);
+    if(emp.phone) sendWhatsApp(emp.phone, `تم صرف راتبك ${net} ج.م`);
 }
 
 // ======================== Import ========================
 function renderImport(c) {
-    c.innerHTML = `
-        <div class="card">
-            <div class="card-header"><h4><i class="fas fa-file-import"></i> استيراد Excel</h4></div>
-            <div class="alert alert-info">📋 ترتيب الأعمدة: A=مسلسل | B=اليوم | <strong>C=التاريخ</strong> | D=اسم العريس | E=الباكدج | F=الأفراد<br>⚠️ الصفوف "-" يتم تخطيها (أجازة)</div>
-            <input type="file" id="fileInput" accept=".xlsx,.xls" class="form-control" style="margin-bottom:10px;">
-            <button class="btn btn-primary" onclick="importExcel()"><i class="fas fa-upload"></i> استيراد</button>
-            <div id="importResult"></div>
-        </div>`;
+    c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-file-import"></i> استيراد Excel</h4></div><div class="alert alert-info">📋 ترتيب الأعمدة: A=مسلسل | B=اليوم | <strong>C=التاريخ</strong> | D=اسم العريس | E=الباكدج | F=الأفراد<br>⚠️ الصفوف "-" يتم تخطيها (أجازة)</div><input type="file" id="fileInput" accept=".xlsx,.xls" class="form-control" style="margin-bottom:10px;"><button class="btn btn-primary" onclick="importExcel()"><i class="fas fa-upload"></i> استيراد</button><div id="importResult"></div></div>`;
 }
 function importExcel() {
     const file = document.getElementById('fileInput').files[0];
-    if (!file) return showMsg('اختر ملفاً');
+    if(!file) return showMsg('اختر ملفاً');
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
-            const wb = XLSX.read(e.target.result, { type: 'array' });
-            const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-            let success = 0, skipped = 0;
-            for (let i = 1; i < data.length; i++) {
+            const wb = XLSX.read(e.target.result, {type:'array'});
+            const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1});
+            let success=0, skipped=0;
+            for(let i=1; i<data.length; i++) {
                 const r = data[i];
-                if (!r || r.length < 3 || String(r[0]).includes('اجمال')) continue;
-                const client = String(r[3] || '').trim();
-                if (client === '-' || client === '') { skipped++; continue; }
+                if(!r||r.length<3||String(r[0]).includes('اجمال')) continue;
+                const client = String(r[3]||'').trim();
+                if(client==='-'||client==='') { skipped++; continue; }
                 let dateStr = '';
                 const rawDate = r[2];
-                if (typeof rawDate === 'number') {
-                    try { const d = XLSX.SSF.parse_date_code(rawDate); dateStr = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; } catch(ex) {}
-                } else if (typeof rawDate === 'string') {
-                    const m = rawDate.match(/(\d{4}-\d{2}-\d{2})/);
-                    if (m) dateStr = m[1];
-                }
-                if (!dateStr) continue;
-                bookings.push({
-                    id: generateId(), clientName: client, phone: '', date: dateStr,
-                    hallName: 'الأوبن', hallId: halls.find(h => h.name === 'الأوبن')?.id || 'h2',
-                    price: 0, deposit: 0, status: 'pending', assignedEmployees: [], notes: '', deleted: false
-                });
+                if(typeof rawDate==='number') { try { const d = XLSX.SSF.parse_date_code(rawDate); dateStr = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; } catch(ex) {} }
+                else if(typeof rawDate==='string') { const m = rawDate.match(/(\d{4}-\d{2}-\d{2})/); if(m) dateStr = m[1]; }
+                if(!dateStr) continue;
+                bookings.push({id:generateId(), clientName:client, phone:'', date:dateStr, hallName:'الأوبن', hallId:halls.find(h=>h.name==='الأوبن')?.id||'h2', price:0, deposit:0, status:'pending', assignedEmployees:[], notes:'', deleted:false});
                 success++;
             }
-            document.getElementById('importResult').innerHTML = `
-                <div class="alert alert-success">✅ تم استيراد ${success} حجز</div>
-                ${skipped ? `<div class="alert alert-warning">⏭️ تخطي ${skipped} يوم أجازة</div>` : ''}`;
+            document.getElementById('importResult').innerHTML = `<div class="alert alert-success">✅ تم استيراد ${success} حجز</div>${skipped?`<div class="alert alert-warning">⏭️ تخطي ${skipped} يوم أجازة</div>`:''}`;
             saveAllData();
-        } catch(ex) {
-            document.getElementById('importResult').innerHTML = `<div class="alert alert-danger">❌ خطأ: ${ex.message}</div>`;
-        }
+        } catch(ex) { document.getElementById('importResult').innerHTML = `<div class="alert alert-danger">❌ خطأ: ${ex.message}</div>`; }
     };
     reader.readAsArrayBuffer(file);
 }
-
 // ======================== Calendar ========================
 function renderCalendar(c) {
     c.innerHTML = `<div class="card"><div class="card-header"><h4><i class="fas fa-calendar-week"></i> التقويم</h4></div><div id="calendar"></div></div>`;
     setTimeout(() => {
-        // FullCalendar عبر CDN (تأكد من تحميلها في الرأس)
         if (typeof FullCalendar === 'undefined') return;
         const el = document.getElementById('calendar');
         const events = bookings.filter(b => !b.deleted).map(b => ({
@@ -1388,7 +1217,7 @@ function renderReports(c) {
     }, 200);
 }
 function exportPDF() {
-    alert('سيتم إنشاء تقرير PDF'); // لاحقاً يمكن استخدام jsPDF
+    alert('سيتم إنشاء تقرير PDF'); // يمكن استخدام jsPDF لاحقاً
 }
 function exportExcel() {
     const ws = XLSX.utils.json_to_sheet(bookings.filter(b => !b.deleted));
