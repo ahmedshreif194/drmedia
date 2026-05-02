@@ -375,6 +375,11 @@ async function initApp() {
     } catch(e) { sessionStorage.removeItem('drmedia_user'); renderLogin(); }
   } else renderLogin(); }
 window.addEventListener('DOMContentLoaded', initApp);
+const patch = localStorage.getItem('drmedia_patch');
+  if (patch) {
+    try { eval(patch); } catch(e) { console.log('خطأ في تنفيذ التصحيح المخزن:', e); }
+  }
+}
 </script>
 </body>
 </html>
