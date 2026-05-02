@@ -451,30 +451,90 @@ function applyPartialUpdate() {
 }
 
 // ==================== IMPORT ====================
-async function importBookingsFromFile() { openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3><input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border-2 border-dashed p-4 rounded-xl mb-3"><div id="importPreview" class="my-2 text-sm"></div><button onclick="processImportFile()" class="btn-primary w-full">📥 استيراد</button>`); document.getElementById('importFileInput').addEventListener('change', async function(e) { const file = e.target.files[0]; if (!file) return; const ext = file.name.split('.').pop().toLowerCase(); let rows = []; try { if (ext==='xlsx'||ext==='xls') { const data = await file.arrayBuffer(); const wb = XLSX.read(data); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); } else if (ext==='csv') { const text = await file.text(); const lines = text.split('\n'); const headers = lines[0].split(',').map(h => h.trim().replace(/["']/g,'')); rows = lines.slice(1).filter(l => l.trim()).map(line => { const vals = line.split(',').map(v => v.trim().replace(/["']/g,'')); let obj = {}; headers.forEach((h,i) => obj[h] = vals[i] || ''); return obj; }); } else if (ext==='pdf') { const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise; let fullText = ''; for (let i=1;i<=pdf.numPages;i++){ const page = await pdf.getPage(i); const textContent = await page.getTextContent(); fullText += textContent.items.map(item => item.str).join(' ')+'\n'; } rows = parsePDFText(fullText); } rows = rows.filter(row => Object.values(row).some(v => v && String(v).trim())); window._importedRows = rows; document.getElementById('importPreview').innerHTML = rows.length ? `<p class="text-green-600">✅ ${rows.length} صف صالح</p>` : `<p class="text-red-500">لا بيانات</p>`; } catch(err) { showError('خطأ في الملف'); } }); }
+async function importBookingsFromFile() {
+  const hallTypeOpts = `<option value="">افتراضي (من الملف)</option>
+    <option value="closed">مغلقة</option>
+    <option value="open">مفتوحة</option>
+    <option value="cafe">كافيه</option>`;
+  
+  openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3>
+    <div class="mb-3">
+      <label class="text-sm font-semibold mb-1 block">🏷️ نوع القاعة:</label>
+      <select id="importHallTypeSelect" class="w-full border-2 p-2 rounded-xl">${hallTypeOpts}</select>
+    </div>
+    <input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border-2 border-dashed p-4 rounded-xl mb-3">
+    <div id="importPreview" class="my-2 text-sm"></div>
+    <div class="flex gap-2">
+      <button onclick="processImportFile()" class="btn-primary flex-1">📥 استيراد</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+  
+  document.getElementById('importFileInput').addEventListener('change', async function(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase(); let rows = [];
+    try {
+      if (ext==='xlsx'||ext==='xls') { 
+        const data = await file.arrayBuffer(); 
+        const wb = XLSX.read(data); 
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); 
+      } else if (ext==='csv') { 
+        const text = await file.text(); 
+        const lines = text.split('\n'); 
+        const headers = lines[0].split(',').map(h => h.trim().replace(/["']/g,'')); 
+        rows = lines.slice(1).filter(l => l.trim()).map(line => { 
+          const vals = line.split(',').map(v => v.trim().replace(/["']/g,'')); 
+          let obj = {}; 
+          headers.forEach((h,i) => obj[h] = vals[i] || ''); 
+          return obj; 
+        }); 
+      } else if (ext==='pdf') { 
+        const arrayBuffer = await file.arrayBuffer(); 
+        const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise; 
+        let fullText = ''; 
+        for (let i=1;i<=pdf.numPages;i++){ 
+          const page = await pdf.getPage(i); 
+          const textContent = await page.getTextContent(); 
+          fullText += textContent.items.map(item => item.str).join(' ') + '\n'; 
+        } 
+        rows = parsePDFText(fullText); 
+      }
+      rows = rows.filter(row => Object.values(row).some(v => v && String(v).trim()));
+      window._importedRows = rows;
+      document.getElementById('importPreview').innerHTML = rows.length 
+        ? `<p class="text-green-600">✅ ${rows.length} صف صالح</p>` 
+        : `<p class="text-red-500">لا بيانات</p>`;
+    } catch(err) { showError('خطأ في الملف'); }
+  });
+}
 function parsePDFText(text) { const rows = []; const lines = text.split(/\r?\n/); lines.forEach(line => { if (/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(line)) { const parts = line.split(/\s{2,}|\t/); if (parts.length>=4) rows.push({'اسم العميل':parts[3],'التاريخ':parts[2],'القاعة':parts[1]}); } }); return rows; }
-window.processImportFile = async function() {
-  var rows = window._importedRows || [];
+async function processImportFile() {
+  const rows = window._importedRows || [];
   if (!rows.length) { showError('لا بيانات'); return; }
   
-  var selectedHallType = document.getElementById('importHallTypeSelect')?.value || '';
-  var added = 0;
+  const selectedHallType = document.getElementById('importHallTypeSelect')?.value || '';
+  let added = 0;
   
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var name = row['اسم العميل'] || row['client name'] || row['العميل'] || '';
+  for (let row of rows) {
+    let name = row['اسم العميل'] || row['client name'] || row['العميل'] || '';
+    // تجاهل الصف إذا كان الاسم فارغاً أو "-" أو فراغات فقط
     if (!name || name.trim() === '' || name.trim() === '-') continue;
     
-    var date = parseDateString(row['التاريخ'] || row['date']);
-    var hallName = row['القاعة'] || row['hall'] || 'القاعة المفتوحة';
+    let date = parseDateString(row['التاريخ'] || row['date']);
+    const hallName = row['القاعة'] || row['hall'] || 'القاعة المفتوحة';
     
-    // البحث عن القاعة الموجودة أو إنشاء واحدة جديدة
-    var hall = halls.find(function(h) { return h.name === hallName; });
+    // البحث عن القاعة أو إنشاء جديدة
+    let hall = halls.find(h => h.name === hallName);
     if (!hall) {
-      hall = { id: generateId('h_'), name: hallName, type: selectedHallType || 'open', basePrice: 0, active: true };
+      hall = { 
+        id: generateId('h_'), 
+        name: hallName, 
+        type: selectedHallType || row['نوع القاعة'] || 'open', 
+        basePrice: 0, 
+        active: true 
+      };
       halls.push(hall);
     } else if (selectedHallType) {
-      // إجبار النوع حتى لو كانت القاعة موجودة مسبقاً
+      // تحديث النوع إذا تم اختياره صراحةً
       hall.type = selectedHallType;
     }
     
@@ -502,39 +562,41 @@ window.processImportFile = async function() {
   closeModal();
   showMsg(`✅ تم استيراد ${added} حجز`);
   window._importedRows = [];
-};
-window.parseDateString = function(str) {
+}
+function parseDateString(str) {
   if (!str && str !== 0) return getTodayDateStr();
-  // إذا كان رقماً (serial number)
+  
+  // معالجة أرقام Excel التسلسلية
   if (typeof str === 'number' || (typeof str === 'string' && /^\d+$/.test(str.trim()))) {
-    var num = parseInt(str);
-    // إذا كان رقمًا منطقيًا لـ Excel (بين 1000 و 100000 تقريبًا)
-    if (num > 1000 && num < 100000) {
-      // تحويل serial number إلى تاريخ (Excel: 1900-01-01 = 1)
-      var date = new Date((num - 25569) * 86400 * 1000);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString().slice(0, 10);
-      }
+    const num = parseInt(str);
+    if (num > 1000 && num < 200000) {
+      const d = new Date((num - 25569) * 86400000);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0,10);
     }
   }
   
   str = String(str).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
   
-  var m = str.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  const patterns = [
+    /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/,
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
+    /^(\d{1,2})-(\d{1,2})-(\d{4})$/
+  ];
   
-  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  for (let p of patterns) {
+    const m = str.match(p);
+    if (m) {
+      if (m[1].length === 4) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+      else return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    }
+  }
   
-  m = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-  
-  var d = new Date(str);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0,10);
   
   return getTodayDateStr();
-};
+}
 // ==================== LOGIN & INIT ====================
 function renderLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-700 to-teal-600 p-4"><div class="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"><div class="text-5xl mb-3">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-16 mx-auto rounded-full">`:companyLogo}</div><h1 class="text-2xl font-bold mb-1 dark:text-white">${companyName}</h1><p class="text-gray-500 mb-6 text-sm">برنامج إدارة القاعات </p><input type="text" id="loginUser" placeholder="👤 اسم المستخدم" class="w-full border-2 p-3 rounded-xl text-center mb-2" autocomplete="username"><input type="password" id="loginPass" placeholder="🔒 كلمة المرور" class="w-full border-2 p-3 rounded-xl text-center mb-4" autocomplete="current-password"><button id="loginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition">🚪 دخول</button><div class="text-xs text-gray-400 mt-6"><p>جميع الحقوق محفوظة 2026 Dr Media Pro</p><p>تصميم وتطوير Ahmed Shreif</p></div><footer class="text-xs text-white mt-4 opacity-75">${footerText}</footer></div></div>`; document.getElementById('loginBtn').onclick = doLogin; }
 function doLogin() { const u = document.getElementById('loginUser')?.value.trim(), p = document.getElementById('loginPass')?.value; if (!u||!p) { showError('أدخل بيانات الدخول'); return; } const user = USERS.find(x => x.username === u && x.password === p); if (user) { currentUser = user; sessionStorage.setItem('drmedia_user', JSON.stringify(user)); showMsg(`👋 مرحباً ${user.name}`); if (user.role==='admin'||user.role==='manager') renderAdminDashboard(); else if (user.role==='employee') renderEmpDash(); else renderAgentDash(); requestNotificationPermission(); } else showError('بيانات خاطئة'); }
