@@ -294,6 +294,49 @@ function processBackupImport() { const file=document.getElementById('backupFileI
 function resetSystemConfirm() { openModal(`<h3 class="text-xl font-bold mb-4 text-red-600">⚠️ إعادة ضبط النظام</h3><p class="mb-3">سيتم مسح جميع البيانات نهائياً. لا يمكن التراجع.</p><div class="flex gap-2"><button onclick="resetSystem()" class="btn-danger flex-1">تأكيد إعادة الضبط</button><button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);}
 function resetSystem() { localStorage.removeItem('drmedia_data');sessionStorage.removeItem('drmedia_user');initializeDefaultData();ensureMinimumData();addActivity('إعادة ضبط','تم إعادة ضبط النظام بالكامل');saveAllData();closeModal();renderLogin();showMsg('🔄 تمت إعادة الضبط وعودة إلى صفحة الدخول');}
 
+// قراءة ملف التحديث الجزئي
+function handlePartialFileUpload() {
+  const file = document.getElementById('partialFileInput')?.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('partialCodeInput').value = e.target.result;
+  };
+  reader.readAsText(file);
+}
+
+// تطبيق التحديث الجزئي
+function applyPartialUpdate() {
+  const code = document.getElementById('partialCodeInput')?.value.trim();
+  if (!code) {
+    showError('يرجى إدخال كود التحديث');
+    return;
+  }
+
+  try {
+    // إذا كان الكود يبدأ بـ <script> أو يحتوي على HTML، نقوم بحقنه
+    if (code.startsWith('<script') || code.startsWith('<html') || code.includes('<div')) {
+      const div = document.createElement('div');
+      div.innerHTML = code;
+      document.body.appendChild(div);
+      // استخراج وتنفيذ أي نصوص JavaScript داخل العناصر المضافة
+      const scripts = div.querySelectorAll('script');
+      scripts.forEach(script => {
+        const newScript = document.createElement('script');
+        newScript.textContent = script.textContent;
+        document.body.appendChild(newScript);
+      });
+      showMsg('✅ تم حقن HTML/Scripts بنجاح');
+    } else {
+      // نفذ الكود كـ JavaScript مباشرة
+      eval(code);
+      showMsg('✅ تم تنفيذ الكود بنجاح');
+    }
+  } catch (e) {
+    showError('خطأ في الكود: ' + e.message);
+  }
+}
+
 // ==================== IMPORT ====================
 async function importBookingsFromFile() { openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3><input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border-2 border-dashed p-4 rounded-xl mb-3"><div id="importPreview" class="my-2 text-sm"></div><button onclick="processImportFile()" class="btn-primary w-full">📥 استيراد</button>`); document.getElementById('importFileInput').addEventListener('change', async function(e) { const file = e.target.files[0]; if (!file) return; const ext = file.name.split('.').pop().toLowerCase(); let rows = []; try { if (ext==='xlsx'||ext==='xls') { const data = await file.arrayBuffer(); const wb = XLSX.read(data); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); } else if (ext==='csv') { const text = await file.text(); const lines = text.split('\n'); const headers = lines[0].split(',').map(h => h.trim().replace(/["']/g,'')); rows = lines.slice(1).filter(l => l.trim()).map(line => { const vals = line.split(',').map(v => v.trim().replace(/["']/g,'')); let obj = {}; headers.forEach((h,i) => obj[h] = vals[i] || ''); return obj; }); } else if (ext==='pdf') { const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise; let fullText = ''; for (let i=1;i<=pdf.numPages;i++){ const page = await pdf.getPage(i); const textContent = await page.getTextContent(); fullText += textContent.items.map(item => item.str).join(' ')+'\n'; } rows = parsePDFText(fullText); } rows = rows.filter(row => Object.values(row).some(v => v && String(v).trim())); window._importedRows = rows; document.getElementById('importPreview').innerHTML = rows.length ? `<p class="text-green-600">✅ ${rows.length} صف صالح</p>` : `<p class="text-red-500">لا بيانات</p>`; } catch(err) { showError('خطأ في الملف'); } }); }
 function parsePDFText(text) { const rows = []; const lines = text.split(/\r?\n/); lines.forEach(line => { if (/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(line)) { const parts = line.split(/\s{2,}|\t/); if (parts.length>=4) rows.push({'اسم العميل':parts[3],'التاريخ':parts[2],'القاعة':parts[1]}); } }); return rows; }
