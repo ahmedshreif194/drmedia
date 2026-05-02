@@ -2995,6 +2995,107 @@ if (typeof window.updateBookingFilter !== 'function') {
     renderBookings();
   };
 }
+// ============================================================
+// تحديث: تسجيل الحضور والانصراف بالوقت الفعلي (ساعة:دقيقة:ثانية)
+// ============================================================
+
+// دالة الحصول على الوقت الحالي بتنسيق ساعة:دقيقة:ثانية
+function getCurrentTime() {
+  const now = new Date();
+  return now.toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true });
+}
+
+// تحديث checkIn لتسجيل الوقت الفعلي
+window.checkIn = async function(empId) {
+  const today = getTodayDateStr();
+  const exist = attendanceRecords.find(a => a.empId === empId && a.date === today);
+  if (exist && exist.checkIn) { showWarning('⚠️ تم التسجيل مسبقاً'); return; }
+  const time = getCurrentTime();
+  if (exist) { exist.checkIn = time; exist.status = 'present'; }
+  else attendanceRecords.push({ id: generateId('att_'), empId, date: today, checkIn: time, checkOut: null, status: 'present' });
+  addActivity('حضور', `الموظف ${empId} سجل حضور الساعة ${time}`);
+  await saveAllData();
+  updateEmployeeOrders();
+  renderAttendance();
+  showMsg(`✅ حضور ${time}`);
+};
+
+// تحديث checkOut لتسجيل الوقت الفعلي
+window.checkOut = async function(empId) {
+  const today = getTodayDateStr();
+  const rec = attendanceRecords.find(a => a.empId === empId && a.date === today);
+  if (!rec || !rec.checkIn) { showWarning('⚠️ لم يسجل حضور'); return; }
+  if (rec.checkOut) { showWarning('⚠️ تم الانصراف مسبقاً'); return; }
+  rec.checkOut = getCurrentTime();
+  addActivity('انصراف', `الموظف ${empId} سجل انصراف الساعة ${rec.checkOut}`);
+  await saveAllData();
+  renderAttendance();
+  showMsg(`✅ انصراف ${rec.checkOut}`);
+};
+
+// تحديث checkInFromScan و checkOutFromScan (للتأكد من استخدام الدوال الجديدة)
+window.checkInFromScan = function() {
+  const empId = document.getElementById('scanEmpSelect')?.value;
+  if (empId) checkIn(empId);
+  closeModal();
+};
+
+window.checkOutFromScan = function() {
+  const empId = document.getElementById('scanEmpSelect')?.value;
+  if (empId) checkOut(empId);
+  closeModal();
+};
+
+// تحديث دالة تسجيل الحضور السابق (يدوي) لتستخدم توقيتاً افتراضياً
+window.recordAttendanceForDate = function(empId, date, type) {
+  if (!empId || !date) return;
+  const exist = attendanceRecords.find(a => a.empId === empId && a.date === date);
+  if (type === 'checkIn') {
+    if (exist && exist.checkIn) { showWarning('⚠️ تم تسجيل الحضور مسبقاً'); return; }
+    const time = '09:00 ص';
+    if (exist) { exist.checkIn = time; exist.status = 'present'; }
+    else attendanceRecords.push({ id: generateId('att_'), empId, date, checkIn: time, checkOut: null, status: 'present' });
+    showMsg(`✅ تم تسجيل حضور بتاريخ ${date}`);
+  } else {
+    if (!exist || !exist.checkIn) { showWarning('⚠️ لم يسجل حضور بعد'); return; }
+    if (exist.checkOut) { showWarning('⚠️ تم تسجيل الانصراف مسبقاً'); return; }
+    exist.checkOut = '05:00 م';
+    showMsg(`✅ تم تسجيل انصراف بتاريخ ${date}`);
+  }
+  addActivity('تسجيل يدوي', `تسجيل ${type==='checkIn'?'حضور':'انصراف'} للموظف ${empId} بتاريخ ${date}`);
+  saveAllData();
+  updateEmployeeOrders();
+  renderAttendance();
+};
+
+// تحديث display في صفحة الحضور لكي يظهر الوقت الكامل
+(function() {
+  const origRenderAttendance = window.renderAttendance;
+  window.renderAttendance = function() {
+    if (origRenderAttendance) origRenderAttendance();
+    // تعديل عرض الوقت في الجداول (سيتم تطبيقه في الاستدعاء التالي)
+    // نقوم بتحديث الخلايا التي تحتوي على وقت الحضور والانصراف لتعرض القيمة المخزنة مباشرة
+    const checkInCells = document.querySelectorAll('#content-area td:nth-child(3)');
+    const checkOutCells = document.querySelectorAll('#content-area td:nth-child(4)');
+    // التعديل سيظهر تلقائياً لأن الدالة الأصلية تملأ البيانات من attendanceRecords التي تحتوي الآن على الوقت الكامل
+  };
+})();
+
+// تحديث markAllAttendance لتسجيل الوقت الحالي
+window.markAllAttendance = function() {
+  const today = getTodayDateStr();
+  const currentTime = getCurrentTime();
+  employees.forEach(e => {
+    const exist = attendanceRecords.find(a => a.empId === e.id && a.date === today);
+    if (!exist || !exist.checkIn) {
+      if (exist) { exist.checkIn = currentTime; exist.status = 'present'; }
+      else attendanceRecords.push({ id: generateId('att_'), empId: e.id, date: today, checkIn: currentTime, checkOut: null, status: 'present' });
+    }
+  });
+  saveAllData();
+  renderAttendance();
+  showMsg(`✅ تم تسجيل حضور الكل (${currentTime})`);
+};
 </script>
 </body>
 </html>
