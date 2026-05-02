@@ -2409,6 +2409,108 @@ window.navigateTo = function(page) {
     if (typeof fn === 'function') fn();
   }
 };
+// ============================================================
+// تحديث: مسح QR لكل موظف + عمود المرتب في صفحة الموظفين
+// ============================================================
+
+// تعديل صفحة الموظفين لإظهار المرتب وزر مسح QR
+window.renderEmployees = function() {
+  updateEmployeeOrders();
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('employees');
+  c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">👥 ${t('employees')} (${employees.length})</h2>
+    <div class="flex gap-2 mb-3">
+      <button onclick="addEmployee()" class="btn-primary">+ موظف</button>
+      <button onclick="deleteSelectedEmployees()" class="btn-danger">🗑️ حذف المحدد</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.emp-check').forEach(cb=>cb.checked=this.checked)"></th><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>المرتب</th><th>QR</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          ${employees.map(e => {
+            const salary = (e.totalOrders||0) * (e.salaryPerOrder||0);
+            return `<tr>
+              <td><input type="checkbox" class="emp-check" value="${e.id}"></td>
+              <td>${e.name}</td>
+              <td>${e.role}</td>
+              <td>${e.phone||'—'}</td>
+              <td>${e.totalOrders||0}</td>
+              <td>${formatCurrency(salary)}</td>
+              <td><button onclick="scanAttendanceFor('${e.id}')" class="btn-secondary text-xs">📷 مسح QR</button></td>
+              <td class="flex gap-1">
+                <button onclick="editEmployee('${e.id}')">✏️</button>
+                <button onclick="addLoan('${e.id}')">💰</button>
+                <button onclick="deleteEmployee('${e.id}')">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer-bar">${footerText}</div>
+  </div>`;
+};
+
+// دالة مسح QR لحضور موظف محدد (من صفحة الموظفين)
+window.scanAttendanceFor = function(empId) {
+  const emp = employees.find(e => e.id === empId);
+  if (!emp) return;
+  if (typeof Html5Qrcode === 'undefined') { showError('مكتبة QR غير متاحة'); return; }
+  openModal(`<h3 class="text-xl font-bold mb-4">📷 مسح QR لـ ${emp.name}</h3>
+    <div id="empQrReader" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div>
+    <div class="flex gap-2 mt-4">
+      <button onclick="closeEmpScanner()" class="btn-danger w-full">إلغاء</button>
+    </div>`);
+  // إنشاء ماسح جديد
+  const scanner = new Html5Qrcode("empQrReader");
+  window._empScanner = scanner;
+  scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
+    (decodedText) => {
+      // عند قراءة أي كود (نتوقع DRMEDIA_ATT_ أو أي كود حضور)
+      if (decodedText) {
+        scanner.stop().then(() => {
+          window._empScanner = null;
+          closeModal();
+          // السماح للمستخدم باختيار حضور أو انصراف لهذا الموظف
+          openModal(`<h3 class="text-xl font-bold mb-4">تسجيل لـ ${emp.name}</h3>
+            <p class="mb-3">تم مسح الكود بنجاح</p>
+            <div class="flex gap-3">
+              <button onclick="checkIn('${emp.id}')" class="btn-primary flex-1">✅ حضور</button>
+              <button onclick="checkOut('${emp.id}')" class="btn-secondary flex-1">🚪 انصراف</button>
+              <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+            </div>`);
+        }).catch(() => {});
+      }
+    },
+    (err) => {}
+  ).catch(err => showError('تعذر بدء الكاميرا'));
+};
+
+// إغلاق الماسح عند إلغاء النافذة
+window.closeEmpScanner = function() {
+  if (window._empScanner) {
+    window._empScanner.stop().then(() => {
+      window._empScanner = null;
+      closeModal();
+    }).catch(() => {
+      window._empScanner = null;
+      closeModal();
+    });
+  } else {
+    closeModal();
+  }
+};
+
+// تأكد من إغلاق الماسح إذا أغلقت النافذة بطرق أخرى
+const origCloseModal = window.closeModal;
+window.closeModal = function() {
+  if (window._empScanner) {
+    window._empScanner.stop().then(() => { window._empScanner = null; origCloseModal(); }).catch(() => { window._empScanner = null; origCloseModal(); });
+    return;
+  }
+  origCloseModal();
+};
 </script>
 </body>
 </html>
