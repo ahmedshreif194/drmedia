@@ -1226,6 +1226,483 @@ window.renderEmpDash = function() {
       <footer class="footer-bar">${footerText}</footer>
     </div>`;
 };
+    // ============================================================
+// تحديث شامل: عدد الأوردرات، QR للموظفين، غياب وتبديل، فلاشات محسنة بالصلاحيات
+// ============================================================
+
+// --- 1. مصفوفة التبديل (غياب / بديل) ---
+if (!window.substitutions) {
+  window.substitutions = JSON.parse(localStorage.getItem('drmedia_substitutions') || '[]');
+}
+function saveSubstitutions() {
+  localStorage.setItem('drmedia_substitutions', JSON.stringify(window.substitutions));
+}
+
+// --- 2. عرض عدد أوردرات الموظفين في صفحة الموظفين + QR لكل موظف ---
+window.renderEmployees = function() {
+  updateEmployeeOrders();
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('employees');
+  c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">👥 ${t('employees')} (${employees.length})</h2>
+    <div class="flex gap-2 mb-3">
+      <button onclick="addEmployee()" class="btn-primary">+ موظف</button>
+      <button onclick="deleteSelectedEmployees()" class="btn-danger">🗑️ حذف المحدد</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.emp-check').forEach(cb=>cb.checked=this.checked)"></th><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>QR</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          ${employees.map(e => {
+            return `<tr>
+              <td><input type="checkbox" class="emp-check" value="${e.id}"></td>
+              <td>${e.name}</td>
+              <td>${e.role}</td>
+              <td>${e.phone||'—'}</td>
+              <td>${e.totalOrders||0}</td>
+              <td><button onclick="showEmpQR('${e.id}')" class="btn-secondary text-xs">📷 QR</button></td>
+              <td class="flex gap-1">
+                <button onclick="editEmployee('${e.id}')">✏️</button>
+                <button onclick="addLoan('${e.id}')">💰</button>
+                <button onclick="deleteEmployee('${e.id}')">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer-bar">${footerText}</div>
+  </div>`;
+};
+
+// عرض QR خاص بموظف لتسجيل الحضور
+window.showEmpQR = function(empId) {
+  const emp = employees.find(e => e.id === empId);
+  if (!emp) return;
+  openModal(`<h3 class="text-xl font-bold mb-2">📷 كود ${emp.name}</h3>
+    <div id="empQrContainer" class="flex justify-center my-3"></div>
+    <p class="text-sm text-gray-500">اطلب من الموظف مسح هذا الكود لتسجيل الحضور</p>
+    <button onclick="closeModal()" class="btn-outline w-full mt-3">إغلاق</button>`);
+  setTimeout(() => {
+    const qc = document.getElementById('empQrContainer');
+    if (qc) {
+      qc.innerHTML = '';
+      new QRCode(qc, { text: `DRMEDIA_EMP_${emp.id}_${getTodayDateStr()}`, width: 200, height: 200 });
+    }
+  }, 200);
+};
+
+// --- 3. حساب المرتبات بناءً على الحضور (مضمن في calculatePayrollForPeriod) ---
+// (موجود مسبقاً مع attended، لكن نؤكد أنه يحسب الأوردرات التي حضرها الموظف فقط)
+
+// --- 4. صفحة الغياب والتبديل (تبويب جديد) ---
+// نضيف التبويب إلى القائمة الجانبية (يمكن إضافته يدوياً في renderAdminDashboard)
+// هنا نضيف دالة renderSubstitutions كصفحة جديدة
+window.renderSubstitutions = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = '🔄 الغياب والتبديل';
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">🔄 إدارة الغياب والتبديل</h2>
+    <button onclick="addSubstitution()" class="btn-primary mb-3">+ طلب تبديل</button>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th>التاريخ</th><th>الموظف الغائب</th><th>الموظف البديل</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <tbody>`;
+
+  window.substitutions.forEach(sub => {
+    const absent = employees.find(e => e.id === sub.absentId);
+    const substitute = employees.find(e => e.id === sub.substituteId);
+    html += `<tr>
+      <td>${sub.date}</td>
+      <td>${absent ? absent.name : '—'}</td>
+      <td>${substitute ? substitute.name : '—'}</td>
+      <td>${sub.done ? '<span class="badge-active">تم التبديل</span>' : '<span class="status-pending">في الانتظار</span>'}</td>
+      <td class="flex gap-1">
+        ${!sub.done ? `<button onclick="confirmSubstitution('${sub.id}')" class="text-green-600">✅ تنفيذ</button>` : ''}
+        <button onclick="deleteSubstitution('${sub.id}')" class="text-red-600">🗑️</button>
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+// إضافة طلب تبديل
+window.addSubstitution = function() {
+  const empOpts = employees.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">🔄 طلب تبديل</h3>
+    <label>الموظف الغائب:</label>
+    <select id="subAbsent" class="w-full border-2 p-2 my-2 rounded-xl">${empOpts}</select>
+    <label>الموظف البديل:</label>
+    <select id="subSubstitute" class="w-full border-2 p-2 my-2 rounded-xl">${empOpts}</select>
+    <input type="date" id="subDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveSubstitution()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.saveSubstitution = function() {
+  const absentId = document.getElementById('subAbsent')?.value;
+  const substituteId = document.getElementById('subSubstitute')?.value;
+  const date = document.getElementById('subDate')?.value;
+  if (!absentId || !substituteId || absentId === substituteId) {
+    showError('يرجى اختيار موظفين مختلفين');
+    return;
+  }
+  window.substitutions.push({
+    id: generateId('sub_'),
+    absentId,
+    substituteId,
+    date,
+    done: false
+  });
+  saveSubstitutions();
+  renderSubstitutions();
+  closeModal();
+  showMsg('✅ تم حفظ طلب التبديل');
+};
+
+// تأكيد التبديل (تنفيذ)
+window.confirmSubstitution = function(id) {
+  const sub = window.substitutions.find(s => s.id === id);
+  if (!sub) return;
+  // نقل الأوردرات من الغائب إلى البديل لنفس التاريخ
+  bookings.forEach(b => {
+    if (b.date === sub.date && (b.assignedEmployees || []).includes(sub.absentId)) {
+      b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== sub.absentId);
+      if (!b.assignedEmployees.includes(sub.substituteId)) {
+        b.assignedEmployees.push(sub.substituteId);
+      }
+    }
+  });
+  // إضافة حضور للبديل (اختياري)
+  const exist = attendanceRecords.find(a => a.empId === sub.substituteId && a.date === sub.date);
+  if (!exist || !exist.checkIn) {
+    attendanceRecords.push({ id: generateId('att_'), empId: sub.substituteId, date: sub.date, checkIn: '09:00 ص', checkOut: null, status: 'present' });
+  }
+  sub.done = true;
+  saveSubstitutions();
+  saveAllData();
+  updateEmployeeOrders();
+  renderSubstitutions();
+  showMsg('✅ تم تبديل الأوردرات بنجاح');
+};
+
+window.deleteSubstitution = function(id) {
+  if (!confirm('حذف طلب التبديل؟')) return;
+  window.substitutions = window.substitutions.filter(s => s.id !== id);
+  saveSubstitutions();
+  renderSubstitutions();
+  showMsg('🗑️ تم الحذف');
+};
+
+// إضافة التبويب إلى القائمة الجانبية (نحتاج لتحديث renderAdminDashboard)
+const originalRenderAdmin = window.renderAdminDashboard;
+window.renderAdminDashboard = function() {
+  // إضافة التبويب الجديد
+  const pages = ['dashboard','bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','activityLog','flash','internet','settings','substitutions'];
+  const icons = { dashboard:'📊', bookings:'📅', employees:'👥', halls:'🏛️', clients:'👥', equipment:'📦', attendance:'📋', payroll:'💰', calendar:'📆', distribution:'⚙️', reports:'📊', advancedReports:'📈', notifications:'🔔', users:'👥', trash:'🗑️', activityLog:'📜', flash:'💾', internet:'🌐', settings:'⚙️', substitutions:'🔄' };
+  document.getElementById('app').innerHTML = `
+    <div class="sidebar" id="sidebar">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700 text-center"><div class="text-2xl font-bold">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-10 inline rounded-full">`:companyLogo} ${companyName}</div></div>
+      <div class="py-2">${pages.map(p => `<div class="sidebar-item ${p==='dashboard'?'active':''}" data-page="${p}" onclick="navigateTo('${p}')"><span>${t(p) || 'الغياب والتبديل'}</span></div>`).join('')}</div>
+      <div class="footer-bar">${footerText}</div>
+    </div>
+    <div class="topbar"><div class="flex items-center gap-3"><button class="md:hidden btn-outline text-xl p-2" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button><span class="font-semibold text-lg" id="pageTitle">${t('dashboard')}</span></div><div class="flex items-center gap-3"><span class="text-sm hidden md:inline">👋 ${currentUser?.name}</span><button onclick="logout()" class="btn-danger text-sm">🚪 خروج</button></div></div>
+    <div class="main-content" id="content-area"></div>
+  `;
+  navigateTo('dashboard');
+};
+
+// تحديث navigateTo ليشمل substitutions
+const originalNavigate = window.navigateTo;
+window.navigateTo = function(page) {
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  const item = document.querySelector(`[data-page="${page}"]`);
+  if (item) item.classList.add('active');
+  const fn = window['render' + page.charAt(0).toUpperCase() + page.slice(1)];
+  if (typeof fn === 'function') fn();
+  else if (page === 'substitutions') renderSubstitutions();
+};
+
+// --- 5. صفحة الفلاشات المتكاملة (ربط بالحجوزات، تحديد متعدد، صلاحيات) ---
+window.renderFlash = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('flash');
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">💾 ${t('flash')} (${flashDrives.length})</h2>
+    <button onclick="addFlash()" class="btn-primary mb-3">+ فلاشة</button>
+    <button onclick="deleteSelectedFlashes()" class="btn-danger mb-3 ml-2">🗑️ حذف المحدد</button>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.flash-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>نوع الباكدج</th><th>العدد</th><th>القاعة</th><th>حالة الفلاشة</th><th>الموقع</th><th>إجراءات</th></tr></thead>
+        <tbody>`;
+
+  flashDrives.forEach(f => {
+    const b = bookings.find(bk => bk.id === f.bookingId);
+    if (!b) return;
+    const actions = getFlashActions(f);
+    html += `<tr>
+      <td><input type="checkbox" class="flash-check" value="${f.id}"></td>
+      <td>${b.clientName}</td>
+      <td>${b.date}</td>
+      <td>${b.packageType||'—'}</td>
+      <td>${b.totalPersons||0}</td>
+      <td>${b.hallName}</td>
+      <td><span class="status-badge status-pending">${f.status}</span></td>
+      <td>${f.currentHolder}</td>
+      <td class="flex gap-1">
+        ${actions}
+        ${isAdmin() ? `<button onclick="editFlash('${f.id}')" class="text-blue-600">✏️</button>` : ''}
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+// تحديد الإجراءات حسب الدور
+window.getFlashActions = function(f) {
+  const user = currentUser;
+  if (!user) return '';
+  const role = user.role;
+  if (role === 'admin' || role === 'manager') {
+    return `<select onchange="moveFlashTo('${f.id}', this.value)" class="border p-1 rounded text-sm">
+      <option value="">-- حركة --</option>
+      <option value="الحسابات">الحسابات</option>
+      <option value="المونتير">المونتير</option>
+      <option value="المصور">المصور</option>
+      <option value="المبيعات">المبيعات</option>
+      <option value="العريس">العريس</option>
+    </select>`;
+  }
+
+  const holders = ['الحسابات','المونتير','المصور','المبيعات','العريس'];
+  const currentIdx = holders.indexOf(f.currentHolder);
+  if (currentIdx === -1) return '';
+
+  if (role === 'montage') {
+    if (f.currentHolder === 'الحسابات') return `<option value="المونتير">✅ استلام</option>`;
+    if (f.currentHolder === 'المونتير') return `<option value="المصور">📤 تسليم للمصور</option>`;
+  }
+  if (role === 'photo' && f.currentHolder === 'المصور') {
+    return `<option value="المبيعات">📤 تسليم للمبيعات</option>`;
+  }
+  if (role === 'sales' && f.currentHolder === 'المبيعات') {
+    return `<option value="العريس">🎉 تسليم للعريس</option>`;
+  }
+  return '';
+};
+
+window.moveFlashTo = function(flashId, targetHolder) {
+  if (!targetHolder) return;
+  const f = flashDrives.find(f => f.id === flashId);
+  if (!f) return;
+  if (!isAdmin() && !isManager()) {
+    // قيود الأدوار
+    const allowed = getFlashActions(f);
+    if (!allowed.includes(targetHolder)) {
+      showError('غير مسموح بهذه الحركة');
+      return;
+    }
+  }
+  f.currentHolder = targetHolder;
+  f.status = 'تم النقل إلى ' + targetHolder;
+  if (!f.history) f.history = [];
+  f.history.push({ date: new Date().toISOString(), action: f.status, user: currentUser?.name });
+  saveAllData();
+  renderFlash();
+  showMsg('✅ تم النقل');
+};
+
+// تعديل فلاشة (للمدير فقط)
+window.editFlash = function(id) {
+  const f = flashDrives.find(f => f.id === id);
+  if (!f) return;
+  const bookingOpts = bookings.map(b => `<option value="${b.id}" ${f.bookingId===b.id?'selected':''}>${b.clientName} - ${b.date}</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل فلاشة</h3>
+    <select id="editFlashBooking" class="w-full border-2 p-2 my-2 rounded-xl">${bookingOpts}</select>
+    <input type="date" id="editFlashDate" value="${f.date}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditFlash('${id}')" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.saveEditFlash = function(id) {
+  const f = flashDrives.find(f => f.id === id);
+  if (!f) return;
+  f.bookingId = document.getElementById('editFlashBooking')?.value || f.bookingId;
+  f.date = document.getElementById('editFlashDate')?.value || f.date;
+  saveAllData();
+  renderFlash();
+  closeModal();
+  showMsg('✅ تم التعديل');
+};
+
+// حذف الفلاشات المحددة
+window.deleteSelectedFlashes = function() {
+  const ids = Array.from(document.querySelectorAll('.flash-check:checked')).map(cb => cb.value);
+  if (!ids.length) { showError('لم يتم تحديد فلاشات'); return; }
+  if (confirm(`حذف ${ids.length} فلاشة؟`)) {
+    ids.forEach(id => {
+      flashDrives = flashDrives.filter(f => f.id !== id);
+    });
+    saveAllData();
+    renderFlash();
+    showMsg(`🗑️ تم حذف ${ids.length} فلاشة`);
+  }
+};
+
+// تحديث إضافة الفلاشة لتشمل تاريخ الحجز تلقائياً (مع إمكانية التعديل)
+window.addFlash = function() {
+  const bookingOpts = bookings.filter(b => !b.deleted).map(b => `<option value="${b.id}">${b.clientName} - ${b.date}</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">💾 إضافة فلاشة</h3>
+    <select id="flashBooking" class="w-full border-2 p-2 my-2 rounded-xl" onchange="autoFillFlashDate()"><option value="">اختر الحجز</option>${bookingOpts}</select>
+    <input type="date" id="flashDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveFlash()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.autoFillFlashDate = function() {
+  const bookingId = document.getElementById('flashBooking')?.value;
+  const b = bookings.find(b => b.id === bookingId);
+  if (b) {
+    document.getElementById('flashDate').value = b.date;
+  }
+};
+
+// --- 6. تحديث مسح QR ليتعامل مع التبديل ---
+// سنقوم بتعديل startQRScanner ليسمح للموظف البديل بمسح QR للغائب
+// ولكن الأسهل: نضيف منطق في checkIn لفحص التبديل
+const originalCheckIn = window.checkIn;
+window.checkIn = async function(empId) {
+  const today = getTodayDateStr();
+  // هل هذا الموظف بديل لأحد؟
+  const sub = window.substitutions.find(s => s.date === today && s.substituteId === empId && !s.done);
+  if (sub) {
+    // نقل الأوردرات من الغائب إلى البديل
+    const absentId = sub.absentId;
+    bookings.forEach(b => {
+      if (b.date === today && (b.assignedEmployees || []).includes(absentId)) {
+        b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== absentId);
+        if (!b.assignedEmployees.includes(empId)) {
+          b.assignedEmployees.push(empId);
+        }
+      }
+    });
+    sub.done = true;
+    saveSubstitutions();
+    saveAllData();
+    updateEmployeeOrders();
+  }
+  await originalCheckIn(empId);
+};
+    // ============================================================
+// إضافة قائمة منسدلة للحالة (معلقة، مكتملة، ملغاة) في صفحة الحجوزات
+// مع إمكانية تغيير الحالة مباشرة وحفظها
+// ============================================================
+
+window.renderBookings = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('bookings');
+  let filtered = bookings.filter(b => !b.deleted);
+  if (bookingFilterStatus !== 'all') filtered = filtered.filter(b => b.status === bookingFilterStatus);
+  if (bookingFilterHall !== 'all') filtered = filtered.filter(b => b.hallId === bookingFilterHall);
+  if (bookingFilterDateFrom) filtered = filtered.filter(b => b.date >= bookingFilterDateFrom);
+  if (bookingFilterDateTo) filtered = filtered.filter(b => b.date <= bookingFilterDateTo);
+  filtered.sort((a,b) => a.date.localeCompare(b.date));
+  const rev = filtered.reduce((s,b) => s + (b.price||0), 0);
+  const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+  
+  c.innerHTML = `<div class="bg-card">
+    <div class="flex justify-between flex-wrap gap-2 mb-3">
+      <h2 class="text-xl font-bold">📅 ${t('bookings')} (${filtered.length})</h2>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="addBooking()" class="btn-primary">+ حجز</button>
+        <button onclick="importBookingsFromFile()" class="btn-secondary">📂 استيراد</button>
+        <button onclick="smartDistribute()" class="btn-secondary">🧠 توزيع ذكي</button>
+        <button onclick="rotateDistribution()" class="btn-secondary">🔄 تدوير</button>
+        <button onclick="deleteSelectedBookings()" class="btn-danger">🗑️ حذف المحدد</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
+      <input type="text" id="bookSearch" placeholder="🔍 بحث" class="border-2 p-2 rounded-xl" onkeyup="renderBookings()">
+      <select id="bookFilterStatus" class="border-2 p-2 rounded-xl" onchange="updateBookingFilter('status')">
+        <option value="all">كل الحالات</option>
+        <option value="pending" ${bookingFilterStatus==='pending'?'selected':''}>معلق</option>
+        <option value="completed" ${bookingFilterStatus==='completed'?'selected':''}>مكتمل</option>
+        <option value="cancelled" ${bookingFilterStatus==='cancelled'?'selected':''}>ملغي</option>
+      </select>
+      <select id="bookFilterHall" class="border-2 p-2 rounded-xl" onchange="updateBookingFilter('hall')">
+        <option value="all">كل القاعات</option>${hallOpts}
+      </select>
+      <div class="flex gap-1">
+        <input type="date" id="bookFilterFrom" class="border-2 p-2 rounded-xl flex-1" onchange="updateBookingFilter('from')">
+        <input type="date" id="bookFilterTo" class="border-2 p-2 rounded-xl flex-1" onchange="updateBookingFilter('to')">
+      </div>
+    </div>
+    <div class="text-sm mb-2">الإيرادات: <strong>${formatCurrency(rev)}</strong></div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.booking-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          ${filtered.length ? filtered.map(b => {
+            const statusOptions = ['pending','completed','cancelled'];
+            const statusLabels = { pending:'معلق', completed:'مكتمل', cancelled:'ملغي' };
+            const selectHTML = `<select onchange="changeBookingStatus('${b.id}', this.value)" class="border p-1 rounded text-sm">
+              ${statusOptions.map(opt => `<option value="${opt}" ${b.status===opt?'selected':''}>${statusLabels[opt]}</option>`).join('')}
+            </select>`;
+            return `<tr>
+              <td><input type="checkbox" class="booking-check" value="${b.id}"></td>
+              <td>${b.clientName}<br><small>${b.phone||''}</small></td>
+              <td>${b.date}<br><small>${getWeekDayArabic(b.date)}</small></td>
+              <td>${b.hallName}</td>
+              <td>${formatCurrency(b.price)}</td>
+              <td>${selectHTML}</td>
+              <td class="flex gap-1">
+                <button onclick="editBooking('${b.id}')" title="تعديل">✏️</button>
+                <button onclick="deleteBookingSoft('${b.id}')" title="حذف">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="7" class="text-center py-8 text-gray-400">لا توجد حجوزات</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer-bar">${footerText}</div>
+  </div>`;
+};
+
+// دالة تغيير حالة الحجز من القائمة المنسدلة
+window.changeBookingStatus = function(bookingId, newStatus) {
+  const b = bookings.find(b => b.id === bookingId);
+  if (!b) return;
+  b.status = newStatus;
+  if (newStatus === 'completed') {
+    b.paymentStatus = 'paid';
+  } else if (newStatus === 'pending') {
+    b.paymentStatus = 'pending';
+  }
+  addActivity('تغيير حالة حجز', `تم تغيير حالة الحجز ${b.clientName} إلى ${newStatus}`);
+  saveAllData();
+  renderBookings();
+  showMsg(`✅ تم تغيير الحالة`);
+};
+
+// تحديث مرشح الحالة ليشمل "ملغي"
+window.updateBookingFilter = function(type) {
+  if (type==='status') bookingFilterStatus = document.getElementById('bookFilterStatus')?.value||'all';
+  if (type==='hall') bookingFilterHall = document.getElementById('bookFilterHall')?.value||'all';
+  if (type==='from') bookingFilterDateFrom = document.getElementById('bookFilterFrom')?.value||'';
+  if (type==='to') bookingFilterDateTo = document.getElementById('bookFilterTo')?.value||'';
+  renderBookings();
+};
 </script>
 </body>
 </html>
