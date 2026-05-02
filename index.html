@@ -975,6 +975,257 @@ window.initApp = async function() {
   await originalInitApp();
   checkReminders(); // تشغيل التذكيرات فوراً بعد بدء التشغيل
 };
+// ================================================================
+// تحديث: ترتيب التوزيع بالتاريخ، رواتب مجزأة بأزرار + صرف فردي،
+// عرض أوردرات المستخدمين، وعرض أوردرات الموظف
+// ================================================================
+
+// --- 1. ترتيب صفحة التوزيع حسب التاريخ ---
+window.renderDistribution = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('distribution');
+  
+  // ترتيب الحجوزات المعلقة بالتاريخ (الأقدم أولاً)
+  const pending = bookings
+    .filter(b => b.status === 'pending' && !b.deleted)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  
+  c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold">⚙️ ${t('distribution')}</h2>
+    <div class="flex gap-2 mb-4 flex-wrap">
+      <button onclick="smartDistribute()" class="btn-primary">🧠 توزيع ذكي</button>
+      <button onclick="rotateDistribution()" class="btn-secondary">🔄 تدوير</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>الموظفون</th><th>تعيين</th></tr></thead>
+        <tbody>
+          ${pending.length ? pending.map(b => `<tr>
+            <td>${b.clientName}</td>
+            <td>${b.date} (${getWeekDayArabic(b.date)})</td>
+            <td>${b.hallName}</td>
+            <td>${(b.assignedEmployees||[]).map(id => employees.find(e=>e.id===id)?.name).join('، ') || '<span class="text-red-500">غير معين</span>'}</td>
+            <td><button onclick="manualAssign('${b.id}')" class="text-blue-600 font-bold">✋ تعيين</button></td>
+          </tr>`).join('') : '<tr><td colspan="5" class="text-center py-4">لا توجد حجوزات معلقة</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer-bar">${footerText}</div>
+  </div>`;
+};
+
+// --- 2. صفحة المرتبات: 3 أزرار فترات + زر صرف فردي ---
+// تخزين المدفوعات (إذا لم يكن موجوداً)
+if (!window.payrollPayments) {
+  window.payrollPayments = JSON.parse(localStorage.getItem('drmedia_payroll_payments') || '[]');
+}
+
+function savePayrollPayments() {
+  localStorage.setItem('drmedia_payroll_payments', JSON.stringify(window.payrollPayments));
+}
+
+function getPeriodLabel(period) {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+  if (period === 'early') return `1 - 10 ${month}/${year}`;
+  if (period === 'mid') return `11 - 20 ${month}/${year}`;
+  const lastDay = new Date(year, month, 0).getDate();
+  return `21 - ${lastDay} ${month}/${year}`;
+}
+
+function getPeriodRange(period, year, month) {
+  const start = new Date(year, month, period === 'early' ? 1 : period === 'mid' ? 11 : 21);
+  let endDay;
+  if (period === 'early') endDay = 10;
+  else if (period === 'mid') endDay = 20;
+  else endDay = new Date(year, month + 1, 0).getDate();
+  const end = new Date(year, month, endDay);
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10)
+  };
+}
+
+function calculatePayrollForPeriod(period) {
+  const now = new Date();
+  const { start, end } = getPeriodRange(period, now.getFullYear(), now.getMonth());
+  const result = [];
+  employees.forEach(e => {
+    const assignedBookings = bookings.filter(b => b.date >= start && b.date <= end && (b.assignedEmployees || []).includes(e.id));
+    const attended = assignedBookings.filter(b => attendanceRecords.some(a => a.empId === e.id && a.date === b.date && a.checkIn));
+    const sal = attended.length * e.salaryPerOrder;
+    const loans = (employeeLoans[e.id] || []).filter(l => !l.settled && l.date >= start && l.date <= end).reduce((s, l) => s + l.amount, 0);
+    // هل تم الصرف لهذه الفترة؟
+    const paid = window.payrollPayments.some(p => p.empId === e.id && p.period === period &&
+      new Date(p.date).getMonth() === now.getMonth() && new Date(p.date).getFullYear() === now.getFullYear());
+    result.push({ emp: e, orders: attended.length, salary: sal, loans, net: Math.max(0, sal - loans), paid });
+  });
+  return result;
+}
+
+window.renderPayroll = function() {
+  updateEmployeeOrders();
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('payroll');
+
+  const periodBtns = ['early', 'mid', 'late'].map(p => {
+    const label = getPeriodLabel(p);
+    return `<button onclick="setPayrollPeriod('${p}')" class="btn-outline btn-secondary text-sm" id="btn-period-${p}">📆 ${label}</button>`;
+  }).join('');
+
+  const currentPeriod = document.getElementById('payrollPeriodSelect')?.value || 'early';
+  const data = calculatePayrollForPeriod(currentPeriod);
+
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">💰 ${t('payroll')}</h2>
+    <div class="flex flex-wrap gap-2 mb-4" id="periodButtons">${periodBtns}</div>
+    <input type="hidden" id="payrollPeriodSelect" value="${currentPeriod}">
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th>الموظف</th><th>الأوردرات</th><th>المستحق</th><th>السلف</th><th>الصافي</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <tbody>`;
+
+  data.forEach(d => {
+    html += `<tr>
+      <td>${d.emp.name}</td>
+      <td>${d.orders}</td>
+      <td>${formatCurrency(d.salary)}</td>
+      <td class="text-red-600">${formatCurrency(d.loans)}</td>
+      <td><strong>${formatCurrency(d.net)}</strong></td>
+      <td>${d.paid ? '<span class="badge-active">تم الصرف</span>' : '<span class="status-pending">لم يصرف</span>'}</td>
+      <td>${!d.paid ? `<button onclick="payEmployee('${d.emp.id}','${currentPeriod}')" class="btn-primary text-xs">💵 صرف</button>` : ''}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+window.setPayrollPeriod = function(period) {
+  document.getElementById('payrollPeriodSelect').value = period;
+  // تحديث الأزرار النشطة
+  ['early','mid','late'].forEach(p => {
+    const btn = document.getElementById('btn-period-'+p);
+    if (btn) btn.className = p === period ? 'btn-primary text-sm' : 'btn-outline btn-secondary text-sm';
+  });
+  window.renderPayroll();
+};
+
+window.payEmployee = function(empId, period) {
+  const emp = employees.find(e => e.id === empId);
+  if (!emp) return;
+  const now = new Date();
+  const periodLabel = getPeriodLabel(period);
+  if (confirm(`هل تريد تأكيد صرف راتب ${emp.name} عن الفترة ${periodLabel}؟`)) {
+    window.payrollPayments.push({
+      id: generateId('pay_'),
+      empId: empId,
+      period: period,
+      date: now.toISOString().slice(0, 10),
+      timestamp: now.toISOString()
+    });
+    savePayrollPayments();
+    renderPayroll();
+    showMsg(`✅ تم صرف راتب ${emp.name}`);
+  }
+};
+
+// --- 3. صفحة المستخدمين: عرض أوردرات الموظفين المرتبطين ---
+window.renderUsers = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('users');
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">👥 ${t('users')} (${USERS.length})</h2>
+    <div class="flex gap-2 mb-3">
+      <button onclick="addUser()" class="btn-primary">+ مستخدم</button>
+      <button onclick="deleteSelectedUsers()" class="btn-danger">🗑️ حذف المحدد</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.user-check').forEach(cb=>cb.checked=this.checked)"></th><th>المستخدم</th><th>الصلاحية</th><th>الاسم</th><th>الموظف المرتبط</th><th>أوردرات اليوم</th><th>إجراءات</th></tr></thead>
+        <tbody>`;
+
+  USERS.forEach(u => {
+    const emp = employees.find(e => e.id === u.employeeId);
+    const today = getTodayDateStr();
+    const todayOrders = emp ? bookings.filter(b => b.date === today && (b.assignedEmployees || []).includes(emp.id) && b.status !== 'cancelled').length : 0;
+    html += `<tr>
+      <td><input type="checkbox" class="user-check" value="${u.id}" ${u.id==='admin1'?'disabled':''}></td>
+      <td>${u.username}</td>
+      <td><span class="badge-active">${u.role}</span></td>
+      <td>${u.name}</td>
+      <td>${emp ? `${emp.name} (${emp.role})<br><button onclick="showEmployeeOrders('${emp.id}')" class="text-xs text-blue-600 underline">عرض الأوردرات</button>` : '—'}</td>
+      <td>${todayOrders} أوردر</td>
+      <td class="flex gap-1">
+        <button onclick="editUser('${u.id}')">✏️</button>
+        ${u.id!=='admin1'?`<button onclick="deleteUser('${u.id}')">🗑️</button>`:''}
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+// دالة مساعدة لعرض أوردرات موظف معين (تستخدم في صفحة المستخدمين)
+window.showEmployeeOrders = function(empId) {
+  const emp = employees.find(e => e.id === empId);
+  if (!emp) return;
+  const empOrders = bookings
+    .filter(b => (b.assignedEmployees || []).includes(empId) && b.status !== 'cancelled')
+    .sort((a, b) => b.date.localeCompare(a.date));
+  
+  let content = `<h3 class="font-bold mb-2">أوردرات ${emp.name}</h3>`;
+  if (empOrders.length === 0) {
+    content += '<p class="text-gray-400">لا توجد أوردرات</p>';
+  } else {
+    content += `<table class="text-sm"><thead><tr><th>التاريخ</th><th>العميل</th><th>القاعة</th><th>الحالة</th></tr></thead><tbody>`;
+    empOrders.forEach(b => {
+      content += `<tr><td>${b.date}</td><td>${b.clientName}</td><td>${b.hallName}</td><td>${b.status==='completed'?'مكتمل':'معلق'}</td></tr>`;
+    });
+    content += `</tbody></table>`;
+  }
+  content += `<button onclick="closeModal()" class="btn-primary mt-4 w-full">إغلاق</button>`;
+  openModal(content);
+};
+
+// --- 4. تحسين واجهة الموظف لتظهر الأوردرات بوضوح ومرتبة بالتاريخ ---
+window.renderEmpDash = function() {
+  const emp = employees.find(e => e.id === currentUser?.employeeId);
+  if (!emp) {
+    document.getElementById('app').innerHTML = `<div class="p-4"><h2>لا يوجد موظف مرتبط بهذا الحساب</h2><button onclick="logout()" class="btn-danger">خروج</button></div>`;
+    return;
+  }
+  
+  const myBookings = bookings
+    .filter(b => (b.assignedEmployees || []).includes(emp.id) && b.status !== 'cancelled')
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const pending = myBookings.filter(b => b.status === 'pending');
+  const completed = myBookings.filter(b => b.status === 'completed');
+  const salary = myBookings.length * emp.salaryPerOrder;
+  const loans = (employeeLoans[emp.id] || []).filter(l => !l.settled).reduce((a, l) => a + l.amount, 0);
+  
+  document.getElementById('app').innerHTML = `
+    <div class="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+      <header class="bg-white dark:bg-gray-800 p-4 flex justify-between shadow"><h1 class="font-bold">${companyName}</h1><button onclick="logout()" class="btn-danger text-sm">خروج</button></header>
+      <main class="p-4 flex-1 max-w-4xl mx-auto">
+        <div class="bg-card mb-4"><h2 class="text-xl font-bold">👋 مرحباً ${emp.name}</h2><p class="text-gray-500">${emp.role} | المستحق الكلي: ${formatCurrency(salary)} | السلف: ${formatCurrency(loans)} | الصافي: ${formatCurrency(Math.max(0,salary-loans))}</p></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="bg-card"><h3 class="font-bold mb-2">📅 أوردراتي المعلقة (${pending.length})</h3>
+            <div class="max-h-60 overflow-y-auto">${pending.length ? pending.map(b => `<div class="border-b py-2 text-sm"><strong>${b.clientName}</strong> - ${b.hallName}<br>📆 ${b.date} (${getWeekDayArabic(b.date)})</div>`).join('') : '<p class="text-gray-400">لا يوجد</p>'}</div>
+          </div>
+          <div class="bg-card"><h3 class="font-bold mb-2">✔️ أوردرات مكتملة (${completed.length})</h3>
+            <div class="max-h-60 overflow-y-auto">${completed.length ? completed.slice(0,10).map(b => `<div class="border-b py-2 text-sm">${b.clientName} - ${b.date}</div>`).join('') : '<p class="text-gray-400">لا يوجد</p>'}</div>
+          </div>
+        </div>
+        <div class="bg-card"><h3 class="font-bold mb-2">📋 جميع الأوردرات مرتبة بالتاريخ</h3>
+          <div class="max-h-60 overflow-y-auto">${myBookings.length ? myBookings.map(b => `<div class="border-b py-2 flex justify-between text-sm"><span>${b.date} - ${b.clientName} (${b.hallName})</span><span class="${b.status==='completed'?'text-green-600':'text-yellow-600'}">${b.status==='completed'?'✅':'⏳'}</span></div>`).join('') : '<p class="text-gray-400">لا توجد أوردرات</p>'}</div>
+        </div>
+      </main>
+      <footer class="footer-bar">${footerText}</footer>
+    </div>`;
+};
 </script>
 </body>
 </html>
