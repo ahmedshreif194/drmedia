@@ -382,6 +382,229 @@ async function initApp() {
   }
 }
 window.addEventListener('DOMContentLoaded', initApp);
+    // ==================== تحديث نوافذ الحجوزات (إضافة + تعديل) ====================
+window.addBooking = function() {
+  const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">📅 إضافة حجز جديد</h3>
+    <input id="bkClientName" placeholder="اسم العميل" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="bkPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="bkHall" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">اختر القاعة</option>${hallOpts}</select>
+    <input type="date" id="bkDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
+    <input type="number" id="bkPrice" placeholder="السعر" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewBooking()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.editBooking = function(id) {
+  const b = bookings.find(b => b.id === id);
+  if (!b) return;
+  const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}" ${b.hallId===h.id?'selected':''}>${h.name}</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل حجز</h3>
+    <input id="editBkName" value="${b.clientName}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="editBkPhone" value="${b.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editBkHall" class="w-full border-2 p-2 my-2 rounded-xl">${hallOpts}</select>
+    <input type="date" id="editBkDate" value="${b.date}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="editBkPrice" value="${b.price}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editBkStatus" class="w-full border-2 p-2 my-2 rounded-xl">
+      <option value="pending" ${b.status==='pending'?'selected':''}>معلق</option>
+      <option value="completed" ${b.status==='completed'?'selected':''}>مكتمل</option>
+    </select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditBooking('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// ==================== تحديث نوافذ الموظفين (إضافة + تعديل) ====================
+window.addEmployee = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة موظف</h3>
+    <input id="newEmpName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option>مخرج</option><option>مصور</option><option>كرين</option></select>
+    <input id="newEmpPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEmpSalary" placeholder="أجر الأوردر" value="200" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewEmployee()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.editEmployee = function(id) {
+  const e = employees.find(e => e.id === id);
+  if (!e) return;
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل موظف</h3>
+    <input id="editEmpName" value="${e.name}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select>
+    <input id="editEmpPhone" value="${e.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="editEmpSalary" value="${e.salaryPerOrder}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditEmployee('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// ==================== تحديث نوافذ القاعات (إضافة + تعديل) ====================
+window.addHall = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">🏛️ إضافة قاعة</h3>
+    <input id="newHallName" placeholder="اسم القاعة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed">مغلقة</option><option value="open">مفتوحة</option><option value="cafe">كافيه</option></select>
+    <input type="number" id="newHallPrice" placeholder="السعر الأساسي" value="3000" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewHall()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.editHall = function(id) {
+  const h = halls.find(h => h.id === id);
+  if (!h) return;
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل قاعة</h3>
+    <input id="editHallName" value="${h.name}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>مفتوحة</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select>
+    <input type="number" id="editHallPrice" value="${h.basePrice}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditHall('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// ==================== تحديث نوافذ العملاء (إضافة + تعديل) ====================
+window.addClient = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة عميل</h3>
+    <input id="newClientName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newClientPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newClientEmail" placeholder="البريد" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newClientAddr" placeholder="العنوان" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewClient()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.editClient = function(id) {
+  const c = clients.find(c => c.id === id);
+  if (!c) return;
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل عميل</h3>
+    <input id="editClientName" value="${c.name}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="editClientPhone" value="${c.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="editClientEmail" value="${c.email||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="editClientAddr" value="${c.address||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditClient('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// ==================== تحديث نوافذ المعدات (إضافة + تعديل) ====================
+window.addEquipment = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">📦 إضافة معدة</h3>
+    <input id="newEqName" placeholder="اسم المعدة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEqQty" placeholder="الكمية" value="1" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEqMin" placeholder="الحد الأدنى" value="1" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newEqCat" placeholder="الفئة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewEquipment()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.editEquipment = function(id) {
+  const eq = equipmentInventory[id];
+  if (!eq) return;
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل معدة</h3>
+    <input id="editEqName" value="${eq.name}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="editEqQty" value="${eq.quantity}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="editEqMin" value="${eq.minStock}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="editEqCat" value="${eq.category||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditEquipment('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// ==================== تحديث نوافذ المستخدمين (إضافة + تعديل) ====================
+window.addUser = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة مستخدم</h3>
+    <input id="newUserUsername" placeholder="اسم المستخدم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="password" id="newUserPass" placeholder="كلمة المرور" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newUserName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin">مدير</option><option value="manager">مدير تنفيذي</option><option value="employee">موظف</option><option value="agent">وكيل</option></select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewUser()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.editUser = function(id) {
+  const u = USERS.find(u => u.id === id);
+  if (!u) return;
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل مستخدم</h3>
+    <input id="editUserUsername" value="${u.username}" readonly class="w-full border-2 p-2 my-2 rounded-xl bg-gray-100">
+    <input type="password" id="editUserPass" placeholder="كلمة مرور جديدة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="editUserName" value="${u.name}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin" ${u.role==='admin'?'selected':''}>مدير</option><option value="manager" ${u.role==='manager'?'selected':''}>مدير تنفيذي</option><option value="employee" ${u.role==='employee'?'selected':''}>موظف</option><option value="agent" ${u.role==='agent'?'selected':''}>وكيل</option></select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditUser('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// ==================== تحديث استيراد الحجوزات (نوع القاعة + تجاهل الصفوف بدون اسم) ====================
+window.importBookingsFromFile = async function() {
+  const hallTypeOpts = `<option value="">افتراضي (من الملف)</option><option value="closed">مغلقة</option><option value="open">مفتوحة</option><option value="cafe">كافيه</option>`;
+  openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3>
+    <select id="importHallTypeSelect" class="w-full border-2 p-2 rounded-xl mb-3">${hallTypeOpts}</select>
+    <input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border-2 border-dashed p-4 rounded-xl mb-3">
+    <div id="importPreview" class="my-2 text-sm"></div>
+    <div class="flex gap-2">
+      <button onclick="processImportFile()" class="btn-primary flex-1">📥 استيراد</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+  document.getElementById('importFileInput').addEventListener('change', async function(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase(); let rows = [];
+    try {
+      if (ext==='xlsx'||ext==='xls') { const data = await file.arrayBuffer(); const wb = XLSX.read(data); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); }
+      else if (ext==='csv') { const text = await file.text(); const lines = text.split('\n'); const headers = lines[0].split(',').map(h => h.trim().replace(/["']/g,'')); rows = lines.slice(1).filter(l => l.trim()).map(line => { const vals = line.split(',').map(v => v.trim().replace(/["']/g,'')); let obj = {}; headers.forEach((h,i) => obj[h] = vals[i] || ''); return obj; }); }
+      else if (ext==='pdf') { const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise; let fullText = ''; for (let i=1;i<=pdf.numPages;i++){ const page = await pdf.getPage(i); const textContent = await page.getTextContent(); fullText += textContent.items.map(item => item.str).join(' ')+'\n'; } rows = parsePDFText(fullText); }
+      rows = rows.filter(row => Object.values(row).some(v => v && String(v).trim()));
+      window._importedRows = rows;
+      document.getElementById('importPreview').innerHTML = rows.length ? `<p class="text-green-600">✅ ${rows.length} صف صالح</p>` : `<p class="text-red-500">لا بيانات</p>`;
+    } catch(err) { showError('خطأ في الملف'); }
+  });
+};
+
+window.processImportFile = async function() {
+  const rows = window._importedRows || [];
+  if (!rows.length) { showError('لا بيانات'); return; }
+  const selectedHallType = document.getElementById('importHallTypeSelect')?.value || '';
+  let added = 0;
+  for (let row of rows) {
+    let name = row['اسم العميل']||row['client name']||row['العميل']||'';
+    // تجاهل إذا كان الاسم فارغًا أو "-" أو فراغات فقط
+    if (!name || name.trim() === '' || name.trim() === '-') continue;
+    let date = parseDateString(row['التاريخ']||row['date']);
+    const hallName = row['القاعة']||row['hall']||'القاعة المفتوحة';
+    let hall = halls.find(h => h.name === hallName);
+    if (!hall) {
+      hall = { id: generateId('h_'), name: hallName, type: selectedHallType || row['نوع القاعة'] || 'open', basePrice:0, active:true };
+      halls.push(hall);
+    } else if (selectedHallType) {
+      hall.type = selectedHallType;
+    }
+    bookings.push({
+      id: generateId('b_'), clientName: name, clientId:null, phone: row['الهاتف']||row['phone']||'',
+      hallId: hall.id, hallName: hall.name, date,
+      price: parseInt(row['السعر']||row['price']||0), status:'pending', paymentStatus:'pending',
+      assignedEmployees:[], notes:'', packageType: row['نوع الباكدج']||row['package']||'',
+      totalPersons: parseInt(row['اجمالي عدد الافراد']||row['total persons']||0)
+    });
+    added++;
+  }
+  await saveAllData(); renderBookings(); closeModal();
+  showMsg(`✅ تم استيراد ${added} حجز`); window._importedRows = [];
+};
 </script>
 </body>
 </html>
