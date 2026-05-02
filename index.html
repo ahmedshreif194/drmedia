@@ -250,7 +250,43 @@ function renderInternet() { const c=document.getElementById('content-area'); if(
 async function manualSync() { if(useFirebase&&db)try{await db.ref('/').set({bookings,employees,halls,clients,equipmentInventory,attendanceRecords,employeeLoans,notifications,trashBin,activityLog,companyName,companyLogo,USERS,rotationCounters,whatsappEnabled,whatsappBusinessNumber,whatsappMessageTemplate,appTheme,appLanguage,flashDrives,holidays,systemOfflineMode});online=true;lastSync=new Date();showMsg('✅ تمت المزامنة');}catch(e){online=false;showError('فشلت المزامنة');}renderInternet();}
 function switchOfflineMode() { systemOfflineMode=!systemOfflineMode;showMsg(systemOfflineMode?'📦 تم التبديل للوضع المحلي':'🌐 تم التبديل للوضع السحابي');saveAllData();renderInternet();}
 
-function renderSettings() { const c=document.getElementById('content-area'); if(!c)return; document.getElementById('pageTitle').textContent=t('settings'); c.innerHTML=`<div class="bg-card"><h2 class="text-xl font-bold">⚙️ ${t('settings')}</h2><div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4"><div class="md:col-span-3"><label class="text-sm font-semibold">🏢 اسم الشركة</label><input id="compName" value="${companyName}" class="w-full border-2 p-2 rounded-xl"></div><div><label class="text-sm font-semibold">🎨 المظهر</label><select id="themeSelect" class="w-full border-2 p-2 rounded-xl"><option value="light" ${appTheme==='light'?'selected':''}>فاتح</option><option value="dark" ${appTheme==='dark'?'selected':''}>داكن</option></select></div><div><label class="text-sm font-semibold">🌐 اللغة</label><select id="langSelect" class="w-full border-2 p-2 rounded-xl"><option value="ar" ${appLanguage==='ar'?'selected':''}>العربية</option><option value="en" ${appLanguage==='en'?'selected':''}>English</option></select></div><div><label class="text-sm font-semibold">🖼️ شعار الشركة</label><input type="file" id="logoUpload" accept="image/*" class="w-full border-2 p-2 rounded-xl" onchange="handleLogoUpload()"><div id="logoPreview" class="mt-2">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-16 rounded-xl">`:''}</div></div><div><label class="text-sm font-semibold">📱 رقم واتساب</label><input id="waNumber" value="${whatsappBusinessNumber}" class="w-full border-2 p-2 rounded-xl"></div><div><label class="text-sm font-semibold">✅ واتساب مفعل</label><select id="waEnabled" class="w-full border-2 p-2 rounded-xl"><option value="1" ${whatsappEnabled?'selected':''}>مفعل</option><option value="0" ${!whatsappEnabled?'selected':''}>معطل</option></select></div><div class="md:col-span-3"><label class="text-sm font-semibold">💬 قالب رسالة واتساب</label><input id="waMsgTemplate" value="${whatsappMessageTemplate}" class="w-full border-2 p-2 rounded-xl"></div></div><div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6"><button onclick="saveSettings()" class="btn-primary">💾 حفظ الإعدادات</button><button onclick="exportBackup()" class="btn-secondary">📤 تصدير باك أب</button><button onclick="importBackupPrompt()" class="btn-secondary">📥 استيراد باك أب</button><button onclick="resetSystemConfirm()" class="btn-danger">🔄 إعادة ضبط</button></div><div class="footer-bar">${footerText}</div></div>`; }
+function renderSettings() { 
+  const c = document.getElementById('content-area'); 
+  if (!c) return; 
+  document.getElementById('pageTitle').textContent = t('settings'); 
+  c.innerHTML = `
+    <div class="bg-card">
+      <h2 class="text-xl font-bold">⚙️ ${t('settings')}</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+        <div class="md:col-span-3"><label class="text-sm font-semibold">🏢 اسم الشركة</label><input id="compName" value="${companyName}" class="w-full border-2 p-2 rounded-xl"></div>
+        <div><label class="text-sm font-semibold">🎨 المظهر</label><select id="themeSelect" class="w-full border-2 p-2 rounded-xl"><option value="light" ${appTheme==='light'?'selected':''}>فاتح</option><option value="dark" ${appTheme==='dark'?'selected':''}>داكن</option></select></div>
+        <div><label class="text-sm font-semibold">🌐 اللغة</label><select id="langSelect" class="w-full border-2 p-2 rounded-xl"><option value="ar" ${appLanguage==='ar'?'selected':''}>العربية</option><option value="en" ${appLanguage==='en'?'selected':''}>English</option></select></div>
+        <div><label class="text-sm font-semibold">🖼️ شعار الشركة</label><input type="file" id="logoUpload" accept="image/*" class="w-full border-2 p-2 rounded-xl" onchange="handleLogoUpload()"><div id="logoPreview" class="mt-2">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-16 rounded-xl">`:''}</div></div>
+        <div><label class="text-sm font-semibold">📱 رقم واتساب</label><input id="waNumber" value="${whatsappBusinessNumber}" class="w-full border-2 p-2 rounded-xl"></div>
+        <div class="md:col-span-3"><label class="text-sm font-semibold">💬 قالب رسالة واتساب</label><input id="waMsgTemplate" value="${whatsappMessageTemplate}" class="w-full border-2 p-2 rounded-xl"></div>
+      </div>
+      
+      <!-- قسم تحديث النظام الجديد -->
+      <div class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl">
+        <h3 class="font-bold text-lg mb-3">🔄 تحديث النظام</h3>
+        <p class="text-sm text-gray-500 mb-3">يمكنك لصق كود HTML كامل أو رفع ملف .html لتحديث النظام مع الاحتفاظ بجميع البيانات.</p>
+        <textarea id="systemCodeInput" class="w-full border-2 p-3 rounded-xl mb-3 font-mono text-sm" rows="10" placeholder="الصق كود HTML الكامل هنا..."></textarea>
+        <div class="flex flex-col md:flex-row gap-2 mb-3">
+          <input type="file" id="systemFileInput" accept=".html,.txt" class="border-2 p-2 rounded-xl flex-1" onchange="handleSystemFileUpload()">
+          <button onclick="applySystemUpdate()" class="btn-primary">📥 تطبيق التحديث</button>
+        </div>
+        <p class="text-xs text-red-500">⚠️ تحذير: سيتم استبدال كود النظام بالكامل. تأكد من أن الكود الجديد يحتوي على هيكل البيانات المتوافق. البيانات الحالية لن تفقد.</p>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+        <button onclick="saveSettings()" class="btn-primary">💾 حفظ الإعدادات</button>
+        <button onclick="exportBackup()" class="btn-secondary">📤 تصدير باك أب</button>
+        <button onclick="importBackupPrompt()" class="btn-secondary">📥 استيراد باك أب</button>
+        <button onclick="resetSystemConfirm()" class="btn-danger">🔄 إعادة ضبط</button>
+      </div>
+    </div>
+  `; 
+}
 function handleLogoUpload() { const file=document.getElementById('logoUpload')?.files[0]; if(!file)return; const reader=new FileReader(); reader.onload=function(e){companyLogoBase64=e.target.result;document.getElementById('logoPreview').innerHTML=`<img src="${companyLogoBase64}" class="h-16 rounded-xl">`;};reader.readAsDataURL(file);}
 async function saveSettings() { companyName=document.getElementById('compName')?.value||companyName;appTheme=document.getElementById('themeSelect')?.value||'light';appLanguage=document.getElementById('langSelect')?.value||'ar';whatsappBusinessNumber=document.getElementById('waNumber')?.value||whatsappBusinessNumber;whatsappEnabled=document.getElementById('waEnabled')?.value==='1';whatsappMessageTemplate=document.getElementById('waMsgTemplate')?.value||whatsappMessageTemplate;await saveAllData();applyTheme(appTheme);showMsg('✅ تم الحفظ');renderAdminDashboard();}
 function importBackupPrompt() { openModal(`<h3 class="text-xl font-bold mb-4">📥 استيراد باك أب</h3><input type="file" id="backupFileInput" accept=".json" class="w-full border-2 p-2 rounded-xl mb-2"><button onclick="processBackupImport()" class="btn-primary w-full">📥 استيراد</button>`);}
