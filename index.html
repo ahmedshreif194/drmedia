@@ -1970,6 +1970,191 @@ window.renderEmpDash = function() {
       <footer class="footer-bar">${footerText}</footer>
     </div>`;
 };
+
+// --- صلاحيات الحسابات (دور جديد) ---
+if (!USERS.find(u => u.role === 'accountant')) {
+  USERS.push({ id:'acc1', username:'accountant', password:'acc123', role:'accountant', name:'محاسب الفلاشات' });
+}
+
+// --- زر مزامنة الفلاشات مع الحجوزات (تاريخ، يوم، اسم العريس) ---
+window.syncFlashesFromBookings = function() {
+  let added = 0;
+  bookings.forEach(b => {
+    if (b.deleted || b.status === 'cancelled') return;
+    // هل الفلاشة موجودة مسبقاً لهذا الحجز؟
+    const exists = flashDrives.some(f => f.bookingId === b.id);
+    if (!exists) {
+      flashDrives.push({
+        id: generateId('fl_'),
+        bookingId: b.id,
+        clientName: b.clientName,
+        date: b.date,
+        status: 'تم الاستلام من الحسابات',
+        currentHolder: 'الحسابات',
+        history: [{ date: new Date().toISOString(), action: 'إنشاء تلقائي من الحجز', user: 'النظام' }]
+      });
+      added++;
+    }
+  });
+  if (added > 0) {
+    saveAllData();
+    showMsg(`✅ تمت إضافة ${added} فلاشة من الحجوزات`);
+    renderFlash();
+  } else {
+    showMsg('ℹ️ جميع الحجوزات لها فلاشات بالفعل');
+  }
+};
+
+// --- تحديث صفحة الفلاشات (إضافة زر المزامنة + صلاحيات الحسابات) ---
+window.renderFlash = (function(oldRender) {
+  return function() {
+    if (oldRender) oldRender();
+    const c = document.getElementById('content-area');
+    if (!c) return;
+    document.getElementById('pageTitle').textContent = t('flash');
+    let html = `<div class="bg-card"><h2 class="text-xl font-bold">💾 ${t('flash')} (${flashDrives.length})</h2>
+      <div class="flex gap-2 mb-3">
+        <button onclick="addFlash()" class="btn-primary">+ فلاشة</button>
+        <button onclick="syncFlashesFromBookings()" class="btn-secondary">🔄 مزامنة من الحجوزات</button>
+        <button onclick="deleteSelectedFlashes()" class="btn-danger">🗑️ حذف المحدد</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.flash-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>اليوم</th><th>القاعة</th><th>حالة الفلاشة</th><th>الموقع</th><th>إجراءات</th></tr></thead>
+          <tbody>`;
+
+    flashDrives.forEach(f => {
+      const b = bookings.find(bk => bk.id === f.bookingId);
+      if (!b) return;
+      const actions = getFlashActions(f);
+      html += `<tr>
+        <td><input type="checkbox" class="flash-check" value="${f.id}"></td>
+        <td>${b.clientName}</td>
+        <td>${b.date}</td>
+        <td>${getWeekDayArabic(b.date)}</td>
+        <td>${b.hallName}</td>
+        <td><span class="status-badge status-pending">${f.status}</span></td>
+        <td>${f.currentHolder}</td>
+        <td class="flex gap-1">
+          ${actions}
+          ${isAdmin() ? `<button onclick="editFlash('${f.id}')" class="text-blue-600">✏️</button>` : ''}
+        </td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+    c.innerHTML = html;
+  };
+})(window.renderFlash);
+
+// --- صلاحيات الحركة للفلاشات (تشمل الحسابات) ---
+window.moveFlashTo = function(flashId, targetHolder) {
+  if (!targetHolder) return;
+  const f = flashDrives.find(f => f.id === flashId);
+  if (!f) return;
+  const user = currentUser;
+  if (!user) return;
+  const role = user.role;
+
+  // الأدوار المسموح لها بالتحكم الكامل
+  if (role === 'admin' || role === 'manager') {
+    if (!confirm(`تأكيد نقل الفلاشة إلى ${targetHolder}؟ (إداري)`)) return;
+    f.currentHolder = targetHolder;
+    f.status = 'تم النقل إدارياً إلى ' + targetHolder;
+    if (!f.history) f.history = [];
+    f.history.push({ date: new Date().toISOString(), action: f.status, user: user.name });
+    saveAllData(); renderFlash(); showMsg('✅ تم النقل');
+    return;
+  }
+
+  // صلاحيات الأدوار المحددة
+  const allowedMoves = {
+    'الحسابات': { allowedRoles: ['accountant'], next: 'المونتير' },
+    'المونتير': { allowedRoles: ['montage'], next: 'المصور' },
+    'المصور': { allowedRoles: ['photo'], next: 'المبيعات' },
+    'المبيعات': { allowedRoles: ['sales'], next: 'العريس' },
+    'العريس': { allowedRoles: [] }
+  };
+
+  const currentStage = f.currentHolder;
+  const move = allowedMoves[currentStage];
+  if (!move) { showError('مرحلة غير معروفة'); return; }
+  if (!move.allowedRoles.includes(role)) { showError('غير مسموح لك بهذه الحركة'); return; }
+  if (targetHolder !== move.next) { showError(`يجب التسليم إلى ${move.next} فقط`); return; }
+  if (!confirm(`تأكيد تسليم الفلاشة من ${currentStage} إلى ${targetHolder}؟`)) return;
+
+  f.currentHolder = targetHolder;
+  f.status = `تم التسليم من ${currentStage} إلى ${targetHolder}`;
+  if (!f.history) f.history = [];
+  f.history.push({ date: new Date().toISOString(), action: f.status, user: user.name });
+  saveAllData(); renderFlash(); showMsg('✅ تم التسليم بنجاح');
+  addActivity('تسليم فلاشة', `${user.name} سلم فلاشة ${f.clientName} من ${currentStage} إلى ${targetHolder}`);
+};
+
+// --- قائمة منسدلة للإجراءات حسب الدور (تظهر في صفحة الفلاشات) ---
+window.getFlashActions = function(f) {
+  const user = currentUser;
+  if (!user) return '';
+  const role = user.role;
+  // المدير والمحاسب لهم قائمة كاملة
+  if (role === 'admin' || role === 'manager' || role === 'accountant') {
+    return `<select onchange="moveFlashTo('${f.id}', this.value)" class="border p-1 rounded text-sm">
+      <option value="">-- حركة --</option>
+      <option value="الحسابات">الحسابات</option>
+      <option value="المونتير">المونتير</option>
+      <option value="المصور">المصور</option>
+      <option value="المبيعات">المبيعات</option>
+      <option value="العريس">العريس</option>
+    </select>`;
+  }
+
+  const allowedMoves = {
+    'الحسابات': { allowedRoles: ['accountant'], next: 'المونتير' },
+    'المونتير': { allowedRoles: ['montage'], next: 'المصور' },
+    'المصور': { allowedRoles: ['photo'], next: 'المبيعات' },
+    'المبيعات': { allowedRoles: ['sales'], next: 'العريس' }
+  };
+  const current = allowedMoves[f.currentHolder];
+  if (current && current.allowedRoles.includes(role)) {
+    return `<select onchange="moveFlashTo('${f.id}', this.value)" class="border p-1 rounded text-sm">
+      <option value="">-- حركة --</option>
+      <option value="${current.next}">تسليم إلى ${current.next}</option>
+    </select>`;
+  }
+  return '<span class="text-gray-400 text-xs">لا توجد صلاحية</span>';
+};
+
+// --- إضافة دور الحسابات إلى واجهة الموظفين ---
+window.renderEmpDash = function() {
+  const emp = employees.find(e => e.id === currentUser?.employeeId);
+  if (!emp) {
+    document.getElementById('app').innerHTML = `<div class="p-4"><h2>لا يوجد موظف مرتبط</h2><button onclick="logout()" class="btn-danger">خروج</button></div>`;
+    return;
+  }
+  const role = currentUser?.role;
+  // عرض خاص بالأدوار الجديدة (حسابات، مونتير، فوتو، مبيعات)
+  if (['accountant','montage','photo','sales'].includes(role)) {
+    document.getElementById('app').innerHTML = `
+      <div class="min-h-screen bg-gray-100 p-4">
+        <h2 class="text-xl font-bold mb-4">👋 مرحباً ${emp.name} (${role})</h2>
+        <p class="mb-4 text-gray-500">مسؤول عن إدارة الفلاشات</p>
+        <button onclick="navigateTo('flash')" class="btn-primary">💾 الفلاشات</button>
+        <button onclick="logout()" class="btn-danger ml-2">خروج</button>
+      </div>`;
+    return;
+  }
+  // واجهة الموظف العادي (أوردرات)
+  const myBookings = bookings.filter(b => (b.assignedEmployees||[]).includes(emp.id) && b.status !== 'cancelled').sort((a,b)=>b.date.localeCompare(a.date));
+  document.getElementById('app').innerHTML = `
+    <div class="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+      <header class="bg-white dark:bg-gray-800 p-4 flex justify-between"><h1>${companyName}</h1><button onclick="logout()" class="btn-danger text-sm">خروج</button></header>
+      <main class="p-4 flex-1 max-w-4xl mx-auto">
+        <div class="bg-card mb-4"><h2>👋 مرحباً ${emp.name}</h2><p>${emp.role} | الأوردرات: ${myBookings.length}</p></div>
+        <div class="bg-card"><h3>📅 أوردراتي</h3>${myBookings.length ? myBookings.map(b=>`<div class="border-b py-2 text-sm">${b.date} - ${b.clientName} (${b.hallName})</div>`).join('') : '<p class="text-gray-400">لا توجد</p>'}</div>
+      </main>
+      <footer class="footer-bar">${footerText}</footer>
+    </div>`;
+};
 </script>
 </body>
 </html>
