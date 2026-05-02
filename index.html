@@ -2156,6 +2156,10 @@ window.renderEmpDash = function() {
     </div>`;
 };
 
+// ============================================================
+// تحديث مصحح: فلاشات بالتاريخ + أرشيف (مع تجنب التكرار)
+// ============================================================
+
 // --- 1. صفحة الفلاشات (ترتيب بالتاريخ + قوائم منسدلة + توقيع) ---
 window.renderFlash = function() {
   const c = document.getElementById('content-area');
@@ -2183,7 +2187,6 @@ window.renderFlash = function() {
   sorted.forEach(f => {
     const b = bookings.find(bk => bk.id === f.bookingId);
     if (!b) return;
-    // آخر توقيع (آخر حركة في التاريخ)
     const lastSignature = f.history && f.history.length ? f.history[f.history.length-1] : null;
     const signatureText = lastSignature ? `${lastSignature.user || ''} ${new Date(lastSignature.date).toLocaleString('ar-EG')}` : '—';
     
@@ -2224,7 +2227,7 @@ window.renderFlash = function() {
   c.innerHTML = html;
 };
 
-// دوال مساعدة لتحديث الحالة والموقع مباشرة من القائمة المنسدلة
+// دوال مساعدة للقوائم المنسدلة
 window.updateFlashStatus = function(flashId, newStatus) {
   const f = flashDrives.find(f => f.id === flashId);
   if (!f) return;
@@ -2256,7 +2259,46 @@ window.deleteSingleFlash = function(id) {
   }
 };
 
-// --- 2. صفحة الأرشيف (تخزين جميع البيانات بتنسيق JSON مع إمكانية التصدير والاستيراد) ---
+window.deleteSelectedFlashes = function() {
+  const ids = Array.from(document.querySelectorAll('.flash-check:checked')).map(cb => cb.value);
+  if (!ids.length) { showError('لم يتم تحديد فلاشات'); return; }
+  if (confirm(`حذف ${ids.length} فلاشة؟`)) {
+    flashDrives = flashDrives.filter(f => !ids.includes(f.id));
+    saveAllData();
+    renderFlash();
+    showMsg(`🗑️ تم حذف ${ids.length} فلاشة`);
+  }
+};
+
+// --- 2. مزامنة الفلاشات مع الحجوزات ---
+window.syncFlashesFromBookings = function() {
+  let added = 0;
+  bookings.forEach(b => {
+    if (b.deleted || b.status === 'cancelled') return;
+    const exists = flashDrives.some(f => f.bookingId === b.id);
+    if (!exists) {
+      flashDrives.push({
+        id: generateId('fl_'),
+        bookingId: b.id,
+        clientName: b.clientName,
+        date: b.date,
+        status: 'تم الاستلام من الحسابات',
+        currentHolder: 'الحسابات',
+        history: [{ date: new Date().toISOString(), action: 'إنشاء تلقائي من الحجز', user: 'النظام' }]
+      });
+      added++;
+    }
+  });
+  if (added > 0) {
+    saveAllData();
+    renderFlash();
+    showMsg(`✅ تمت إضافة ${added} فلاشة`);
+  } else {
+    showMsg('ℹ️ جميع الحجوزات لها فلاشات بالفعل');
+  }
+};
+
+// --- 3. صفحة الأرشيف ---
 window.renderArchive = function() {
   const c = document.getElementById('content-area');
   if (!c) return;
@@ -2265,16 +2307,15 @@ window.renderArchive = function() {
   const fullData = {
     bookings, employees, halls, clients, equipmentInventory,
     attendanceRecords, employeeLoans, notifications, trashBin,
-    activityLog, flashDrives, holidays, substitutions: window.substitutions || [],
-    payrollPayments: window.payrollPayments || [],
+    activityLog, flashDrives, holidays,
     exportedAt: new Date().toISOString()
   };
   const jsonStr = JSON.stringify(fullData, null, 2);
   
   c.innerHTML = `
     <div class="bg-card">
-      <h2 class="text-xl font-bold mb-4">📦 أرشيف النظام (حفظ / استيراد كامل)</h2>
-      <p class="text-sm text-gray-500 mb-3">يمكنك تصدير جميع بيانات النظام في ملف JSON واحد لاستخدامه كنسخة احتياطية أو استيراده لاحقاً.</p>
+      <h2 class="text-xl font-bold mb-4">📦 أرشيف النظام</h2>
+      <p class="text-sm text-gray-500 mb-3">تصدير أو استيراد كافة بيانات النظام في ملف JSON واحد.</p>
       <div class="flex gap-2 mb-4">
         <button onclick="exportArchive()" class="btn-primary">📤 تصدير الأرشيف</button>
         <button onclick="importArchivePrompt()" class="btn-secondary">📥 استيراد أرشيف</button>
@@ -2289,8 +2330,7 @@ window.exportArchive = function() {
   const fullData = {
     bookings, employees, halls, clients, equipmentInventory,
     attendanceRecords, employeeLoans, notifications, trashBin,
-    activityLog, flashDrives, holidays, substitutions: window.substitutions || [],
-    payrollPayments: window.payrollPayments || [],
+    activityLog, flashDrives, holidays,
     exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' });
@@ -2308,7 +2348,7 @@ window.exportArchive = function() {
 window.importArchivePrompt = function() {
   openModal(`<h3 class="text-xl font-bold mb-4">📥 استيراد أرشيف</h3>
     <input type="file" id="archiveFileInput" accept=".json" class="w-full border-2 p-2 rounded-xl mb-2">
-    <button onclick="processArchiveImport()" class="btn-primary w-full">📥 استيراد</button>`);
+    <div class="flex gap-2"><button onclick="processArchiveImport()" class="btn-primary flex-1">📥 استيراد</button><button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
 };
 
 window.processArchiveImport = function() {
@@ -2318,8 +2358,7 @@ window.processArchiveImport = function() {
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      if (confirm('سيتم استبدال جميع البيانات الحالية ببيانات الأرشيف. هل أنت متأكد؟')) {
-        // استبدال جميع المصفوفات الرئيسية
+      if (confirm('سيتم استبدال جميع البيانات الحالية. هل أنت متأكد؟')) {
         bookings = data.bookings || [];
         employees = data.employees || [];
         halls = data.halls || [];
@@ -2332,8 +2371,6 @@ window.processArchiveImport = function() {
         activityLog = data.activityLog || [];
         flashDrives = data.flashDrives || [];
         holidays = data.holidays || [];
-        window.substitutions = data.substitutions || [];
-        window.payrollPayments = data.payrollPayments || [];
         saveAllData();
         closeModal();
         renderAdminDashboard();
@@ -2344,30 +2381,29 @@ window.processArchiveImport = function() {
   reader.readAsText(file);
 };
 
-// --- 3. إضافة تبويب "الأرشيف" إلى القائمة الجانبية ---
-const originalRenderAdmin = window.renderAdminDashboard;
-window.renderAdminDashboard = function() {
-  const pages = ['dashboard','bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','activityLog','flash','internet','settings','archive','substitutions'];
-  document.getElementById('app').innerHTML = `
-    <div class="sidebar" id="sidebar">
-      <div class="p-4 border-b border-gray-200 dark:border-gray-700 text-center"><div class="text-2xl font-bold">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-10 inline rounded-full">`:companyLogo} ${companyName}</div></div>
-      <div class="py-2">${pages.map(p => `<div class="sidebar-item ${p==='dashboard'?'active':''}" data-page="${p}" onclick="navigateTo('${p}')"><span>${p==='archive'?'📦 الأرشيف':p==='substitutions'?'🔄 التبديل':t(p)}</span></div>`).join('')}</div>
-      <div class="footer-bar">${footerText}</div>
-    </div>
-    <div class="topbar"><div class="flex items-center gap-3"><button class="md:hidden btn-outline text-xl p-2" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button><span class="font-semibold text-lg" id="pageTitle">${t('dashboard')}</span></div><div class="flex items-center gap-3"><span class="text-sm hidden md:inline">👋 ${currentUser?.name}</span><button onclick="logout()" class="btn-danger text-sm">🚪 خروج</button></div></div>
-    <div class="main-content" id="content-area"></div>
-  `;
-  navigateTo('dashboard');
-};
+// --- 4. إضافة تبويب "الأرشيف" للقائمة (بأمان دون تكرار) ---
+(function updateSidebar() {
+  const sidebar = document.querySelector('.sidebar .py-2');
+  if (!sidebar) return;
+  // لا نضيف التبويب إذا كان موجوداً مسبقاً
+  if (document.querySelector('[data-page="archive"]')) return;
+  
+  const archiveItem = document.createElement('div');
+  archiveItem.className = 'sidebar-item';
+  archiveItem.setAttribute('data-page', 'archive');
+  archiveItem.onclick = function() { navigateTo('archive'); };
+  archiveItem.innerHTML = '<span>📦 الأرشيف</span>';
+  sidebar.appendChild(archiveItem);
+})();
 
-// تحديث navigateTo ليشمل الأرشيف
-const originalNavigate = window.navigateTo;
+// تحديث navigateTo لدعم الأرشيف
+const origNavigate = window.navigateTo;
 window.navigateTo = function(page) {
   document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
   const item = document.querySelector(`[data-page="${page}"]`);
   if (item) item.classList.add('active');
-  if (page === 'archive') renderArchive();
-  else if (page === 'substitutions') renderSubstitutions();
+  if (page === 'archive') { renderArchive(); return; }
+  if (origNavigate) origNavigate(page);
   else {
     const fn = window['render' + page.charAt(0).toUpperCase() + page.slice(1)];
     if (typeof fn === 'function') fn();
