@@ -2679,6 +2679,128 @@ window.renderEmpDash = function() {
       <footer class="footer-bar">${footerText}</footer>
     </div>`;
 };
+// ============================================================
+// تحديث: رقم سري لإظهار الأرباح مع مصروفات إضافية
+// ============================================================
+
+// الرقم السري الافتراضي (يمكن تغييره من الإعدادات)
+let profitPin = localStorage.getItem('drmedia_profit_pin') || '1234';
+
+// دالة عرض نافذة الأرباح
+window.showProfitPanel = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">🔒 أدخل الرقم السري لعرض الأرباح</h3>
+    <input type="password" id="profitPinInput" placeholder="الرقم السري" class="w-full border-2 p-3 rounded-xl mb-2" maxlength="4">
+    <div class="flex gap-2">
+      <button onclick="verifyProfitPin()" class="btn-primary flex-1">✅ عرض</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>
+    <p class="text-xs text-gray-400 mt-2">الرقم الافتراضي: 1234 (يمكن تغييره من الإعدادات)</p>`);
+};
+
+window.verifyProfitPin = function() {
+  const entered = document.getElementById('profitPinInput')?.value;
+  if (entered === profitPin) {
+    closeModal();
+    showProfitDetails();
+  } else {
+    showError('الرقم السري غير صحيح');
+  }
+};
+
+window.showProfitDetails = function() {
+  // حساب الإيرادات (كل الحجوزات غير الملغاة وغير المحذوفة)
+  const validBookings = bookings.filter(b => !b.deleted && b.status !== 'cancelled');
+  const totalRevenue = validBookings.reduce((sum, b) => sum + (b.price || 0), 0);
+
+  // حساب تكلفة الموظفين (كل موظف يحصل على salaryPerOrder عن كل أوردر حضر فيه)
+  let totalEmployeesCost = 0;
+  const empEarnings = []; // لتفصيل كل موظف
+  employees.forEach(e => {
+    const empBookings = validBookings.filter(b => (b.assignedEmployees || []).includes(e.id));
+    // الأوردرات التي حضرها الموظف (سجل حضور)
+    const attendedBookings = empBookings.filter(b => attendanceRecords.some(a => a.empId === e.id && a.date === b.date && a.checkIn));
+    const empCost = attendedBookings.length * (e.salaryPerOrder || 0);
+    totalEmployeesCost += empCost;
+    empEarnings.push({ name: e.name, orders: attendedBookings.length, cost: empCost });
+  });
+
+  // عرض إضافي للمصروفات الاختيارية التي سيُدخلها المستخدم
+  let additionalExpense = 0;
+  let html = `<div style="max-height:70vh; overflow-y:auto;">
+    <h3 class="text-xl font-bold mb-4 text-center">💰 لوحة الأرباح</h3>
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div class="bg-green-50 p-3 rounded-xl text-center">
+        <div class="text-lg font-bold text-green-700">${formatCurrency(totalRevenue)}</div>
+        <div class="text-sm">الإيرادات الكلية</div>
+      </div>
+      <div class="bg-red-50 p-3 rounded-xl text-center">
+        <div class="text-lg font-bold text-red-700">${formatCurrency(totalEmployeesCost)}</div>
+        <div class="text-sm">تكاليف الموظفين</div>
+      </div>
+    </div>
+    <div class="mb-4"><label class="text-sm font-semibold">مصاريف إضافية (كهرباء، صيانة...)</label>
+      <input type="number" id="additionalExpenseInput" class="w-full border-2 p-2 rounded-xl mt-1" value="0" onchange="updateNetProfit()">
+    </div>
+    <h4 class="font-bold mb-2">تفصيل الموظفين</h4>
+    <table class="text-sm w-full mb-4"><thead><tr><th>الاسم</th><th>أوردرات حضرها</th><th>التكلفة</th></tr></thead><tbody>`;
+  empEarnings.forEach(ee => {
+    html += `<tr><td>${ee.name}</td><td>${ee.orders}</td><td>${formatCurrency(ee.cost)}</td></tr>`;
+  });
+  html += `</tbody></table>
+    <div class="bg-blue-50 p-4 rounded-xl text-center text-lg font-bold" id="netProfitDisplay">
+      صافي المكسب: ${formatCurrency(totalRevenue - totalEmployeesCost)}
+    </div>
+    <div class="flex gap-2 mt-4">
+      <button onclick="closeModal()" class="btn-outline flex-1">إغلاق</button>
+      <button onclick="changeProfitPin()" class="btn-secondary text-sm">⚙️ تغيير الرقم السري</button>
+    </div>
+  </div>`;
+
+  openModal(html);
+
+  // دالة تحديث صافي المكسب عند تغيير المصروفات الإضافية
+  window.updateNetProfit = function() {
+    additionalExpense = parseInt(document.getElementById('additionalExpenseInput')?.value) || 0;
+    const net = totalRevenue - totalEmployeesCost - additionalExpense;
+    const display = document.getElementById('netProfitDisplay');
+    if (display) display.innerHTML = `صافي المكسب: ${formatCurrency(net)}`;
+  };
+};
+
+// تغيير الرقم السري
+window.changeProfitPin = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">⚙️ تغيير الرقم السري</h3>
+    <input type="password" id="oldPinInput" placeholder="الرقم الحالي" class="w-full border-2 p-2 rounded-xl mb-2" maxlength="4">
+    <input type="password" id="newPinInput" placeholder="الرقم الجديد" class="w-full border-2 p-2 rounded-xl mb-2" maxlength="4">
+    <div class="flex gap-2">
+      <button onclick="saveNewProfitPin()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.saveNewProfitPin = function() {
+  const oldPin = document.getElementById('oldPinInput')?.value;
+  const newPin = document.getElementById('newPinInput')?.value;
+  if (oldPin !== profitPin) { showError('الرقم الحالي غير صحيح'); return; }
+  if (!newPin || newPin.length < 4) { showError('الرقم الجديد يجب أن يكون 4 أرقام'); return; }
+  profitPin = newPin;
+  localStorage.setItem('drmedia_profit_pin', newPin);
+  closeModal();
+  showMsg('✅ تم تغيير الرقم السري بنجاح');
+};
+
+// إضافة زر "عرض الإيرادات" في شريط العنوان (topbar)
+(function() {
+  const topbar = document.querySelector('.topbar .flex.items-center.gap-3:last-child');
+  if (topbar && !document.getElementById('profitBtn')) {
+    const btn = document.createElement('button');
+    btn.id = 'profitBtn';
+    btn.className = 'btn-secondary text-sm';
+    btn.textContent = '💰 الإيرادات';
+    btn.onclick = showProfitPanel;
+    topbar.prepend(btn);
+  }
+})();
 </script>
 </body>
 </html>
