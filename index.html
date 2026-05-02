@@ -3096,6 +3096,235 @@ window.markAllAttendance = function() {
   renderAttendance();
   showMsg(`✅ تم تسجيل حضور الكل (${currentTime})`);
 };
+// ============================================================
+// تحديث: توزيع ذكي سريع يمنع تكرار الموظف في نفس اليوم
+// ============================================================
+
+// توزيع كل الحجوزات المعلقة (سريع وآمن)
+window.smartDistribute = async function() {
+  const pending = bookings.filter(b => b.status === 'pending' && !b.deleted);
+  if (!pending.length) { showWarning('لا توجد حجوزات معلقة'); return; }
+
+  // الموظفون المتاحون
+  const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
+  const phs = employees.filter(e => e.role === 'مصور' && e.active);
+  const crs = employees.filter(e => e.role === 'كرين' && e.active);
+
+  // سجل الموظفين المشغولين في كل يوم (من الحجوزات الحالية)
+  const busy = {}; // { date: Set(employeeIds) }
+  bookings.forEach(b => {
+    if (b.deleted || b.status === 'cancelled') return;
+    if (!busy[b.date]) busy[b.date] = new Set();
+    (b.assignedEmployees || []).forEach(id => busy[b.date].add(id));
+  });
+
+  let assignedCount = 0;
+
+  for (let b of pending) {
+    const type = (halls.find(h => h.id === b.hallId) || {}).type || 'closed';
+    
+    if (!busy[b.date]) busy[b.date] = new Set();
+    
+    const chosen = [];
+
+    if (type === 'cafe') {
+      // للكافيه نكتفي بمصور واحد إن وجد
+      if (phs.length) {
+        const free = phs.find(p => !busy[b.date].has(p.id));
+        if (free) {
+          chosen.push(free.id);
+          busy[b.date].add(free.id);
+        }
+      }
+    } else {
+      // قاعة مغلقة أو مفتوحة: مخرج، مصورين، كرين
+      // مخرج
+      if (dirs.length) {
+        const free = dirs.find(d => !busy[b.date].has(d.id));
+        if (free) {
+          chosen.push(free.id);
+          busy[b.date].add(free.id);
+        }
+      }
+      
+      // مصورين (حتى 2، مع تجنب المشغولين)
+      if (phs.length) {
+        for (let i = 0; i < phs.length; i++) {
+          if (chosen.filter(id => phs.some(p => p.id === id)).length >= 2) break;
+          const p = phs[i];
+          if (!busy[b.date].has(p.id)) {
+            chosen.push(p.id);
+            busy[b.date].add(p.id);
+          }
+        }
+      }
+      
+      // كرين
+      if (crs.length) {
+        const free = crs.find(c => !busy[b.date].has(c.id));
+        if (free) {
+          chosen.push(free.id);
+          busy[b.date].add(free.id);
+        }
+      }
+    }
+
+    b.assignedEmployees = chosen;
+    assignedCount++;
+  }
+
+  updateEmployeeOrders();
+  await saveAllData();
+
+  // إرسال إشعارات (اختياري)
+  for (let b of pending) {
+    b.assignedEmployees.forEach(eid => {
+      const emp = employees.find(e => e.id === eid);
+      if (emp) {
+        notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
+      }
+    });
+  }
+
+  addActivity('توزيع ذكي', `تم توزيع ${assignedCount} حجز`);
+  renderBookings();
+  renderDistribution();
+  showMsg(`✅ تم توزيع ${assignedCount} حجز`);
+};
+
+// توزيع فردي لحجز واحد (مستخدم من صفحة الحجوزات)
+window.distributeSingleBooking = async function(bookingId) {
+  const b = bookings.find(bk => bk.id === bookingId);
+  if (!b) return;
+
+  const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
+  const phs = employees.filter(e => e.role === 'مصور' && e.active);
+  const crs = employees.filter(e => e.role === 'كرين' && e.active);
+
+  const busy = new Set();
+  bookings.filter(bk => bk.date === b.date && bk.id !== bookingId && !bk.deleted && bk.status !== 'cancelled')
+    .forEach(bk => (bk.assignedEmployees || []).forEach(id => busy.add(id)));
+
+  const type = (halls.find(h => h.id === b.hallId) || {}).type || 'closed';
+  const chosen = [];
+
+  if (type === 'cafe') {
+    if (phs.length) {
+      const free = phs.find(p => !busy.has(p.id));
+      if (free) chosen.push(free.id);
+    }
+  } else {
+    if (dirs.length) {
+      const free = dirs.find(d => !busy.has(d.id));
+      if (free) chosen.push(free.id);
+    }
+    if (phs.length) {
+      const freeList = phs.filter(p => !busy.has(p.id));
+      for (let i = 0; i < Math.min(2, freeList.length); i++) {
+        chosen.push(freeList[i].id);
+      }
+    }
+    if (crs.length) {
+      const free = crs.find(c => !busy.has(c.id));
+      if (free) chosen.push(free.id);
+    }
+  }
+
+  b.assignedEmployees = chosen;
+  updateEmployeeOrders();
+  await saveAllData();
+  renderBookings();
+  showMsg(`✅ تم توزيع الموظفين على ${b.clientName}`);
+};
+
+// تدوير الموظفين (بسيط وآمن)
+window.rotateDistribution = async function() {
+  const pending = bookings.filter(b => b.status === 'pending' && !b.deleted);
+  if (!pending.length) { showWarning('لا حجوزات معلقة'); return; }
+
+  const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
+  const phs = employees.filter(e => e.role === 'مصور' && e.active);
+  const crs = employees.filter(e => e.role === 'كرين' && e.active);
+
+  let di = 0, pi = 0, ci = 0;
+  const busyByDay = {}; // { date: Set(empIds) }
+
+  bookings.forEach(b => {
+    if (b.deleted || b.status === 'cancelled') return;
+    if (!busyByDay[b.date]) busyByDay[b.date] = new Set();
+    (b.assignedEmployees || []).forEach(id => busyByDay[b.date].add(id));
+  });
+
+  for (let b of pending) {
+    if (!busyByDay[b.date]) busyByDay[b.date] = new Set();
+    const type = (halls.find(h => h.id === b.hallId) || {}).type || 'closed';
+    const assigned = [];
+
+    if (type === 'cafe') {
+      if (phs.length) {
+        for (let i = 0; i < phs.length; i++) {
+          const idx = (pi + i) % phs.length;
+          const emp = phs[idx];
+          if (!busyByDay[b.date].has(emp.id)) {
+            assigned.push(emp.id);
+            busyByDay[b.date].add(emp.id);
+            pi = (idx + 1) % phs.length;
+            break;
+          }
+        }
+      }
+    } else {
+      // مخرج
+      if (dirs.length) {
+        for (let i = 0; i < dirs.length; i++) {
+          const idx = (di + i) % dirs.length;
+          const emp = dirs[idx];
+          if (!busyByDay[b.date].has(emp.id)) {
+            assigned.push(emp.id);
+            busyByDay[b.date].add(emp.id);
+            di = (idx + 1) % dirs.length;
+            break;
+          }
+        }
+      }
+      // مصورين
+      if (phs.length) {
+        let added = 0;
+        for (let i = 0; i < phs.length && added < 2; i++) {
+          const idx = (pi + i) % phs.length;
+          const emp = phs[idx];
+          if (!busyByDay[b.date].has(emp.id)) {
+            assigned.push(emp.id);
+            busyByDay[b.date].add(emp.id);
+            added++;
+            if (added === 1) pi = (idx + 1) % phs.length;
+          }
+        }
+      }
+      // كرين
+      if (crs.length) {
+        for (let i = 0; i < crs.length; i++) {
+          const idx = (ci + i) % crs.length;
+          const emp = crs[idx];
+          if (!busyByDay[b.date].has(emp.id)) {
+            assigned.push(emp.id);
+            busyByDay[b.date].add(emp.id);
+            ci = (idx + 1) % crs.length;
+            break;
+          }
+        }
+      }
+    }
+    b.assignedEmployees = assigned;
+  }
+
+  rotationCounters = { dir: di, ph: pi, cr: ci };
+  updateEmployeeOrders();
+  await saveAllData();
+  renderBookings();
+  renderDistribution();
+  showMsg('✅ تم التوزيع بالتدوير');
+};
 </script>
 </body>
 </html>
