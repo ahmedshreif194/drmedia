@@ -516,13 +516,12 @@ async function processImportFile() {
   
   for (let row of rows) {
     let name = row['اسم العميل'] || row['client name'] || row['العميل'] || '';
-    // تجاهل الصف إذا كان الاسم فارغاً أو "-" أو فراغات فقط
     if (!name || name.trim() === '' || name.trim() === '-') continue;
     
     let date = parseDateString(row['التاريخ'] || row['date']);
     const hallName = row['القاعة'] || row['hall'] || 'القاعة المفتوحة';
     
-    // البحث عن القاعة أو إنشاء جديدة
+    // البحث عن القاعة أو إنشاء واحدة جديدة
     let hall = halls.find(h => h.name === hallName);
     if (!hall) {
       hall = { 
@@ -534,7 +533,7 @@ async function processImportFile() {
       };
       halls.push(hall);
     } else if (selectedHallType) {
-      // تحديث النوع إذا تم اختياره صراحةً
+      // ✨ هذا السطر هو الحل: يجبر القاعة الموجودة على أخذ النوع المختار
       hall.type = selectedHallType;
     }
     
