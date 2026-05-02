@@ -445,6 +445,70 @@ function deleteSelectedTrash() {
   renderTrash();
   showMsg(`🗑️ تم حذف ${ids.length} عنصر نهائياً`);
 }
+     (function() {
+    var style = document.createElement('style');
+    style.id = 'mobile-sidebar-scroll-fix';
+    style.textContent = `
+      @media (max-width: 768px) {
+        /* إصلاح القائمة الجانبية لتكون قابلة للتمرير */
+        .sidebar {
+          position: fixed !important;
+          top: 0 !important;
+          right: 0 !important;
+          height: 100vh !important;
+          max-height: 100vh !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          -webkit-overflow-scrolling: touch;
+          padding-bottom: 80px !important; /* مساحة لشريط التنقل السفلي */
+          z-index: 1000;
+          background-color: var(--card, #ffffff);
+          border-left: 1px solid var(--border, #e5e7eb);
+          box-shadow: -2px 0 12px rgba(0,0,0,0.1);
+        }
+        
+        /* إخفاء التذييل الثابت من القائمة الجانبية */
+        .sidebar .footer-bar {
+          display: none !important;
+        }
+        
+        /* شريط تمرير مخصص */
+        .sidebar::-webkit-scrollbar {
+          width: 5px;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+          background-color: #16a34a;
+          border-radius: 10px;
+        }
+        .sidebar::-webkit-scrollbar-track {
+          background-color: #f1f1f1;
+        }
+        
+        /* الوضع الداكن */
+        body.dark .sidebar::-webkit-scrollbar-track {
+          background-color: #2d2d3a;
+        }
+        
+        /* تأكيد ظهور القائمة عند فتحها */
+        .sidebar.open {
+          right: 0 !important;
+          width: 260px !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // إغلاق القائمة عند النقر خارجها على الموبايل
+    document.addEventListener('click', function(e) {
+      var sidebar = document.getElementById('sidebar');
+      if (!sidebar) return;
+      if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+        if (!sidebar.contains(e.target) && !e.target.closest('[onclick*="sidebar"]')) {
+          sidebar.classList.remove('open');
+        }
+      }
+    });
+  })();
 </script>
 </body>
 </html>
