@@ -2881,6 +2881,120 @@ window.recordPastAttendance = function(type) {
     }
   };
 })();
+// ============================================================
+// تحديث: أزرار ملونة للحالة (معلق، مكتمل، ملغي) في صفحة الحجوزات
+// ============================================================
+
+window.renderBookings = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('bookings');
+  let filtered = bookings.filter(b => !b.deleted);
+  if (bookingFilterStatus !== 'all') filtered = filtered.filter(b => b.status === bookingFilterStatus);
+  if (bookingFilterHall !== 'all') filtered = filtered.filter(b => b.hallId === bookingFilterHall);
+  if (bookingFilterDateFrom) filtered = filtered.filter(b => b.date >= bookingFilterDateFrom);
+  if (bookingFilterDateTo) filtered = filtered.filter(b => b.date <= bookingFilterDateTo);
+  filtered.sort((a,b) => a.date.localeCompare(b.date));
+  const rev = filtered.reduce((s,b) => s + (b.price||0), 0);
+  const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+
+  c.innerHTML = `<div class="bg-card">
+    <div class="flex justify-between flex-wrap gap-2 mb-3">
+      <h2 class="text-xl font-bold">📅 ${t('bookings')} (${filtered.length})</h2>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="addBooking()" class="btn-primary">+ حجز</button>
+        <button onclick="importBookingsFromFile()" class="btn-secondary">📂 استيراد</button>
+        <button onclick="smartDistribute()" class="btn-secondary">🧠 توزيع الكل</button>
+        <button onclick="rotateDistribution()" class="btn-secondary">🔄 تدوير الكل</button>
+        <button onclick="deleteSelectedBookings()" class="btn-danger">🗑️ حذف المحدد</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
+      <input type="text" id="bookSearch" placeholder="🔍 بحث" class="border-2 p-2 rounded-xl" onkeyup="renderBookings()">
+      <select id="bookFilterStatus" class="border-2 p-2 rounded-xl" onchange="updateBookingFilter('status')">
+        <option value="all">كل الحالات</option>
+        <option value="pending" ${bookingFilterStatus==='pending'?'selected':''}>معلق</option>
+        <option value="completed" ${bookingFilterStatus==='completed'?'selected':''}>مكتمل</option>
+        <option value="cancelled" ${bookingFilterStatus==='cancelled'?'selected':''}>ملغي</option>
+      </select>
+      <select id="bookFilterHall" class="border-2 p-2 rounded-xl" onchange="updateBookingFilter('hall')"><option value="all">كل القاعات</option>${hallOpts}</select>
+      <div class="flex gap-1"><input type="date" id="bookFilterFrom" class="border-2 p-2 rounded-xl flex-1" onchange="updateBookingFilter('from')"><input type="date" id="bookFilterTo" class="border-2 p-2 rounded-xl flex-1" onchange="updateBookingFilter('to')"></div>
+    </div>
+    <div class="text-sm mb-2">الإيرادات: <strong>${formatCurrency(rev)}</strong></div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.booking-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفون</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          ${filtered.length ? filtered.map(b => {
+            const assigned = (b.assignedEmployees||[]).map(id => employees.find(e=>e.id===id)?.name).filter(n=>n).join(', ') || '<span class="text-red-500">غير معين</span>';
+            const statusLabels = { pending: 'معلق', completed: 'مكتمل', cancelled: 'ملغي' };
+            const statusColors = { pending: 'status-pending', completed: 'status-completed', cancelled: 'badge-inactive' };
+            const statusBtn = `<span class="status-badge ${statusColors[b.status]}" onclick="event.stopPropagation(); toggleBookingStatus('${b.id}')" style="cursor:pointer;">${statusLabels[b.status]}</span>
+              <select id="status-select-${b.id}" class="hidden border p-1 rounded text-sm mt-1" onchange="changeBookingStatus('${b.id}', this.value)">
+                <option value="pending" ${b.status==='pending'?'selected':''}>معلق</option>
+                <option value="completed" ${b.status==='completed'?'selected':''}>مكتمل</option>
+                <option value="cancelled" ${b.status==='cancelled'?'selected':''}>ملغي</option>
+              </select>`;
+            return `<tr>
+              <td><input type="checkbox" class="booking-check" value="${b.id}"></td>
+              <td>${b.clientName}<br><small>${b.phone||''}</small></td>
+              <td>${b.date}<br><small>${getWeekDayArabic(b.date)}</small></td>
+              <td>${b.hallName}</td>
+              <td>${formatCurrency(b.price)}</td>
+              <td>${statusBtn}</td>
+              <td>${assigned}</td>
+              <td class="flex gap-1">
+                <button onclick="editBooking('${b.id}')" title="تعديل">✏️</button>
+                <button onclick="distributeSingleBooking('${b.id}')" title="توزيع">⚙️</button>
+                <button onclick="deleteBookingSoft('${b.id}')" title="حذف">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="8" class="text-center py-8 text-gray-400">لا توجد حجوزات</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer-bar">${footerText}</div>
+  </div>`;
+};
+
+// دالة لإظهار/إخفاء قائمة تغيير الحالة عند الضغط على الزر
+window.toggleBookingStatus = function(bookingId) {
+  const select = document.getElementById('status-select-' + bookingId);
+  if (!select) return;
+  if (select.classList.contains('hidden')) {
+    select.classList.remove('hidden');
+    select.focus();
+  } else {
+    select.classList.add('hidden');
+  }
+};
+
+// دالة تغيير الحالة (بعد اختيارها من القائمة)
+window.changeBookingStatus = function(bookingId, newStatus) {
+  const b = bookings.find(b => b.id === bookingId);
+  if (!b) return;
+  b.status = newStatus;
+  if (newStatus === 'completed') {
+    b.paymentStatus = 'paid';
+  } else if (newStatus === 'pending') {
+    b.paymentStatus = 'pending';
+  }
+  addActivity('تغيير حالة حجز', `تم تغيير حالة ${b.clientName} إلى ${newStatus}`);
+  saveAllData();
+  renderBookings();
+  showMsg(`✅ تم تغيير الحالة`);
+};
+
+// تأكد من وجود updateBookingFilter (قد تكون معرفة مسبقاً، نضمن تعريفها)
+if (typeof window.updateBookingFilter !== 'function') {
+  window.updateBookingFilter = function(type) {
+    if (type==='status') bookingFilterStatus = document.getElementById('bookFilterStatus')?.value||'all';
+    if (type==='hall') bookingFilterHall = document.getElementById('bookFilterHall')?.value||'all';
+    if (type==='from') bookingFilterDateFrom = document.getElementById('bookFilterFrom')?.value||'';
+    if (type==='to') bookingFilterDateTo = document.getElementById('bookFilterTo')?.value||'';
+    renderBookings();
+  };
+}
 </script>
 </body>
 </html>
