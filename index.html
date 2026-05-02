@@ -669,6 +669,104 @@ window.processImportFile = async function() {
   `;
   document.head.appendChild(style);
 })();
+    (function() {
+  // التحقق من عدم وجود الشريط بالفعل
+  if (document.getElementById('mobileBottomNav')) return;
+
+  // إنشاء الشريط السفلي
+  const nav = document.createElement('div');
+  nav.id = 'mobileBottomNav';
+  nav.style.cssText = `
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 65px;
+    background: var(--card, #fff);
+    border-top: 1px solid var(--border, #e5e7eb);
+    z-index: 1000;
+    justify-content: space-around;
+    align-items: center;
+    padding: 5px 0;
+    box-shadow: 0 -4px 6px rgba(0,0,0,0.05);
+  `;
+  document.body.appendChild(nav);
+
+  // تعريف الأيقونات والعناوين للتبويبات الرئيسية
+  const tabs = [
+    { page: 'dashboard', icon: '📊', label: 'الرئيسية' },
+    { page: 'bookings', icon: '📅', label: 'الحجوزات' },
+    { page: 'attendance', icon: '📋', label: 'الحضور' },
+    { page: 'distribution', icon: '⚙️', label: 'التوزيع' },
+    { page: 'settings', icon: '⚙️', label: 'الإعدادات' }
+  ];
+
+  tabs.forEach(tab => {
+    const btn = document.createElement('div');
+    btn.className = 'mobile-nav-item';
+    btn.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      color: var(--text-secondary, #6b7280);
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 4px 8px;
+      border-radius: 12px;
+      transition: 0.2s;
+    `;
+    btn.innerHTML = `<span style="font-size:1.3rem;">${tab.icon}</span><span>${tab.label}</span>`;
+    
+    btn.addEventListener('click', function() {
+      // إزالة التحديد من الكل
+      document.querySelectorAll('.mobile-nav-item').forEach(b => b.style.color = 'var(--text-secondary, #6b7280)');
+      // تحديد الحالي
+      btn.style.color = 'var(--primary, #16a34a)';
+      // استدعاء دالة navigateTo للتنقل
+      if (typeof navigateTo === 'function') {
+        navigateTo(tab.page);
+      }
+    });
+    
+    nav.appendChild(btn);
+  });
+
+  // تحديث التحديد عند تغيير الصفحة
+  const observer = new MutationObserver(() => {
+    const currentPage = document.querySelector('.sidebar-item.active')?.dataset.page;
+    if (currentPage) {
+      document.querySelectorAll('.mobile-nav-item').forEach((btn, idx) => {
+        btn.style.color = tabs[idx].page === currentPage ? 'var(--primary, #16a34a)' : 'var(--text-secondary, #6b7280)';
+      });
+    }
+  });
+  observer.observe(document.getElementById('sidebar'), { attributes: true, subtree: true });
+
+  // ضبط إظهار الشريط حسب حجم الشاشة
+  function toggleNav() {
+    if (window.innerWidth <= 768) {
+      nav.style.display = 'flex';
+    } else {
+      nav.style.display = 'none';
+    }
+  }
+  window.addEventListener('resize', toggleNav);
+  toggleNav();
+
+  // تحديث تموضع المحتوى الرئيسي عند ظهور الشريط
+  const style = document.createElement('style');
+  style.textContent = `
+    @media (max-width: 768px) {
+      .main-content {
+        padding-bottom: 80px !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+})();
 </script>
 </body>
 </html>
