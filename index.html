@@ -852,6 +852,70 @@ window.processImportFile = async function() {
   var footerBar = document.querySelector('.sidebar .footer-bar');
   if (footerBar) footerBar.style.display = 'none';
 })();
+    window.renderTrash = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('trash');
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">🗑️ ${t('trash')} (${trashBin.length})</h2>`;
+  
+  if (trashBin.length > 0) {
+    html += `
+      <div class="flex gap-2 mb-3">
+        <button onclick="restoreSelectedTrash()" class="btn-primary text-sm">🔄 استعادة المحدد</button>
+        <button onclick="deleteSelectedTrash()" class="btn-danger text-sm">❌ حذف المحدد نهائياً</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" onchange="document.querySelectorAll('.trash-check').forEach(cb=>cb.checked=this.checked)"></th>
+              <th>النوع</th>
+              <th>البيانات</th>
+              <th>تاريخ الحذف</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>`;
+    
+    trashBin.forEach(t => {
+      html += `
+        <tr>
+          <td><input type="checkbox" class="trash-check" value="${t.id}"></td>
+          <td><span class="badge-inactive">${t.type}</span></td>
+          <td>${t.data?.clientName || t.data?.name || 'عنصر'}</td>
+          <td><small class="text-gray-400">${new Date(t.deletedAt).toLocaleString('ar-EG')}</small></td>
+          <td class="flex gap-1">
+            <button onclick="restoreItem('${t.id}')" class="text-green-600">🔄</button>
+            <button onclick="deletePermanently('${t.id}')" class="text-red-600">❌</button>
+          </td>
+        </tr>`;
+    });
+    
+    html += `</tbody></table></div>`;
+  } else {
+    html += `<p class="text-gray-400 text-center py-8">السلة فارغة</p>`;
+  }
+  
+  html += `<div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+window.restoreSelectedTrash = function() {
+  const ids = Array.from(document.querySelectorAll('.trash-check:checked')).map(cb => cb.value);
+  if (!ids.length) { showError('لم يتم تحديد عناصر'); return; }
+  ids.forEach(id => restoreItem(id));
+  window.renderTrash();
+  showMsg(`🔄 تم استعادة ${ids.length} عنصر`);
+};
+
+window.deleteSelectedTrash = function() {
+  const ids = Array.from(document.querySelectorAll('.trash-check:checked')).map(cb => cb.value);
+  if (!ids.length) { showError('لم يتم تحديد عناصر'); return; }
+  if (!confirm(`هل أنت متأكد من حذف ${ids.length} عنصر نهائياً؟`)) return;
+  ids.forEach(id => deletePermanently(id));
+  window.renderTrash();
+  showMsg(`🗑️ تم حذف ${ids.length} عنصر نهائياً`);
+};
 </script>
 </body>
 </html>
