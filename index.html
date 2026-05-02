@@ -2680,127 +2680,141 @@ window.renderEmpDash = function() {
     </div>`;
 };
 // ============================================================
-// تحديث: رقم سري لإظهار الأرباح مع مصروفات إضافية
+// تحديث: رقم سري لإظهار الإيرادات + حساب المكسب بعد خصم رواتب الموظفين
 // ============================================================
 
-// الرقم السري الافتراضي (يمكن تغييره من الإعدادات)
-let profitPin = localStorage.getItem('drmedia_profit_pin') || '1234';
+// تخزين الرقم السري (افتراضي 1234)
+if (!localStorage.getItem('revenuePin')) {
+  localStorage.setItem('revenuePin', '1234');
+}
+window.revenuePin = localStorage.getItem('revenuePin');
 
-// دالة عرض نافذة الأرباح
-window.showProfitPanel = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">🔒 أدخل الرقم السري لعرض الأرباح</h3>
-    <input type="password" id="profitPinInput" placeholder="الرقم السري" class="w-full border-2 p-3 rounded-xl mb-2" maxlength="4">
-    <div class="flex gap-2">
-      <button onclick="verifyProfitPin()" class="btn-primary flex-1">✅ عرض</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>
-    <p class="text-xs text-gray-400 mt-2">الرقم الافتراضي: 1234 (يمكن تغييره من الإعدادات)</p>`);
-};
+// دالة التحقق من الرقم السري وإظهار الإيرادات المخفية
+window.showRevenue = function() {
+  const pin = prompt('🔒 أدخل الرقم السري لعرض الإيرادات:');
+  if (pin === window.revenuePin) {
+    // حساب إجمالي الإيرادات (من الحجوزات غير الملغاة)
+    const totalRevenue = bookings.filter(b => !b.deleted && b.status !== 'cancelled').reduce((sum, b) => sum + (b.price || 0), 0);
+    // حساب إجمالي تكلفة الموظفين (عدد الأوردرات × أجر الأوردر)
+    updateEmployeeOrders();
+    const totalEmployeeCost = employees.reduce((sum, e) => sum + (e.totalOrders || 0) * (e.salaryPerOrder || 0), 0);
+    const profit = totalRevenue - totalEmployeeCost;
 
-window.verifyProfitPin = function() {
-  const entered = document.getElementById('profitPinInput')?.value;
-  if (entered === profitPin) {
-    closeModal();
-    showProfitDetails();
+    // إظهار المعلومات في نافذة
+    openModal(`
+      <div class="text-center">
+        <h3 class="text-xl font-bold mb-4">💰 إحصائيات الإيرادات</h3>
+        <div class="grid grid-cols-1 gap-3">
+          <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-xl">
+            <span class="block text-sm text-gray-500">إجمالي الإيرادات</span>
+            <span class="text-2xl font-bold text-green-600">${formatCurrency(totalRevenue)}</span>
+          </div>
+          <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-xl">
+            <span class="block text-sm text-gray-500">إجمالي رواتب الموظفين</span>
+            <span class="text-2xl font-bold text-red-600">${formatCurrency(totalEmployeeCost)}</span>
+          </div>
+          <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border-2 border-green-500">
+            <span class="block text-sm text-gray-500">💵 المكسب الصافي</span>
+            <span class="text-3xl font-bold text-green-600">${formatCurrency(profit)}</span>
+          </div>
+        </div>
+        <button onclick="closeModal()" class="btn-primary mt-4 w-full">إغلاق</button>
+      </div>
+    `);
   } else {
-    showError('الرقم السري غير صحيح');
+    showError('❌ رقم سري غير صحيح');
   }
 };
 
-window.showProfitDetails = function() {
-  // حساب الإيرادات (كل الحجوزات غير الملغاة وغير المحذوفة)
-  const validBookings = bookings.filter(b => !b.deleted && b.status !== 'cancelled');
-  const totalRevenue = validBookings.reduce((sum, b) => sum + (b.price || 0), 0);
-
-  // حساب تكلفة الموظفين (كل موظف يحصل على salaryPerOrder عن كل أوردر حضر فيه)
-  let totalEmployeesCost = 0;
-  const empEarnings = []; // لتفصيل كل موظف
-  employees.forEach(e => {
-    const empBookings = validBookings.filter(b => (b.assignedEmployees || []).includes(e.id));
-    // الأوردرات التي حضرها الموظف (سجل حضور)
-    const attendedBookings = empBookings.filter(b => attendanceRecords.some(a => a.empId === e.id && a.date === b.date && a.checkIn));
-    const empCost = attendedBookings.length * (e.salaryPerOrder || 0);
-    totalEmployeesCost += empCost;
-    empEarnings.push({ name: e.name, orders: attendedBookings.length, cost: empCost });
-  });
-
-  // عرض إضافي للمصروفات الاختيارية التي سيُدخلها المستخدم
-  let additionalExpense = 0;
-  let html = `<div style="max-height:70vh; overflow-y:auto;">
-    <h3 class="text-xl font-bold mb-4 text-center">💰 لوحة الأرباح</h3>
-    <div class="grid grid-cols-2 gap-4 mb-4">
-      <div class="bg-green-50 p-3 rounded-xl text-center">
-        <div class="text-lg font-bold text-green-700">${formatCurrency(totalRevenue)}</div>
-        <div class="text-sm">الإيرادات الكلية</div>
+// تعديل لوحة التحكم (إخفاء الإيرادات خلف زر)
+window.renderDashboard = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('dashboard');
+  const totalRev = bookings.filter(b => !b.deleted && b.status !== 'cancelled').reduce((s, b) => s + (b.price || 0), 0);
+  c.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="stat-card">
+        <div class="stat-value">${bookings.filter(b => !b.deleted && b.status !== 'cancelled').length}</div>
+        <div class="stat-label">إجمالي الحجوزات</div>
       </div>
-      <div class="bg-red-50 p-3 rounded-xl text-center">
-        <div class="text-lg font-bold text-red-700">${formatCurrency(totalEmployeesCost)}</div>
-        <div class="text-sm">تكاليف الموظفين</div>
+      <div class="stat-card">
+        <div class="stat-value text-yellow-600">${bookings.filter(b => b.status === 'pending' && !b.deleted).length}</div>
+        <div class="stat-label">معلق</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value text-green-600">${bookings.filter(b => b.status === 'completed' && !b.deleted).length}</div>
+        <div class="stat-label">مكتمل</div>
+      </div>
+      <div class="stat-card cursor-pointer" onclick="showRevenue()">
+        <div class="stat-value text-purple-600">🔒</div>
+        <div class="stat-label">الإيرادات (اضغط للعرض)</div>
       </div>
     </div>
-    <div class="mb-4"><label class="text-sm font-semibold">مصاريف إضافية (كهرباء، صيانة...)</label>
-      <input type="number" id="additionalExpenseInput" class="w-full border-2 p-2 rounded-xl mt-1" value="0" onchange="updateNetProfit()">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+      <div class="bg-card">
+        <h3 class="font-bold mb-2">📊 الإيرادات الشهرية</h3>
+        <canvas id="monthlyChart"></canvas>
+      </div>
+      <div class="bg-card">
+        <h3 class="font-bold mb-2">📋 آخر الحجوزات</h3>
+        <div class="max-h-60 overflow-y-auto">
+          ${bookings.filter(b => !b.deleted).slice(0, 8).map(b => `<div class="border-b py-2 flex justify-between text-sm"><span>${b.clientName} - ${b.hallName}</span><span class="${b.status==='pending'?'text-yellow-600':'text-green-600'}">${b.date}</span></div>`).join('') || '<p class="text-gray-400">لا توجد</p>'}
+        </div>
+      </div>
     </div>
-    <h4 class="font-bold mb-2">تفصيل الموظفين</h4>
-    <table class="text-sm w-full mb-4"><thead><tr><th>الاسم</th><th>أوردرات حضرها</th><th>التكلفة</th></tr></thead><tbody>`;
-  empEarnings.forEach(ee => {
-    html += `<tr><td>${ee.name}</td><td>${ee.orders}</td><td>${formatCurrency(ee.cost)}</td></tr>`;
-  });
-  html += `</tbody></table>
-    <div class="bg-blue-50 p-4 rounded-xl text-center text-lg font-bold" id="netProfitDisplay">
-      صافي المكسب: ${formatCurrency(totalRevenue - totalEmployeesCost)}
-    </div>
-    <div class="flex gap-2 mt-4">
-      <button onclick="closeModal()" class="btn-outline flex-1">إغلاق</button>
-      <button onclick="changeProfitPin()" class="btn-secondary text-sm">⚙️ تغيير الرقم السري</button>
-    </div>
-  </div>`;
+    <div class="footer-bar">${footerText}</div>
+  `;
+  setTimeout(() => {
+    try {
+      const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+      const cy = new Date().getFullYear();
+      const data = months.map((_, i) => bookings.filter(b => {
+        const d = new Date(b.date);
+        return d.getMonth() === i && d.getFullYear() === cy && !b.deleted && b.status !== 'cancelled';
+      }).reduce((s, b) => s + (b.price || 0), 0));
+      const ctx = document.getElementById('monthlyChart');
+      if (ctx) new Chart(ctx, { type:'bar', data: { labels: months, datasets: [{ label:'الإيرادات', data, backgroundColor:'#16a34a' }] } });
+    } catch(e) {}
+  }, 300);
+};
 
-  openModal(html);
-
-  // دالة تحديث صافي المكسب عند تغيير المصروفات الإضافية
-  window.updateNetProfit = function() {
-    additionalExpense = parseInt(document.getElementById('additionalExpenseInput')?.value) || 0;
-    const net = totalRevenue - totalEmployeesCost - additionalExpense;
-    const display = document.getElementById('netProfitDisplay');
-    if (display) display.innerHTML = `صافي المكسب: ${formatCurrency(net)}`;
+// إضافة إعداد الرقم السري في صفحة الإعدادات
+window.renderSettings = (function(oldRender) {
+  return function() {
+    if (oldRender) oldRender();
+    const c = document.getElementById('content-area');
+    if (!c) return;
+    // إضافة حقل الرقم السري بعد حقل رقم الواتساب إن أمكن
+    const waField = document.getElementById('waNumber');
+    if (waField) {
+      const pinDiv = document.createElement('div');
+      pinDiv.innerHTML = `<label class="text-sm font-semibold">🔒 الرقم السري للإيرادات</label><input id="revenuePinInput" value="${window.revenuePin}" class="w-full border-2 p-2 rounded-xl mt-1">`;
+      waField.parentElement.after(pinDiv);
+    }
+    // تعديل دالة الحفظ لتشمل الرقم السري
+    const saveBtn = document.querySelector('button[onclick="saveSettings()"]');
+    if (saveBtn) {
+      saveBtn.onclick = function() {
+        const newPin = document.getElementById('revenuePinInput')?.value || window.revenuePin;
+        window.revenuePin = newPin;
+        localStorage.setItem('revenuePin', newPin);
+        // ثم استدعاء saveSettings الأصلية
+        if (window._originalSaveSettings) window._originalSaveSettings();
+        else {
+          companyName = document.getElementById('compName')?.value || companyName;
+          appTheme = document.getElementById('themeSelect')?.value || 'light';
+          appLanguage = document.getElementById('langSelect')?.value || 'ar';
+          whatsappBusinessNumber = document.getElementById('waNumber')?.value || whatsappBusinessNumber;
+          saveAllData();
+          applyTheme(appTheme);
+          showMsg('✅ تم الحفظ');
+          renderAdminDashboard();
+        }
+      };
+    }
   };
-};
-
-// تغيير الرقم السري
-window.changeProfitPin = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">⚙️ تغيير الرقم السري</h3>
-    <input type="password" id="oldPinInput" placeholder="الرقم الحالي" class="w-full border-2 p-2 rounded-xl mb-2" maxlength="4">
-    <input type="password" id="newPinInput" placeholder="الرقم الجديد" class="w-full border-2 p-2 rounded-xl mb-2" maxlength="4">
-    <div class="flex gap-2">
-      <button onclick="saveNewProfitPin()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.saveNewProfitPin = function() {
-  const oldPin = document.getElementById('oldPinInput')?.value;
-  const newPin = document.getElementById('newPinInput')?.value;
-  if (oldPin !== profitPin) { showError('الرقم الحالي غير صحيح'); return; }
-  if (!newPin || newPin.length < 4) { showError('الرقم الجديد يجب أن يكون 4 أرقام'); return; }
-  profitPin = newPin;
-  localStorage.setItem('drmedia_profit_pin', newPin);
-  closeModal();
-  showMsg('✅ تم تغيير الرقم السري بنجاح');
-};
-
-// إضافة زر "عرض الإيرادات" في شريط العنوان (topbar)
-(function() {
-  const topbar = document.querySelector('.topbar .flex.items-center.gap-3:last-child');
-  if (topbar && !document.getElementById('profitBtn')) {
-    const btn = document.createElement('button');
-    btn.id = 'profitBtn';
-    btn.className = 'btn-secondary text-sm';
-    btn.textContent = '💰 الإيرادات';
-    btn.onclick = showProfitPanel;
-    topbar.prepend(btn);
-  }
-})();
+})(window.renderSettings);
 </script>
 </body>
 </html>
