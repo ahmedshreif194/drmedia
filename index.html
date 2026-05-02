@@ -501,8 +501,8 @@ async function processImportFile() {
   renderBookings();
   closeModal();
   showMsg(`✅ تم استيراد ${added} حجز`);
-  window._importedRows = [];
-}
+  window._importedRows = [];}
+
 function parseDateString(str) {
   if (!str && str !== 0) return getTodayDateStr();
   // إذا كان رقماً (serial number)
@@ -535,6 +535,7 @@ function parseDateString(str) {
   
   return getTodayDateStr();
 }
+
 // ==================== LOGIN & INIT ====================
 function renderLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-700 to-teal-600 p-4"><div class="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"><div class="text-5xl mb-3">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-16 mx-auto rounded-full">`:companyLogo}</div><h1 class="text-2xl font-bold mb-1 dark:text-white">${companyName}</h1><p class="text-gray-500 mb-6 text-sm">برنامج إدارة القاعات </p><input type="text" id="loginUser" placeholder="👤 اسم المستخدم" class="w-full border-2 p-3 rounded-xl text-center mb-2" autocomplete="username"><input type="password" id="loginPass" placeholder="🔒 كلمة المرور" class="w-full border-2 p-3 rounded-xl text-center mb-4" autocomplete="current-password"><button id="loginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition">🚪 دخول</button><div class="text-xs text-gray-400 mt-6"><p>جميع الحقوق محفوظة 2026 Dr Media Pro</p><p>تصميم وتطوير Ahmed Shreif</p></div><footer class="text-xs text-white mt-4 opacity-75">${footerText}</footer></div></div>`; document.getElementById('loginBtn').onclick = doLogin; }
 function doLogin() { const u = document.getElementById('loginUser')?.value.trim(), p = document.getElementById('loginPass')?.value; if (!u||!p) { showError('أدخل بيانات الدخول'); return; } const user = USERS.find(x => x.username === u && x.password === p); if (user) { currentUser = user; sessionStorage.setItem('drmedia_user', JSON.stringify(user)); showMsg(`👋 مرحباً ${user.name}`); if (user.role==='admin'||user.role==='manager') renderAdminDashboard(); else if (user.role==='employee') renderEmpDash(); else renderAgentDash(); requestNotificationPermission(); } else showError('بيانات خاطئة'); }
