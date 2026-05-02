@@ -676,9 +676,6 @@ function deleteSelectedTrash() {
       }
     });
   })();
-// ============================================================
-// تحديث شامل: ربط الموظفين، رواتب مجزأة، تذكيرات، فلاشات بالصلاحيات
-// ============================================================
 
 // --- 1. صلاحيات جديدة (مونتاج، تصوير، مبيعات) تضاف إلى USERS ---
 if (!USERS.find(u => u.id === 'montage1')) {
@@ -975,10 +972,6 @@ window.initApp = async function() {
   await originalInitApp();
   checkReminders(); // تشغيل التذكيرات فوراً بعد بدء التشغيل
 };
-// ================================================================
-// تحديث: ترتيب التوزيع بالتاريخ، رواتب مجزأة بأزرار + صرف فردي،
-// عرض أوردرات المستخدمين، وعرض أوردرات الموظف
-// ================================================================
 
 // --- 1. ترتيب صفحة التوزيع حسب التاريخ ---
 window.renderDistribution = function() {
@@ -1226,9 +1219,6 @@ window.renderEmpDash = function() {
       <footer class="footer-bar">${footerText}</footer>
     </div>`;
 };
-    // ============================================================
-// تحديث شامل: عدد الأوردرات، QR للموظفين، غياب وتبديل، فلاشات محسنة بالصلاحيات
-// ============================================================
 
 // --- 1. مصفوفة التبديل (غياب / بديل) ---
 if (!window.substitutions) {
@@ -1603,10 +1593,6 @@ window.checkIn = async function(empId) {
   }
   await originalCheckIn(empId);
 };
-    // ============================================================
-// إضافة قائمة منسدلة للحالة (معلقة، مكتملة، ملغاة) في صفحة الحجوزات
-// مع إمكانية تغيير الحالة مباشرة وحفظها
-// ============================================================
 
 window.renderBookings = function() {
   const c = document.getElementById('content-area');
@@ -1702,6 +1688,287 @@ window.updateBookingFilter = function(type) {
   if (type==='from') bookingFilterDateFrom = document.getElementById('bookFilterFrom')?.value||'';
   if (type==='to') bookingFilterDateTo = document.getElementById('bookFilterTo')?.value||'';
   renderBookings();
+};
+
+// --- 1. صفحة الحضور باختيار السنة والشهر واليوم ---
+window.renderAttendance = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  // قراءة المرشحات من الحقول إن وجدت، وإلا استخدم القيم الافتراضية
+  const filterYear = parseInt(document.getElementById('attYear')?.value) || new Date().getFullYear();
+  const filterMonth = parseInt(document.getElementById('attMonth')?.value) || (new Date().getMonth()+1);
+  const filterDay = document.getElementById('attDay')?.value || '';
+  document.getElementById('pageTitle').textContent = t('attendance');
+  const today = getTodayDateStr();
+  const todayRecs = attendanceRecords.filter(a => a.date === today);
+  // فلترة السجلات حسب المرشحات
+  let filteredRecords = attendanceRecords;
+  if (filterYear) filteredRecords = filteredRecords.filter(a => new Date(a.date).getFullYear() === filterYear);
+  if (filterMonth) filteredRecords = filteredRecords.filter(a => (new Date(a.date).getMonth()+1) === filterMonth);
+  if (filterDay) filteredRecords = filteredRecords.filter(a => a.date === filterDay);
+
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">📋 ${t('attendance')}</h2>
+    <div class="mb-4 p-4 border-2 border-emerald-200 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 text-center">
+      <h3 class="font-semibold mb-2">📷 مسح QR للحضور والانصراف</h3>
+      <div id="attendanceQrContainer" class="flex justify-center my-3"></div>
+      <div class="flex gap-2 justify-center">
+        <button onclick="generateAttendanceQR()" class="btn-primary text-sm">🔄 تحديث QR</button>
+        <button onclick="startQRScanner()" class="btn-secondary text-sm">📷 فتح الماسح</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-2">امسح الكود أو استخدم الماسح لتسجيل الحضور والانصراف</p>
+    </div>
+    <!-- مرشحات -->
+    <div class="flex gap-2 mb-4">
+      <input type="number" id="attYear" placeholder="السنة" value="${filterYear}" class="border-2 p-2 rounded-xl w-24" onchange="renderAttendance()">
+      <select id="attMonth" class="border-2 p-2 rounded-xl" onchange="renderAttendance()">
+        <option value="">كل الشهور</option>
+        ${['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'].map((m,i)=>`<option value="${i+1}" ${(i+1)===filterMonth?'selected':''}>${m}</option>`).join('')}
+      </select>
+      <input type="date" id="attDay" class="border-2 p-2 rounded-xl w-40" value="${filterDay}" onchange="renderAttendance()">
+    </div>
+    <h3 class="font-bold mb-2">📌 اليوم (${today})</h3>
+    <div class="flex gap-2 mb-2"><button onclick="markAllAttendance()" class="btn-primary text-sm">✅ تسجيل حضور الكل</button><button onclick="deleteSelectedAttendance()" class="btn-danger text-sm">🗑️ حذف المحدد</button></div>
+    <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.att-check').forEach(cb=>cb.checked=this.checked)"></th><th>الموظف</th><th>الحضور</th><th>الانصراف</th><th>إجراءات</th></tr></thead><tbody>`;
+  if (employees.length) {
+    employees.forEach(e => {
+      const rec = todayRecs.find(r=>r.empId===e.id);
+      html += `<tr><td><input type="checkbox" class="att-check" value="${e.id}_${today}"></td><td>${e.name}</td><td>${rec?.checkIn||'—'}</td><td>${rec?.checkOut||'—'}</td><td class="flex gap-1">${!rec?.checkIn?`<button onclick="checkIn('${e.id}')" class="text-green-600">✅ حضور</button>`:''}${rec?.checkIn&&!rec?.checkOut?`<button onclick="checkOut('${e.id}')" class="text-blue-600">🚪 انصراف</button>`:''}</td></tr>`;
+    });
+  } else {
+    html += '<tr><td colspan="5" class="text-center py-4">لا يوجد موظفين</td></tr>';
+  }
+  html += `</tbody></table>
+    <h3 class="font-bold mt-4 mb-2">📋 سجل مفلتر</h3>
+    <table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحضور</th><th>الانصراف</th></tr></thead><tbody>`;
+  filteredRecords.slice(0,50).forEach(a => {
+    html += `<tr><td>${employees.find(e=>e.id===a.empId)?.name||a.empId}</td><td>${a.date}</td><td>${a.checkIn||'—'}</td><td>${a.checkOut||'—'}</td></tr>`;
+  });
+  html += `</tbody></table><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+  if (isAdmin()||isManager()) setTimeout(generateAttendanceQR, 200);
+};
+
+// --- 2. تقارير متقدمة: عدد أوردرات كل موظف بالسنة/الشهر/كل 10 أيام (بالتزامن مع المرتبات) ---
+window.renderAdvancedReports = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('advancedReports');
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const periods = [
+    { label:'1-10', start:1, end:10 },
+    { label:'11-20', start:11, end:20 },
+    { label:'21-نهاية', start:21, end:new Date(year, month+1,0).getDate() }
+  ];
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">📈 ${t('advancedReports')}</h2>
+    <h3 class="font-semibold mt-4">أوردرات الموظفين (${year}-${month+1})</h3>
+    <div class="overflow-x-auto"><table><thead><tr><th>الموظف</th>${periods.map(p=>`<th>${p.label}</th>`).join('')}<th>الإجمالي</th></tr></thead><tbody>`;
+  employees.forEach(e => {
+    let total = 0;
+    html += `<tr><td>${e.name}</td>`;
+    periods.forEach(period => {
+      const startDate = `${year}-${String(month+1).padStart(2,'0')}-${String(period.start).padStart(2,'0')}`;
+      const endDate = `${year}-${String(month+1).padStart(2,'0')}-${String(period.end).padStart(2,'0')}`;
+      const count = bookings.filter(b => (b.assignedEmployees||[]).includes(e.id) && b.date >= startDate && b.date <= endDate && !b.deleted && b.status !== 'cancelled').length;
+      total += count;
+      html += `<td>${count}</td>`;
+    });
+    html += `<td><strong>${total}</strong></td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+  // رسم بياني للإيرادات الشهرية (موجود سابقاً)
+  html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"><div><h3 class="font-semibold mb-2">الإيرادات الشهرية</h3><canvas id="advChart1"></canvas></div><div><h3 class="font-semibold mb-2">توزيع الحجوزات حسب القاعة</h3><canvas id="advChart2"></canvas></div></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+  setTimeout(()=>{
+    try {
+      const months=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+      const cy=new Date().getFullYear();
+      const mData=months.map((_,i)=>bookings.filter(b=>{const d=new Date(b.date);return d.getMonth()===i&&d.getFullYear()===cy&&!b.deleted&&b.status!=='cancelled';}).reduce((s,b)=>s+(b.price||0),0));
+      const ctx1=document.getElementById('advChart1');
+      if(ctx1) new Chart(ctx1,{type:'bar',data:{labels:months,datasets:[{label:'الإيرادات',data:mData,backgroundColor:'#16a34a'}]}});
+      const hallData={}; halls.forEach(h=>{hallData[h.name]=bookings.filter(b=>b.hallId===h.id&&!b.deleted).length;});
+      const ctx2=document.getElementById('advChart2');
+      if(ctx2) new Chart(ctx2,{type:'doughnut',data:{labels:Object.keys(hallData),datasets:[{data:Object.values(hallData),backgroundColor:['#16a34a','#2563eb','#d97706','#dc2626']}]}});
+    } catch(e){}
+  },400);
+};
+
+// --- 3. توليد رقم سري 4 أرقام (تلقائي/يدوي) في صفحة المستخدمين ---
+window.addUser = function() {
+  const generatedPass = Math.floor(1000 + Math.random() * 9000).toString();
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة مستخدم</h3>
+    <input id="newUserUsername" placeholder="اسم المستخدم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 items-center">
+      <input type="text" id="newUserPass" placeholder="كلمة المرور" value="${generatedPass}" class="w-full border-2 p-2 my-2 rounded-xl flex-1">
+      <button onclick="document.getElementById('newUserPass').value = Math.floor(1000+Math.random()*9000)" class="btn-secondary text-sm px-3 py-2">🎲 auto</button>
+    </div>
+    <input id="newUserName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newUserRole" class="w-full border-2 p-2 my-2 rounded-xl">
+      <option value="admin">مدير</option><option value="manager">مدير تنفيذي</option>
+      <option value="employee">موظف</option><option value="agent">وكيل</option>
+      <option value="montage">مونتير</option><option value="photo">فوتو</option><option value="sales">مبيعات</option>
+    </select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewUser()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+// تعديل saveNewUser لدعم الأدوار الجديدة
+window.saveNewUser = async function() {
+  const username = document.getElementById('newUserUsername')?.value.trim();
+  const password = document.getElementById('newUserPass')?.value;
+  if (!username||!password) { showError('جميع الحقول مطلوبة'); return; }
+  if (USERS.find(u=>u.username===username)) { showError('اسم المستخدم موجود'); return; }
+  USERS.push({ id: generateId('user_'), username, password, name: document.getElementById('newUserName')?.value||username, role: document.getElementById('newUserRole')?.value||'employee', employeeId:null });
+  addActivity('مستخدم جديد', `تم إضافة ${username}`);
+  await saveAllData(); renderUsers(); closeModal(); showMsg('✅ تمت الإضافة');
+};
+
+// --- 4. مزامنة الفلاشات تلقائيًا/يدويًا مع تواريخ الحجوزات ---
+window.syncFlashesFromBookings = function() {
+  let added = 0;
+  bookings.forEach(b => {
+    if (b.deleted || b.status === 'cancelled') return;
+    const exists = flashDrives.some(f => f.bookingId === b.id);
+    if (!exists) {
+      flashDrives.push({
+        id: generateId('fl_'),
+        bookingId: b.id,
+        clientName: b.clientName,
+        date: b.date,
+        status: 'تم الاستلام من الحسابات',
+        currentHolder: 'الحسابات',
+        history: [{ date: new Date().toISOString(), action: 'تم الاستلام من الحسابات', user: 'النظام' }]
+      });
+      added++;
+    }
+  });
+  if (added > 0) {
+    saveAllData();
+    showMsg(`✅ تمت إضافة ${added} فلاشة من الحجوزات`);
+    renderFlash();
+  } else {
+    showMsg('ℹ️ جميع الحجوزات لها فلاشات بالفعل');
+  }
+};
+
+// إضافة زر المزامنة في صفحة الفلاشات
+const originalRenderFlash = window.renderFlash;
+window.renderFlash = function() {
+  if (originalRenderFlash) originalRenderFlash();
+  // نضيف زر المزامنة في الأعلى إن لم يكن موجوداً
+  const btn = document.getElementById('syncFlashesBtn');
+  if (!btn) {
+    const container = document.querySelector('#content-area .bg-card .flex');
+    if (container) {
+      const syncBtn = document.createElement('button');
+      syncBtn.id = 'syncFlashesBtn';
+      syncBtn.className = 'btn-secondary text-sm';
+      syncBtn.textContent = '🔄 مزامنة من الحجوزات';
+      syncBtn.onclick = syncFlashesFromBookings;
+      container.appendChild(syncBtn);
+    }
+  }
+};
+
+// --- 5. صلاحيات Confirmation للفلاشات حسب الأدوار ---
+// تحديث moveFlashTo لاستخدام الأدوار الجديدة والتأكيدات
+window.moveFlashTo = function(flashId, targetHolder) {
+  if (!targetHolder) return;
+  const f = flashDrives.find(f => f.id === flashId);
+  if (!f) return;
+  const user = currentUser;
+  if (!user) return;
+  const role = user.role;
+  // السماح فقط للأدوار المصرح لها حسب المرحلة
+  if (role === 'admin' || role === 'manager') {
+    // المدير يمكنه النقل إلى أي مرحلة (تأكيد إداري)
+    if (!confirm(`تأكيد نقل الفلاشة إلى ${targetHolder}؟ (إداري)`)) return;
+    f.currentHolder = targetHolder;
+    f.status = 'تم النقل إدارياً إلى ' + targetHolder;
+    if (!f.history) f.history = [];
+    f.history.push({ date: new Date().toISOString(), action: f.status, user: user.name });
+    saveAllData(); renderFlash(); showMsg('✅ تم النقل');
+    return;
+  }
+  // صلاحيات الأدوار الأخرى
+  const allowedMoves = {
+    'الحسابات': { allowedRoles: ['admin','manager','accountant'], next: 'المونتير' },
+    'المونتير': { allowedRoles: ['montage'], next: 'المصور' },
+    'المصور': { allowedRoles: ['photo'], next: 'المبيعات' },
+    'المبيعات': { allowedRoles: ['sales'], next: 'العريس' },
+    'العريس': { allowedRoles: [] }
+  };
+  const currentStage = f.currentHolder;
+  const move = allowedMoves[currentStage];
+  if (!move) { showError('مرحلة غير معروفة'); return; }
+  if (!move.allowedRoles.includes(role)) { showError('غير مسموح لك بهذه الحركة'); return; }
+  if (targetHolder !== move.next) { showError(`يجب التسليم إلى ${move.next} فقط`); return; }
+  // تأكيد إجباري
+  if (!confirm(`تأكيد تسليم الفلاشة من ${currentStage} إلى ${targetHolder}؟`)) return;
+  f.currentHolder = targetHolder;
+  f.status = `تم التسليم من ${currentStage} إلى ${targetHolder}`;
+  if (!f.history) f.history = [];
+  f.history.push({ date: new Date().toISOString(), action: f.status, user: user.name });
+  saveAllData(); renderFlash(); showMsg('✅ تم التسليم بنجاح');
+  addActivity('تسليم فلاشة', `${user.name} سلم فلاشة ${f.clientName} من ${currentStage} إلى ${targetHolder}`);
+};
+
+// إضافة دور محاسب جديد (accountant) في USERS إن لم يكن موجوداً
+if (!USERS.find(u => u.role === 'accountant')) {
+  USERS.push({ id:'acc1', username:'accountant', password:'acc123', role:'accountant', name:'موظف الحسابات' });
+}
+// تأكد من أن الأدوار الجديدة لها صفحات
+window.renderFlash = (function(oldRender) {
+  return function() {
+    if (oldRender) oldRender();
+    // تأكد من ظهور زر المزامنة
+    const btn = document.getElementById('syncFlashesBtn');
+    if (!btn) {
+      const container = document.querySelector('#content-area .bg-card .flex');
+      if (container) {
+        const syncBtn = document.createElement('button');
+        syncBtn.id = 'syncFlashesBtn';
+        syncBtn.className = 'btn-secondary text-sm';
+        syncBtn.textContent = '🔄 مزامنة';
+        syncBtn.onclick = syncFlashesFromBookings;
+        container.appendChild(syncBtn);
+      }
+    }
+  };
+})(window.renderFlash);
+
+// تحديث واجهة الموظفين الجدد (محاسب، مونتير، فوتو، مبيعات)
+window.renderEmpDash = function() {
+  const emp = employees.find(e => e.id === currentUser?.employeeId);
+  if (!emp) {
+    document.getElementById('app').innerHTML = `<div class="p-4"><h2>لا يوجد موظف مرتبط</h2><button onclick="logout()" class="btn-danger">خروج</button></div>`;
+    return;
+  }
+  // عرض خاص حسب الدور
+  const role = currentUser?.role;
+  if (role === 'montage' || role === 'photo' || role === 'sales' || role === 'accountant') {
+    // عرض خاص بالفلاشات
+    document.getElementById('app').innerHTML = `
+      <div class="min-h-screen bg-gray-100 p-4">
+        <h2 class="text-xl font-bold mb-4">👋 مرحباً ${emp.name} (${role})</h2>
+        <button onclick="navigateTo('flash')" class="btn-primary">💾 الفلاشات</button>
+        <button onclick="logout()" class="btn-danger ml-2">خروج</button>
+      </div>`;
+    return;
+  }
+  // واجهة الموظف العادي (كما هي)
+  const myBookings = bookings.filter(b => (b.assignedEmployees||[]).includes(emp.id) && b.status !== 'cancelled').sort((a,b)=>b.date.localeCompare(a.date));
+  document.getElementById('app').innerHTML = `
+    <div class="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+      <header class="bg-white dark:bg-gray-800 p-4 flex justify-between"><h1>${companyName}</h1><button onclick="logout()" class="btn-danger text-sm">خروج</button></header>
+      <main class="p-4 flex-1 max-w-4xl mx-auto">
+        <div class="bg-card mb-4"><h2>👋 مرحباً ${emp.name}</h2><p>${emp.role} | الأوردرات: ${myBookings.length}</p></div>
+        <div class="bg-card"><h3>📅 أوردراتي</h3>${myBookings.length ? myBookings.map(b=>`<div class="border-b py-2 text-sm">${b.date} - ${b.clientName} (${b.hallName})</div>`).join('') : '<p class="text-gray-400">لا توجد</p>'}</div>
+      </main>
+      <footer class="footer-bar">${footerText}</footer>
+    </div>`;
 };
 </script>
 </body>
