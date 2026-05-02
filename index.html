@@ -232,7 +232,53 @@ async function saveEditUser(id) { const u = USERS.find(u=>u.id===id); if (!u) re
 function deleteUser(id) { if (id === 'admin1') { showError('لا يمكن حذف المدير الأساسي'); return; } const idx = USERS.findIndex(u=>u.id===id); if (idx!==-1) { USERS.splice(idx,1); saveAllData(); renderUsers(); showMsg('🗑️ تم الحذف'); } }
 function deleteSelectedUsers() { const ids = Array.from(document.querySelectorAll('.user-check:checked')).map(cb=>cb.value); if (!ids.length) { showError('لم يتم تحديد مستخدمين'); return; } if (ids.includes('admin1')) { showError('لا يمكن حذف المدير الأساسي'); return; } ids.forEach(id => deleteUser(id)); renderUsers(); showMsg(`🗑️ تم حذف ${ids.length} مستخدم`); }
 
-function renderTrash() { const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('trash'); c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold">🗑️ ${t('trash')} (${trashBin.length})</h2><div>${trashBin.length ? trashBin.map(t => `<div class="border-b p-2 flex justify-between items-center"><span><span class="badge-inactive mr-2">${t.type}</span> ${t.data?.clientName||t.data?.name||'عنصر'} <small class="text-gray-400">${new Date(t.deletedAt).toLocaleString('ar-EG')}</small></span><div class="flex gap-1"><button onclick="restoreItem('${t.id}')" class="text-green-600">🔄 استعادة</button><button onclick="deletePermanently('${t.id}')" class="text-red-600">❌ حذف نهائي</button></div></div>`).join('') : '<p class="text-gray-400 text-center py-8">السلة فارغة</p>'}</div><div class="footer-bar">${footerText}</div></div>`; }
+function renderTrash() { 
+  const c = document.getElementById('content-area'); 
+  if (!c) return; 
+  document.getElementById('pageTitle').textContent = t('trash'); 
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">🗑️ ${t('trash')} (${trashBin.length})</h2>`;
+  
+  if (trashBin.length > 0) {
+    html += `
+      <div class="flex gap-2 mb-3">
+        <button onclick="restoreSelectedTrash()" class="btn-primary text-sm">🔄 استعادة المحدد</button>
+        <button onclick="deleteSelectedTrash()" class="btn-danger text-sm">❌ حذف المحدد نهائياً</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" onchange="document.querySelectorAll('.trash-check').forEach(cb=>cb.checked=this.checked)"></th>
+              <th>النوع</th>
+              <th>البيانات</th>
+              <th>تاريخ الحذف</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>`;
+    
+    trashBin.forEach(t => {
+      html += `
+        <tr>
+          <td><input type="checkbox" class="trash-check" value="${t.id}"></td>
+          <td><span class="badge-inactive">${t.type}</span></td>
+          <td>${t.data?.clientName || t.data?.name || 'عنصر'}</td>
+          <td><small class="text-gray-400">${new Date(t.deletedAt).toLocaleString('ar-EG')}</small></td>
+          <td class="flex gap-1">
+            <button onclick="restoreItem('${t.id}')" class="text-green-600">🔄</button>
+            <button onclick="deletePermanently('${t.id}')" class="text-red-600">❌</button>
+          </td>
+        </tr>`;
+    });
+    
+    html += `</tbody></table></div>`;
+  } else {
+    html += `<p class="text-gray-400 text-center py-8">السلة فارغة</p>`;
+  }
+  
+  html += `<div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+}
 async function restoreItem(trashId) { const idx = trashBin.findIndex(t => t.id == trashId); if (idx !== -1) { const item = trashBin[idx]; if (item.type === 'booking') bookings.push(item.data); else if (item.type === 'employee') employees.push(item.data); else if (item.type === 'client') clients.push(item.data); else if (item.type === 'hall') halls.push(item.data); trashBin.splice(idx, 1); addActivity('استعادة', `تم استعادة عنصر من سلة المحذوفات`); await saveAllData(); renderTrash(); showMsg('🔄 تمت الاستعادة'); } }
 async function deletePermanently(trashId) { const idx = trashBin.findIndex(t => t.id == trashId); if (idx !== -1) { trashBin.splice(idx, 1); await saveAllData(); renderTrash(); showMsg('🗑️ تم الحذف نهائياً'); } }
 
@@ -382,540 +428,23 @@ async function initApp() {
   }
 }
 window.addEventListener('DOMContentLoaded', initApp);
-    // ==================== تحديث نوافذ الحجوزات (إضافة + تعديل) ====================
-window.addBooking = function() {
-  const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
-  openModal(`<h3 class="text-xl font-bold mb-4">📅 إضافة حجز جديد</h3>
-    <input id="bkClientName" placeholder="اسم العميل" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="bkPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="bkHall" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">اختر القاعة</option>${hallOpts}</select>
-    <input type="date" id="bkDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
-    <input type="number" id="bkPrice" placeholder="السعر" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveNewBooking()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.editBooking = function(id) {
-  const b = bookings.find(b => b.id === id);
-  if (!b) return;
-  const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}" ${b.hallId===h.id?'selected':''}>${h.name}</option>`).join('');
-  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل حجز</h3>
-    <input id="editBkName" value="${b.clientName}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="editBkPhone" value="${b.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="editBkHall" class="w-full border-2 p-2 my-2 rounded-xl">${hallOpts}</select>
-    <input type="date" id="editBkDate" value="${b.date}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="editBkPrice" value="${b.price}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="editBkStatus" class="w-full border-2 p-2 my-2 rounded-xl">
-      <option value="pending" ${b.status==='pending'?'selected':''}>معلق</option>
-      <option value="completed" ${b.status==='completed'?'selected':''}>مكتمل</option>
-    </select>
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveEditBooking('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-// ==================== تحديث نوافذ الموظفين (إضافة + تعديل) ====================
-window.addEmployee = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة موظف</h3>
-    <input id="newEmpName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="newEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option>مخرج</option><option>مصور</option><option>كرين</option></select>
-    <input id="newEmpPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="newEmpSalary" placeholder="أجر الأوردر" value="200" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveNewEmployee()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.editEmployee = function(id) {
-  const e = employees.find(e => e.id === id);
-  if (!e) return;
-  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل موظف</h3>
-    <input id="editEmpName" value="${e.name}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="editEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select>
-    <input id="editEmpPhone" value="${e.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="editEmpSalary" value="${e.salaryPerOrder}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveEditEmployee('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-// ==================== تحديث نوافذ القاعات (إضافة + تعديل) ====================
-window.addHall = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">🏛️ إضافة قاعة</h3>
-    <input id="newHallName" placeholder="اسم القاعة" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="newHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed">مغلقة</option><option value="open">مفتوحة</option><option value="cafe">كافيه</option></select>
-    <input type="number" id="newHallPrice" placeholder="السعر الأساسي" value="3000" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveNewHall()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.editHall = function(id) {
-  const h = halls.find(h => h.id === id);
-  if (!h) return;
-  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل قاعة</h3>
-    <input id="editHallName" value="${h.name}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="editHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>مفتوحة</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select>
-    <input type="number" id="editHallPrice" value="${h.basePrice}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveEditHall('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-// ==================== تحديث نوافذ العملاء (إضافة + تعديل) ====================
-window.addClient = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة عميل</h3>
-    <input id="newClientName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="newClientPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="newClientEmail" placeholder="البريد" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="newClientAddr" placeholder="العنوان" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveNewClient()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.editClient = function(id) {
-  const c = clients.find(c => c.id === id);
-  if (!c) return;
-  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل عميل</h3>
-    <input id="editClientName" value="${c.name}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="editClientPhone" value="${c.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="editClientEmail" value="${c.email||''}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="editClientAddr" value="${c.address||''}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveEditClient('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-// ==================== تحديث نوافذ المعدات (إضافة + تعديل) ====================
-window.addEquipment = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">📦 إضافة معدة</h3>
-    <input id="newEqName" placeholder="اسم المعدة" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="newEqQty" placeholder="الكمية" value="1" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="newEqMin" placeholder="الحد الأدنى" value="1" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="newEqCat" placeholder="الفئة" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveNewEquipment()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.editEquipment = function(id) {
-  const eq = equipmentInventory[id];
-  if (!eq) return;
-  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل معدة</h3>
-    <input id="editEqName" value="${eq.name}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="editEqQty" value="${eq.quantity}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="number" id="editEqMin" value="${eq.minStock}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="editEqCat" value="${eq.category||''}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveEditEquipment('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-// ==================== تحديث نوافذ المستخدمين (إضافة + تعديل) ====================
-window.addUser = function() {
-  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة مستخدم</h3>
-    <input id="newUserUsername" placeholder="اسم المستخدم" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input type="password" id="newUserPass" placeholder="كلمة المرور" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="newUserName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="newUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin">مدير</option><option value="manager">مدير تنفيذي</option><option value="employee">موظف</option><option value="agent">وكيل</option></select>
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveNewUser()" class="btn-primary flex-1">💾 حفظ</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-window.editUser = function(id) {
-  const u = USERS.find(u => u.id === id);
-  if (!u) return;
-  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل مستخدم</h3>
-    <input id="editUserUsername" value="${u.username}" readonly class="w-full border-2 p-2 my-2 rounded-xl bg-gray-100">
-    <input type="password" id="editUserPass" placeholder="كلمة مرور جديدة" class="w-full border-2 p-2 my-2 rounded-xl">
-    <input id="editUserName" value="${u.name}" class="w-full border-2 p-2 my-2 rounded-xl">
-    <select id="editUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin" ${u.role==='admin'?'selected':''}>مدير</option><option value="manager" ${u.role==='manager'?'selected':''}>مدير تنفيذي</option><option value="employee" ${u.role==='employee'?'selected':''}>موظف</option><option value="agent" ${u.role==='agent'?'selected':''}>وكيل</option></select>
-    <div class="flex gap-2 mt-4">
-      <button onclick="saveEditUser('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-};
-
-// ==================== تحديث استيراد الحجوزات (نوع القاعة + تجاهل الصفوف بدون اسم) ====================
-window.importBookingsFromFile = async function() {
-  const hallTypeOpts = `<option value="">افتراضي (من الملف)</option><option value="closed">مغلقة</option><option value="open">مفتوحة</option><option value="cafe">كافيه</option>`;
-  openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3>
-    <select id="importHallTypeSelect" class="w-full border-2 p-2 rounded-xl mb-3">${hallTypeOpts}</select>
-    <input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border-2 border-dashed p-4 rounded-xl mb-3">
-    <div id="importPreview" class="my-2 text-sm"></div>
-    <div class="flex gap-2">
-      <button onclick="processImportFile()" class="btn-primary flex-1">📥 استيراد</button>
-      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
-    </div>`);
-  document.getElementById('importFileInput').addEventListener('change', async function(e) {
-    const file = e.target.files[0]; if (!file) return;
-    const ext = file.name.split('.').pop().toLowerCase(); let rows = [];
-    try {
-      if (ext==='xlsx'||ext==='xls') { const data = await file.arrayBuffer(); const wb = XLSX.read(data); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); }
-      else if (ext==='csv') { const text = await file.text(); const lines = text.split('\n'); const headers = lines[0].split(',').map(h => h.trim().replace(/["']/g,'')); rows = lines.slice(1).filter(l => l.trim()).map(line => { const vals = line.split(',').map(v => v.trim().replace(/["']/g,'')); let obj = {}; headers.forEach((h,i) => obj[h] = vals[i] || ''); return obj; }); }
-      else if (ext==='pdf') { const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise; let fullText = ''; for (let i=1;i<=pdf.numPages;i++){ const page = await pdf.getPage(i); const textContent = await page.getTextContent(); fullText += textContent.items.map(item => item.str).join(' ')+'\n'; } rows = parsePDFText(fullText); }
-      rows = rows.filter(row => Object.values(row).some(v => v && String(v).trim()));
-      window._importedRows = rows;
-      document.getElementById('importPreview').innerHTML = rows.length ? `<p class="text-green-600">✅ ${rows.length} صف صالح</p>` : `<p class="text-red-500">لا بيانات</p>`;
-    } catch(err) { showError('خطأ في الملف'); }
-  });
-};
-
-window.processImportFile = async function() {
-  const rows = window._importedRows || [];
-  if (!rows.length) { showError('لا بيانات'); return; }
-  const selectedHallType = document.getElementById('importHallTypeSelect')?.value || '';
-  let added = 0;
-  for (let row of rows) {
-    let name = row['اسم العميل']||row['client name']||row['العميل']||'';
-    // تجاهل إذا كان الاسم فارغًا أو "-" أو فراغات فقط
-    if (!name || name.trim() === '' || name.trim() === '-') continue;
-    let date = parseDateString(row['التاريخ']||row['date']);
-    const hallName = row['القاعة']||row['hall']||'القاعة المفتوحة';
-    let hall = halls.find(h => h.name === hallName);
-    if (!hall) {
-      hall = { id: generateId('h_'), name: hallName, type: selectedHallType || row['نوع القاعة'] || 'open', basePrice:0, active:true };
-      halls.push(hall);
-    } else if (selectedHallType) {
-      hall.type = selectedHallType;
-    }
-    bookings.push({
-      id: generateId('b_'), clientName: name, clientId:null, phone: row['الهاتف']||row['phone']||'',
-      hallId: hall.id, hallName: hall.name, date,
-      price: parseInt(row['السعر']||row['price']||0), status:'pending', paymentStatus:'pending',
-      assignedEmployees:[], notes:'', packageType: row['نوع الباكدج']||row['package']||'',
-      totalPersons: parseInt(row['اجمالي عدد الافراد']||row['total persons']||0)
-    });
-    added++;
-  }
-  await saveAllData(); renderBookings(); closeModal();
-  showMsg(`✅ تم استيراد ${added} حجز`); window._importedRows = [];
-};
-    // جعل الشريط الجانبي يتصرف بشكل أفضل على الموبايل
-(function() {
-  // إضافة زر إغلاق للشريط الجانبي عند لمس خارجه
-  document.addEventListener('click', function(e) {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
-      if (!sidebar.contains(e.target) && !e.target.closest('.topbar button')) {
-        sidebar.classList.remove('open');
-      }
-    }
-  });
-
-  // إغلاق الشريط الجانبي عند اختيار عنصر
-  const style = document.createElement('style');
-  style.textContent = `
-    @media (max-width: 768px) {
-      .main-content {
-        padding-top: 80px;
-        padding-left: 12px;
-        padding-right: 12px;
-      }
-      .sidebar {
-        transition: right 0.3s ease;
-        right: -260px;
-      }
-      .sidebar.open {
-        right: 0;
-      }
-      .topbar {
-        right: 0;
-      }
-      .modal-content {
-        margin: 0 8px;
-        max-width: 95vw;
-      }
-      table {
-        font-size: 0.75rem;
-      }
-      th, td {
-        padding: 6px 4px;
-      }
-      .btn-primary, .btn-secondary, .btn-danger, .btn-outline {
-        padding: 6px 14px;
-        font-size: 0.8rem;
-      }
-      .stat-card {
-        padding: 12px;
-      }
-      .stat-value {
-        font-size: 1.5rem;
-      }
-      .calendar-grid {
-        gap: 2px;
-      }
-      .calendar-day {
-        padding: 4px;
-        font-size: 0.7rem;
-        min-height: auto;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-    (function() {
-  // التحقق من عدم وجود الشريط بالفعل
-  if (document.getElementById('mobileBottomNav')) return;
-
-  // إنشاء الشريط السفلي
-  const nav = document.createElement('div');
-  nav.id = 'mobileBottomNav';
-  nav.style.cssText = `
-    display: none;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 65px;
-    background: var(--card, #fff);
-    border-top: 1px solid var(--border, #e5e7eb);
-    z-index: 1000;
-    justify-content: space-around;
-    align-items: center;
-    padding: 5px 0;
-    box-shadow: 0 -4px 6px rgba(0,0,0,0.05);
-  `;
-  document.body.appendChild(nav);
-
-  // تعريف الأيقونات والعناوين للتبويبات الرئيسية
-  const tabs = [
-    { page: 'dashboard', icon: '📊', label: 'الرئيسية' },
-    { page: 'bookings', icon: '📅', label: 'الحجوزات' },
-    { page: 'attendance', icon: '📋', label: 'الحضور' },
-    { page: 'distribution', icon: '⚙️', label: 'التوزيع' },
-    { page: 'settings', icon: '⚙️', label: 'الإعدادات' }
-  ];
-
-  tabs.forEach(tab => {
-    const btn = document.createElement('div');
-    btn.className = 'mobile-nav-item';
-    btn.style.cssText = `
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      cursor: pointer;
-      color: var(--text-secondary, #6b7280);
-      font-size: 0.7rem;
-      font-weight: 500;
-      padding: 4px 8px;
-      border-radius: 12px;
-      transition: 0.2s;
-    `;
-    btn.innerHTML = `<span style="font-size:1.3rem;">${tab.icon}</span><span>${tab.label}</span>`;
-    
-    btn.addEventListener('click', function() {
-      // إزالة التحديد من الكل
-      document.querySelectorAll('.mobile-nav-item').forEach(b => b.style.color = 'var(--text-secondary, #6b7280)');
-      // تحديد الحالي
-      btn.style.color = 'var(--primary, #16a34a)';
-      // استدعاء دالة navigateTo للتنقل
-      if (typeof navigateTo === 'function') {
-        navigateTo(tab.page);
-      }
-    });
-    
-    nav.appendChild(btn);
-  });
-
-  // تحديث التحديد عند تغيير الصفحة
-  const observer = new MutationObserver(() => {
-    const currentPage = document.querySelector('.sidebar-item.active')?.dataset.page;
-    if (currentPage) {
-      document.querySelectorAll('.mobile-nav-item').forEach((btn, idx) => {
-        btn.style.color = tabs[idx].page === currentPage ? 'var(--primary, #16a34a)' : 'var(--text-secondary, #6b7280)';
-      });
-    }
-  });
-  observer.observe(document.getElementById('sidebar'), { attributes: true, subtree: true });
-
-  // ضبط إظهار الشريط حسب حجم الشاشة
-  function toggleNav() {
-    if (window.innerWidth <= 768) {
-      nav.style.display = 'flex';
-    } else {
-      nav.style.display = 'none';
-    }
-  }
-  window.addEventListener('resize', toggleNav);
-  toggleNav();
-
-  // تحديث تموضع المحتوى الرئيسي عند ظهور الشريط
-  const style = document.createElement('style');
-  style.textContent = `
-    @media (max-width: 768px) {
-      .main-content {
-        padding-bottom: 80px !important;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-    (function() {
-  var style = document.createElement('style');
-  style.textContent = `
-    /* ضمان تمرير القائمة الجانبية على الشاشات الصغيرة */
-    @media (max-width: 768px) {
-      .sidebar {
-        max-height: 100vh; /* منع تجاوز الشاشة */
-        overflow-y: auto; /* تمكين التمرير الرأسي */
-        -webkit-overflow-scrolling: touch; /* تمرير سلس في iOS */
-        padding-bottom: 20px; /* ترك مساحة أسفل العناصر */
-      }
-      /* تخصيص شريط التمرير ليكون مرئياً */
-      .sidebar::-webkit-scrollbar {
-        width: 6px;
-      }
-      .sidebar::-webkit-scrollbar-thumb {
-        background-color: #16a34a;
-        border-radius: 10px;
-      }
-      .sidebar::-webkit-scrollbar-track {
-        background-color: #f1f1f1;
-      }
-      body.dark .sidebar::-webkit-scrollbar-track {
-        background-color: #2d2d3a;
-      }
-      /* إخفاء التذييل الثابت داخل الشريط الجانبي إذا كان يسبب مشكلة */
-      .sidebar .footer-bar {
-        display: none;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-    (function() {
-  // إزالة أي أنماط سابقة قد تتعارض
-  var oldStyle = document.getElementById('mobile-sidebar-style');
-  if (oldStyle) oldStyle.remove();
-
-  var style = document.createElement('style');
-  style.id = 'mobile-sidebar-style';
-  style.textContent = `
-    @media (max-width: 768px) {
-      .sidebar {
-        position: fixed;
-        top: 0;
-        right: 0;
-        height: 100vh !important;
-        max-height: 100vh;
-        overflow-y: auto !important;
-        overflow-x: hidden;
-        -webkit-overflow-scrolling: touch;
-        padding-bottom: 30px;
-        z-index: 1000;
-        background-color: var(--card, #ffffff);
-        border-left: 1px solid var(--border, #e5e7eb);
-        box-shadow: 2px 0 12px rgba(0,0,0,0.08);
-      }
-      .sidebar::-webkit-scrollbar {
-        width: 6px;
-      }
-      .sidebar::-webkit-scrollbar-thumb {
-        background-color: #16a34a;
-        border-radius: 10px;
-      }
-      .sidebar::-webkit-scrollbar-track {
-        background-color: #f1f1f1;
-      }
-      body.dark .sidebar::-webkit-scrollbar-track {
-        background-color: #2d2d3a;
-      }
-      /* إخفاء التذييل الموجود داخل السايدبار */
-      .sidebar .footer-bar {
-        display: none !important;
-      }
-      .sidebar.open {
-        right: 0;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  // ضمان أن العناصر لا تختفي خلف التذييل
-  var footerBar = document.querySelector('.sidebar .footer-bar');
-  if (footerBar) footerBar.style.display = 'none';
-})();
-    window.renderTrash = function() {
-  const c = document.getElementById('content-area');
-  if (!c) return;
-  document.getElementById('pageTitle').textContent = t('trash');
-  let html = `<div class="bg-card"><h2 class="text-xl font-bold">🗑️ ${t('trash')} (${trashBin.length})</h2>`;
-  
-  if (trashBin.length > 0) {
-    html += `
-      <div class="flex gap-2 mb-3">
-        <button onclick="restoreSelectedTrash()" class="btn-primary text-sm">🔄 استعادة المحدد</button>
-        <button onclick="deleteSelectedTrash()" class="btn-danger text-sm">❌ حذف المحدد نهائياً</button>
-      </div>
-      <div class="overflow-x-auto">
-        <table>
-          <thead>
-            <tr>
-              <th><input type="checkbox" onchange="document.querySelectorAll('.trash-check').forEach(cb=>cb.checked=this.checked)"></th>
-              <th>النوع</th>
-              <th>البيانات</th>
-              <th>تاريخ الحذف</th>
-              <th>إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>`;
-    
-    trashBin.forEach(t => {
-      html += `
-        <tr>
-          <td><input type="checkbox" class="trash-check" value="${t.id}"></td>
-          <td><span class="badge-inactive">${t.type}</span></td>
-          <td>${t.data?.clientName || t.data?.name || 'عنصر'}</td>
-          <td><small class="text-gray-400">${new Date(t.deletedAt).toLocaleString('ar-EG')}</small></td>
-          <td class="flex gap-1">
-            <button onclick="restoreItem('${t.id}')" class="text-green-600">🔄</button>
-            <button onclick="deletePermanently('${t.id}')" class="text-red-600">❌</button>
-          </td>
-        </tr>`;
-    });
-    
-    html += `</tbody></table></div>`;
-  } else {
-    html += `<p class="text-gray-400 text-center py-8">السلة فارغة</p>`;
-  }
-  
-  html += `<div class="footer-bar">${footerText}</div></div>`;
-  c.innerHTML = html;
-};
-
-window.restoreSelectedTrash = function() {
+// دوال مساعدة لسلة المحذوفات (تحديد متعدد)
+function restoreSelectedTrash() {
   const ids = Array.from(document.querySelectorAll('.trash-check:checked')).map(cb => cb.value);
   if (!ids.length) { showError('لم يتم تحديد عناصر'); return; }
   ids.forEach(id => restoreItem(id));
-  window.renderTrash();
+  renderTrash();
   showMsg(`🔄 تم استعادة ${ids.length} عنصر`);
-};
+}
 
-window.deleteSelectedTrash = function() {
+function deleteSelectedTrash() {
   const ids = Array.from(document.querySelectorAll('.trash-check:checked')).map(cb => cb.value);
   if (!ids.length) { showError('لم يتم تحديد عناصر'); return; }
   if (!confirm(`هل أنت متأكد من حذف ${ids.length} عنصر نهائياً؟`)) return;
   ids.forEach(id => deletePermanently(id));
-  window.renderTrash();
+  renderTrash();
   showMsg(`🗑️ تم حذف ${ids.length} عنصر نهائياً`);
-};
+}
 </script>
 </body>
 </html>
