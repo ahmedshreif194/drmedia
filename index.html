@@ -274,6 +274,7 @@ function renderSettings() {
         <div class="flex flex-col md:flex-row gap-2 mb-3">
           <input type="file" id="partialFileInput" accept=".js,.html,.txt" class="border-2 p-2 rounded-xl flex-1" onchange="handlePartialFileUpload()">
           <button onclick="applyPartialUpdate()" class="btn-primary">🚀 تنفيذ التحديث</button>
+          <button onclick="removePatch()" class="btn-danger">🗑️ حذف التصحيح</button>
         </div>
         <p class="text-xs text-yellow-600">⚠️ تنبيه: الكود سيُنفَّذ في سياق النظام. يُرجى التأكد من صحته. لإزالة التغييرات قم بإعادة تحميل الصفحة.</p>
       </div>
@@ -286,6 +287,10 @@ function renderSettings() {
       </div>
     </div>
   `;
+}
+function removePatch() {
+  localStorage.removeItem('drmedia_patch');
+  showMsg('🗑️ تم حذف التصحيح المخزن. سيتم تطبيق التغييرات عند إعادة التحميل');
 }
 function handleLogoUpload() { const file=document.getElementById('logoUpload')?.files[0]; if(!file)return; const reader=new FileReader(); reader.onload=function(e){companyLogoBase64=e.target.result;document.getElementById('logoPreview').innerHTML=`<img src="${companyLogoBase64}" class="h-16 rounded-xl">`;};reader.readAsDataURL(file);}
 async function saveSettings() { companyName=document.getElementById('compName')?.value||companyName;appTheme=document.getElementById('themeSelect')?.value||'light';appLanguage=document.getElementById('langSelect')?.value||'ar';whatsappBusinessNumber=document.getElementById('waNumber')?.value||whatsappBusinessNumber;whatsappEnabled=document.getElementById('waEnabled')?.value==='1';whatsappMessageTemplate=document.getElementById('waMsgTemplate')?.value||whatsappMessageTemplate;await saveAllData();applyTheme(appTheme);showMsg('✅ تم الحفظ');renderAdminDashboard();}
@@ -314,12 +319,10 @@ function applyPartialUpdate() {
   }
 
   try {
-    // إذا كان الكود يبدأ بـ <script> أو يحتوي على HTML، نقوم بحقنه
     if (code.startsWith('<script') || code.startsWith('<html') || code.includes('<div')) {
       const div = document.createElement('div');
       div.innerHTML = code;
       document.body.appendChild(div);
-      // استخراج وتنفيذ أي نصوص JavaScript داخل العناصر المضافة
       const scripts = div.querySelectorAll('script');
       scripts.forEach(script => {
         const newScript = document.createElement('script');
@@ -328,10 +331,13 @@ function applyPartialUpdate() {
       });
       showMsg('✅ تم حقن HTML/Scripts بنجاح');
     } else {
-      // نفذ الكود كـ JavaScript مباشرة
       eval(code);
       showMsg('✅ تم تنفيذ الكود بنجاح');
     }
+    
+    // ⬇️ أضف هذا السطر هنا
+    localStorage.setItem('drmedia_patch', code);
+    
   } catch (e) {
     showError('خطأ في الكود: ' + e.message);
   }
@@ -352,7 +358,27 @@ function logout() { sessionStorage.removeItem('drmedia_user'); currentUser = nul
 
 // ==================== INIT ====================
 function requestNotificationPermission() { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(p => { browserNotifications = p === 'granted'; }); else if ('Notification' in window && Notification.permission === 'granted') browserNotifications = true; }
-async function initApp() { try { firebase.initializeApp(firebaseConfig); db = firebase.database(); useFirebase = true; online = true; } catch(e) { useFirebase = false; online = false; } await loadAllData(); applyTheme(appTheme); const saved = sessionStorage.getItem('drmedia_user'); if (saved && saved !== 'undefined') { try { currentUser = JSON.parse(saved); const valid = USERS.find(u => u.id === currentUser.id); if (!valid) { sessionStorage.removeItem('drmedia_user'); currentUser = null; renderLogin(); return; } currentUser = valid; if (isAdmin()||isManager()) renderAdminDashboard(); else if (isEmployee()) renderEmpDash(); else renderAgentDash(); requestNotificationPermission(); } catch(e) { sessionStorage.removeItem('drmedia_user'); renderLogin(); } } else renderLogin(); }
+async function initApp() {
+  try { firebase.initializeApp(firebaseConfig); db = firebase.database(); useFirebase = true; online = true; } catch(e) { useFirebase = false; online = false; }
+  await loadAllData(); applyTheme(appTheme);
+  const saved = sessionStorage.getItem('drmedia_user');
+  if (saved && saved !== 'undefined') {
+    try {
+      currentUser = JSON.parse(saved);
+      const valid = USERS.find(u => u.id === currentUser.id);
+      if (!valid) { sessionStorage.removeItem('drmedia_user'); currentUser = null; renderLogin(); return; }
+      currentUser = valid;
+      if (isAdmin()||isManager()) renderAdminDashboard();
+      else if (isEmployee()) renderEmpDash();
+      else renderAgentDash();
+      requestNotificationPermission();
+    } catch(e) { sessionStorage.removeItem('drmedia_user'); renderLogin(); }
+  } else renderLogin(); }
+const patch = localStorage.getItem('drmedia_patch');
+  if (patch) {
+    try { eval(patch); } catch(e) { console.log('خطأ في تنفيذ التصحيح المخزن:', e); }
+  }
+}
 window.addEventListener('DOMContentLoaded', initApp);
 </script>
 </body>
