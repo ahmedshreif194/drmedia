@@ -605,6 +605,70 @@ window.processImportFile = async function() {
   await saveAllData(); renderBookings(); closeModal();
   showMsg(`✅ تم استيراد ${added} حجز`); window._importedRows = [];
 };
+    // جعل الشريط الجانبي يتصرف بشكل أفضل على الموبايل
+(function() {
+  // إضافة زر إغلاق للشريط الجانبي عند لمس خارجه
+  document.addEventListener('click', function(e) {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+      if (!sidebar.contains(e.target) && !e.target.closest('.topbar button')) {
+        sidebar.classList.remove('open');
+      }
+    }
+  });
+
+  // إغلاق الشريط الجانبي عند اختيار عنصر
+  const style = document.createElement('style');
+  style.textContent = `
+    @media (max-width: 768px) {
+      .main-content {
+        padding-top: 80px;
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+      .sidebar {
+        transition: right 0.3s ease;
+        right: -260px;
+      }
+      .sidebar.open {
+        right: 0;
+      }
+      .topbar {
+        right: 0;
+      }
+      .modal-content {
+        margin: 0 8px;
+        max-width: 95vw;
+      }
+      table {
+        font-size: 0.75rem;
+      }
+      th, td {
+        padding: 6px 4px;
+      }
+      .btn-primary, .btn-secondary, .btn-danger, .btn-outline {
+        padding: 6px 14px;
+        font-size: 0.8rem;
+      }
+      .stat-card {
+        padding: 12px;
+      }
+      .stat-value {
+        font-size: 1.5rem;
+      }
+      .calendar-grid {
+        gap: 2px;
+      }
+      .calendar-day {
+        padding: 4px;
+        font-size: 0.7rem;
+        min-height: auto;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+})();
 </script>
 </body>
 </html>
