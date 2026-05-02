@@ -3325,6 +3325,249 @@ window.rotateDistribution = async function() {
   renderDistribution();
   showMsg('✅ تم التوزيع بالتدوير');
 };
+// ============================================================
+// تحديث: إصلاح مسح QR للحضور والانصراف (كاميرا ثابتة)
+// ============================================================
+
+// دالة مسح QR محسنة
+window.startQRScanner = function() {
+  // التحقق من وجود عنصر في الصفحة
+  const qrReaderEl = document.createElement('div');
+  qrReaderEl.id = 'qr-reader';
+  qrReaderEl.style.width = '100%';
+  qrReaderEl.style.maxWidth = '400px';
+  qrReaderEl.style.margin = '0 auto';
+  qrReaderEl.style.minHeight = '300px';
+
+  const modalContent = `
+    <h3 class="text-xl font-bold mb-4 text-center">📷 مسح QR للحضور والانصراف</h3>
+    <div id="qr-reader-container" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div>
+    <p class="text-sm text-gray-500 text-center mt-2">وجه الكاميرا نحو الكود</p>
+    <div class="flex gap-2 mt-4">
+      <button onclick="stopScannerAndClose()" class="btn-danger w-full">إلغاء</button>
+    </div>
+  `;
+
+  openModal(modalContent);
+
+  // انتظار ظهور العنصر في DOM ثم بدء المسح
+  setTimeout(() => {
+    const container = document.getElementById('qr-reader-container');
+    if (!container) {
+      showError('تعذر تحميل الماسح');
+      closeModal();
+      return;
+    }
+
+    // تنظيف أي ماسح سابق
+    if (window.html5QrScanner) {
+      try { window.html5QrScanner.stop(); } catch(e) {}
+      window.html5QrScanner = null;
+    }
+
+    try {
+      const scanner = new Html5Qrcode("qr-reader-container");
+      window.html5QrScanner = scanner;
+
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0
+      };
+
+      scanner.start(
+        { facingMode: "environment" },
+        config,
+        // نجاح المسح
+        (decodedText) => {
+          // إيقاف المسح فوراً عند قراءة أي كود
+          scanner.stop().then(() => {
+            window.html5QrScanner = null;
+            closeModal();
+            
+            // التحقق من الكود
+            if (decodedText && decodedText.startsWith("DRMEDIA_")) {
+              // عرض نافذة تسجيل الحضور
+              const parts = decodedText.split('_');
+              if (parts.length >= 2) {
+                const targetDate = parts[2] || getTodayDateStr();
+                const today = getTodayDateStr();
+                
+                // السماح بالمسح لتاريخ اليوم فقط (أو أي تاريخ موجود في الكود)
+                openModal(`
+                  <h3 class="text-xl font-bold mb-4 text-center">✅ تم مسح الكود</h3>
+                  <p class="text-center mb-4 text-green-600">التاريخ: ${targetDate}</p>
+                  <select id="scanEmpSelect" class="w-full border-2 p-3 rounded-xl mb-3">
+                    ${employees.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('')}
+                  </select>
+                  <div class="flex gap-3">
+                    <button onclick="checkInFromScan()" class="btn-primary flex-1 py-2">✅ حضور</button>
+                    <button onclick="checkOutFromScan()" class="btn-secondary flex-1 py-2">🚪 انصراف</button>
+                    <button onclick="closeModal()" class="btn-outline flex-1 py-2">إلغاء</button>
+                  </div>
+                `);
+              }
+            } else {
+              showError("❌ رمز QR غير صالح");
+            }
+          }).catch(err => {
+            window.html5QrScanner = null;
+            closeModal();
+            showError('خطأ في الماسح');
+          });
+        },
+        // خطأ في المسح (تجاهل)
+        (errorMessage) => {
+          // لا نفعل شيئاً، ننتظر مسحاً ناجحاً
+        }
+      ).catch(err => {
+        console.error('Scanner start error:', err);
+        window.html5QrScanner = null;
+        closeModal();
+        showError('تعذر تشغيل الكاميرا. تأكد من السماح بالوصول للكاميرا.');
+      });
+
+    } catch(e) {
+      console.error('Scanner init error:', e);
+      window.html5QrScanner = null;
+      closeModal();
+      showError('تعذر تحميل الماسح');
+    }
+  }, 500); // زيادة التأخير لضمان ظهور العنصر
+};
+
+// إيقاف الماسح وإغلاق النافذة
+window.stopScannerAndClose = function() {
+  if (window.html5QrScanner) {
+    try {
+      window.html5QrScanner.stop().then(() => {
+        window.html5QrScanner = null;
+        closeModal();
+      }).catch(() => {
+        window.html5QrScanner = null;
+        closeModal();
+      });
+    } catch(e) {
+      window.html5QrScanner = null;
+      closeModal();
+    }
+  } else {
+    closeModal();
+  }
+};
+
+// تسجيل الحضور من المسح
+window.checkInFromScan = function() {
+  const empId = document.getElementById('scanEmpSelect')?.value;
+  if (!empId) { showError('اختر موظفاً'); return; }
+  closeModal();
+  checkIn(empId);
+};
+
+// تسجيل الانصراف من المسح
+window.checkOutFromScan = function() {
+  const empId = document.getElementById('scanEmpSelect')?.value;
+  if (!empId) { showError('اختر موظفاً'); return; }
+  closeModal();
+  checkOut(empId);
+};
+
+// مسح QR لموظف محدد (من صفحة الموظفين)
+window.scanAttendanceFor = function(empId) {
+  const emp = employees.find(e => e.id === empId);
+  if (!emp) return;
+  if (typeof Html5Qrcode === 'undefined') { showError('مكتبة QR غير متاحة'); return; }
+
+  openModal(`
+    <h3 class="text-xl font-bold mb-4 text-center">📷 مسح QR لـ ${emp.name}</h3>
+    <div id="empQrReader" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div>
+    <p class="text-sm text-gray-500 text-center mt-2">وجه الكاميرا نحو أي كود QR</p>
+    <div class="flex gap-2 mt-4">
+      <button onclick="closeEmpScanner()" class="btn-danger w-full">إلغاء</button>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const el = document.getElementById('empQrReader');
+    if (!el) return;
+
+    try {
+      const scanner = new Html5Qrcode("empQrReader");
+      window._empScanner = scanner;
+
+      scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          scanner.stop().then(() => {
+            window._empScanner = null;
+            closeModal();
+            openModal(`
+              <h3 class="text-xl font-bold mb-4 text-center">✅ تم المسح</h3>
+              <p class="text-center mb-3">الموظف: <strong>${emp.name}</strong></p>
+              <div class="flex gap-3">
+                <button onclick="checkIn('${emp.id}')" class="btn-primary flex-1 py-2">✅ حضور</button>
+                <button onclick="checkOut('${emp.id}')" class="btn-secondary flex-1 py-2">🚪 انصراف</button>
+                <button onclick="closeModal()" class="btn-outline flex-1 py-2">إلغاء</button>
+              </div>
+            `);
+          }).catch(() => {});
+        },
+        (err) => {}
+      ).catch(err => {
+        window._empScanner = null;
+        closeModal();
+        showError('تعذر تشغيل الكاميرا');
+      });
+
+    } catch(e) {
+      window._empScanner = null;
+      closeModal();
+      showError('تعذر تحميل الماسح');
+    }
+  }, 500);
+};
+
+// إغلاق ماسح الموظف
+window.closeEmpScanner = function() {
+  if (window._empScanner) {
+    window._empScanner.stop().then(() => {
+      window._empScanner = null;
+      closeModal();
+    }).catch(() => {
+      window._empScanner = null;
+      closeModal();
+    });
+  } else {
+    closeModal();
+  }
+};
+
+// تأكد من تنظيف الماسح عند إغلاق النافذة
+const origCloseModal = window.closeModal;
+window.closeModal = function() {
+  if (window._empScanner) {
+    window._empScanner.stop().then(() => {
+      window._empScanner = null;
+      origCloseModal();
+    }).catch(() => {
+      window._empScanner = null;
+      origCloseModal();
+    });
+    return;
+  }
+  if (window.html5QrScanner) {
+    window.html5QrScanner.stop().then(() => {
+      window.html5QrScanner = null;
+      origCloseModal();
+    }).catch(() => {
+      window.html5QrScanner = null;
+      origCloseModal();
+    });
+    return;
+  }
+  origCloseModal();
+};
 </script>
 </body>
 </html>
