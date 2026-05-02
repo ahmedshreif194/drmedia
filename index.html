@@ -374,12 +374,14 @@ async function initApp() {
       requestNotificationPermission();
     } catch(e) { sessionStorage.removeItem('drmedia_user'); renderLogin(); }
   } else renderLogin(); }
-window.addEventListener('DOMContentLoaded', initApp);
+
 const patch = localStorage.getItem('drmedia_patch');
   if (patch) {
     try { eval(patch); } catch(e) { console.log('خطأ في تنفيذ التصحيح المخزن:', e); }
   }
 }
+
+window.addEventListener('DOMContentLoaded', initApp);
 </script>
 </body>
 </html>
