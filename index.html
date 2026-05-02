@@ -2815,6 +2815,72 @@ window.renderSettings = (function(oldRender) {
     }
   };
 })(window.renderSettings);
+// ============================================================
+// تحديث: تسجيل حضور / انصراف في أيام سابقة (يدويًا من المدير)
+// ============================================================
+
+// دالة مساعدة لتسجيل حضور أو انصراف في تاريخ محدد
+window.recordAttendanceForDate = function(empId, date, type) {
+  if (!empId || !date) return;
+  const exist = attendanceRecords.find(a => a.empId === empId && a.date === date);
+  const time = (type === 'checkIn') ? '09:00 ص' : '05:00 م';
+  if (type === 'checkIn') {
+    if (exist && exist.checkIn) { showWarning('⚠️ تم تسجيل الحضور مسبقاً'); return; }
+    if (exist) { exist.checkIn = time; exist.status = 'present'; }
+    else attendanceRecords.push({ id: generateId('att_'), empId, date, checkIn: time, checkOut: null, status: 'present' });
+  } else {
+    if (!exist || !exist.checkIn) { showWarning('⚠️ لم يسجل حضور بعد'); return; }
+    if (exist.checkOut) { showWarning('⚠️ تم تسجيل الانصراف مسبقاً'); return; }
+    exist.checkOut = time;
+  }
+  addActivity('تسجيل يدوي', `تسجيل ${type==='checkIn'?'حضور':'انصراف'} للموظف ${empId} بتاريخ ${date}`);
+  saveAllData();
+  updateEmployeeOrders();
+  renderAttendance();
+  showMsg(`✅ تم التسجيل`);
+};
+
+// دالة فتح نافذة تسجيل الحضور السابق
+window.showPastAttendanceModal = function() {
+  const empOpts = employees.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">📅 تسجيل حضور / انصراف سابق</h3>
+    <select id="pastEmpSelect" class="w-full border-2 p-2 my-2 rounded-xl">${empOpts}</select>
+    <input type="date" id="pastDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
+    <div class="flex gap-2 mt-4">
+      <button onclick="recordPastAttendance('checkIn')" class="btn-primary flex-1">✅ تسجيل حضور</button>
+      <button onclick="recordPastAttendance('checkOut')" class="btn-secondary flex-1">🚪 تسجيل انصراف</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+// استدعاؤها من الزر
+window.recordPastAttendance = function(type) {
+  const empId = document.getElementById('pastEmpSelect')?.value;
+  const date = document.getElementById('pastDate')?.value;
+  if (!empId || !date) { showError('اختر الموظف والتاريخ'); return; }
+  recordAttendanceForDate(empId, date, type);
+  closeModal();
+};
+
+// تعديل renderAttendance لإضافة الزر
+(function() {
+  const origRenderAttendance = window.renderAttendance;
+  window.renderAttendance = function() {
+    if (origRenderAttendance) origRenderAttendance();
+    // البحث عن مكان إضافة الزر (بجانب "تسجيل حضور الكل")
+    const container = document.querySelector('#content-area .flex.gap-2.mb-2');
+    if (container) {
+      if (!document.getElementById('pastAttendanceBtn')) {
+        const btn = document.createElement('button');
+        btn.id = 'pastAttendanceBtn';
+        btn.className = 'btn-outline text-sm';
+        btn.textContent = '📅 حضور سابق';
+        btn.onclick = showPastAttendanceModal;
+        container.appendChild(btn);
+      }
+    }
+  };
+})();
 </script>
 </body>
 </html>
