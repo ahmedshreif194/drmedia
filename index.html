@@ -240,6 +240,31 @@ function renderActivityLogTab() { const c = document.getElementById('content-are
 async function clearActivityLog() { activityLog = []; await saveAllData(); renderActivityLogTab(); showMsg('✅ تم مسح السجل'); }
 function exportActivityLog() { const text = activityLog.map(a => `${new Date(a.timestamp).toLocaleString('ar-EG')} - ${a.user}: ${a.action} - ${a.details}`).join('\n'); const blob = new Blob([text], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'activity_log.txt'; a.click(); }
 
+function exportForGithub() {
+  // الحصول على كود الصفحة الحالي
+  let html = document.documentElement.outerHTML;
+  
+  // البحث عن التصحيح المخزن وإضافته في نهاية الملف قبل </body>
+  const patch = localStorage.getItem('drmedia_patch');
+  if (patch) {
+    const scriptTag = `<script>${patch}<\/script>`;
+    html = html.replace('</body>', scriptTag + '\n</body>');
+  }
+  
+  // إنشاء رابط التحميل
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `drmedia_updated_${getTodayDateStr()}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showMsg('✅ تم تجهيز النسخة المحدثة. ارفع الملف الذي تم تنزيله إلى GitHub.');
+}
+    
 function renderFlash() { const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('flash'); c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold">💾 ${t('flash')} (${flashDrives.length})</h2><button onclick="addFlash()" class="btn-primary mb-3">+ فلاشة</button><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.flash-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>الموقع الحالي</th><th>إجراءات</th></tr></thead><tbody>${flashDrives.map(f=>{const b=bookings.find(b=>b.id===f.bookingId);return`<tr><td><input type="checkbox" class="flash-check" value="${f.id}"></td><td>${b?b.clientName:f.clientName}</td><td>${f.date}</td><td>${f.status}</td><td>${f.currentHolder}</td><td class="flex gap-1"><button onclick="moveFlash('${f.id}')">➡️</button><button onclick="deleteFlash('${f.id}')">🗑️</button></td></tr>`}).join('')}</tbody></table><div class="footer-bar">${footerText}</div></div>`; }
 function addFlash() { const bookingOpts=bookings.filter(b=>!b.deleted).map(b=>`<option value="${b.id}">${b.clientName} - ${b.date}</option>`).join(''); openModal(`<h3 class="text-xl font-bold mb-4">💾 إضافة فلاشة</h3><select id="flashBooking" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">اختر الحجز</option>${bookingOpts}</select><input type="date" id="flashDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}"><button onclick="saveFlash()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
 function saveFlash() { const bookingId=document.getElementById('flashBooking')?.value; const b=bookings.find(b=>b.id===bookingId); if(!b){showError('اختر حجزاً');return;} flashDrives.push({id:generateId('fl_'),bookingId:b.id,clientName:b.clientName,date:document.getElementById('flashDate')?.value||getTodayDateStr(),status:'تم الاستلام من الحسابات',currentHolder:'المونتير'}); saveAllData(); renderFlash(); closeModal(); showMsg('✅ تمت الإضافة'); }
@@ -274,6 +299,8 @@ function renderSettings() {
         <div class="flex flex-col md:flex-row gap-2 mb-3">
           <input type="file" id="partialFileInput" accept=".js,.html,.txt" class="border-2 p-2 rounded-xl flex-1" onchange="handlePartialFileUpload()">
           <button onclick="applyPartialUpdate()" class="btn-primary">🚀 تنفيذ التحديث</button>
+           <button onclick="exportForGithub()" class="btn-secondary">⬆️ تجهيز للـ GitHub</button>
+        <p class="text-xs text-yellow-600">⚠️ التعديلات لا تغير الملف الأصلي. استخدم "تجهيز للـ GitHub" لتنزيل نسخة محدثة يمكن رفعها.</p>
           <button onclick="removePatch()" class="btn-danger">🗑️ حذف التصحيح</button>
         </div>
         <p class="text-xs text-yellow-600">⚠️ تنبيه: الكود سيُنفَّذ في سياق النظام. يُرجى التأكد من صحته. لإزالة التغييرات قم بإعادة تحميل الصفحة.</p>
