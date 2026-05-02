@@ -676,6 +676,305 @@ function deleteSelectedTrash() {
       }
     });
   })();
+// ============================================================
+// تحديث شامل: ربط الموظفين، رواتب مجزأة، تذكيرات، فلاشات بالصلاحيات
+// ============================================================
+
+// --- 1. صلاحيات جديدة (مونتاج، تصوير، مبيعات) تضاف إلى USERS ---
+if (!USERS.find(u => u.id === 'montage1')) {
+  USERS.push({ id:'montage1', username:'montage', password:'montage123', role:'montage', name:'مسؤول المونتاج' });
+}
+if (!USERS.find(u => u.id === 'photo1')) {
+  USERS.push({ id:'photo1', username:'photo', password:'photo123', role:'photo', name:'مسؤول التصوير' });
+}
+if (!USERS.find(u => u.id === 'sales1')) {
+  USERS.push({ id:'sales1', username:'sales', password:'sales123', role:'sales', name:'مندوب المبيعات' });
+}
+
+// --- 2. ربط الموظف بمستخدم (تعديل addEmployee و editEmployee) ---
+window.addEmployee = function() {
+  const userOpts = USERS.filter(u => !u.employeeId).map(u => `<option value="${u.id}">${u.username} (${u.role})</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة موظف</h3>
+    <input id="newEmpName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option>مخرج</option><option>مصور</option><option>كرين</option></select>
+    <input id="newEmpPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEmpSalary" placeholder="أجر الأوردر" value="200" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newEmpUser" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">بدون ربط</option>${userOpts}</select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewEmployee()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.saveNewEmployee = async function() {
+  const name = document.getElementById('newEmpName')?.value.trim(); if (!name) { showError('الاسم مطلوب'); return; }
+  const userId = document.getElementById('newEmpUser')?.value || null;
+  const emp = { id: generateId('emp_'), name, role: document.getElementById('newEmpRole')?.value||'مصور', phone: document.getElementById('newEmpPhone')?.value||'', salaryPerOrder: parseInt(document.getElementById('newEmpSalary')?.value)||200, active:true, totalOrders:0, userId };
+  if (userId) { const u = USERS.find(u => u.id === userId); if (u) u.employeeId = emp.id; }
+  employees.push(emp);
+  addActivity('موظف جديد', `تم إضافة ${name} مع ربط بحساب`);
+  await saveAllData(); renderEmployees(); closeModal(); showMsg('✅ تمت الإضافة');
+};
+
+window.editEmployee = function(id) {
+  const e = employees.find(e => e.id === id); if (!e) return;
+  const userOpts = USERS.filter(u => !u.employeeId || u.id === e.userId).map(u => `<option value="${u.id}" ${e.userId===u.id?'selected':''}>${u.username} (${u.role})</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل موظف</h3>
+    <input id="editEmpName" value="${e.name}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select>
+    <input id="editEmpPhone" value="${e.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="editEmpSalary" value="${e.salaryPerOrder}" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="editEmpUser" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">بدون ربط</option>${userOpts}</select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveEditEmployee('${id}')" class="btn-primary flex-1">💾 حفظ التعديل</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.saveEditEmployee = async function(id) {
+  const e = employees.find(e => e.id === id); if (!e) return;
+  const oldUserId = e.userId;
+  e.name = document.getElementById('editEmpName')?.value || e.name;
+  e.role = document.getElementById('editEmpRole')?.value || e.role;
+  e.phone = document.getElementById('editEmpPhone')?.value || e.phone;
+  e.salaryPerOrder = parseInt(document.getElementById('editEmpSalary')?.value) || e.salaryPerOrder;
+  const newUserId = document.getElementById('editEmpUser')?.value || null;
+  e.userId = newUserId;
+  if (oldUserId && oldUserId !== newUserId) { const oldU = USERS.find(u => u.id === oldUserId); if (oldU) oldU.employeeId = null; }
+  if (newUserId) { const newU = USERS.find(u => u.id === newUserId); if (newU) newU.employeeId = e.id; }
+  await saveAllData(); renderEmployees(); closeModal(); showMsg('✅ تم التعديل');
+};
+
+// --- 3. واجهة الموظف (أوردراته وحسابه) ---
+window.renderEmpDash = function() {
+  const emp = employees.find(e => e.id === currentUser?.employeeId);
+  if (!emp) { document.getElementById('app').innerHTML = `<div class="p-4"><h2>لا يوجد موظف مرتبط</h2><button onclick="logout()" class="btn-danger">خروج</button></div>`; return; }
+  const myBookings = bookings.filter(b => (b.assignedEmployees||[]).includes(emp.id));
+  const pending = myBookings.filter(b => b.status === 'pending');
+  const completed = myBookings.filter(b => b.status === 'completed');
+  const salary = myBookings.length * emp.salaryPerOrder;
+  document.getElementById('app').innerHTML = `
+    <div class="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+      <header class="bg-white dark:bg-gray-800 p-4 flex justify-between"><h1>${companyName}</h1><button onclick="logout()" class="btn-danger text-sm">خروج</button></header>
+      <main class="p-4 flex-1 max-w-4xl mx-auto">
+        <div class="bg-card mb-4"><h2 class="text-xl font-bold mb-2">👋 مرحباً ${emp.name}</h2><p class="text-gray-500">الدور: ${emp.role} | الرصيد المستحق: ${formatCurrency(salary)}</p></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="bg-card"><h3 class="font-bold mb-2">📅 أوردرات معلقة (${pending.length})</h3>${pending.length ? pending.map(b => `<div class="border-b py-2 text-sm"><strong>${b.clientName}</strong> - ${b.hallName}<br>${b.date}</div>`).join('') : '<p class="text-gray-400">لا يوجد</p>'}</div>
+          <div class="bg-card"><h3 class="font-bold mb-2">✔️ أوردرات مكتملة (${completed.length})</h3>${completed.length ? completed.slice(0,5).map(b => `<div class="border-b py-2 text-sm">${b.clientName} - ${b.date}</div>`).join('') : '<p class="text-gray-400">لا يوجد</p>'}</div>
+        </div>
+        <div class="bg-card"><h3 class="font-bold mb-2">💰 تفاصيل الحساب</h3><p>عدد الأوردرات: ${myBookings.length} | الأجر: ${formatCurrency(salary)} | السلف: ${formatCurrency((employeeLoans[emp.id]||[]).filter(l=>!l.settled).reduce((a,l)=>a+l.amount,0))} | الصافي: ${formatCurrency(salary - (employeeLoans[emp.id]||[]).reduce((a,l)=>a+l.amount,0))}</p></div>
+      </main>
+      <footer class="footer-bar">${footerText}</footer>
+    </div>`;
+};
+
+// --- 4. رواتب مجزأة (1-10، 11-20، 21-آخر الشهر) ---
+function getPeriodRange(period, year, month) {
+  const start = new Date(year, month, period === 'early' ? 1 : period === 'mid' ? 11 : 21);
+  const end = new Date(year, month, period === 'early' ? 10 : period === 'mid' ? 20 : new Date(year, month+1, 0).getDate());
+  return { start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10) };
+}
+
+function calculatePayrollForPeriod(period) {
+  const now = new Date();
+  const { start, end } = getPeriodRange(period, now.getFullYear(), now.getMonth());
+  const result = [];
+  employees.forEach(e => {
+    const assignedBookings = bookings.filter(b => b.date >= start && b.date <= end && (b.assignedEmployees||[]).includes(e.id));
+    const attended = assignedBookings.filter(b => attendanceRecords.some(a => a.empId === e.id && a.date === b.date && a.checkIn));
+    const sal = attended.length * e.salaryPerOrder;
+    const loans = (employeeLoans[e.id]||[]).filter(l => !l.settled && l.date >= start && l.date <= end).reduce((s,l) => s + l.amount, 0);
+    result.push({ emp: e, orders: attended.length, salary: sal, loans, net: Math.max(0, sal - loans) });
+  });
+  return result;
+}
+
+window.renderPayroll = function() {
+  updateEmployeeOrders();
+  const c = document.getElementById('content-area'); if (!c) return;
+  document.getElementById('pageTitle').textContent = t('payroll');
+  const period = document.getElementById('payrollPeriod')?.value || 'early';
+  const data = calculatePayrollForPeriod(period);
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">💰 ${t('payroll')}</h2>
+    <div class="flex gap-2 mb-4">
+      <select id="payrollPeriod" onchange="renderPayroll()" class="border-2 p-2 rounded-xl">
+        <option value="early" ${period==='early'?'selected':''}>من 1 إلى 10</option>
+        <option value="mid" ${period==='mid'?'selected':''}>من 11 إلى 20</option>
+        <option value="late" ${period==='late'?'selected':''}>من 21 إلى نهاية الشهر</option>
+      </select>
+    </div>
+    <div class="overflow-x-auto"><table><thead><tr><th>الموظف</th><th>الأوردرات</th><th>المستحق</th><th>السلف</th><th>الصافي</th></tr></thead><tbody>`;
+  data.forEach(d => html += `<tr><td>${d.emp.name}</td><td>${d.orders}</td><td>${formatCurrency(d.salary)}</td><td class="text-red-600">${formatCurrency(d.loans)}</td><td><strong>${formatCurrency(d.net)}</strong></td></tr>`);
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+// --- 5. تذكيرات قبل الأوردر بيوم ويوم الأوردر ---
+window.checkReminders = function() {
+  const today = getTodayDateStr();
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0,10);
+
+  bookings.forEach(b => {
+    if (b.status !== 'pending' || b.deleted) return;
+    const targetDate = b.date;
+    const isToday = targetDate === today;
+    const isTomorrow = targetDate === tomorrowStr;
+    if (!isToday && !isTomorrow) return;
+
+    (b.assignedEmployees||[]).forEach(eid => {
+      const emp = employees.find(e => e.id === eid);
+      if (emp) {
+        const title = isToday ? `📅 أوردر اليوم` : `⏰ تذكير أوردر غداً`;
+        const body = `${b.clientName} - ${b.hallName} - ${targetDate}`;
+        notifyEmployee(emp, title, body, true);
+      }
+    });
+  });
+};
+
+// تشغيل التذكيرات عند بدء التطبيق (يتم استدعاؤها من initApp لاحقاً)
+setInterval(checkReminders, 3600000); // كل ساعة
+
+// --- 6. صفحة الفلاشات المطورة (ربط بالحجوزات، صلاحيات) ---
+window.renderFlash = function() {
+  const c = document.getElementById('content-area'); if (!c) return;
+  document.getElementById('pageTitle').textContent = t('flash');
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">💾 ${t('flash')} (${flashDrives.length})</h2>
+    <button onclick="addFlash()" class="btn-primary mb-3">+ فلاشة</button>
+    <div class="overflow-x-auto"><table><thead><tr><th>العميل</th><th>التاريخ</th><th>نوع الباكدج</th><th>العدد</th><th>القاعة</th><th>حالة الفلاشة</th><th>الموقع الحالي</th><th>إجراءات</th></tr></thead><tbody>`;
+
+  flashDrives.forEach(f => {
+    const b = bookings.find(bk => bk.id === f.bookingId);
+    if (!b) return;
+    const actions = getFlashActions(f);
+    html += `<tr>
+      <td>${b.clientName}</td>
+      <td>${b.date}</td>
+      <td>${b.packageType||'—'}</td>
+      <td>${b.totalPersons||0}</td>
+      <td>${b.hallName}</td>
+      <td><span class="status-badge status-pending">${f.status}</span></td>
+      <td>${f.currentHolder}</td>
+      <td class="flex gap-1">${actions}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+// تحديد الإجراءات المتاحة حسب صلاحية المستخدم
+function getFlashActions(f) {
+  const user = currentUser;
+  if (!user) return '';
+  const role = user.role;
+  if (role === 'admin' || role === 'manager') {
+    return `<button onclick="moveFlash('${f.id}','admin')" class="text-blue-600">➡️ نقل</button> <button onclick="deleteFlash('${f.id}')" class="text-red-600">🗑️</button>`;
+  }
+
+  const holders = ['الحسابات','المونتير','المصور','المبيعات','العريس'];
+  const currentIdx = holders.indexOf(f.currentHolder);
+  if (currentIdx === -1) return '';
+
+  // المونتير يمكنه نقل من الحسابات إليه
+  if (role === 'montage' && f.currentHolder === 'الحسابات') {
+    return `<button onclick="moveFlash('${f.id}','montage')" class="text-green-600">✅ استلام</button>`;
+  }
+  // المونتير بعد النسخ يسلم للمصور
+  if (role === 'montage' && f.currentHolder === 'المونتير') {
+    return `<button onclick="moveFlash('${f.id}','photo')" class="text-blue-600">📤 تسليم للمصور</button>`;
+  }
+  // المصور يستلم من المونتير ويسلم للمبيعات
+  if (role === 'photo' && f.currentHolder === 'المصور') {
+    return `<button onclick="moveFlash('${f.id}','sales')" class="text-blue-600">📤 تسليم للمبيعات</button>`;
+  }
+  // المبيعات يستلم من المصور ويسلم للعريس
+  if (role === 'sales' && f.currentHolder === 'المبيعات') {
+    return `<button onclick="moveFlash('${f.id}','groom')" class="text-green-600">🎉 تسليم للعريس</button>`;
+  }
+  return '';
+}
+
+// تحديث moveFlash لاستخدام المراحل وتقييد التعديل
+window.moveFlash = function(id, targetRole) {
+  const f = flashDrives.find(f => f.id === id);
+  if (!f) return;
+  const user = currentUser;
+  if (!user) return;
+
+  const holders = ['الحسابات','المونتير','المصور','المبيعات','العريس'];
+  let newHolder, newStatus;
+
+  if (targetRole === 'admin') {
+    // المدير يختار مرحلة يدوياً
+    const opts = holders.map(h => `<option value="${h}" ${f.currentHolder===h?'selected':''}>${h}</option>`).join('');
+    openModal(`<h3>نقل الفلاشة</h3><select id="adminFlashTarget" class="w-full border-2 p-2 my-2 rounded-xl">${opts}</select>
+      <div class="flex gap-2"><button onclick="adminMoveFlashConfirm('${id}')" class="btn-primary">حفظ</button><button onclick="closeModal()" class="btn-outline">إلغاء</button></div>`);
+    return;
+  }
+
+  if (targetRole === 'montage') { newHolder = 'المونتير'; newStatus = 'تم الاستلام من الحسابات'; }
+  else if (targetRole === 'photo') { newHolder = 'المصور'; newStatus = 'تم التسليم للمصور'; }
+  else if (targetRole === 'sales') { newHolder = 'المبيعات'; newStatus = 'تم التسليم للمبيعات'; }
+  else if (targetRole === 'groom') { newHolder = 'العريس'; newStatus = 'تم التسليم للعريس'; }
+
+  if (newHolder && newStatus) {
+    f.currentHolder = newHolder;
+    f.status = newStatus;
+    if (!f.history) f.history = [];
+    f.history.push({ date: new Date().toISOString(), action: newStatus, user: user.name });
+    saveAllData(); renderFlash(); showMsg('✅ تم التحديث');
+  }
+};
+
+window.adminMoveFlashConfirm = function(id) {
+  const target = document.getElementById('adminFlashTarget')?.value;
+  const f = flashDrives.find(f => f.id === id);
+  if (f && target) {
+    f.currentHolder = target;
+    f.status = 'تم النقل إلى ' + target;
+    if (!f.history) f.history = [];
+    f.history.push({ date: new Date().toISOString(), action: f.status, user: currentUser?.name });
+    saveAllData(); renderFlash(); closeModal(); showMsg('✅ تم النقل');
+  }
+};
+
+// إضافة فلاشة (محدثة)
+window.addFlash = function() {
+  const bookingOpts = bookings.filter(b => !b.deleted).map(b => `<option value="${b.id}">${b.clientName} - ${b.date}</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">💾 إضافة فلاشة</h3>
+    <select id="flashBooking" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">اختر الحجز</option>${bookingOpts}</select>
+    <input type="date" id="flashDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveFlash()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+};
+
+window.saveFlash = function() {
+  const bookingId = document.getElementById('flashBooking')?.value;
+  const b = bookings.find(b => b.id === bookingId);
+  if (!b) { showError('اختر حجزاً'); return; }
+  flashDrives.push({
+    id: generateId('fl_'),
+    bookingId: b.id,
+    clientName: b.clientName,
+    date: document.getElementById('flashDate')?.value || getTodayDateStr(),
+    status: 'تم الاستلام من الحسابات',
+    currentHolder: 'الحسابات',
+    history: [{ date: new Date().toISOString(), action: 'استلام من الحسابات', user: currentUser?.name }]
+  });
+  saveAllData(); renderFlash(); closeModal(); showMsg('✅ تمت الإضافة');
+};
+
+// --- 7. تشغيل التذكيرات مع بدء التشغيل ---
+// سيتم استدعاء checkReminders مباشرة بعد تعريفها وسيتم إضافتها إلى initApp
+const originalInitApp = window.initApp;
+window.initApp = async function() {
+  await originalInitApp();
+  checkReminders(); // تشغيل التذكيرات فوراً بعد بدء التشغيل
+};
 </script>
 </body>
 </html>
