@@ -767,6 +767,39 @@ window.processImportFile = async function() {
   `;
   document.head.appendChild(style);
 })();
+    (function() {
+  var style = document.createElement('style');
+  style.textContent = `
+    /* ضمان تمرير القائمة الجانبية على الشاشات الصغيرة */
+    @media (max-width: 768px) {
+      .sidebar {
+        max-height: 100vh; /* منع تجاوز الشاشة */
+        overflow-y: auto; /* تمكين التمرير الرأسي */
+        -webkit-overflow-scrolling: touch; /* تمرير سلس في iOS */
+        padding-bottom: 20px; /* ترك مساحة أسفل العناصر */
+      }
+      /* تخصيص شريط التمرير ليكون مرئياً */
+      .sidebar::-webkit-scrollbar {
+        width: 6px;
+      }
+      .sidebar::-webkit-scrollbar-thumb {
+        background-color: #16a34a;
+        border-radius: 10px;
+      }
+      .sidebar::-webkit-scrollbar-track {
+        background-color: #f1f1f1;
+      }
+      body.dark .sidebar::-webkit-scrollbar-track {
+        background-color: #2d2d3a;
+      }
+      /* إخفاء التذييل الثابت داخل الشريط الجانبي إذا كان يسبب مشكلة */
+      .sidebar .footer-bar {
+        display: none;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+})();
 </script>
 </body>
 </html>
