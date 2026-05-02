@@ -2511,6 +2511,174 @@ window.closeModal = function() {
   }
   origCloseModal();
 };
+// ============================================================
+// تحديث: توزيع الموظفين على القاعات من صفحة الحجوزات
+// ============================================================
+
+// دالة توزيع حجز واحد (تستخدم الذكي وتجنب المشغولين في نفس اليوم)
+window.distributeSingleBooking = function(bookingId) {
+  const b = bookings.find(bk => bk.id === bookingId);
+  if (!b) return;
+  const dirs = employees.filter(e => e.role === 'مخرج' && e.active);
+  const phs = employees.filter(e => e.role === 'مصور' && e.active);
+  const crs = employees.filter(e => e.role === 'كرين' && e.active);
+  const busy = new Set();
+  // من هم مشغولون في نفس اليوم (من الحجوزات الأخرى)
+  bookings.filter(bk => bk.date === b.date && bk.id !== bookingId && !bk.deleted)
+    .forEach(bk => (bk.assignedEmployees||[]).forEach(id => busy.add(id)));
+  
+  const assigned = [];
+  // اختيار مخرج غير مشغول
+  if (dirs.length) {
+    const available = dirs.filter(d => !busy.has(d.id));
+    if (available.length) assigned.push(available[0].id);
+  }
+  // اختيار مصورين غير مشغولين
+  if (phs.length) {
+    const available = phs.filter(p => !busy.has(p.id));
+    for (let i = 0; i < Math.min(2, available.length); i++) {
+      assigned.push(available[i].id);
+    }
+  }
+  // اختيار كرين غير مشغول
+  if (crs.length) {
+    const available = crs.filter(c => !busy.has(c.id));
+    if (available.length) assigned.push(available[0].id);
+  }
+  
+  b.assignedEmployees = assigned;
+  updateEmployeeOrders();
+  saveAllData();
+  renderBookings();
+  showMsg(`✅ تم توزيع الموظفين على ${b.clientName}`);
+};
+
+// تعديل صفحة الحجوزات لتشمل عمود "الموظفون" وزر "توزيع" لكل صف
+window.renderBookings = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('bookings');
+  let filtered = bookings.filter(b => !b.deleted);
+  if (bookingFilterStatus !== 'all') filtered = filtered.filter(b => b.status === bookingFilterStatus);
+  if (bookingFilterHall !== 'all') filtered = filtered.filter(b => b.hallId === bookingFilterHall);
+  if (bookingFilterDateFrom) filtered = filtered.filter(b => b.date >= bookingFilterDateFrom);
+  if (bookingFilterDateTo) filtered = filtered.filter(b => b.date <= bookingFilterDateTo);
+  filtered.sort((a,b) => a.date.localeCompare(b.date));
+  const rev = filtered.reduce((s,b) => s + (b.price||0), 0);
+  const hallOpts = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+  
+  c.innerHTML = `<div class="bg-card">
+    <div class="flex justify-between flex-wrap gap-2 mb-3">
+      <h2 class="text-xl font-bold">📅 ${t('bookings')} (${filtered.length})</h2>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="addBooking()" class="btn-primary">+ حجز</button>
+        <button onclick="importBookingsFromFile()" class="btn-secondary">📂 استيراد</button>
+        <button onclick="smartDistribute()" class="btn-secondary">🧠 توزيع الكل</button>
+        <button onclick="rotateDistribution()" class="btn-secondary">🔄 تدوير الكل</button>
+        <button onclick="deleteSelectedBookings()" class="btn-danger">🗑️ حذف المحدد</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
+      <input type="text" id="bookSearch" placeholder="🔍 بحث" class="border-2 p-2 rounded-xl" onkeyup="renderBookings()">
+      <select id="bookFilterStatus" class="border-2 p-2 rounded-xl" onchange="updateBookingFilter('status')">
+        <option value="all">كل الحالات</option>
+        <option value="pending">معلق</option>
+        <option value="completed">مكتمل</option>
+        <option value="cancelled">ملغي</option>
+      </select>
+      <select id="bookFilterHall" class="border-2 p-2 rounded-xl" onchange="updateBookingFilter('hall')"><option value="all">كل القاعات</option>${hallOpts}</select>
+      <div class="flex gap-1"><input type="date" id="bookFilterFrom" class="border-2 p-2 rounded-xl flex-1" onchange="updateBookingFilter('from')"><input type="date" id="bookFilterTo" class="border-2 p-2 rounded-xl flex-1" onchange="updateBookingFilter('to')"></div>
+    </div>
+    <div class="text-sm mb-2">الإيرادات: <strong>${formatCurrency(rev)}</strong></div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.booking-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفون</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          ${filtered.length ? filtered.map(b => {
+            const assigned = (b.assignedEmployees||[]).map(id => employees.find(e=>e.id===id)?.name).filter(n=>n).join(', ') || '<span class="text-red-500">غير معين</span>';
+            const statusOptions = ['pending','completed','cancelled'];
+            const statusLabels = { pending:'معلق', completed:'مكتمل', cancelled:'ملغي' };
+            const selectHTML = `<select onchange="changeBookingStatus('${b.id}', this.value)" class="border p-1 rounded text-sm">
+              ${statusOptions.map(opt => `<option value="${opt}" ${b.status===opt?'selected':''}>${statusLabels[opt]}</option>`).join('')}
+            </select>`;
+            return `<tr>
+              <td><input type="checkbox" class="booking-check" value="${b.id}"></td>
+              <td>${b.clientName}<br><small>${b.phone||''}</small></td>
+              <td>${b.date}<br><small>${getWeekDayArabic(b.date)}</small></td>
+              <td>${b.hallName}</td>
+              <td>${formatCurrency(b.price)}</td>
+              <td>${selectHTML}</td>
+              <td>${assigned}</td>
+              <td class="flex gap-1">
+                <button onclick="editBooking('${b.id}')" title="تعديل">✏️</button>
+                <button onclick="distributeSingleBooking('${b.id}')" title="توزيع">⚙️</button>
+                <button onclick="deleteBookingSoft('${b.id}')" title="حذف">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="8" class="text-center py-8 text-gray-400">لا توجد حجوزات</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer-bar">${footerText}</div>
+  </div>`;
+};
+// ============================================================
+// تحديث: واجهة الموظف (QR، راتب كل 10 أيام، تذكيرات)
+// ============================================================
+window.renderEmpDash = function() {
+  const emp = employees.find(e => e.id === currentUser?.employeeId);
+  if (!emp) {
+    document.getElementById('app').innerHTML = `<div class="p-4"><h2>لا يوجد موظف مرتبط</h2><button onclick="logout()" class="btn-danger">خروج</button></div>`;
+    return;
+  }
+  const myBookings = bookings.filter(b => (b.assignedEmployees||[]).includes(emp.id) && !b.deleted && b.status !== 'cancelled');
+  const totalSalary = myBookings.length * (emp.salaryPerOrder || 0);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const periods = [
+    { label:'1-10', start:1, end:10 },
+    { label:'11-20', start:11, end:20 },
+    { label:'21-نهاية', start:21, end: new Date(year, month+1, 0).getDate() }
+  ];
+  const periodDetails = periods.map(period => {
+    const startDate = `${year}-${String(month+1).padStart(2,'0')}-${String(period.start).padStart(2,'0')}`;
+    const endDate = `${year}-${String(month+1).padStart(2,'0')}-${String(period.end).padStart(2,'0')}`;
+    const periodBookings = myBookings.filter(b => b.date >= startDate && b.date <= endDate);
+    const attended = periodBookings.filter(b => attendanceRecords.some(a => a.empId === emp.id && a.date === b.date && a.checkIn));
+    return { period: period.label, orders: attended.length, salary: attended.length * (emp.salaryPerOrder||0) };
+  });
+  const today = getTodayDateStr();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate()+1);
+  const tomorrowStr = tomorrow.toISOString().slice(0,10);
+  const todaysOrders = myBookings.filter(b => b.date === today);
+  const tomorrowsOrders = myBookings.filter(b => b.date === tomorrowStr);
+
+  document.getElementById('app').innerHTML = `
+    <div class="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+      <header class="bg-white dark:bg-gray-800 p-4 flex justify-between shadow">
+        <h1 class="font-bold text-lg">${companyName}</h1>
+        <button onclick="logout()" class="btn-danger text-sm">🚪 خروج</button>
+      </header>
+      <main class="p-4 flex-1 max-w-2xl mx-auto w-full">
+        <div class="bg-card mb-4 text-center">
+          <h2 class="text-xl font-bold">👋 مرحباً ${emp.name}</h2>
+          <p class="text-gray-500">${emp.role} | الرصيد المستحق الكلي: <strong>${formatCurrency(totalSalary)}</strong></p>
+        </div>
+        <div class="bg-card mb-4 text-center">
+          <button onclick="startQRScanner()" class="btn-primary w-full py-3 text-lg">📷 مسح QR لتسجيل الحضور/الانصراف</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="bg-card"><h3 class="font-bold mb-2">📅 أوردرات اليوم (${today})</h3>${todaysOrders.length ? todaysOrders.map(b => `<div class="border-b py-2 text-sm"><strong>${b.clientName}</strong> - ${b.hallName}</div>`).join('') : '<p class="text-gray-400">لا توجد</p>'}</div>
+          <div class="bg-card"><h3 class="font-bold mb-2">⏰ أوردرات غداً (${tomorrowStr})</h3>${tomorrowsOrders.length ? tomorrowsOrders.map(b => `<div class="border-b py-2 text-sm"><strong>${b.clientName}</strong> - ${b.hallName}</div>`).join('') : '<p class="text-gray-400">لا توجد</p>'}</div>
+        </div>
+        <div class="bg-card mb-4"><h3 class="font-bold mb-2">💰 متابعة الراتب (${year}-${month+1})</h3><table class="w-full text-sm"><thead><tr><th>الفترة</th><th>أوردرات حضرتها</th><th>المستحق</th></tr></thead><tbody>${periodDetails.map(pd => `<tr><td>${pd.period}</td><td>${pd.orders}</td><td>${formatCurrency(pd.salary)}</td></tr>`).join('')}</tbody></table></div>
+        <div class="bg-card"><h3 class="font-bold mb-2">📋 جميع الأوردرات</h3><div class="max-h-60 overflow-y-auto">${myBookings.map(b => `<div class="border-b py-2 flex justify-between text-sm"><span>${b.date} - ${b.clientName} (${b.hallName})</span><span class="${b.status==='completed'?'text-green-600':'text-yellow-600'}">${b.status==='completed'?'✅':'⏳'}</span></div>`).join('') || '<p class="text-gray-400">لا توجد</p>'}</div></div>
+      </main>
+      <footer class="footer-bar">${footerText}</footer>
+    </div>`;
+};
 </script>
 </body>
 </html>
