@@ -2155,6 +2155,231 @@ window.renderEmpDash = function() {
       <footer class="footer-bar">${footerText}</footer>
     </div>`;
 };
+// ============================================================
+// تحديث: ترتيب الفلاشات بالتاريخ | حالة وموقع منسدلين | توقيع | صفحة الأرشيف
+// ============================================================
+
+// --- 1. صفحة الفلاشات (ترتيب بالتاريخ + قوائم منسدلة + توقيع) ---
+window.renderFlash = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = t('flash');
+  
+  // ترتيب الفلاشات حسب التاريخ (الأقرب أولاً)
+  const sorted = [...flashDrives].sort((a, b) => a.date.localeCompare(b.date));
+  
+  let html = `<div class="bg-card"><h2 class="text-xl font-bold">💾 ${t('flash')} (${sorted.length})</h2>
+    <div class="flex gap-2 mb-3">
+      <button onclick="addFlash()" class="btn-primary">+ فلاشة</button>
+      <button onclick="syncFlashesFromBookings()" class="btn-secondary">🔄 مزامنة</button>
+      <button onclick="deleteSelectedFlashes()" class="btn-danger">🗑️ حذف المحدد</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" onchange="document.querySelectorAll('.flash-check').forEach(cb=>cb.checked=this.checked)"></th>
+          <th>العميل</th><th>التاريخ</th><th>اليوم</th><th>القاعة</th>
+          <th>حالة الفلاشة</th><th>الموقع</th><th>التوقيع / التاريخ</th><th>إجراءات</th>
+        </tr></thead>
+        <tbody>`;
+
+  sorted.forEach(f => {
+    const b = bookings.find(bk => bk.id === f.bookingId);
+    if (!b) return;
+    // آخر توقيع (آخر حركة في التاريخ)
+    const lastSignature = f.history && f.history.length ? f.history[f.history.length-1] : null;
+    const signatureText = lastSignature ? `${lastSignature.user || ''} ${new Date(lastSignature.date).toLocaleString('ar-EG')}` : '—';
+    
+    html += `<tr>
+      <td><input type="checkbox" class="flash-check" value="${f.id}"></td>
+      <td>${b.clientName}</td>
+      <td>${b.date}</td>
+      <td>${getWeekDayArabic(b.date)}</td>
+      <td>${b.hallName}</td>
+      <td>
+        <select onchange="updateFlashStatus('${f.id}', this.value)" class="border p-1 rounded text-sm w-full">
+          <option value="تم الاستلام من الحسابات" ${f.status==='تم الاستلام من الحسابات'?'selected':''}>تم الاستلام</option>
+          <option value="قيد التصوير" ${f.status==='قيد التصوير'?'selected':''}>قيد التصوير</option>
+          <option value="قيد المونتاج" ${f.status==='قيد المونتاج'?'selected':''}>قيد المونتاج</option>
+          <option value="تم التسليم للمبيعات" ${f.status==='تم التسليم للمبيعات'?'selected':''}>تم التسليم للمبيعات</option>
+          <option value="تم التسليم للعريس" ${f.status==='تم التسليم للعريس'?'selected':''}>تم التسليم للعريس</option>
+          <option value="مكتملة" ${f.status==='مكتملة'?'selected':''}>مكتملة</option>
+        </select>
+      </td>
+      <td>
+        <select onchange="updateFlashHolder('${f.id}', this.value)" class="border p-1 rounded text-sm w-full">
+          <option value="الحسابات" ${f.currentHolder==='الحسابات'?'selected':''}>الحسابات</option>
+          <option value="المونتير" ${f.currentHolder==='المونتير'?'selected':''}>المونتير</option>
+          <option value="المصور" ${f.currentHolder==='المصور'?'selected':''}>المصور</option>
+          <option value="المبيعات" ${f.currentHolder==='المبيعات'?'selected':''}>المبيعات</option>
+          <option value="العريس" ${f.currentHolder==='العريس'?'selected':''}>العريس</option>
+        </select>
+      </td>
+      <td><small class="text-gray-500">${signatureText}</small></td>
+      <td class="flex gap-1">
+        <button onclick="editFlash('${f.id}')" class="text-blue-600">✏️</button>
+        <button onclick="deleteSingleFlash('${f.id}')" class="text-red-600">🗑️</button>
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`;
+  c.innerHTML = html;
+};
+
+// دوال مساعدة لتحديث الحالة والموقع مباشرة من القائمة المنسدلة
+window.updateFlashStatus = function(flashId, newStatus) {
+  const f = flashDrives.find(f => f.id === flashId);
+  if (!f) return;
+  f.status = newStatus;
+  if (!f.history) f.history = [];
+  f.history.push({ date: new Date().toISOString(), action: `تغيير الحالة إلى: ${newStatus}`, user: currentUser?.name || 'النظام' });
+  saveAllData();
+  renderFlash();
+  showMsg('✅ تم تحديث الحالة');
+};
+
+window.updateFlashHolder = function(flashId, newHolder) {
+  const f = flashDrives.find(f => f.id === flashId);
+  if (!f) return;
+  f.currentHolder = newHolder;
+  if (!f.history) f.history = [];
+  f.history.push({ date: new Date().toISOString(), action: `نقل إلى: ${newHolder}`, user: currentUser?.name || 'النظام' });
+  saveAllData();
+  renderFlash();
+  showMsg('✅ تم نقل الفلاشة');
+};
+
+window.deleteSingleFlash = function(id) {
+  if (confirm('حذف هذه الفلاشة؟')) {
+    flashDrives = flashDrives.filter(f => f.id !== id);
+    saveAllData();
+    renderFlash();
+    showMsg('🗑️ تم الحذف');
+  }
+};
+
+// --- 2. صفحة الأرشيف (تخزين جميع البيانات بتنسيق JSON مع إمكانية التصدير والاستيراد) ---
+window.renderArchive = function() {
+  const c = document.getElementById('content-area');
+  if (!c) return;
+  document.getElementById('pageTitle').textContent = '📦 الأرشيف';
+  
+  const fullData = {
+    bookings, employees, halls, clients, equipmentInventory,
+    attendanceRecords, employeeLoans, notifications, trashBin,
+    activityLog, flashDrives, holidays, substitutions: window.substitutions || [],
+    payrollPayments: window.payrollPayments || [],
+    exportedAt: new Date().toISOString()
+  };
+  const jsonStr = JSON.stringify(fullData, null, 2);
+  
+  c.innerHTML = `
+    <div class="bg-card">
+      <h2 class="text-xl font-bold mb-4">📦 أرشيف النظام (حفظ / استيراد كامل)</h2>
+      <p class="text-sm text-gray-500 mb-3">يمكنك تصدير جميع بيانات النظام في ملف JSON واحد لاستخدامه كنسخة احتياطية أو استيراده لاحقاً.</p>
+      <div class="flex gap-2 mb-4">
+        <button onclick="exportArchive()" class="btn-primary">📤 تصدير الأرشيف</button>
+        <button onclick="importArchivePrompt()" class="btn-secondary">📥 استيراد أرشيف</button>
+      </div>
+      <h3 class="font-semibold mb-2">معاينة البيانات (أول 500 حرف)</h3>
+      <pre class="bg-gray-100 dark:bg-gray-800 p-3 rounded-xl text-xs overflow-auto max-h-40">${jsonStr.substring(0, 500)}...</pre>
+      <div class="footer-bar">${footerText}</div>
+    </div>`;
+};
+
+window.exportArchive = function() {
+  const fullData = {
+    bookings, employees, halls, clients, equipmentInventory,
+    attendanceRecords, employeeLoans, notifications, trashBin,
+    activityLog, flashDrives, holidays, substitutions: window.substitutions || [],
+    payrollPayments: window.payrollPayments || [],
+    exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `drmedia_archive_${getTodayDateStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showMsg('✅ تم تصدير الأرشيف');
+};
+
+window.importArchivePrompt = function() {
+  openModal(`<h3 class="text-xl font-bold mb-4">📥 استيراد أرشيف</h3>
+    <input type="file" id="archiveFileInput" accept=".json" class="w-full border-2 p-2 rounded-xl mb-2">
+    <button onclick="processArchiveImport()" class="btn-primary w-full">📥 استيراد</button>`);
+};
+
+window.processArchiveImport = function() {
+  const file = document.getElementById('archiveFileInput')?.files[0];
+  if (!file) { showError('اختر ملفاً'); return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (confirm('سيتم استبدال جميع البيانات الحالية ببيانات الأرشيف. هل أنت متأكد؟')) {
+        // استبدال جميع المصفوفات الرئيسية
+        bookings = data.bookings || [];
+        employees = data.employees || [];
+        halls = data.halls || [];
+        clients = data.clients || [];
+        equipmentInventory = data.equipmentInventory || {};
+        attendanceRecords = data.attendanceRecords || [];
+        employeeLoans = data.employeeLoans || {};
+        notifications = data.notifications || [];
+        trashBin = data.trashBin || [];
+        activityLog = data.activityLog || [];
+        flashDrives = data.flashDrives || [];
+        holidays = data.holidays || [];
+        window.substitutions = data.substitutions || [];
+        window.payrollPayments = data.payrollPayments || [];
+        saveAllData();
+        closeModal();
+        renderAdminDashboard();
+        showMsg('✅ تم استيراد الأرشيف بنجاح');
+      }
+    } catch (ex) { showError('ملف غير صالح'); }
+  };
+  reader.readAsText(file);
+};
+
+// --- 3. إضافة تبويب "الأرشيف" إلى القائمة الجانبية ---
+const originalRenderAdmin = window.renderAdminDashboard;
+window.renderAdminDashboard = function() {
+  const pages = ['dashboard','bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','activityLog','flash','internet','settings','archive','substitutions'];
+  document.getElementById('app').innerHTML = `
+    <div class="sidebar" id="sidebar">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700 text-center"><div class="text-2xl font-bold">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-10 inline rounded-full">`:companyLogo} ${companyName}</div></div>
+      <div class="py-2">${pages.map(p => `<div class="sidebar-item ${p==='dashboard'?'active':''}" data-page="${p}" onclick="navigateTo('${p}')"><span>${p==='archive'?'📦 الأرشيف':p==='substitutions'?'🔄 التبديل':t(p)}</span></div>`).join('')}</div>
+      <div class="footer-bar">${footerText}</div>
+    </div>
+    <div class="topbar"><div class="flex items-center gap-3"><button class="md:hidden btn-outline text-xl p-2" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button><span class="font-semibold text-lg" id="pageTitle">${t('dashboard')}</span></div><div class="flex items-center gap-3"><span class="text-sm hidden md:inline">👋 ${currentUser?.name}</span><button onclick="logout()" class="btn-danger text-sm">🚪 خروج</button></div></div>
+    <div class="main-content" id="content-area"></div>
+  `;
+  navigateTo('dashboard');
+};
+
+// تحديث navigateTo ليشمل الأرشيف
+const originalNavigate = window.navigateTo;
+window.navigateTo = function(page) {
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  const item = document.querySelector(`[data-page="${page}"]`);
+  if (item) item.classList.add('active');
+  if (page === 'archive') renderArchive();
+  else if (page === 'substitutions') renderSubstitutions();
+  else {
+    const fn = window['render' + page.charAt(0).toUpperCase() + page.slice(1)];
+    if (typeof fn === 'function') fn();
+  }
+};
+
+// ============================================================
+// انتهى التحديث
+// ============================================================
 </script>
 </body>
 </html>
