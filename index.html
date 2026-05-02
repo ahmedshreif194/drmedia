@@ -134,7 +134,19 @@ async function smartDistribute() { const pending = bookings.filter(b => b.status
 async function rotateDistribution() { const pending = bookings.filter(b => b.status === 'pending' && !b.deleted); if (!pending.length) { showWarning('لا حجوزات معلقة'); return; } const dirs = employees.filter(e => e.role === 'مخرج' && e.active), phs = employees.filter(e => e.role === 'مصور' && e.active), crs = employees.filter(e => e.role === 'كرين' && e.active); let di = rotationCounters.dir||0, pi = rotationCounters.ph||0, ci = rotationCounters.cr||0; for (let b of pending) { const type = (halls.find(h=>h.id===b.hallId)||{}).type||'closed'; let assigned=[]; if (type==='cafe') { if(phs.length){ assigned.push(phs[pi%phs.length].id); pi++; } } else { if(dirs.length){ assigned.push(dirs[di%dirs.length].id); di++; } if(phs.length){ assigned.push(phs[pi%phs.length].id); pi++; if(phs.length>1){ assigned.push(phs[pi%phs.length].id); pi++; } } if(crs.length){ assigned.push(crs[ci%crs.length].id); ci++; } } b.assignedEmployees = assigned; } rotationCounters={dir:di,ph:pi,cr:ci}; updateEmployeeOrders(); await saveAllData(); renderBookings(); renderDistribution(); showMsg('✅ تم التوزيع بالتدوير'); }
 
 // ==================== CRUD BOOKINGS ====================
-function addBooking() { const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join(''); openModal(`<h3 class="text-xl font-bold mb-4">📅 إضافة حجز جديد</h3><input id="bkClientName" placeholder="اسم العميل" class="w-full border-2 p-2 my-2 rounded-xl"><input id="bkPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl"><select id="bkHall" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">اختر القاعة</option>${hallOpts}</select><input type="date" id="bkDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}"><input type="number" id="bkPrice" placeholder="السعر" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveNewBooking()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
+function addBooking() {
+  const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}">${h.name}</option>`).join('');
+  openModal(`<h3 class="text-xl font-bold mb-4">📅 إضافة حجز جديد</h3>
+    <input id="bkClientName" placeholder="اسم العميل" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="bkPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="bkHall" class="w-full border-2 p-2 my-2 rounded-xl"><option value="">اختر القاعة</option>${hallOpts}</select>
+    <input type="date" id="bkDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${getTodayDateStr()}">
+    <input type="number" id="bkPrice" placeholder="السعر" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewBooking()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+}
 async function saveNewBooking() { const clientName = document.getElementById('bkClientName')?.value.trim(); if (!clientName) { showError('اسم العميل مطلوب'); return; } const hallId = document.getElementById('bkHall')?.value; const hall = halls.find(h => h.id === hallId); if (!hall) { showError('اختر قاعة'); return; } bookings.push({ id: generateId('b_'), clientName, phone: document.getElementById('bkPhone')?.value||'', hallId, hallName: hall.name, date: document.getElementById('bkDate')?.value||getTodayDateStr(), price: parseInt(document.getElementById('bkPrice')?.value)||0, status:'pending', paymentStatus:'pending', assignedEmployees:[], notes:'', packageType:'', totalPersons:0 }); addActivity('حجز جديد', `تم إضافة حجز لـ ${clientName}`); await saveAllData(); renderBookings(); closeModal(); showMsg('✅ تم إضافة الحجز'); }
 function editBooking(id) { const b = bookings.find(b => b.id === id); if (!b) return; const hallOpts = halls.filter(h=>h.active).map(h=>`<option value="${h.id}" ${b.hallId===h.id?'selected':''}>${h.name}</option>`).join(''); openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل حجز</h3><input id="editBkName" value="${b.clientName}" class="w-full border-2 p-2 my-2 rounded-xl"><input id="editBkPhone" value="${b.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl"><select id="editBkHall" class="w-full border-2 p-2 my-2 rounded-xl">${hallOpts}</select><input type="date" id="editBkDate" value="${b.date}" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="editBkPrice" value="${b.price}" class="w-full border-2 p-2 my-2 rounded-xl"><select id="editBkStatus" class="w-full border-2 p-2 my-2 rounded-xl"><option value="pending" ${b.status==='pending'?'selected':''}>معلق</option><option value="completed" ${b.status==='completed'?'selected':''}>مكتمل</option></select><button onclick="saveEditBooking('${id}')" class="btn-primary mt-2 w-full">💾 حفظ التعديل</button>`); }
 async function saveEditBooking(id) { const b = bookings.find(b => b.id === id); if (!b) return; b.clientName = document.getElementById('editBkName')?.value || b.clientName; b.phone = document.getElementById('editBkPhone')?.value || b.phone; b.hallId = document.getElementById('editBkHall')?.value || b.hallId; b.hallName = halls.find(h=>h.id===b.hallId)?.name || b.hallName; b.date = document.getElementById('editBkDate')?.value || b.date; b.price = parseInt(document.getElementById('editBkPrice')?.value) || b.price; b.status = document.getElementById('editBkStatus')?.value || b.status; addActivity('تعديل حجز', `تم تعديل حجز ${b.clientName}`); await saveAllData(); renderBookings(); closeModal(); showMsg('✅ تم التعديل'); }
@@ -166,7 +178,17 @@ function renderBookings() { const c = document.getElementById('content-area'); i
 function updateBookingFilter(type) { if (type==='status') bookingFilterStatus = document.getElementById('bookFilterStatus')?.value||'all'; if (type==='hall') bookingFilterHall = document.getElementById('bookFilterHall')?.value||'all'; if (type==='from') bookingFilterDateFrom = document.getElementById('bookFilterFrom')?.value||''; if (type==='to') bookingFilterDateTo = document.getElementById('bookFilterTo')?.value||''; renderBookings(); }
 
 function renderEmployees() { updateEmployeeOrders(); const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('employees'); c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">👥 ${t('employees')} (${employees.length})</h2><div class="flex gap-2 mb-3"><button onclick="addEmployee()" class="btn-primary">+ موظف</button><button onclick="deleteSelectedEmployees()" class="btn-danger">🗑️ حذف المحدد</button></div><div class="overflow-x-auto"><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.emp-check').forEach(cb=>cb.checked=this.checked)"></th><th>الاسم</th><th>الدور</th><th>الهاتف</th><th>الأوردرات</th><th>إجراءات</th></tr></thead><tbody>${employees.map(e => { return `<tr><td><input type="checkbox" class="emp-check" value="${e.id}"></td><td>${e.name}</td><td>${e.role}</td><td>${e.phone||'—'}</td><td>${e.totalOrders||0}</td><td class="flex gap-1"><button onclick="editEmployee('${e.id}')">✏️</button><button onclick="addLoan('${e.id}')">💰</button><button onclick="deleteEmployee('${e.id}')">🗑️</button></td></tr>`; }).join('')}</tbody></table></div><div class="footer-bar">${footerText}</div></div>`; }
-function addEmployee() { openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة موظف</h3><input id="newEmpName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl"><select id="newEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option>مخرج</option><option>مصور</option><option>كرين</option></select><input id="newEmpPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="newEmpSalary" placeholder="أجر الأوردر" value="200" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveNewEmployee()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
+function addEmployee() {
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة موظف</h3>
+    <input id="newEmpName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option>مخرج</option><option>مصور</option><option>كرين</option></select>
+    <input id="newEmpPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEmpSalary" placeholder="أجر الأوردر" value="200" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewEmployee()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+}
 async function saveNewEmployee() { const name = document.getElementById('newEmpName')?.value.trim(); if (!name) { showError('الاسم مطلوب'); return; } employees.push({ id: generateId('emp_'), name, role: document.getElementById('newEmpRole')?.value||'مصور', phone: document.getElementById('newEmpPhone')?.value||'', salaryPerOrder: parseInt(document.getElementById('newEmpSalary')?.value)||200, active:true, totalOrders:0 }); addActivity('موظف جديد', `تم إضافة ${name}`); await saveAllData(); renderEmployees(); closeModal(); showMsg('✅ تمت الإضافة'); }
 function editEmployee(id) { const e = employees.find(e => e.id === id); if (!e) return; openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل موظف</h3><input id="editEmpName" value="${e.name}" class="w-full border-2 p-2 my-2 rounded-xl"><select id="editEmpRole" class="w-full border-2 p-2 my-2 rounded-xl"><option ${e.role==='مخرج'?'selected':''}>مخرج</option><option ${e.role==='مصور'?'selected':''}>مصور</option><option ${e.role==='كرين'?'selected':''}>كرين</option></select><input id="editEmpPhone" value="${e.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="editEmpSalary" value="${e.salaryPerOrder}" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveEditEmployee('${id}')" class="btn-primary mt-2 w-full">💾 حفظ التعديل</button>`); }
 async function saveEditEmployee(id) { const e = employees.find(e => e.id === id); if (!e) return; e.name = document.getElementById('editEmpName')?.value || e.name; e.role = document.getElementById('editEmpRole')?.value || e.role; e.phone = document.getElementById('editEmpPhone')?.value || e.phone; e.salaryPerOrder = parseInt(document.getElementById('editEmpSalary')?.value) || e.salaryPerOrder; addActivity('تعديل موظف', `تم تعديل ${e.name}`); await saveAllData(); renderEmployees(); closeModal(); showMsg('✅ تم التعديل'); }
@@ -176,7 +198,16 @@ function addLoan(empId) { openModal(`<h3>💰 إضافة سلفة</h3><input typ
 function saveLoan(empId) { const amount = parseInt(document.getElementById('loanAmount')?.value)||0; if (amount<=0) { showError('المبلغ غير صالح'); return; } if (!employeeLoans[empId]) employeeLoans[empId]=[]; employeeLoans[empId].push({ id: generateId('loan_'), amount, description: document.getElementById('loanDesc')?.value||'', date: getTodayDateStr(), settled:false }); saveAllData(); renderEmployees(); closeModal(); showMsg('✅ تمت الإضافة'); }
 
 function renderHalls() { const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('halls'); c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">🏛️ ${t('halls')} (${halls.length})</h2><div class="flex gap-2 mb-3"><button onclick="addHall()" class="btn-primary">+ قاعة</button><button onclick="deleteSelectedHalls()" class="btn-danger">🗑️ حذف المحدد</button></div><div class="overflow-x-auto"><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.hall-check').forEach(cb=>cb.checked=this.checked)"></th><th>الاسم</th><th>النوع</th><th>السعر</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>${halls.map(h => `<tr><td><input type="checkbox" class="hall-check" value="${h.id}"></td><td>${h.name}</td><td>${h.type==='closed'?'مغلقة':h.type==='open'?'مفتوحة':'كافيه'}</td><td>${formatCurrency(h.basePrice)}</td><td><span class="${h.active?'badge-active':'badge-inactive'}">${h.active?'نشطة':'معطلة'}</span></td><td class="flex gap-1"><button onclick="editHall('${h.id}')">✏️</button><button onclick="toggleHallActive('${h.id}')">${h.active?'⏸️':'▶️'}</button><button onclick="deleteHall('${h.id}')">🗑️</button></td></tr>`).join('')}</tbody></table></div><div class="footer-bar">${footerText}</div></div>`; }
-function addHall() { openModal(`<h3 class="text-xl font-bold mb-4">🏛️ إضافة قاعة</h3><input id="newHallName" placeholder="اسم القاعة" class="w-full border-2 p-2 my-2 rounded-xl"><select id="newHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed">مغلقة</option><option value="open">مفتوحة</option><option value="cafe">كافيه</option></select><input type="number" id="newHallPrice" placeholder="السعر الأساسي" value="3000" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveNewHall()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
+function addHall() {
+  openModal(`<h3 class="text-xl font-bold mb-4">🏛️ إضافة قاعة</h3>
+    <input id="newHallName" placeholder="اسم القاعة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed">مغلقة</option><option value="open">مفتوحة</option><option value="cafe">كافيه</option></select>
+    <input type="number" id="newHallPrice" placeholder="السعر الأساسي" value="3000" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewHall()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+}
 async function saveNewHall() { const name = document.getElementById('newHallName')?.value.trim(); if (!name) { showError('الاسم مطلوب'); return; } halls.push({ id: generateId('h_'), name, type: document.getElementById('newHallType')?.value||'open', basePrice: parseInt(document.getElementById('newHallPrice')?.value)||3000, active:true }); addActivity('قاعة جديدة', `تم إضافة ${name}`); await saveAllData(); renderHalls(); closeModal(); showMsg('✅ تمت الإضافة'); }
 function editHall(id) { const h = halls.find(h => h.id === id); if (!h) return; openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل قاعة</h3><input id="editHallName" value="${h.name}" class="w-full border-2 p-2 my-2 rounded-xl"><select id="editHallType" class="w-full border-2 p-2 my-2 rounded-xl"><option value="closed" ${h.type==='closed'?'selected':''}>مغلقة</option><option value="open" ${h.type==='open'?'selected':''}>مفتوحة</option><option value="cafe" ${h.type==='cafe'?'selected':''}>كافيه</option></select><input type="number" id="editHallPrice" value="${h.basePrice}" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveEditHall('${id}')" class="btn-primary mt-2 w-full">💾 حفظ التعديل</button>`); }
 async function saveEditHall(id) { const h = halls.find(h => h.id === id); if (!h) return; h.name = document.getElementById('editHallName')?.value || h.name; h.type = document.getElementById('editHallType')?.value || h.type; h.basePrice = parseInt(document.getElementById('editHallPrice')?.value) || h.basePrice; addActivity('تعديل قاعة', `تم تعديل ${h.name}`); await saveAllData(); renderHalls(); closeModal(); showMsg('✅ تم التعديل'); }
@@ -185,7 +216,17 @@ function deleteHall(id) { const idx = halls.findIndex(h => h.id === id); if (idx
 function deleteSelectedHalls() { const ids = Array.from(document.querySelectorAll('.hall-check:checked')).map(cb=>cb.value); if (!ids.length) { showError('لم يتم تحديد قاعات'); return; } ids.forEach(id => deleteHall(id)); renderHalls(); showMsg(`🗑️ تم حذف ${ids.length} قاعة`); }
 
 function renderClients() { const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('clients'); c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">👥 ${t('clients')} (${clients.length})</h2><div class="flex gap-2 mb-3"><button onclick="addClient()" class="btn-primary">+ عميل</button><button onclick="deleteSelectedClients()" class="btn-danger">🗑️ حذف المحدد</button></div><div class="overflow-x-auto"><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.client-check').forEach(cb=>cb.checked=this.checked)"></th><th>الاسم</th><th>الهاتف</th><th>البريد</th><th>عدد الحجوزات</th><th>إجراءات</th></tr></thead><tbody>${clients.map(cl => { const count = bookings.filter(b => b.clientId === cl.id).length; return `<tr><td><input type="checkbox" class="client-check" value="${cl.id}"></td><td>${cl.name}</td><td>${cl.phone}</td><td>${cl.email||'—'}</td><td>${count}</td><td class="flex gap-1"><button onclick="editClient('${cl.id}')">✏️</button><button onclick="deleteClient('${cl.id}')">🗑️</button></td></tr>`; }).join('')}</tbody></table></div><div class="footer-bar">${footerText}</div></div>`; }
-function addClient() { openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة عميل</h3><input id="newClientName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl"><input id="newClientPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl"><input id="newClientEmail" placeholder="البريد" class="w-full border-2 p-2 my-2 rounded-xl"><input id="newClientAddr" placeholder="العنوان" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveNewClient()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
+function addClient() {
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة عميل</h3>
+    <input id="newClientName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newClientPhone" placeholder="الهاتف" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newClientEmail" placeholder="البريد" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newClientAddr" placeholder="العنوان" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewClient()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+}
 async function saveNewClient() { const name = document.getElementById('newClientName')?.value.trim(); if (!name) { showError('الاسم مطلوب'); return; } clients.push({ id: generateId('c_'), name, phone: document.getElementById('newClientPhone')?.value||'', email: document.getElementById('newClientEmail')?.value||'', address: document.getElementById('newClientAddr')?.value||'' }); addActivity('عميل جديد', `تم إضافة ${name}`); await saveAllData(); renderClients(); closeModal(); showMsg('✅ تمت الإضافة'); }
 function editClient(id) { const c = clients.find(c => c.id === id); if (!c) return; openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل عميل</h3><input id="editClientName" value="${c.name}" class="w-full border-2 p-2 my-2 rounded-xl"><input id="editClientPhone" value="${c.phone||''}" class="w-full border-2 p-2 my-2 rounded-xl"><input id="editClientEmail" value="${c.email||''}" class="w-full border-2 p-2 my-2 rounded-xl"><input id="editClientAddr" value="${c.address||''}" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveEditClient('${id}')" class="btn-primary mt-2 w-full">💾 حفظ التعديل</button>`); }
 async function saveEditClient(id) { const c = clients.find(c => c.id === id); if (!c) return; c.name = document.getElementById('editClientName')?.value || c.name; c.phone = document.getElementById('editClientPhone')?.value || c.phone; c.email = document.getElementById('editClientEmail')?.value || c.email; c.address = document.getElementById('editClientAddr')?.value || c.address; addActivity('تعديل عميل', `تم تعديل ${c.name}`); await saveAllData(); renderClients(); closeModal(); showMsg('✅ تم التعديل'); }
@@ -193,7 +234,17 @@ function deleteClient(id) { const idx = clients.findIndex(c => c.id === id); if 
 function deleteSelectedClients() { const ids = Array.from(document.querySelectorAll('.client-check:checked')).map(cb=>cb.value); if (!ids.length) { showError('لم يتم تحديد عملاء'); return; } ids.forEach(id => deleteClient(id)); renderClients(); showMsg(`🗑️ تم حذف ${ids.length} عميل`); }
 
 function renderEquipment() { const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('equipment'); let html = `<div class="bg-card"><h2 class="text-xl font-bold mb-3">📦 ${t('equipment')}</h2><div class="flex gap-2 mb-3"><button onclick="addEquipment()" class="btn-primary">+ معدة</button><button onclick="deleteSelectedEquipment()" class="btn-danger">🗑️ حذف المحدد</button></div><div class="overflow-x-auto"><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.eq-check').forEach(cb=>cb.checked=this.checked)"></th><th>المعدة</th><th>الفئة</th><th>الكمية</th><th>الحد الأدنى</th><th>حالة المخزون</th><th>إجراءات</th></tr></thead><tbody>`; for (let id in equipmentInventory) { const eq = equipmentInventory[id]; html += `<tr><td><input type="checkbox" class="eq-check" value="${id}"></td><td>${eq.name}</td><td>${eq.category||'—'}</td><td>${eq.quantity}</td><td>${eq.minStock}</td><td>${eq.quantity <= eq.minStock ? '<span class="text-red-600 font-bold">⚠️ منخفض</span>' : '<span class="text-green-600">✅ جيد</span>'}</td><td class="flex gap-1"><button onclick="editEquipment('${id}')">✏️</button><button onclick="deleteEquipment('${id}')">🗑️</button></td></tr>`; } html += `</tbody></table></div><div class="footer-bar">${footerText}</div></div>`; c.innerHTML = html; }
-function addEquipment() { openModal(`<h3 class="text-xl font-bold mb-4">📦 إضافة معدة</h3><input id="newEqName" placeholder="اسم المعدة" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="newEqQty" placeholder="الكمية" value="1" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="newEqMin" placeholder="الحد الأدنى" value="1" class="w-full border-2 p-2 my-2 rounded-xl"><input id="newEqCat" placeholder="الفئة" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveNewEquipment()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
+function addEquipment() {
+  openModal(`<h3 class="text-xl font-bold mb-4">📦 إضافة معدة</h3>
+    <input id="newEqName" placeholder="اسم المعدة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEqQty" placeholder="الكمية" value="1" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="number" id="newEqMin" placeholder="الحد الأدنى" value="1" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newEqCat" placeholder="الفئة" class="w-full border-2 p-2 my-2 rounded-xl">
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewEquipment()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+}
 async function saveNewEquipment() { const name = document.getElementById('newEqName')?.value.trim(); if (!name) { showError('الاسم مطلوب'); return; } equipmentInventory[generateId('eq_')] = { name, quantity: parseInt(document.getElementById('newEqQty')?.value)||1, minStock: parseInt(document.getElementById('newEqMin')?.value)||1, category: document.getElementById('newEqCat')?.value||'' }; addActivity('معدة جديدة', `تم إضافة ${name}`); await saveAllData(); renderEquipment(); closeModal(); showMsg('✅ تمت الإضافة'); }
 function editEquipment(id) { const eq = equipmentInventory[id]; if (!eq) return; openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل معدة</h3><input id="editEqName" value="${eq.name}" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="editEqQty" value="${eq.quantity}" class="w-full border-2 p-2 my-2 rounded-xl"><input type="number" id="editEqMin" value="${eq.minStock}" class="w-full border-2 p-2 my-2 rounded-xl"><input id="editEqCat" value="${eq.category||''}" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="saveEditEquipment('${id}')" class="btn-primary mt-2 w-full">💾 حفظ التعديل</button>`); }
 async function saveEditEquipment(id) { const eq = equipmentInventory[id]; if (!eq) return; eq.name = document.getElementById('editEqName')?.value || eq.name; eq.quantity = parseInt(document.getElementById('editEqQty')?.value) || eq.quantity; eq.minStock = parseInt(document.getElementById('editEqMin')?.value) || eq.minStock; eq.category = document.getElementById('editEqCat')?.value || eq.category; addActivity('تعديل معدة', `تم تعديل ${eq.name}`); await saveAllData(); renderEquipment(); closeModal(); showMsg('✅ تم التعديل'); }
@@ -225,7 +276,17 @@ function renderNotificationsTab() { const c = document.getElementById('content-a
 function sendCustomNotification() { const msg = document.getElementById('notifyMsg')?.value.trim(); if (!msg) return; const target = document.getElementById('notifyEmpSelect')?.value; if (target === 'all') { employees.filter(e=>e.active).forEach(e=>notifyEmployee(e,'📢 إشعار',msg,true)); showMsg('✅ تم إرسال الإشعار للجميع'); } else { const emp = employees.find(e=>e.id===target); if (emp) { notifyEmployee(emp,'📢 إشعار',msg,true); showMsg(`✅ تم إرسال الإشعار إلى ${emp.name}`); } } saveAllData(); renderNotificationsTab(); }
 
 function renderUsers() { const c = document.getElementById('content-area'); if (!c) return; document.getElementById('pageTitle').textContent = t('users'); c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold">👥 ${t('users')} (${USERS.length})</h2><div class="flex gap-2 mb-3"><button onclick="addUser()" class="btn-primary">+ مستخدم</button><button onclick="deleteSelectedUsers()" class="btn-danger">🗑️ حذف المحدد</button></div><div class="overflow-x-auto"><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.user-check').forEach(cb=>cb.checked=this.checked)"></th><th>المستخدم</th><th>الصلاحية</th><th>الاسم</th><th>إجراءات</th></tr></thead><tbody>${USERS.map(u => `<tr><td><input type="checkbox" class="user-check" value="${u.id}" ${u.id==='admin1'?'disabled':''}></td><td>${u.username}</td><td><span class="badge-active">${u.role}</span></td><td>${u.name}</td><td class="flex gap-1"><button onclick="editUser('${u.id}')">✏️</button>${u.id!=='admin1'?`<button onclick="deleteUser('${u.id}')">🗑️</button>`:''}</td></tr>`).join('')}</tbody></table></div><div class="footer-bar">${footerText}</div></div>`; }
-function addUser() { openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة مستخدم</h3><input id="newUserUsername" placeholder="اسم المستخدم" class="w-full border-2 p-2 my-2 rounded-xl"><input type="password" id="newUserPass" placeholder="كلمة المرور" class="w-full border-2 p-2 my-2 rounded-xl"><input id="newUserName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl"><select id="newUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin">مدير</option><option value="manager">مدير تنفيذي</option><option value="employee">موظف</option><option value="agent">وكيل</option></select><button onclick="saveNewUser()" class="btn-primary mt-2 w-full">💾 حفظ</button>`); }
+function addUser() {
+  openModal(`<h3 class="text-xl font-bold mb-4">👤 إضافة مستخدم</h3>
+    <input id="newUserUsername" placeholder="اسم المستخدم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input type="password" id="newUserPass" placeholder="كلمة المرور" class="w-full border-2 p-2 my-2 rounded-xl">
+    <input id="newUserName" placeholder="الاسم" class="w-full border-2 p-2 my-2 rounded-xl">
+    <select id="newUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin">مدير</option><option value="manager">مدير تنفيذي</option><option value="employee">موظف</option><option value="agent">وكيل</option></select>
+    <div class="flex gap-2 mt-4">
+      <button onclick="saveNewUser()" class="btn-primary flex-1">💾 حفظ</button>
+      <button onclick="closeModal()" class="btn-outline flex-1">إلغاء</button>
+    </div>`);
+}
 async function saveNewUser() { const username = document.getElementById('newUserUsername')?.value.trim(); const password = document.getElementById('newUserPass')?.value; if (!username||!password) { showError('جميع الحقول مطلوبة'); return; } if (USERS.find(u=>u.username===username)) { showError('اسم المستخدم موجود'); return; } USERS.push({ id: generateId('user_'), username, password, name: document.getElementById('newUserName')?.value||username, role: document.getElementById('newUserRole')?.value||'employee', employeeId:null }); addActivity('مستخدم جديد', `تم إضافة ${username}`); await saveAllData(); renderUsers(); closeModal(); showMsg('✅ تمت الإضافة'); }
 function editUser(id) { const u = USERS.find(u=>u.id===id); if (!u) return; openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل مستخدم</h3><input id="editUserUsername" value="${u.username}" readonly class="w-full border-2 p-2 my-2 rounded-xl bg-gray-100"><input type="password" id="editUserPass" placeholder="كلمة مرور جديدة" class="w-full border-2 p-2 my-2 rounded-xl"><input id="editUserName" value="${u.name}" class="w-full border-2 p-2 my-2 rounded-xl"><select id="editUserRole" class="w-full border-2 p-2 my-2 rounded-xl"><option value="admin" ${u.role==='admin'?'selected':''}>مدير</option><option value="manager" ${u.role==='manager'?'selected':''}>مدير تنفيذي</option><option value="employee" ${u.role==='employee'?'selected':''}>موظف</option><option value="agent" ${u.role==='agent'?'selected':''}>وكيل</option></select><button onclick="saveEditUser('${id}')" class="btn-primary mt-2 w-full">💾 حفظ التعديل</button>`); }
 async function saveEditUser(id) { const u = USERS.find(u=>u.id===id); if (!u) return; const pass = document.getElementById('editUserPass')?.value; if (pass) u.password = pass; u.name = document.getElementById('editUserName')?.value || u.name; u.role = document.getElementById('editUserRole')?.value || u.role; addActivity('تعديل مستخدم', `تم تعديل ${u.username}`); await saveAllData(); renderUsers(); closeModal(); showMsg('✅ تم التعديل'); }
@@ -392,9 +453,88 @@ function applyPartialUpdate() {
 // ==================== IMPORT ====================
 async function importBookingsFromFile() { openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3><input type="file" id="importFileInput" accept=".xlsx,.xls,.pdf,.csv" class="w-full border-2 border-dashed p-4 rounded-xl mb-3"><div id="importPreview" class="my-2 text-sm"></div><button onclick="processImportFile()" class="btn-primary w-full">📥 استيراد</button>`); document.getElementById('importFileInput').addEventListener('change', async function(e) { const file = e.target.files[0]; if (!file) return; const ext = file.name.split('.').pop().toLowerCase(); let rows = []; try { if (ext==='xlsx'||ext==='xls') { const data = await file.arrayBuffer(); const wb = XLSX.read(data); rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); } else if (ext==='csv') { const text = await file.text(); const lines = text.split('\n'); const headers = lines[0].split(',').map(h => h.trim().replace(/["']/g,'')); rows = lines.slice(1).filter(l => l.trim()).map(line => { const vals = line.split(',').map(v => v.trim().replace(/["']/g,'')); let obj = {}; headers.forEach((h,i) => obj[h] = vals[i] || ''); return obj; }); } else if (ext==='pdf') { const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise; let fullText = ''; for (let i=1;i<=pdf.numPages;i++){ const page = await pdf.getPage(i); const textContent = await page.getTextContent(); fullText += textContent.items.map(item => item.str).join(' ')+'\n'; } rows = parsePDFText(fullText); } rows = rows.filter(row => Object.values(row).some(v => v && String(v).trim())); window._importedRows = rows; document.getElementById('importPreview').innerHTML = rows.length ? `<p class="text-green-600">✅ ${rows.length} صف صالح</p>` : `<p class="text-red-500">لا بيانات</p>`; } catch(err) { showError('خطأ في الملف'); } }); }
 function parsePDFText(text) { const rows = []; const lines = text.split(/\r?\n/); lines.forEach(line => { if (/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(line)) { const parts = line.split(/\s{2,}|\t/); if (parts.length>=4) rows.push({'اسم العميل':parts[3],'التاريخ':parts[2],'القاعة':parts[1]}); } }); return rows; }
-async function processImportFile() { const rows = window._importedRows || []; if (!rows.length) { showError('لا بيانات'); return; } let added = 0; for (let row of rows) { let name = row['اسم العميل']||row['client name']||row['العميل']||''; if (!name) continue; let date = parseDateString(row['التاريخ']||row['date']); const hallName = row['القاعة']||row['hall']||'القاعة المفتوحة'; let hall = halls.find(h => h.name === hallName); if (!hall) { hall = { id: generateId('h_'), name: hallName, type: row['نوع القاعة']||'open', basePrice:0, active:true }; halls.push(hall); } bookings.push({ id: generateId('b_'), clientName: name, clientId:null, phone: row['الهاتف']||row['phone']||'', hallId: hall.id, hallName: hall.name, date, price: parseInt(row['السعر']||row['price']||0), status:'pending', paymentStatus:'pending', assignedEmployees:[], notes:'', packageType: row['نوع الباكدج']||row['package']||'', totalPersons: parseInt(row['اجمالي عدد الافراد']||row['total persons']||0) }); added++; } await saveAllData(); renderBookings(); closeModal(); showMsg(`✅ تم استيراد ${added} حجز`); window._importedRows = []; }
-function parseDateString(str) { if (!str) return getTodayDateStr(); str = String(str).trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str; let m = str.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/); if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; m = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; const d = new Date(str); if (!isNaN(d.getTime())) return d.toISOString().slice(0,10); return getTodayDateStr(); }
-
+async function processImportFile() {
+  var rows = window._importedRows || [];
+  if (!rows.length) { showError('لا بيانات'); return; }
+  
+  var selectedHallType = document.getElementById('importHallTypeSelect')?.value || '';
+  var added = 0;
+  
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var name = row['اسم العميل'] || row['client name'] || row['العميل'] || '';
+    if (!name || name.trim() === '' || name.trim() === '-') continue;
+    
+    var date = parseDateString(row['التاريخ'] || row['date']);
+    var hallName = row['القاعة'] || row['hall'] || 'القاعة المفتوحة';
+    
+    // البحث عن القاعة الموجودة أو إنشاء واحدة جديدة
+    var hall = halls.find(function(h) { return h.name === hallName; });
+    if (!hall) {
+      hall = { id: generateId('h_'), name: hallName, type: selectedHallType || 'open', basePrice: 0, active: true };
+      halls.push(hall);
+    } else if (selectedHallType) {
+      // إجبار النوع حتى لو كانت القاعة موجودة مسبقاً
+      hall.type = selectedHallType;
+    }
+    
+    bookings.push({
+      id: generateId('b_'),
+      clientName: name,
+      clientId: null,
+      phone: row['الهاتف'] || row['phone'] || '',
+      hallId: hall.id,
+      hallName: hall.name,
+      date: date,
+      price: parseInt(row['السعر'] || row['price'] || 0) || 0,
+      status: 'pending',
+      paymentStatus: 'pending',
+      assignedEmployees: [],
+      notes: '',
+      packageType: row['نوع الباكدج'] || row['package'] || '',
+      totalPersons: parseInt(row['اجمالي عدد الافراد'] || row['total persons'] || 0) || 0
+    });
+    added++;
+  }
+  
+  await saveAllData();
+  renderBookings();
+  closeModal();
+  showMsg(`✅ تم استيراد ${added} حجز`);
+  window._importedRows = [];
+}
+function parseDateString(str) {
+  if (!str && str !== 0) return getTodayDateStr();
+  // إذا كان رقماً (serial number)
+  if (typeof str === 'number' || (typeof str === 'string' && /^\d+$/.test(str.trim()))) {
+    var num = parseInt(str);
+    // إذا كان رقمًا منطقيًا لـ Excel (بين 1000 و 100000 تقريبًا)
+    if (num > 1000 && num < 100000) {
+      // تحويل serial number إلى تاريخ (Excel: 1900-01-01 = 1)
+      var date = new Date((num - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().slice(0, 10);
+      }
+    }
+  }
+  
+  str = String(str).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  
+  var m = str.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  
+  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  
+  m = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  
+  var d = new Date(str);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  
+  return getTodayDateStr();
+}
 // ==================== LOGIN & INIT ====================
 function renderLogin() { document.getElementById('app').innerHTML = `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-700 to-teal-600 p-4"><div class="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl text-center"><div class="text-5xl mb-3">${companyLogoBase64?`<img src="${companyLogoBase64}" class="h-16 mx-auto rounded-full">`:companyLogo}</div><h1 class="text-2xl font-bold mb-1 dark:text-white">${companyName}</h1><p class="text-gray-500 mb-6 text-sm">برنامج إدارة القاعات </p><input type="text" id="loginUser" placeholder="👤 اسم المستخدم" class="w-full border-2 p-3 rounded-xl text-center mb-2" autocomplete="username"><input type="password" id="loginPass" placeholder="🔒 كلمة المرور" class="w-full border-2 p-3 rounded-xl text-center mb-4" autocomplete="current-password"><button id="loginBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold transition">🚪 دخول</button><div class="text-xs text-gray-400 mt-6"><p>جميع الحقوق محفوظة 2026 Dr Media Pro</p><p>تصميم وتطوير Ahmed Shreif</p></div><footer class="text-xs text-white mt-4 opacity-75">${footerText}</footer></div></div>`; document.getElementById('loginBtn').onclick = doLogin; }
 function doLogin() { const u = document.getElementById('loginUser')?.value.trim(), p = document.getElementById('loginPass')?.value; if (!u||!p) { showError('أدخل بيانات الدخول'); return; } const user = USERS.find(x => x.username === u && x.password === p); if (user) { currentUser = user; sessionStorage.setItem('drmedia_user', JSON.stringify(user)); showMsg(`👋 مرحباً ${user.name}`); if (user.role==='admin'||user.role==='manager') renderAdminDashboard(); else if (user.role==='employee') renderEmpDash(); else renderAgentDash(); requestNotificationPermission(); } else showError('بيانات خاطئة'); }
