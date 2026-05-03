@@ -546,107 +546,174 @@
         }
     };
 
-    // ========================================================
-    // الحضور والانصراف
-    // ========================================================
-    const AttendanceManager = {
-        async checkIn(empId) {
-            const today = Utils.getTodayDateStr();
-            const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
-            if (exist?.checkIn) { Utils.showWarning('⚠️ تم التسجيل مسبقاً'); return; }
-            const time = Utils.getCurrentTime();
-            if (exist) { exist.checkIn = time; exist.status = 'present'; }
-            else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date: today, checkIn: time, checkOut: null, status: 'present' });
-            const sub = state.substitutions.find(s => s.date === today && s.substituteId === empId && !s.done);
-            if (sub) {
-                state.bookings.forEach(b => {
-                    if (b.date === today && (b.assignedEmployees||[]).includes(sub.absentId)) {
-                        b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== sub.absentId);
-                        if (!b.assignedEmployees.includes(empId)) b.assignedEmployees.push(empId);
-                    }
-                });
-                sub.done = true;
-                localStorage.setItem('drmedia_substitutions', JSON.stringify(state.substitutions));
-            }
-            DataManager.addActivity('حضور', `الموظف ${empId} سجل حضور الساعة ${time}`);
-            await DataManager.saveAllData();
-            DataManager.updateEmployeeOrders();
-            AppRenderer.renderAttendance();
-            Utils.showMsg(`✅ حضور ${time}`);
-        },
-        async checkOut(empId) {
-            const today = Utils.getTodayDateStr();
-            const rec = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
-            if (!rec?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور'); return; }
-            if (rec.checkOut) { Utils.showWarning('⚠️ تم الانصراف مسبقاً'); return; }
-            rec.checkOut = Utils.getCurrentTime();
-            DataManager.addActivity('انصراف', `الموظف ${empId} سجل انصراف الساعة ${rec.checkOut}`);
-            await DataManager.saveAllData();
-            AppRenderer.renderAttendance();
-            Utils.showMsg(`✅ انصراف ${rec.checkOut}`);
-        },
-        recordAttendanceForDate(empId, date, type) {
-            if (!empId || !date) return;
-            const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === date);
-            if (type === 'checkIn') {
-                if (exist?.checkIn) { Utils.showWarning('⚠️ تم تسجيل الحضور مسبقاً'); return; }
-                const time = '09:00 ص';
-                if (exist) { exist.checkIn = time; exist.status = 'present'; }
-                else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date, checkIn: time, checkOut: null, status: 'present' });
-            } else {
-                if (!exist?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور بعد'); return; }
-                if (exist.checkOut) { Utils.showWarning('⚠️ تم تسجيل الانصراف مسبقاً'); return; }
-                exist.checkOut = '05:00 م';
-            }
-            DataManager.addActivity('تسجيل يدوي', `تسجيل ${type==='checkIn'?'حضور':'انصراف'} للموظف ${empId} بتاريخ ${date}`);
-            DataManager.saveAllData();
-            DataManager.updateEmployeeOrders();
-            AppRenderer.renderAttendance();
-        },
-        markAllAttendance() {
-            const today = Utils.getTodayDateStr();
-            const currentTime = Utils.getCurrentTime();
-            state.employees.forEach(e => {
-                const exist = state.attendanceRecords.find(a => a.empId === e.id && a.date === today);
-                if (!exist || !exist.checkIn) {
-                    if (exist) { exist.checkIn = currentTime; exist.status = 'present'; }
-                    else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: e.id, date: today, checkIn: currentTime, checkOut: null, status: 'present' });
+// ========================================================
+// الحضور والانصراف (نسخة مُحدثة – تسجيل تلقائي للموظف)
+// ========================================================
+const AttendanceManager = {
+    async checkIn(empId) {
+        const today = Utils.getTodayDateStr();
+        const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
+        if (exist?.checkIn) { Utils.showWarning('⚠️ تم التسجيل مسبقاً'); return; }
+        const time = Utils.getCurrentTime();
+        if (exist) { exist.checkIn = time; exist.status = 'present'; }
+        else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date: today, checkIn: time, checkOut: null, status: 'present' });
+        const sub = state.substitutions.find(s => s.date === today && s.substituteId === empId && !s.done);
+        if (sub) {
+            state.bookings.forEach(b => {
+                if (b.date === today && (b.assignedEmployees||[]).includes(sub.absentId)) {
+                    b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== sub.absentId);
+                    if (!b.assignedEmployees.includes(empId)) b.assignedEmployees.push(empId);
                 }
             });
-            DataManager.saveAllData();
-            AppRenderer.renderAttendance();
-            Utils.showMsg(`✅ تم تسجيل حضور الكل (${currentTime})`);
-        },
-        generateAttendanceQR() {
-            const qc = document.getElementById('attendanceQrContainer');
-            if (!qc) return;
-            qc.innerHTML = '';
-            try { new QRCode(qc, { text: `DRMEDIA_ATT_${Utils.getTodayDateStr()}`, width: 200, height: 200 }); } catch(e) { qc.innerHTML = '<p class="text-red-500">تعذر إنشاء QR</p>'; }
-        },
-        async startQRScanner() {
-            Utils.openModal(`<h3 class="text-xl font-bold mb-4">📷 مسح QR للحضور</h3><div id="qr-reader" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div><div class="flex gap-2 mt-4"><button onclick="Utils.closeModal()" class="btn-danger w-full">إلغاء</button></div>`);
-            setTimeout(() => {
-                const el = document.getElementById('qr-reader');
-                if (!el) return;
-                try {
-                    const scanner = new Html5Qrcode("qr-reader");
-                    window.html5QrScanner = scanner;
-                    scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
-                        (text) => {
-                            if (text?.startsWith("DRMEDIA_ATT_") && text === `DRMEDIA_ATT_${Utils.getTodayDateStr()}`) {
-                                scanner.stop().then(() => {
-                                    window.html5QrScanner = null;
-                                    Utils.openModal(`<h3 class="text-xl font-bold mb-4">تسجيل الحضور والانصراف</h3><select id="scanEmpSelect" class="w-full border-2 p-3 rounded-xl">${state.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select><div class="flex gap-3 mt-3"><button onclick="AttendanceManager.checkInFromScan()" class="btn-primary flex-1">✅ حضور</button><button onclick="AttendanceManager.checkOutFromScan()" class="btn-secondary flex-1">🚪 انصراف</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
-                                }).catch(() => { window.html5QrScanner = null; });
-                            } else Utils.showError("رمز QR غير صالح");
-                        }, () => {});
-                } catch(e) { Utils.showError("تعذر بدء الكاميرا"); Utils.closeModal(); }
-            }, 300);
-        },
-        checkInFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkIn(empId); Utils.closeModal(); },
-        checkOutFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkOut(empId); Utils.closeModal(); }
-    };
-        // ========================================================
+            sub.done = true;
+            localStorage.setItem('drmedia_substitutions', JSON.stringify(state.substitutions));
+        }
+        DataManager.addActivity('حضور', `الموظف ${empId} سجل حضور الساعة ${time}`);
+        await DataManager.saveAllData();
+        DataManager.updateEmployeeOrders();
+        AppRenderer.renderAttendance();
+        Utils.showMsg(`✅ حضور ${time}`);
+    },
+    async checkOut(empId) {
+        const today = Utils.getTodayDateStr();
+        const rec = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
+        if (!rec?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور'); return; }
+        if (rec.checkOut) { Utils.showWarning('⚠️ تم الانصراف مسبقاً'); return; }
+        rec.checkOut = Utils.getCurrentTime();
+        DataManager.addActivity('انصراف', `الموظف ${empId} سجل انصراف الساعة ${rec.checkOut}`);
+        await DataManager.saveAllData();
+        AppRenderer.renderAttendance();
+        Utils.showMsg(`✅ انصراف ${rec.checkOut}`);
+    },
+    recordAttendanceForDate(empId, date, type) {
+        if (!empId || !date) return;
+        const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === date);
+        if (type === 'checkIn') {
+            if (exist?.checkIn) { Utils.showWarning('⚠️ تم تسجيل الحضور مسبقاً'); return; }
+            const time = '09:00 ص';
+            if (exist) { exist.checkIn = time; exist.status = 'present'; }
+            else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date, checkIn: time, checkOut: null, status: 'present' });
+        } else {
+            if (!exist?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور بعد'); return; }
+            if (exist.checkOut) { Utils.showWarning('⚠️ تم تسجيل الانصراف مسبقاً'); return; }
+            exist.checkOut = '05:00 م';
+        }
+        DataManager.addActivity('تسجيل يدوي', `تسجيل ${type==='checkIn'?'حضور':'انصراف'} للموظف ${empId} بتاريخ ${date}`);
+        DataManager.saveAllData();
+        DataManager.updateEmployeeOrders();
+        AppRenderer.renderAttendance();
+    },
+    markAllAttendance() {
+        const today = Utils.getTodayDateStr();
+        const currentTime = Utils.getCurrentTime();
+        state.employees.forEach(e => {
+            const exist = state.attendanceRecords.find(a => a.empId === e.id && a.date === today);
+            if (!exist || !exist.checkIn) {
+                if (exist) { exist.checkIn = currentTime; exist.status = 'present'; }
+                else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: e.id, date: today, checkIn: currentTime, checkOut: null, status: 'present' });
+            }
+        });
+        DataManager.saveAllData();
+        AppRenderer.renderAttendance();
+        Utils.showMsg(`✅ تم تسجيل حضور الكل (${currentTime})`);
+    },
+    generateAttendanceQR() {
+        const qc = document.getElementById('attendanceQrContainer');
+        if (!qc) return;
+        qc.innerHTML = '';
+        try { new QRCode(qc, { text: `DRMEDIA_ATT_${Utils.getTodayDateStr()}`, width: 200, height: 200 }); } catch(e) { qc.innerHTML = '<p class="text-red-500">تعذر إنشاء QR</p>'; }
+    },
+    async startQRScanner(autoEmpId = null) {
+        // إيقاف أي ماسح سابق
+        if (window.html5QrScanner) {
+            try { await window.html5QrScanner.stop(); } catch(e) {}
+            window.html5QrScanner = null;
+        }
+
+        const isAutoMode = (autoEmpId !== null);  // true = موظف، false = مدير
+
+        Utils.openModal(`
+            <h3 class="text-xl font-bold mb-4">📷 مسح QR للحضور</h3>
+            <div id="qr-reader" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div>
+            <div class="flex gap-2 mt-4">
+                <button id="stopScannerBtn" class="btn-danger w-full">⏹️ إيقاف الماسح</button>
+            </div>
+        `);
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const el = document.getElementById('qr-reader');
+        if (!el) { Utils.showError('فشل تحميل نافذة الماسح'); Utils.closeModal(); return; }
+
+        const scanner = new Html5Qrcode("qr-reader");
+        window.html5QrScanner = scanner;
+
+        const safeStop = async () => {
+            if (window.html5QrScanner) {
+                try { await window.html5QrScanner.stop(); } catch(e) {}
+                window.html5QrScanner = null;
+            }
+            Utils.closeModal();
+        };
+
+        document.getElementById('stopScannerBtn').onclick = safeStop;
+
+        try {
+            await scanner.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                async (decodedText) => {
+                    if (decodedText && decodedText.startsWith("DRMEDIA_ATT_")) {
+                        const expectedCode = `DRMEDIA_ATT_${Utils.getTodayDateStr()}`;
+                        if (decodedText === expectedCode) {
+                            await safeStop();
+
+                            if (isAutoMode) {
+                                // وضع الموظف: تسجيل تلقائي
+                                const today = Utils.getTodayDateStr();
+                                const rec = state.attendanceRecords.find(a => a.empId === autoEmpId && a.date === today);
+                                if (!rec || !rec.checkIn) {
+                                    await AttendanceManager.checkIn(autoEmpId);
+                                } else if (!rec.checkOut) {
+                                    await AttendanceManager.checkOut(autoEmpId);
+                                } else {
+                                    Utils.showWarning('تم تسجيل الحضور والانصراف بالفعل');
+                                }
+                            } else {
+                                // وضع المدير: اختيار الموظف
+                                setTimeout(() => {
+                                    Utils.openModal(`
+                                        <h3 class="text-xl font-bold mb-4">تسجيل الحضور والانصراف</h3>
+                                        <select id="scanEmpSelect" class="w-full border-2 p-3 rounded-xl">
+                                            ${state.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}
+                                        </select>
+                                        <div class="flex gap-3 mt-3">
+                                            <button onclick="AttendanceManager.checkInFromScan()" class="btn-primary flex-1">✅ حضور</button>
+                                            <button onclick="AttendanceManager.checkOutFromScan()" class="btn-secondary flex-1">🚪 انصراف</button>
+                                            <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
+                                        </div>
+                                    `);
+                                }, 200);
+                            }
+                        } else {
+                            Utils.showError("رمز QR غير صالح أو منتهي الصلاحية");
+                        }
+                    } else {
+                        Utils.showError("رمز QR غير معروف");
+                    }
+                },
+                (errorMessage) => {}
+            );
+        } catch(err) {
+            console.error(err);
+            Utils.showError("تعذر تشغيل الكاميرا. تأكد من منح الإذن أو استخدام HTTPS.");
+            safeStop();
+        }
+    },
+    checkInFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkIn(empId); Utils.closeModal(); },
+    checkOutFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkOut(empId); Utils.closeModal(); }
+};
+
+    // ========================================================
     // مدير الموظفين
     // ========================================================
     const EmployeeManager = {
@@ -697,7 +764,6 @@
         addLoan(empId) { Utils.openModal(`<h3>💰 إضافة سلفة</h3><input type="number" id="loanAmount" placeholder="المبلغ" class="w-full border-2 p-2 my-2 rounded-xl"><input id="loanDesc" placeholder="الوصف" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="EmployeeManager.saveLoan('${empId}')" class="btn-primary mt-2 w-full">حفظ</button>`); },
         saveLoan(empId) { const amount = parseInt(document.getElementById('loanAmount')?.value)||0; if (amount<=0) { Utils.showError('المبلغ غير صالح'); return; } if (!state.employeeLoans[empId]) state.employeeLoans[empId]=[]; state.employeeLoans[empId].push({ id: Utils.generateId('loan_'), amount, description: document.getElementById('loanDesc')?.value||'', date: Utils.getTodayDateStr(), settled:false }); DataManager.saveAllData(); AppRenderer.renderEmployees(); Utils.closeModal(); Utils.showMsg('✅ تمت الإضافة'); }
     };
-
     // ========================================================
     // التوزيع الذكي
     // ========================================================
@@ -1441,7 +1507,7 @@
                 <header class="bg-white dark:bg-gray-800 p-4 flex justify-between shadow"><h1 class="font-bold text-lg">${state.companyName}</h1><button onclick="AuthManager.logout()" class="btn-danger text-sm">🚪 خروج</button></header>
                 <main class="p-4 flex-1 max-w-2xl mx-auto w-full">
                     <div class="bg-card mb-4 text-center"><h2 class="text-xl font-bold">👋 مرحباً ${emp.name}</h2><p>${emp.role} | الرصيد المستحق الكلي: <strong>${Utils.formatCurrency(totalSalary)}</strong></p></div>
-                    <div class="bg-card mb-4 text-center"><button onclick="AttendanceManager.startQRScanner()" class="btn-primary w-full py-3 text-lg">📷 مسح QR لتسجيل الحضور/الانصراف</button></div>
+                    <div class="bg-card mb-4 text-center"><button onclick="AttendanceManager.startQRScanner('${emp.id}')" class="btn-primary w-full py-3 text-lg">📷 مسح QR لتسجيل الحضور/الانصراف</button></div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div class="bg-card"><h3 class="font-bold mb-2">📅 أوردرات اليوم (${today})</h3>${myBookings.filter(b=>b.date===today).map(b=>`<div class="border-b py-2 text-sm"><strong>${b.clientName}</strong> - ${b.hallName}</div>`).join('')||'<p class="text-gray-400">لا توجد</p>'}</div>
                         <div class="bg-card"><h3 class="font-bold mb-2">⏰ أوردرات غداً (${tomorrowStr})</h3>${myBookings.filter(b=>b.date===tomorrowStr).map(b=>`<div class="border-b py-2 text-sm"><strong>${b.clientName}</strong> - ${b.hallName}</div>`).join('')||'<p class="text-gray-400">لا توجد</p>'}</div>
