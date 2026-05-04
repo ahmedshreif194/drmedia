@@ -1587,9 +1587,165 @@ const AttendanceManager = {
             if (!sidebar.contains(e.target) && !e.target.closest('[onclick*="sidebar"]')) sidebar.classList.remove('open');
         }
     });
-// ========================================================
-// التوزيع الذكي – توزيع متساوٍ عبر فترات الشهر (1-10, 11-20, 21-نهاية)
-// ========================================================
+
+const DistributionManager = {
+    // تقسيم قائمة الحجوزات إلى ثلاث فترات شهرية
+    _splitByPeriod(bookings) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const periods = [
+            { start: 1, end: 10 },
+            { start: 11, end: 20 },
+            { start: 21, end: new Date(year, month + 1, 0).getDate() }
+        ];
+        const result = [[], [], []];
+        bookings.forEach(b => {
+            const d = parseInt(b.date.slice(8, 10));
+            for (let i = 0; i < 3; i++) {
+                if (d >= periods[i].start && d <= periods[i].end) {
+                    result[i].push(b);
+                    break;
+                }
+            }
+        });
+        return result;
+    },
+
+    // توزيع عادل داخل قائمة حجوزات (نفس الفترة)
+    _distributeFairly(bookings, roleEmployees, countNeeded = 1) {
+        if (!roleEmployees.length || !bookings.length) return;
+        let idx = 0;
+        bookings.forEach(b => {
+            const assigned = b.assignedEmployees || [];
+            for (let i = 0; i < countNeeded; i++) {
+                const emp = roleEmployees[idx % roleEmployees.length];
+                if (!assigned.includes(emp.id)) assigned.push(emp.id);
+                idx++;
+            }
+            b.assignedEmployees = assigned;
+        });
+    },
+
+    // توزيع ذكي (متساوٍ بين الفترات)
+    async smartDistribute() {
+        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
+
+        // الموظفون النشطون حسب الدور
+        const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
+        const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
+        const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
+
+        // تقسيم الأوردرات للفترات الثلاث
+        const periods = this._splitByPeriod(pending);
+
+        // توزيع كل فترة
+        periods.forEach((periodBookings, periodIndex) => {
+            // قاعات كل حجز
+            const cafeBookings = periodBookings.filter(b => state.halls.find(h => h.id === b.hallId)?.type === 'cafe');
+            const otherBookings = periodBookings.filter(b => state.halls.find(h => h.id === b.hallId)?.type !== 'cafe');
+
+            // توزيع الكافيه (مصور واحد)
+            this._distributeFairly(cafeBookings, phs, 1);
+
+            // توزيع باقي القاعات (مخرج + مصورين + كرين)
+            const dirBookings = [...otherBookings]; // كل الأوردرات تحتاج مخرج
+            this._distributeFairly(dirBookings, dirs, 1);
+
+            const phBookings = [...otherBookings]; // مصورين
+            this._distributeFairly(phBookings, phs, 2);
+
+            const crBookings = [...otherBookings]; // كرين
+            this._distributeFairly(crBookings, crs, 1);
+        });
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        // إرسال إشعارات
+        for (let b of pending) {
+            b.assignedEmployees.forEach(eid => {
+                const emp = state.employees.find(e => e.id === eid);
+                if (emp) NotificationManager.notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
+            });
+        }
+
+        DataManager.addActivity('توزيع ذكي', `تم توزيع ${pending.length} حجز بالتساوي بين الفترات`);
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg(`✅ تم توزيع ${pending.length} حجز بالتساوي على الفترات`);
+    },
+
+    // تدوير متساوٍ عبر الفترات
+    async rotateDistribution() {
+        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) { Utils.showWarning('لا حجوزات معلقة'); return; }
+
+        const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
+        const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
+        const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
+
+        // مؤشرات الدورات (يمكن تخزينها في state.rotationCounters إذا أردت الحفظ عبر الجلسات)
+        let dirIdx = state.rotationCounters.dir % Math.max(1, dirs.length);
+        let phIdx  = state.rotationCounters.ph % Math.max(1, phs.length);
+        let crIdx  = state.rotationCounters.cr % Math.max(1, crs.length);
+
+        const periods = this._splitByPeriod(pending);
+
+        periods.forEach(periodBookings => {
+            periodBookings.forEach(b => {
+                const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
+                const assigned = [];
+
+                if (hallType === 'cafe') {
+                    if (phs.length) {
+                        assigned.push(phs[phIdx % phs.length].id);
+                        phIdx++;
+                    }
+                } else {
+                    if (dirs.length) { assigned.push(dirs[dirIdx % dirs.length].id); dirIdx++; }
+                    if (phs.length) {
+                        assigned.push(phs[phIdx % phs.length].id); phIdx++;
+                        if (phs.length > 1) { assigned.push(phs[phIdx % phs.length].id); phIdx++; }
+                    }
+                    if (crs.length) { assigned.push(crs[crIdx % crs.length].id); crIdx++; }
+                }
+
+                b.assignedEmployees = assigned;
+            });
+        });
+
+        state.rotationCounters = { dir: dirIdx, ph: phIdx, cr: crIdx };
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg('✅ تم التوزيع بالتدوير (متساوٍ بين الفترات)');
+    },
+
+    // (دوال manualAssign و saveManualAssign تبقى كما هي دون تغيير)
+    manualAssign(bookingId) {
+        const b = state.bookings.find(b => b.id === bookingId);
+        if (!b) return;
+        const opts = state.employees.filter(e => e.active).map(e => `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`).join('');
+        Utils.openModal(`<h3>تعيين يدوي</h3><select id="manualSelect" multiple class="w-full border-2 p-3 rounded-xl h-48">${opts}</select><button onclick="DistributionManager.saveManualAssign('${bookingId}')" class="btn-primary mt-2 w-full">حفظ</button>`);
+    },
+    async saveManualAssign(bookingId) {
+        const sel = document.getElementById('manualSelect');
+        if (!sel) return;
+        const b = state.bookings.find(b => b.id === bookingId);
+        if (!b) return;
+        b.assignedEmployees = Array.from(sel.selectedOptions).map(o => o.value);
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.closeModal();
+        Utils.showMsg('✅ تم التعيين');
+    }
+};
+
 const DistributionManager = {
     // تقسيم قائمة الحجوزات إلى ثلاث فترات شهرية
     _splitByPeriod(bookings) {
