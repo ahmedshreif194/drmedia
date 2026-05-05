@@ -1437,299 +1437,264 @@
         }
     });
         
-      // ========================================================
-// وحدة التحديثات المتقدمة (توضع قبل اسكربت)
+// ========================================================
+// وحدة التحديثات المتقدمة (نسخة آمنة 100% - لا تؤثر على صفحة الدخول)
 // ========================================================
 (function() {
     'use strict';
 
-    // ==================== 1. أنماط متعددة لواجهة النظام ====================
-    const THEMES = {
-        light: { '--primary': '#16a34a', '--bg': '#f3f4f6', '--card': '#ffffff', '--text': '#1f2937', '--text-secondary': '#6b7280', '--border': '#e5e7eb' },
-        dark: { '--primary': '#22c55e', '--bg': '#0f172a', '--card': '#1e293b', '--text': '#e2e8f0', '--text-secondary': '#94a3b8', '--border': '#334155' },
-        blue: { '--primary': '#2563eb', '--bg': '#eff6ff', '--card': '#ffffff', '--text': '#1e3a5f', '--text-secondary': '#64748b', '--border': '#bfdbfe' },
-        green: { '--primary': '#059669', '--bg': '#ecfdf5', '--card': '#ffffff', '--text': '#064e3b', '--text-secondary': '#475569', '--border': '#a7f3d0' },
-        highcontrast: { '--primary': '#facc15', '--bg': '#000000', '--card': '#1a1a1a', '--text': '#ffffff', '--text-secondary': '#cccccc', '--border': '#444444' }
-    };
+    // انتظر تحميل الصفحة أولاً
+    window.addEventListener('load', function() {
+        // لا تفعل شيء إذا كانت صفحة الدخول (لا يوجد AppRenderer)
+        if (typeof AppRenderer === 'undefined' || !document.getElementById('content-area')) return;
 
-    function applyTheme(themeName) {
-        const theme = THEMES[themeName] || THEMES.light;
-        Object.entries(theme).forEach(([key, value]) => {
-            document.documentElement.style.setProperty(key, value);
-        });
-        // إضافة كلاس للـ body (مهم للـ dark mode الأصلي)
-        document.body.classList.toggle('dark', themeName === 'dark' || themeName === 'highcontrast');
-        localStorage.setItem('drmedia_theme', themeName);
-    }
+        // ==================== 1. أنماط متعددة لواجهة النظام ====================
+        const THEMES = {
+            light: { '--primary': '#16a34a', '--bg': '#f3f4f6', '--card': '#ffffff', '--text': '#1f2937', '--text-secondary': '#6b7280', '--border': '#e5e7eb' },
+            dark: { '--primary': '#22c55e', '--bg': '#0f172a', '--card': '#1e293b', '--text': '#e2e8f0', '--text-secondary': '#94a3b8', '--border': '#334155' },
+            blue: { '--primary': '#2563eb', '--bg': '#eff6ff', '--card': '#ffffff', '--text': '#1e3a5f', '--text-secondary': '#64748b', '--border': '#bfdbfe' },
+            green: { '--primary': '#059669', '--bg': '#ecfdf5', '--card': '#ffffff', '--text': '#064e3b', '--text-secondary': '#475569', '--border': '#a7f3d0' },
+            highcontrast: { '--primary': '#facc15', '--bg': '#000000', '--card': '#1a1a1a', '--text': '#ffffff', '--text-secondary': '#cccccc', '--border': '#444444' }
+        };
 
-    // تحميل الثيم المحفوظ عند البدء
-    const savedTheme = localStorage.getItem('drmedia_theme') || 'light';
-    applyTheme(savedTheme);
+        function applyTheme(themeName) {
+            const theme = THEMES[themeName] || THEMES.light;
+            Object.entries(theme).forEach(([key, value]) => {
+                document.documentElement.style.setProperty(key, value);
+            });
+            document.body.classList.toggle('dark', themeName === 'dark' || themeName === 'highcontrast');
+            localStorage.setItem('drmedia_theme', themeName);
+        }
 
-    // دمج إعداد الثيم داخل صفحة الإعدادات الأصلية دون كسرها
-    function enhanceSettings() {
+        const savedTheme = localStorage.getItem('drmedia_theme') || 'light';
+        applyTheme(savedTheme);
+
+        // دمج إعداد الثيم داخل صفحة الإعدادات
         const origRenderSettings = AppRenderer.renderSettings;
         AppRenderer.renderSettings = function() {
             origRenderSettings.apply(this, arguments);
-            // إضافة قائمة اختيار الثيم بعد الحفظ
-            const container = document.getElementById('content-area');
-            if (!container) return;
-            const themeSelect = `
-                <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
-                    <label class="text-sm font-semibold">🎨 سمة الواجهة</label>
-                    <select id="themeSelectNew" class="w-full border-2 p-2 rounded-xl mt-1" onchange="applyTheme(this.value)">
-                        <option value="light" ${savedTheme==='light'?'selected':''}>فاتح (افتراضي)</option>
-                        <option value="dark" ${savedTheme==='dark'?'selected':''}>داكن</option>
-                        <option value="blue" ${savedTheme==='blue'?'selected':''}>أزرق</option>
-                        <option value="green" ${savedTheme==='green'?'selected':''}>أخضر</option>
-                        <option value="highcontrast" ${savedTheme==='highcontrast'?'selected':''}>تباين عالي</option>
-                    </select>
-                </div>`;
-            // حقن القائمة بعد حقل "قالب رسالة واتساب"
-            const waTemplate = document.getElementById('waMsgTemplate');
-            if (waTemplate) {
+            setTimeout(() => {
+                const container = document.getElementById('content-area');
+                if (!container) return;
+                const waTemplate = document.getElementById('waMsgTemplate');
+                if (!waTemplate) return;
+                const themeSelect = `
+                    <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <label class="text-sm font-semibold">🎨 سمة الواجهة</label>
+                        <select id="themeSelectNew" class="w-full border-2 p-2 rounded-xl mt-1" onchange="window._applyTheme(this.value)">
+                            <option value="light" ${savedTheme==='light'?'selected':''}>فاتح (افتراضي)</option>
+                            <option value="dark" ${savedTheme==='dark'?'selected':''}>داكن</option>
+                            <option value="blue" ${savedTheme==='blue'?'selected':''}>أزرق</option>
+                            <option value="green" ${savedTheme==='green'?'selected':''}>أخضر</option>
+                            <option value="highcontrast" ${savedTheme==='highcontrast'?'selected':''}>تباين عالي</option>
+                        </select>
+                    </div>`;
                 waTemplate.insertAdjacentHTML('afterend', themeSelect);
-            }
+            }, 100);
         };
-    }
+        window._applyTheme = applyTheme;
 
-    // ==================== 2 & 3. باك آب تلقائي + مشاركة ====================
-    function exportBackupData() {
-        const data = {
-            bookings: state.bookings,
-            employees: state.employees,
-            halls: state.halls,
-            clients: state.clients,
-            equipmentInventory: state.equipmentInventory,
-            attendanceRecords: state.attendanceRecords,
-            employeeLoans: state.employeeLoans,
-            notifications: state.notifications,
-            trashBin: state.trashBin,
-            activityLog: state.activityLog,
-            flashDrives: state.flashDrives,
-            substitutions: state.substitutions,
-            payrollPayments: state.payrollPayments,
-            rotationCounters: state.rotationCounters,
-            USERS: state.USERS,
-            companyName: state.companyName,
-            whatsapp: state.whatsapp,
-            appTheme: state.appTheme,
-            appLanguage: state.appLanguage,
-            systemOfflineMode: state.systemOfflineMode,
-            exportedAt: new Date().toISOString()
-        };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `backup_${new Date().toISOString().slice(0,10)}_${new Date().toLocaleTimeString().replace(/:/g,'-')}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        return blob;
-    }
-
-    function shareBackupViaEmail(blob) {
-        // يمكن استخدام EmailJS أو فتح mailto مع رابط تنزيل (للأسف لا يمكن إرفاق الملف مباشرة)
-        // بديل: فتح نافذة mailto مع نص يطلب من المستخدم تحميل المرفق يدوياً
-        const subject = encodeURIComponent('نسخة احتياطية Dr Media Pro');
-        const body = encodeURIComponent('الرجاء تحميل ملف الباك أب المرفق وإرساله.\n\nيمكنك تحميله من الرابط التالي:\n' + URL.createObjectURL(blob));
-        window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
-    }
-
-    let backupIntervalId = null;
-    function startAutoBackup(intervalHours) {
-        if (backupIntervalId) clearInterval(backupIntervalId);
-        if (!intervalHours || intervalHours <= 0) return;
-        const ms = intervalHours * 3600 * 1000;
-        backupIntervalId = setInterval(() => {
-            const blob = exportBackupData();
-            // إذا أردت إرسال إيميل تلقائي، يمكن استخدام EmailJS، لكننا سنكتفي بالتنزيل التلقائي
+        // ==================== 2 & 3. باك آب تلقائي + مشاركة ====================
+        function exportBackupData() {
+            const data = {
+                bookings: state.bookings,
+                employees: state.employees,
+                halls: state.halls,
+                clients: state.clients,
+                equipmentInventory: state.equipmentInventory,
+                attendanceRecords: state.attendanceRecords,
+                employeeLoans: state.employeeLoans,
+                notifications: state.notifications,
+                trashBin: state.trashBin,
+                activityLog: state.activityLog,
+                flashDrives: state.flashDrives,
+                substitutions: state.substitutions,
+                payrollPayments: state.payrollPayments,
+                rotationCounters: state.rotationCounters,
+                USERS: state.USERS,
+                companyName: state.companyName,
+                whatsapp: state.whatsapp,
+                appTheme: state.appTheme,
+                appLanguage: state.appLanguage,
+                systemOfflineMode: state.systemOfflineMode,
+                exportedAt: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `auto_backup_${new Date().toISOString().slice(0,10)}.json`;
+            a.href = url;
+            a.download = `backup_${new Date().toISOString().slice(0,10)}_${new Date().toLocaleTimeString().replace(/:/g,'-')}.json`;
+            document.body.appendChild(a);
             a.click();
-            // إشعار
-            Utils.showMsg('✅ تم إنشاء نسخة احتياطية تلقائية', 'success');
-        }, ms);
-    }
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            return blob;
+        }
 
-    // ضبط الإعدادات من localStorage
-    const autoBackup = JSON.parse(localStorage.getItem('drmedia_auto_backup') || '{"enabled":false,"interval":24}');
-    if (autoBackup.enabled) {
-        startAutoBackup(autoBackup.interval);
-    }
+        function shareBackupViaEmail(blob) {
+            const subject = encodeURIComponent('نسخة احتياطية Dr Media Pro');
+            const body = encodeURIComponent('الرجاء تحميل ملف الباك أب المرفق وإرساله.\n\nيمكنك تحميله من الرابط التالي:\n' + URL.createObjectURL(blob));
+            window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+        }
 
-    // دمج إعدادات الباك أب في صفحة الإعدادات
-    function enhanceSettingsBackup() {
-        const origRenderSettings = AppRenderer.renderSettings;
-        AppRenderer.renderSettings = function() {
-            origRenderSettings.apply(this, arguments);
-            const container = document.getElementById('content-area');
-            if (!container) return;
-            const backupSettings = JSON.parse(localStorage.getItem('drmedia_auto_backup') || '{"enabled":false,"interval":24}');
-            const backupHTML = `
-                <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
-                    <h3 class="font-semibold mb-2">💾 النسخ الاحتياطي التلقائي</h3>
-                    <div class="flex items-center gap-2 mb-2">
-                        <input type="checkbox" id="autoBackupEnabled" ${backupSettings.enabled?'checked':''} onchange="toggleAutoBackup()"> <label>تفعيل</label>
-                    </div>
-                    <select id="autoBackupInterval" class="border-2 p-2 rounded-xl w-full" onchange="updateAutoBackupInterval()" ${backupSettings.enabled?'':'disabled'}>
-                        <option value="12" ${backupSettings.interval==12?'selected':''}>كل 12 ساعة</option>
-                        <option value="24" ${backupSettings.interval==24?'selected':''}>كل 24 ساعة</option>
-                        <option value="168" ${backupSettings.interval==168?'selected':''}>كل أسبوع</option>
-                        <option value="720" ${backupSettings.interval==720?'selected':''}>كل شهر</option>
-                    </select>
-                    <button onclick="exportBackupData(); shareBackupViaEmail(exportBackupData())" class="btn-secondary w-full mt-2">📧 تصدير وإرسال عبر الإيميل</button>
-                </div>`;
-            const waTemplate = document.getElementById('waMsgTemplate');
-            if (waTemplate) {
-                waTemplate.insertAdjacentHTML('afterend', backupHTML);
-            }
-        };
-    }
+        let backupIntervalId = null;
+        function startAutoBackup(intervalHours) {
+            if (backupIntervalId) clearInterval(backupIntervalId);
+            if (!intervalHours || intervalHours <= 0) return;
+            const ms = intervalHours * 3600 * 1000;
+            backupIntervalId = setInterval(() => {
+                exportBackupData();
+                if (typeof Utils !== 'undefined') Utils.showMsg('✅ تم إنشاء نسخة احتياطية تلقائية', 'success');
+            }, ms);
+        }
 
-    window.toggleAutoBackup = function() {
-        const enabled = document.getElementById('autoBackupEnabled').checked;
-        const interval = parseInt(document.getElementById('autoBackupInterval').value) || 24;
-        localStorage.setItem('drmedia_auto_backup', JSON.stringify({ enabled, interval }));
-        if (enabled) startAutoBackup(interval);
-        else { if (backupIntervalId) clearInterval(backupIntervalId); backupIntervalId = null; }
-    };
-    window.updateAutoBackupInterval = function() {
-        const enabled = document.getElementById('autoBackupEnabled')?.checked;
-        if (enabled) {
+        const autoBackup = JSON.parse(localStorage.getItem('drmedia_auto_backup') || '{"enabled":false,"interval":24}');
+        if (autoBackup.enabled) startAutoBackup(autoBackup.interval);
+
+        // دمج إعدادات الباك أب
+        AppRenderer.renderSettings = (function(orig) {
+            return function() {
+                orig.apply(this, arguments);
+                setTimeout(() => {
+                    const waTemplate = document.getElementById('waMsgTemplate');
+                    if (!waTemplate) return;
+                    const backupSettings = JSON.parse(localStorage.getItem('drmedia_auto_backup') || '{"enabled":false,"interval":24}');
+                    const backupHTML = `
+                        <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                            <h3 class="font-semibold mb-2">💾 النسخ الاحتياطي التلقائي</h3>
+                            <div class="flex items-center gap-2 mb-2">
+                                <input type="checkbox" id="autoBackupEnabled" ${backupSettings.enabled?'checked':''} onchange="window._toggleAutoBackup()"> <label>تفعيل</label>
+                            </div>
+                            <select id="autoBackupInterval" class="border-2 p-2 rounded-xl w-full" onchange="window._updateAutoBackupInterval()" ${backupSettings.enabled?'':'disabled'}>
+                                <option value="12" ${backupSettings.interval==12?'selected':''}>كل 12 ساعة</option>
+                                <option value="24" ${backupSettings.interval==24?'selected':''}>كل 24 ساعة</option>
+                                <option value="168" ${backupSettings.interval==168?'selected':''}>كل أسبوع</option>
+                                <option value="720" ${backupSettings.interval==720?'selected':''}>كل شهر</option>
+                            </select>
+                            <button onclick="window._exportAndShare()" class="btn-secondary w-full mt-2">📧 تصدير وإرسال عبر الإيميل</button>
+                        </div>`;
+                    waTemplate.insertAdjacentHTML('afterend', backupHTML);
+                }, 100);
+            };
+        })(AppRenderer.renderSettings);
+
+        window._toggleAutoBackup = function() {
+            const enabled = document.getElementById('autoBackupEnabled').checked;
             const interval = parseInt(document.getElementById('autoBackupInterval').value) || 24;
             localStorage.setItem('drmedia_auto_backup', JSON.stringify({ enabled, interval }));
-            startAutoBackup(interval);
-        }
-    };
-
-    // ==================== 4. ريفرش تلقائي ====================
-    let refreshIntervalId = null;
-    function startAutoRefresh(seconds) {
-        if (refreshIntervalId) clearInterval(refreshIntervalId);
-        if (!seconds || seconds <= 0) return;
-        refreshIntervalId = setInterval(() => {
-            location.reload();
-        }, seconds * 1000);
-    }
-
-    const autoRefreshSetting = JSON.parse(localStorage.getItem('drmedia_auto_refresh') || '{"enabled":false,"seconds":30}');
-    if (autoRefreshSetting.enabled) {
-        startAutoRefresh(autoRefreshSetting.seconds);
-    }
-
-    function enhanceSettingsRefresh() {
-        const origRenderSettings = AppRenderer.renderSettings;
-        AppRenderer.renderSettings = function() {
-            origRenderSettings.apply(this, arguments);
-            const container = document.getElementById('content-area');
-            if (!container) return;
-            const refreshSettings = JSON.parse(localStorage.getItem('drmedia_auto_refresh') || '{"enabled":false,"seconds":30}');
-            const refreshHTML = `
-                <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
-                    <h3 class="font-semibold mb-2">🔄 التحديث التلقائي للصفحة</h3>
-                    <div class="flex items-center gap-2 mb-2">
-                        <input type="checkbox" id="autoRefreshEnabled" ${refreshSettings.enabled?'checked':''} onchange="toggleAutoRefresh()"> <label>تفعيل</label>
-                    </div>
-                    <select id="autoRefreshInterval" class="border-2 p-2 rounded-xl w-full" onchange="updateAutoRefreshInterval()" ${refreshSettings.enabled?'':'disabled'}>
-                        ${[5,10,15,20,25,30,35,40,45,50,55,60].map(s => `<option value="${s}" ${refreshSettings.seconds==s?'selected':''}>${s} ثانية</option>`).join('')}
-                    </select>
-                </div>`;
-            const waTemplate = document.getElementById('waMsgTemplate');
-            if (waTemplate) {
-                waTemplate.insertAdjacentHTML('afterend', refreshHTML);
+            if (enabled) startAutoBackup(interval);
+            else { if (backupIntervalId) clearInterval(backupIntervalId); backupIntervalId = null; }
+        };
+        window._updateAutoBackupInterval = function() {
+            const enabled = document.getElementById('autoBackupEnabled')?.checked;
+            if (enabled) {
+                const interval = parseInt(document.getElementById('autoBackupInterval').value) || 24;
+                localStorage.setItem('drmedia_auto_backup', JSON.stringify({ enabled, interval }));
+                startAutoBackup(interval);
             }
         };
-    }
+        window._exportAndShare = function() {
+            const blob = exportBackupData();
+            shareBackupViaEmail(blob);
+        };
 
-    window.toggleAutoRefresh = function() {
-        const enabled = document.getElementById('autoRefreshEnabled').checked;
-        const seconds = parseInt(document.getElementById('autoRefreshInterval').value) || 30;
-        localStorage.setItem('drmedia_auto_refresh', JSON.stringify({ enabled, seconds }));
-        if (enabled) startAutoRefresh(seconds);
-        else { if (refreshIntervalId) clearInterval(refreshIntervalId); refreshIntervalId = null; }
-    };
-    window.updateAutoRefreshInterval = function() {
-        const enabled = document.getElementById('autoRefreshEnabled')?.checked;
-        if (enabled) {
+        // ==================== 4. ريفرش تلقائي ====================
+        let refreshIntervalId = null;
+        function startAutoRefresh(seconds) {
+            if (refreshIntervalId) clearInterval(refreshIntervalId);
+            if (!seconds || seconds <= 0) return;
+            refreshIntervalId = setInterval(() => location.reload(), seconds * 1000);
+        }
+
+        const autoRefreshSetting = JSON.parse(localStorage.getItem('drmedia_auto_refresh') || '{"enabled":false,"seconds":30}');
+        if (autoRefreshSetting.enabled) startAutoRefresh(autoRefreshSetting.seconds);
+
+        AppRenderer.renderSettings = (function(orig) {
+            return function() {
+                orig.apply(this, arguments);
+                setTimeout(() => {
+                    const waTemplate = document.getElementById('waMsgTemplate');
+                    if (!waTemplate) return;
+                    const refreshSettings = JSON.parse(localStorage.getItem('drmedia_auto_refresh') || '{"enabled":false,"seconds":30}');
+                    const refreshHTML = `
+                        <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                            <h3 class="font-semibold mb-2">🔄 التحديث التلقائي للصفحة</h3>
+                            <div class="flex items-center gap-2 mb-2">
+                                <input type="checkbox" id="autoRefreshEnabled" ${refreshSettings.enabled?'checked':''} onchange="window._toggleAutoRefresh()"> <label>تفعيل</label>
+                            </div>
+                            <select id="autoRefreshInterval" class="border-2 p-2 rounded-xl w-full" onchange="window._updateAutoRefreshInterval()" ${refreshSettings.enabled?'':'disabled'}>
+                                ${[5,10,15,20,25,30,35,40,45,50,55,60].map(s => `<option value="${s}" ${refreshSettings.seconds==s?'selected':''}>${s} ثانية</option>`).join('')}
+                            </select>
+                        </div>`;
+                    waTemplate.insertAdjacentHTML('afterend', refreshHTML);
+                }, 100);
+            };
+        })(AppRenderer.renderSettings);
+
+        window._toggleAutoRefresh = function() {
+            const enabled = document.getElementById('autoRefreshEnabled').checked;
             const seconds = parseInt(document.getElementById('autoRefreshInterval').value) || 30;
             localStorage.setItem('drmedia_auto_refresh', JSON.stringify({ enabled, seconds }));
-            startAutoRefresh(seconds);
-        }
-    };
+            if (enabled) startAutoRefresh(seconds);
+            else { if (refreshIntervalId) clearInterval(refreshIntervalId); refreshIntervalId = null; }
+        };
+        window._updateAutoRefreshInterval = function() {
+            const enabled = document.getElementById('autoRefreshEnabled')?.checked;
+            if (enabled) {
+                const seconds = parseInt(document.getElementById('autoRefreshInterval').value) || 30;
+                localStorage.setItem('drmedia_auto_refresh', JSON.stringify({ enabled, seconds }));
+                startAutoRefresh(seconds);
+            }
+        };
 
-    // ==================== 5. زر إلغاء بجوار كل زر حفظ ====================
-    function addCancelButtons() {
-        const observer = new MutationObserver(function(mutations) {
-            document.querySelectorAll('button').forEach(btn => {
-                if ((btn.textContent.includes('حفظ') || btn.textContent.includes('💾')) && !btn.nextElementSibling?.classList.contains('cancel-btn-auto')) {
-                    const cancelBtn = document.createElement('button');
-                    cancelBtn.textContent = 'إلغاء';
-                    cancelBtn.className = btn.className + ' cancel-btn-auto';
-                    cancelBtn.style.marginRight = '8px';
-                    cancelBtn.onclick = function(e) {
-                        e.preventDefault();
-                        if (typeof Utils !== 'undefined' && Utils.closeModal) Utils.closeModal();
-                        else if (typeof closeModal === 'function') closeModal();
-                        else console.log('إلغاء');
-                    };
-                    btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
-                }
-            });
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
+        // ==================== 5. زر إلغاء بجوار كل زر حفظ ====================
+        new MutationObserver(function() {
+            if (!document.getElementById('app') || !document.getElementById('app').innerHTML.includes('تسجيل الدخول')) {
+                document.querySelectorAll('button').forEach(btn => {
+                    if ((btn.textContent.includes('حفظ') || btn.textContent.includes('💾')) && !btn.nextElementSibling?.classList.contains('cancel-btn-auto')) {
+                        const cancelBtn = document.createElement('button');
+                        cancelBtn.textContent = 'إلغاء';
+                        cancelBtn.className = btn.className + ' cancel-btn-auto';
+                        cancelBtn.style.marginRight = '8px';
+                        cancelBtn.onclick = (e) => {
+                            e.preventDefault();
+                            if (typeof Utils !== 'undefined') Utils.closeModal();
+                        };
+                        btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+                    }
+                });
+            }
+        }).observe(document.body, { childList: true, subtree: true });
 
-    // ==================== 6. ترتيب الأوردرات وعرض الحضور للموظف ====================
-    function enhanceEmpDash() {
+        // ==================== 6. ترتيب الأوردرات وعرض الحضور للموظف ====================
         const origRenderEmpDash = AppRenderer.renderEmpDash;
         AppRenderer.renderEmpDash = function() {
             origRenderEmpDash.apply(this, arguments);
-            // بعد الرسم، نضيف حالة الحضور لكل أوردر في قسم "جميع الأوردرات"
             setTimeout(() => {
-                const bookingsContainer = document.querySelector('#app .max-h-60.overflow-y-auto');
-                if (!bookingsContainer) return;
-                const items = bookingsContainer.querySelectorAll('.border-b');
-                items.forEach(item => {
-                    const spans = item.querySelectorAll('span');
-                    if (spans.length >= 2) {
-                        const datePart = spans[0]?.textContent?.split(' - ')[0]?.trim();
-                        const empId = state.currentUser?.employeeId;
-                        if (datePart && empId) {
-                            const status = Utils.getAttendanceStatus(empId, datePart);
+                const empId = state.currentUser?.employeeId;
+                if (!empId) return;
+                const containers = document.querySelectorAll('#app .max-h-60.overflow-y-auto');
+                containers.forEach(container => {
+                    const items = container.querySelectorAll('.border-b');
+                    items.forEach(item => {
+                        const text = item.textContent || '';
+                        const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})/);
+                        if (dateMatch) {
+                            const status = Utils.getAttendanceStatus(empId, dateMatch[0]);
                             let badge = '';
                             if (status === 'present') badge = '<span style="color:#16a34a; margin-right:8px; font-weight:bold;">✅ حاضر</span>';
                             else if (status === 'absent') badge = '<span style="color:#dc2626; margin-right:8px; font-weight:bold;">❌ غائب</span>';
                             else badge = '<span style="color:#6b7280; margin-right:8px;">⏳ قادم</span>';
                             item.insertAdjacentHTML('beforeend', badge);
                         }
-                    }
+                    });
                 });
-            }, 200);
+            }, 300);
         };
-    }
 
-    // ==================== تنفيذ التوسيعات ====================
-    window.addEventListener('load', function() {
-        // تأكد من أن AppRenderer أصبح موجودًا
-        if (typeof AppRenderer !== 'undefined') {
-            enhanceSettings();
-            enhanceSettingsBackup();
-            enhanceSettingsRefresh();
-            enhanceEmpDash();
-        }
-        addCancelButtons();
-        // تطبيق الثيم المحفوظ مرة أخرى
-        const theme = localStorage.getItem('drmedia_theme') || 'light';
-        applyTheme(theme);
+        // تأكد من تطبيق الثيم مرة أخرى
+        applyTheme(localStorage.getItem('drmedia_theme') || 'light');
     });
-
-    // تأكد من أن دوال exportBackupData متاحة عالميًا
-    window.exportBackupData = exportBackupData;
-    window.shareBackupViaEmail = shareBackupViaEmail;
 })();
     </script>
 </body>
