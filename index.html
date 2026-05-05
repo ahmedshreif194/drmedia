@@ -17,249 +17,36 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 
     <style>
-        /* ============ المتغيرات العامة ============ */
-        :root {
-            --primary: #16a34a;
-            --primary-dark: #15803d;
-            --danger: #dc2626;
-            --bg: #f3f4f6;
-            --card: #ffffff;
-            --text: #1f2937;
-            --text-secondary: #6b7280;
-            --border: #e5e7eb;
-            --sidebar-width: 260px;
-            --topbar-height: 70px;
-            --transition-speed: 0.2s;
-            --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.1);
-            --shadow-lg: 0 25px 50px -12px rgba(0,0,0,0.25);
-            --radius-lg: 20px;
-            --radius-xl: 24px;
-            --radius-btn: 30px;
-        }
-
+        :root { --primary: #16a34a; --primary-dark: #15803d; --danger: #dc2626; --bg: #f3f4f6; --card: #ffffff; --text: #1f2937; --text-secondary: #6b7280; --border: #e5e7eb; --sidebar-width: 260px; --topbar-height: 70px; --transition-speed: 0.2s; --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.1); --shadow-lg: 0 25px 50px -12px rgba(0,0,0,0.25); --radius-lg: 20px; --radius-xl: 24px; --radius-btn: 30px; }
         * { box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            margin: 0;
-            min-height: 100vh;
-            line-height: 1.6;
-        }
-
-        .toast {
-            position: fixed;
-            bottom: 24px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1f2937;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 40px;
-            z-index: 10000;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s;
-            white-space: nowrap;
-            box-shadow: var(--shadow-lg);
-            font-weight: 500;
-        }
-        .toast.show { opacity: 1; pointer-events: auto; }
-        .toast.success { background: #059669; }
-        .toast.error { background: #dc2626; }
-        .toast.warning { background: #d97706; }
-
-        .modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1100;
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity var(--transition-speed), visibility var(--transition-speed);
-            backdrop-filter: blur(4px);
-            padding: 16px;
-        }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); margin: 0; min-height: 100vh; line-height: 1.6; }
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 12px 24px; border-radius: 40px; z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.3s; white-space: nowrap; box-shadow: var(--shadow-lg); font-weight: 500; }
+        .toast.show { opacity: 1; pointer-events: auto; } .toast.success { background: #059669; } .toast.error { background: #dc2626; } .toast.warning { background: #d97706; }
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1100; visibility: hidden; opacity: 0; transition: opacity var(--transition-speed), visibility var(--transition-speed); backdrop-filter: blur(4px); padding: 16px; }
         .modal.show { visibility: visible; opacity: 1; }
-        .modal-content {
-            background: var(--card);
-            border-radius: var(--radius-xl);
-            max-width: 700px;
-            width: 100%;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 24px;
-            box-shadow: var(--shadow-lg);
-            transform: scale(0.95);
-            transition: transform var(--transition-speed);
-        }
+        .modal-content { background: var(--card); border-radius: var(--radius-xl); max-width: 700px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: var(--shadow-lg); transform: scale(0.95); transition: transform var(--transition-speed); }
         .modal.show .modal-content { transform: scale(1); }
-
-        .sidebar {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: var(--sidebar-width);
-            height: 100vh;
-            background: var(--card);
-            border-left: 1px solid var(--border);
-            overflow-y: auto;
-            z-index: 50;
-            transition: transform var(--transition-speed);
-            box-shadow: 2px 0 12px rgba(0,0,0,0.05);
-        }
-        .sidebar-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 14px 20px;
-            cursor: pointer;
-            transition: background var(--transition-speed), color var(--transition-speed);
-            font-size: 0.95rem;
-            font-weight: 500;
-            border-right: 3px solid transparent;
-            color: var(--text-secondary);
-        }
+        .sidebar { position: fixed; top: 0; right: 0; width: var(--sidebar-width); height: 100vh; background: var(--card); border-left: 1px solid var(--border); overflow-y: auto; z-index: 50; transition: transform var(--transition-speed); box-shadow: 2px 0 12px rgba(0,0,0,0.05); }
+        .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; cursor: pointer; transition: background var(--transition-speed), color var(--transition-speed); font-size: 0.95rem; font-weight: 500; border-right: 3px solid transparent; color: var(--text-secondary); }
         .sidebar-item:hover { background: #f9fafb; color: var(--text); }
-        .sidebar-item.active {
-            background: #f0fdf4;
-            color: var(--primary);
-            border-right-color: var(--primary);
-            font-weight: 600;
-        }
-
-        .main-content {
-            margin-right: var(--sidebar-width);
-            min-height: 100vh;
-            padding: 24px;
-            padding-top: calc(var(--topbar-height) + 24px);
-        }
-        .topbar {
-            position: fixed;
-            top: 0;
-            right: var(--sidebar-width);
-            left: 0;
-            background: var(--card);
-            border-bottom: 1px solid var(--border);
-            padding: 16px 24px;
-            z-index: 40;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: var(--topbar-height);
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 20px;
-            border-radius: var(--radius-btn);
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            transition: opacity 0.2s, background 0.2s;
-            white-space: nowrap;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: var(--primary-dark); }
-        .btn-secondary { background: #2563eb; color: white; }
-        .btn-danger { background: var(--danger); color: white; }
-        .btn-outline {
-            background: transparent;
-            color: var(--text);
-            border: 2px solid var(--border);
-        }
-        .btn-outline:hover { background: #f9fafb; }
-
-        .status-badge {
-            display: inline-block;
-            padding: 5px 14px;
-            border-radius: 30px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            cursor: pointer;
-        }
-        .status-pending { background: #fef3c7; color: #92400e; }
-        .status-completed { background: #d1fae5; color: #065f46; }
-        .status-cancelled { background: #fee2e2; color: #991b1b; }
-        .badge-active { background: #d1fae5; color: #065f46; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; }
-        .badge-inactive { background: #fee2e2; color: #991b1b; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; }
-
+        .sidebar-item.active { background: #f0fdf4; color: var(--primary); border-right-color: var(--primary); font-weight: 600; }
+        .main-content { margin-right: var(--sidebar-width); min-height: 100vh; padding: 24px; padding-top: calc(var(--topbar-height) + 24px); }
+        .topbar { position: fixed; top: 0; right: var(--sidebar-width); left: 0; background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; z-index: 40; display: flex; justify-content: space-between; align-items: center; height: var(--topbar-height); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 10px 20px; border-radius: var(--radius-btn); border: none; cursor: pointer; font-weight: 600; transition: opacity 0.2s, background 0.2s; white-space: nowrap; }
+        .btn:hover { opacity: 0.9; } .btn-primary { background: var(--primary); color: white; } .btn-primary:hover { background: var(--primary-dark); } .btn-secondary { background: #2563eb; color: white; } .btn-danger { background: var(--danger); color: white; } .btn-outline { background: transparent; color: var(--text); border: 2px solid var(--border); } .btn-outline:hover { background: #f9fafb; }
+        .status-badge { display: inline-block; padding: 5px 14px; border-radius: 30px; font-size: 0.75rem; font-weight: 700; cursor: pointer; } .status-pending { background: #fef3c7; color: #92400e; } .status-completed { background: #d1fae5; color: #065f46; } .status-cancelled { background: #fee2e2; color: #991b1b; } .badge-active { background: #d1fae5; color: #065f46; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; } .badge-inactive { background: #fee2e2; color: #991b1b; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
-        .calendar-day {
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 8px;
-            text-align: center;
-            cursor: pointer;
-            font-size: 0.85rem;
-            transition: background var(--transition-speed), border-color var(--transition-speed);
-            min-height: 60px;
-        }
-        .calendar-day:hover { background: #f0fdf4; border-color: #86efac; }
-        .calendar-day.booked { background: #d1fae5; border-color: #86efac; font-weight: 700; }
-        .calendar-day.today { background: #dbeafe; border-color: #93c5fd; font-weight: 700; }
-        .calendar-day.other-month { color: #ccc; }
-
-        .stat-card {
-            background: var(--card);
-            border-radius: var(--radius-lg);
-            padding: 20px;
-            text-align: center;
-            box-shadow: var(--shadow-sm);
-        }
-        .stat-value { font-size: 2rem; font-weight: 800; color: var(--primary); }
-        .stat-label { font-size: 0.85rem; color: var(--text-secondary); }
-        .bg-card {
-            background: var(--card);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-sm);
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-        th, td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--border); }
-        th { background: #f9fafb; font-weight: 600; position: sticky; top: 0; z-index: 1; }
-        .footer-bar {
-            text-align: center;
-            padding: 12px;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            border-top: 1px solid var(--border);
-            margin-top: 20px;
-        }
-
+        .calendar-day { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; text-align: center; cursor: pointer; font-size: 0.85rem; transition: background var(--transition-speed), border-color var(--transition-speed); min-height: 60px; }
+        .calendar-day:hover { background: #f0fdf4; border-color: #86efac; } .calendar-day.booked { background: #d1fae5; border-color: #86efac; font-weight: 700; } .calendar-day.today { background: #dbeafe; border-color: #93c5fd; font-weight: 700; } .calendar-day.other-month { color: #ccc; }
+        .stat-card { background: var(--card); border-radius: var(--radius-lg); padding: 20px; text-align: center; box-shadow: var(--shadow-sm); } .stat-value { font-size: 2rem; font-weight: 800; color: var(--primary); } .stat-label { font-size: 0.85rem; color: var(--text-secondary); }
+        .bg-card { background: var(--card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 20px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; } th, td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--border); } th { background: #f9fafb; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+        .footer-bar { text-align: center; padding: 12px; font-size: 0.75rem; color: var(--text-secondary); border-top: 1px solid var(--border); margin-top: 20px; }
         body.dark { --bg: #1e1e2f; --card: #2d2d3a; --text: #e5e7eb; --text-secondary: #9ca3af; --border: #404050; }
         body.dark input, body.dark select, body.dark textarea { background: #3a3a4a; color: #e5e7eb; border-color: #555; }
-        body.dark .sidebar { background: #2d2d3a; border-left-color: #404050; }
-        body.dark .sidebar-item.active { background: #064e3b; color: #6ee7b7; }
-        body.dark .calendar-day { background: #2d2d3a; border-color: #404050; }
-        body.dark .calendar-day.booked { background: #065f46; border-color: #059669; }
-        body.dark .calendar-day.today { background: #1e3a5f; border-color: #3b82f6; }
-        body.dark th { background: #3a3a4a; }
-
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(100%);
-                width: 260px;
-                max-height: 100vh;
-                overflow-y: auto;
-                position: fixed;
-                z-index: 1000;
-                padding-bottom: 80px;
-            }
-            .sidebar.open { transform: translateX(0); }
-            .sidebar .footer-bar { display: none; }
-            .main-content { margin-right: 0; }
-            .topbar { right: 0; }
-        }
+        body.dark .sidebar { background: #2d2d3a; border-left-color: #404050; } body.dark .sidebar-item.active { background: #064e3b; color: #6ee7b7; }
+        body.dark .calendar-day { background: #2d2d3a; border-color: #404050; } body.dark .calendar-day.booked { background: #065f46; border-color: #059669; } body.dark .calendar-day.today { background: #1e3a5f; border-color: #3b82f6; } body.dark th { background: #3a3a4a; }
+        @media (max-width: 768px) { .sidebar { transform: translateX(100%); width: 260px; max-height: 100vh; overflow-y: auto; position: fixed; z-index: 1000; padding-bottom: 80px; } .sidebar.open { transform: translateX(0); } .sidebar .footer-bar { display: none; } .main-content { margin-right: 0; } .topbar { right: 0; } }
     </style>
 </head>
 <body>
@@ -340,20 +127,12 @@
             modal.classList.add('show');
             document.body.style.overflow = 'hidden';
         },
-        applyTheme(theme) {
-            state.appTheme = theme;
-            document.body.className = theme === 'dark' ? 'dark' : '';
-        },
+        applyTheme(theme) { state.appTheme = theme; document.body.className = theme === 'dark' ? 'dark' : ''; },
         getTodayDateStr() { return new Date().toISOString().slice(0,10); },
-        getCurrentTime() {
-            return new Date().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true });
-        },
+        getCurrentTime() { return new Date().toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true }); },
         generateId(prefix='') { return prefix + Date.now().toString(36) + Math.random().toString(36).substr(2,6); },
         formatCurrency(amount) { return (amount||0).toLocaleString('ar-EG') + ' ج.م'; },
-        getWeekDayArabic(dateStr) {
-            const days = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
-            return days[new Date(dateStr).getDay()];
-        },
+        getWeekDayArabic(dateStr) { const days = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت']; return days[new Date(dateStr).getDay()]; },
         t(key) {
             const trans = {
                 ar: { dashboard:"الرئيسية", bookings:"الحجوزات", employees:"الموظفين", halls:"القاعات", clients:"العملاء", equipment:"المعدات", attendance:"الحضور", payroll:"المرتبات", calendar:"التقويم", distribution:"التوزيع", reports:"التقارير", advancedReports:"تقارير متقدمة", notifications:"الإشعارات", users:"المستخدمين", trash:"سلة المحذوفات", activityLog:"سجل النشاطات", internet:"الإنترنت", settings:"الإعدادات", flash:"الفلاشات" },
@@ -367,10 +146,7 @@
             if (!str && str !== 0) return this.getTodayDateStr();
             if (typeof str === 'number' || (typeof str === 'string' && /^\d+$/.test(str.trim()))) {
                 const num = parseInt(str);
-                if (num > 1000 && num < 200000) {
-                    const d = new Date((num - 25569) * 86400000);
-                    if (!isNaN(d.getTime())) return d.toISOString().slice(0,10);
-                }
+                if (num > 1000 && num < 200000) { const d = new Date((num - 25569) * 86400000); if (!isNaN(d.getTime())) return d.toISOString().slice(0,10); }
             }
             str = String(str).trim();
             if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
@@ -385,17 +161,15 @@
         getPeriodRange(period, year, month) {
             const startDay = period === 'early' ? 1 : period === 'mid' ? 11 : 21;
             let endDay = period === 'early' ? 10 : period === 'mid' ? 20 : new Date(year, month+1, 0).getDate();
-            return {
-                start: `${year}-${String(month+1).padStart(2,'0')}-${String(startDay).padStart(2,'0')}`,
-                end: `${year}-${String(month+1).padStart(2,'0')}-${String(endDay).padStart(2,'0')}`
-            };
+            return { start: `${year}-${String(month+1).padStart(2,'0')}-${String(startDay).padStart(2,'0')}`, end: `${year}-${String(month+1).padStart(2,'0')}-${String(endDay).padStart(2,'0')}` };
         },
-        getPeriodLabel(period) {
-            const now = new Date();
-            const m = now.getMonth() + 1, y = now.getFullYear();
-            if (period === 'early') return `1 - 10 ${m}/${y}`;
-            if (period === 'mid') return `11 - 20 ${m}/${y}`;
-            return `21 - ${new Date(y, m, 0).getDate()} ${m}/${y}`;
+        getPeriodLabel(period) { const now = new Date(); const m = now.getMonth() + 1, y = now.getFullYear(); if (period === 'early') return `1 - 10 ${m}/${y}`; if (period === 'mid') return `11 - 20 ${m}/${y}`; return `21 - ${new Date(y, m, 0).getDate()} ${m}/${y}`; },
+        getAttendanceStatus(empId, dateStr) {
+            const today = this.getTodayDateStr();
+            const rec = state.attendanceRecords.find(a => a.empId === empId && a.date === dateStr);
+            if (rec && rec.checkIn) return 'present';
+            if (dateStr < today) return 'absent';
+            return 'future';
         }
     };
 
@@ -426,47 +200,25 @@
         async loadAllData() {
             let loaded = false;
             if (state.useFirebase && state.db && !state.systemOfflineMode) {
-                try {
-                    const s = await state.db.ref('/').get();
-                    if (s.exists()) { this._loadDataObject(s.val()); state.online = true; state.lastSync = new Date(); loaded = true; }
-                } catch(e) { state.online = false; }
+                try { const s = await state.db.ref('/').get(); if (s.exists()) { this._loadDataObject(s.val()); state.online = true; state.lastSync = new Date(); loaded = true; } } catch(e) { state.online = false; }
             }
             if (!loaded) {
-                try {
-                    const raw = localStorage.getItem('drmedia_data');
-                    if (raw) this._loadDataObject(JSON.parse(raw));
-                    else this._initializeDefaultData();
-                } catch(e) { this._initializeDefaultData(); }
+                try { const raw = localStorage.getItem('drmedia_data'); if (raw) this._loadDataObject(JSON.parse(raw)); else this._initializeDefaultData(); } catch(e) { this._initializeDefaultData(); }
             }
-            this._ensureMinimumData();
-            this.updateEmployeeOrders();
-            await this.saveAllData();
-            Utils.applyTheme(state.appTheme);
+            this._ensureMinimumData(); this.updateEmployeeOrders(); await this.saveAllData(); Utils.applyTheme(state.appTheme);
         },
         _loadDataObject(d) {
-            state.bookings = d.bookings || [];
-            state.employees = d.employees || [];
-            state.halls = d.halls || [];
-            state.clients = d.clients || [];
-            state.equipmentInventory = d.equipmentInventory || {};
-            state.attendanceRecords = d.attendanceRecords || [];
-            state.employeeLoans = d.employeeLoans || {};
-            state.notifications = d.notifications || [];
-            state.trashBin = d.trashBin || [];
-            state.activityLog = d.activityLog || [];
-            state.flashDrives = d.flashDrives || [];
-            state.holidays = d.holidays || [];
+            state.bookings = d.bookings || []; state.employees = d.employees || []; state.halls = d.halls || []; state.clients = d.clients || [];
+            state.equipmentInventory = d.equipmentInventory || {}; state.attendanceRecords = d.attendanceRecords || [];
+            state.employeeLoans = d.employeeLoans || {}; state.notifications = d.notifications || []; state.trashBin = d.trashBin || [];
+            state.activityLog = d.activityLog || []; state.flashDrives = d.flashDrives || []; state.holidays = d.holidays || [];
             state.companyName = d.companyName || state.companyName;
-            if (d.companyLogo?.startsWith('data:image')) state.companyLogoBase64 = d.companyLogo;
-            else state.companyLogo = d.companyLogo || state.companyLogo;
-            state.USERS = d.USERS || state.USERS;
-            state.rotationCounters = d.rotationCounters || { dir:0, ph:0, cr:0 };
+            if (d.companyLogo?.startsWith('data:image')) state.companyLogoBase64 = d.companyLogo; else state.companyLogo = d.companyLogo || state.companyLogo;
+            state.USERS = d.USERS || state.USERS; state.rotationCounters = d.rotationCounters || { dir:0, ph:0, cr:0 };
             state.whatsapp.enabled = d.whatsappEnabled !== undefined ? d.whatsappEnabled : true;
             state.whatsapp.businessNumber = d.whatsappBusinessNumber || "201001234567";
             state.whatsapp.messageTemplate = d.whatsappMessageTemplate || "مرحباً {name}، تم توزيع أوردر {client} في {date} بقاعة {hall}";
-            state.appTheme = d.appTheme || "light";
-            state.appLanguage = d.appLanguage || "ar";
-            state.systemOfflineMode = d.systemOfflineMode || false;
+            state.appTheme = d.appTheme || "light"; state.appLanguage = d.appLanguage || "ar"; state.systemOfflineMode = d.systemOfflineMode || false;
         },
         _initializeDefaultData() {
             state.bookings = []; state.employees = []; state.halls = []; state.clients = [];
@@ -474,42 +226,22 @@
             state.notifications = []; state.trashBin = []; state.activityLog = []; state.flashDrives = []; state.holidays = [];
         },
         _ensureMinimumData() {
-            if (!state.halls.length) state.halls = [
-                { id:'h1', name:'القاعة الكبرى', type:'closed', basePrice:5000, active:true },
-                { id:'h2', name:'القاعة المفتوحة', type:'open', basePrice:4000, active:true },
-                { id:'h3', name:'الكافيه', type:'cafe', basePrice:2000, active:true }
-            ];
-            if (!state.employees.length) state.employees = [
-                { id:'emp1', name:'أحمد علي', role:'مخرج', phone:'01001234567', salaryPerOrder:300, active:true, totalOrders:0, userId:'emp1' },
-                { id:'emp2', name:'محمود حسن', role:'مصور', phone:'01002345678', salaryPerOrder:200, active:true, totalOrders:0, userId:null },
-                { id:'emp3', name:'سامر خالد', role:'كرين', phone:'01003456789', salaryPerOrder:250, active:true, totalOrders:0, userId:null }
-            ];
+            if (!state.halls.length) state.halls = [ { id:'h1', name:'القاعة الكبرى', type:'closed', basePrice:5000, active:true }, { id:'h2', name:'القاعة المفتوحة', type:'open', basePrice:4000, active:true }, { id:'h3', name:'الكافيه', type:'cafe', basePrice:2000, active:true } ];
+            if (!state.employees.length) state.employees = [ { id:'emp1', name:'أحمد علي', role:'مخرج', phone:'01001234567', salaryPerOrder:300, active:true, totalOrders:0, userId:'emp1' }, { id:'emp2', name:'محمود حسن', role:'مصور', phone:'01002345678', salaryPerOrder:200, active:true, totalOrders:0, userId:null }, { id:'emp3', name:'سامر خالد', role:'كرين', phone:'01003456789', salaryPerOrder:250, active:true, totalOrders:0, userId:null } ];
             if (!state.clients.length) state.clients = [{ id:'c1', name:'محمد عبدالله', phone:'01012345678', email:'', address:'' }];
             if (Object.keys(state.equipmentInventory).length === 0) state.equipmentInventory = { eq1: { name:'كاميرا Sony A7', quantity:3, minStock:1, category:'تصوير' } };
-            if (!state.bookings.length) state.bookings = [
-                { id:'b1', clientName:'محمد عبدالله', clientId:'c1', phone:'01012345678', hallId:'h1', hallName:'القاعة الكبرى', date:Utils.getTodayDateStr(), price:5000, status:'pending', paymentStatus:'pending', assignedEmployees:[], notes:'', packageType:'', totalPersons:0 },
-                { id:'b2', clientName:'أحمد محمود', clientId:null, phone:'01098765432', hallId:'h2', hallName:'القاعة المفتوحة', date:Utils.getTodayDateStr(), price:4000, status:'completed', paymentStatus:'paid', assignedEmployees:['emp2'], notes:'', packageType:'', totalPersons:0 }
-            ];
+            if (!state.bookings.length) state.bookings = [ { id:'b1', clientName:'محمد عبدالله', clientId:'c1', phone:'01012345678', hallId:'h1', hallName:'القاعة الكبرى', date:Utils.getTodayDateStr(), price:5000, status:'pending', paymentStatus:'pending', assignedEmployees:[], notes:'', packageType:'', totalPersons:0 }, { id:'b2', clientName:'أحمد محمود', clientId:null, phone:'01098765432', hallId:'h2', hallName:'القاعة المفتوحة', date:Utils.getTodayDateStr(), price:4000, status:'completed', paymentStatus:'paid', assignedEmployees:['emp2'], notes:'', packageType:'', totalPersons:0 } ];
         },
         updateEmployeeOrders() {
             state.employees.forEach(e => {
                 e.totalOrders = state.bookings.filter(b =>
                     b.status !== 'cancelled' && !b.deleted &&
-                    (b.assignedEmployees||[]).includes(e.id) &&
+                    (b.assignedEmployees || []).includes(e.id) &&
                     state.attendanceRecords.some(a => a.empId === e.id && a.date === b.date && a.checkIn)
                 ).length;
             });
         },
-        addActivity(action, details) {
-            state.activityLog.unshift({
-                id: Utils.generateId('act_'),
-                timestamp: new Date().toISOString(),
-                user: state.currentUser?.name || 'النظام',
-                action, details
-            });
-            if (state.activityLog.length > 500) state.activityLog.length = 500;
-            this.saveAllData();
-        }
+        addActivity(action, details) { state.activityLog.unshift({ id: Utils.generateId('act_'), timestamp: new Date().toISOString(), user: state.currentUser?.name || 'النظام', action, details }); if (state.activityLog.length > 500) state.activityLog.length = 500; this.saveAllData(); }
     };
 
     // ========================================================
@@ -525,194 +257,126 @@
         },
         notifyEmployee(emp, title, body, sendWA=true) {
             if (!emp?.id) return;
-            state.notifications.unshift({
-                id: Utils.generateId('notif_'),
-                title, body,
-                date: new Date().toLocaleString('ar-EG'),
-                recipient: emp.id
-            });
+            state.notifications.unshift({ id: Utils.generateId('notif_'), title, body, date: new Date().toLocaleString('ar-EG'), recipient: emp.id });
             if (sendWA && emp.phone) this.sendWhatsApp(emp.phone, `${title}\n${body}`);
             DataManager.saveAllData();
-            if (state.browserNotifications && 'Notification' in window && Notification.permission === 'granted') {
-                try { new Notification(title, { body }); } catch(e) {}
-            }
+            if (state.browserNotifications && 'Notification' in window && Notification.permission === 'granted') { try { new Notification(title, { body }); } catch(e) {} }
         },
         requestPermission() {
-            if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission().then(p => { state.browserNotifications = p === 'granted'; });
-            } else if ('Notification' in window && Notification.permission === 'granted') {
-                state.browserNotifications = true;
-            }
+            if ('Notification' in window && Notification.permission === 'default') { Notification.requestPermission().then(p => { state.browserNotifications = p === 'granted'; }); }
+            else if ('Notification' in window && Notification.permission === 'granted') { state.browserNotifications = true; }
         }
     };
 
-// ========================================================
-// الحضور والانصراف (نسخة مُحدثة – تسجيل تلقائي للموظف)
-// ========================================================
-const AttendanceManager = {
-    async checkIn(empId) {
-        const today = Utils.getTodayDateStr();
-        const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
-        if (exist?.checkIn) { Utils.showWarning('⚠️ تم التسجيل مسبقاً'); return; }
-        const time = Utils.getCurrentTime();
-        if (exist) { exist.checkIn = time; exist.status = 'present'; }
-        else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date: today, checkIn: time, checkOut: null, status: 'present' });
-        const sub = state.substitutions.find(s => s.date === today && s.substituteId === empId && !s.done);
-        if (sub) {
-            state.bookings.forEach(b => {
-                if (b.date === today && (b.assignedEmployees||[]).includes(sub.absentId)) {
-                    b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== sub.absentId);
-                    if (!b.assignedEmployees.includes(empId)) b.assignedEmployees.push(empId);
+    // ========================================================
+    // الحضور والانصراف (تسجيل تلقائي للموظف + QR ثابت)
+    // ========================================================
+    const AttendanceManager = {
+        async checkIn(empId) {
+            const today = Utils.getTodayDateStr();
+            const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
+            if (exist?.checkIn) { Utils.showWarning('⚠️ تم التسجيل مسبقاً'); return; }
+            const time = Utils.getCurrentTime();
+            if (exist) { exist.checkIn = time; exist.status = 'present'; }
+            else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date: today, checkIn: time, checkOut: null, status: 'present' });
+            const sub = state.substitutions.find(s => s.date === today && s.substituteId === empId && !s.done);
+            if (sub) {
+                state.bookings.forEach(b => {
+                    if (b.date === today && (b.assignedEmployees||[]).includes(sub.absentId)) {
+                        b.assignedEmployees = b.assignedEmployees.filter(eid => eid !== sub.absentId);
+                        if (!b.assignedEmployees.includes(empId)) b.assignedEmployees.push(empId);
+                    }
+                });
+                sub.done = true;
+                localStorage.setItem('drmedia_substitutions', JSON.stringify(state.substitutions));
+            }
+            DataManager.addActivity('حضور', `الموظف ${empId} سجل حضور الساعة ${time}`);
+            await DataManager.saveAllData();
+            DataManager.updateEmployeeOrders();
+            AppRenderer.renderAttendance();
+            Utils.showMsg(`✅ حضور ${time}`);
+        },
+        async checkOut(empId) {
+            const today = Utils.getTodayDateStr();
+            const rec = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
+            if (!rec?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور'); return; }
+            if (rec.checkOut) { Utils.showWarning('⚠️ تم الانصراف مسبقاً'); return; }
+            rec.checkOut = Utils.getCurrentTime();
+            DataManager.addActivity('انصراف', `الموظف ${empId} سجل انصراف الساعة ${rec.checkOut}`);
+            await DataManager.saveAllData();
+            AppRenderer.renderAttendance();
+            Utils.showMsg(`✅ انصراف ${rec.checkOut}`);
+        },
+        recordAttendanceForDate(empId, date, type) {
+            if (!empId || !date) return;
+            const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === date);
+            if (type === 'checkIn') {
+                if (exist?.checkIn) { Utils.showWarning('⚠️ تم تسجيل الحضور مسبقاً'); return; }
+                const time = '09:00 ص';
+                if (exist) { exist.checkIn = time; exist.status = 'present'; }
+                else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date, checkIn: time, checkOut: null, status: 'present' });
+            } else {
+                if (!exist?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور بعد'); return; }
+                if (exist.checkOut) { Utils.showWarning('⚠️ تم تسجيل الانصراف مسبقاً'); return; }
+                exist.checkOut = '05:00 م';
+            }
+            DataManager.addActivity('تسجيل يدوي', `تسجيل ${type==='checkIn'?'حضور':'انصراف'} للموظف ${empId} بتاريخ ${date}`);
+            DataManager.saveAllData();
+            DataManager.updateEmployeeOrders();
+            AppRenderer.renderAttendance();
+        },
+        markAllAttendance() {
+            const today = Utils.getTodayDateStr();
+            const currentTime = Utils.getCurrentTime();
+            state.employees.forEach(e => {
+                const exist = state.attendanceRecords.find(a => a.empId === e.id && a.date === today);
+                if (!exist || !exist.checkIn) {
+                    if (exist) { exist.checkIn = currentTime; exist.status = 'present'; }
+                    else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: e.id, date: today, checkIn: currentTime, checkOut: null, status: 'present' });
                 }
             });
-            sub.done = true;
-            localStorage.setItem('drmedia_substitutions', JSON.stringify(state.substitutions));
-        }
-        DataManager.addActivity('حضور', `الموظف ${empId} سجل حضور الساعة ${time}`);
-        await DataManager.saveAllData();
-        DataManager.updateEmployeeOrders();
-        AppRenderer.renderAttendance();
-        Utils.showMsg(`✅ حضور ${time}`);
-    },
-    async checkOut(empId) {
-        const today = Utils.getTodayDateStr();
-        const rec = state.attendanceRecords.find(a => a.empId === empId && a.date === today);
-        if (!rec?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور'); return; }
-        if (rec.checkOut) { Utils.showWarning('⚠️ تم الانصراف مسبقاً'); return; }
-        rec.checkOut = Utils.getCurrentTime();
-        DataManager.addActivity('انصراف', `الموظف ${empId} سجل انصراف الساعة ${rec.checkOut}`);
-        await DataManager.saveAllData();
-        AppRenderer.renderAttendance();
-        Utils.showMsg(`✅ انصراف ${rec.checkOut}`);
-    },
-    recordAttendanceForDate(empId, date, type) {
-        if (!empId || !date) return;
-        const exist = state.attendanceRecords.find(a => a.empId === empId && a.date === date);
-        if (type === 'checkIn') {
-            if (exist?.checkIn) { Utils.showWarning('⚠️ تم تسجيل الحضور مسبقاً'); return; }
-            const time = '09:00 ص';
-            if (exist) { exist.checkIn = time; exist.status = 'present'; }
-            else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId, date, checkIn: time, checkOut: null, status: 'present' });
-        } else {
-            if (!exist?.checkIn) { Utils.showWarning('⚠️ لم يسجل حضور بعد'); return; }
-            if (exist.checkOut) { Utils.showWarning('⚠️ تم تسجيل الانصراف مسبقاً'); return; }
-            exist.checkOut = '05:00 م';
-        }
-        DataManager.addActivity('تسجيل يدوي', `تسجيل ${type==='checkIn'?'حضور':'انصراف'} للموظف ${empId} بتاريخ ${date}`);
-        DataManager.saveAllData();
-        DataManager.updateEmployeeOrders();
-        AppRenderer.renderAttendance();
-    },
-    markAllAttendance() {
-        const today = Utils.getTodayDateStr();
-        const currentTime = Utils.getCurrentTime();
-        state.employees.forEach(e => {
-            const exist = state.attendanceRecords.find(a => a.empId === e.id && a.date === today);
-            if (!exist || !exist.checkIn) {
-                if (exist) { exist.checkIn = currentTime; exist.status = 'present'; }
-                else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: e.id, date: today, checkIn: currentTime, checkOut: null, status: 'present' });
-            }
-        });
-        DataManager.saveAllData();
-        AppRenderer.renderAttendance();
-        Utils.showMsg(`✅ تم تسجيل حضور الكل (${currentTime})`);
-    },
-    generateAttendanceQR() {
-        const qc = document.getElementById('attendanceQrContainer');
-        if (!qc) return;
-        qc.innerHTML = '';
-        try { new QRCode(qc, { text: `DRMEDIA_ATT_${Utils.getTodayDateStr()}`, width: 200, height: 200 }); } catch(e) { qc.innerHTML = '<p class="text-red-500">تعذر إنشاء QR</p>'; }
-    },
-    async startQRScanner(autoEmpId = null) {
-        // إيقاف أي ماسح سابق
-        if (window.html5QrScanner) {
-            try { await window.html5QrScanner.stop(); } catch(e) {}
-            window.html5QrScanner = null;
-        }
-
-        const isAutoMode = (autoEmpId !== null);  // true = موظف، false = مدير
-
-        Utils.openModal(`
-            <h3 class="text-xl font-bold mb-4">📷 مسح QR للحضور</h3>
-            <div id="qr-reader" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div>
-            <div class="flex gap-2 mt-4">
-                <button id="stopScannerBtn" class="btn-danger w-full">⏹️ إيقاف الماسح</button>
-            </div>
-        `);
-
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const el = document.getElementById('qr-reader');
-        if (!el) { Utils.showError('فشل تحميل نافذة الماسح'); Utils.closeModal(); return; }
-
-        const scanner = new Html5Qrcode("qr-reader");
-        window.html5QrScanner = scanner;
-
-        const safeStop = async () => {
-            if (window.html5QrScanner) {
-                try { await window.html5QrScanner.stop(); } catch(e) {}
-                window.html5QrScanner = null;
-            }
-            Utils.closeModal();
-        };
-
-        document.getElementById('stopScannerBtn').onclick = safeStop;
-
-        try {
-            await scanner.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: { width: 250, height: 250 } },
-                async (decodedText) => {
-                    if (decodedText && decodedText.startsWith("DRMEDIA_ATT_")) {
-                        const expectedCode = `DRMEDIA_ATT_${Utils.getTodayDateStr()}`;
-                        if (decodedText === expectedCode) {
-                            await safeStop();
-
-                            if (isAutoMode) {
-                                // وضع الموظف: تسجيل تلقائي
-                                const today = Utils.getTodayDateStr();
-                                const rec = state.attendanceRecords.find(a => a.empId === autoEmpId && a.date === today);
-                                if (!rec || !rec.checkIn) {
-                                    await AttendanceManager.checkIn(autoEmpId);
-                                } else if (!rec.checkOut) {
-                                    await AttendanceManager.checkOut(autoEmpId);
-                                } else {
-                                    Utils.showWarning('تم تسجيل الحضور والانصراف بالفعل');
-                                }
-                            } else {
-                                // وضع المدير: اختيار الموظف
-                                setTimeout(() => {
-                                    Utils.openModal(`
-                                        <h3 class="text-xl font-bold mb-4">تسجيل الحضور والانصراف</h3>
-                                        <select id="scanEmpSelect" class="w-full border-2 p-3 rounded-xl">
-                                            ${state.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}
-                                        </select>
-                                        <div class="flex gap-3 mt-3">
-                                            <button onclick="AttendanceManager.checkInFromScan()" class="btn-primary flex-1">✅ حضور</button>
-                                            <button onclick="AttendanceManager.checkOutFromScan()" class="btn-secondary flex-1">🚪 انصراف</button>
-                                            <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
-                                        </div>
-                                    `);
-                                }, 200);
-                            }
+            DataManager.saveAllData();
+            AppRenderer.renderAttendance();
+            Utils.showMsg(`✅ تم تسجيل حضور الكل (${currentTime})`);
+        },
+        generateAttendanceQR() {
+            const qc = document.getElementById('attendanceQrContainer');
+            if (!qc) return;
+            qc.innerHTML = '';
+            try { new QRCode(qc, { text: "DRMEDIA_ATT_FIXED", width: 200, height: 200 }); } 
+            catch(e) { qc.innerHTML = '<p class="text-red-500">تعذر إنشاء QR</p>'; }
+        },
+        async startQRScanner(autoEmpId = null) {
+            if (window.html5QrScanner) { try { await window.html5QrScanner.stop(); } catch(e) {} window.html5QrScanner = null; }
+            const isAutoMode = (autoEmpId !== null);
+            Utils.openModal(`<h3 class="text-xl font-bold mb-4">📷 مسح QR للحضور</h3><div id="qr-reader" style="width:100%;max-width:400px;margin:0 auto;min-height:300px;"></div><div class="flex gap-2 mt-4"><button id="stopScannerBtn" class="btn-danger w-full">⏹️ إيقاف الماسح</button></div>`);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const el = document.getElementById('qr-reader');
+            if (!el) { Utils.showError('فشل تحميل نافذة الماسح'); Utils.closeModal(); return; }
+            const scanner = new Html5Qrcode("qr-reader");
+            window.html5QrScanner = scanner;
+            const safeStop = async () => { if (window.html5QrScanner) { try { await window.html5QrScanner.stop(); } catch(e) {} window.html5QrScanner = null; } Utils.closeModal(); };
+            document.getElementById('stopScannerBtn').onclick = safeStop;
+            try {
+                await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, async (decodedText) => {
+                    if (decodedText === "DRMEDIA_ATT_FIXED" || decodedText === `DRMEDIA_ATT_${Utils.getTodayDateStr()}`) {
+                        await safeStop();
+                        if (isAutoMode) {
+                            const today = Utils.getTodayDateStr();
+                            const rec = state.attendanceRecords.find(a => a.empId === autoEmpId && a.date === today);
+                            if (!rec || !rec.checkIn) await AttendanceManager.checkIn(autoEmpId);
+                            else if (!rec.checkOut) await AttendanceManager.checkOut(autoEmpId);
+                            else Utils.showWarning('تم تسجيل الحضور والانصراف بالفعل');
                         } else {
-                            Utils.showError("رمز QR غير صالح أو منتهي الصلاحية");
+                            setTimeout(() => { Utils.openModal(`<h3 class="text-xl font-bold mb-4">تسجيل الحضور والانصراف</h3><select id="scanEmpSelect" class="w-full border-2 p-3 rounded-xl">${state.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('')}</select><div class="flex gap-3 mt-3"><button onclick="AttendanceManager.checkInFromScan()" class="btn-primary flex-1">✅ حضور</button><button onclick="AttendanceManager.checkOutFromScan()" class="btn-secondary flex-1">🚪 انصراف</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`); }, 200);
                         }
-                    } else {
-                        Utils.showError("رمز QR غير معروف");
-                    }
-                },
-                (errorMessage) => {}
-            );
-        } catch(err) {
-            console.error(err);
-            Utils.showError("تعذر تشغيل الكاميرا. تأكد من منح الإذن أو استخدام HTTPS.");
-            safeStop();
-        }
-    },
-    checkInFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkIn(empId); Utils.closeModal(); },
-    checkOutFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkOut(empId); Utils.closeModal(); }
-};
-
+                    } else Utils.showError("رمز QR غير صالح");
+                }, (errorMessage) => {});
+            } catch(err) { console.error(err); Utils.showError("تعذر تشغيل الكاميرا. تأكد من منح الإذن أو استخدام HTTPS."); safeStop(); }
+        },
+        checkInFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkIn(empId); Utils.closeModal(); },
+        checkOutFromScan() { const empId = document.getElementById('scanEmpSelect')?.value; if (empId) this.checkOut(empId); Utils.closeModal(); }
+    };
     // ========================================================
     // مدير الموظفين
     // ========================================================
@@ -764,168 +428,252 @@ const AttendanceManager = {
         addLoan(empId) { Utils.openModal(`<h3>💰 إضافة سلفة</h3><input type="number" id="loanAmount" placeholder="المبلغ" class="w-full border-2 p-2 my-2 rounded-xl"><input id="loanDesc" placeholder="الوصف" class="w-full border-2 p-2 my-2 rounded-xl"><button onclick="EmployeeManager.saveLoan('${empId}')" class="btn-primary mt-2 w-full">حفظ</button>`); },
         saveLoan(empId) { const amount = parseInt(document.getElementById('loanAmount')?.value)||0; if (amount<=0) { Utils.showError('المبلغ غير صالح'); return; } if (!state.employeeLoans[empId]) state.employeeLoans[empId]=[]; state.employeeLoans[empId].push({ id: Utils.generateId('loan_'), amount, description: document.getElementById('loanDesc')?.value||'', date: Utils.getTodayDateStr(), settled:false }); DataManager.saveAllData(); AppRenderer.renderEmployees(); Utils.closeModal(); Utils.showMsg('✅ تمت الإضافة'); }
     };
+
     // ========================================================
-    // التوزيع الذكي
+    // التوزيع الذكي والتدوير وإعادة التوزيع واستبدال الغائب
     // ========================================================
-    // ========================================================
-// التوزيع الذكي – توزيع متساوٍ عبر فترات الشهر (1-10, 11-20, 21-نهاية)
-// ========================================================
-const DistributionManager = {
-    // تقسيم قائمة الحجوزات إلى ثلاث فترات شهرية
-    _splitByPeriod(bookings) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
-        const periods = [
-            { start: 1, end: 10 },
-            { start: 11, end: 20 },
-            { start: 21, end: new Date(year, month + 1, 0).getDate() }
-        ];
-        const result = [[], [], []];
-        bookings.forEach(b => {
-            const d = parseInt(b.date.slice(8, 10));
-            for (let i = 0; i < 3; i++) {
-                if (d >= periods[i].start && d <= periods[i].end) {
-                    result[i].push(b);
-                    break;
+    const DistributionManager = {
+        _splitByPeriod(bookings) {
+            const grouped = {};
+            for (const b of bookings) {
+                const d = new Date(b.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                if (!grouped[key]) {
+                    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                    grouped[key] = { periods: [[], [], []], limits: [10, 20, lastDay] };
+                }
+                const day = d.getDate();
+                const limits = grouped[key].limits;
+                for (let i = 0; i < 3; i++) {
+                    if (day <= limits[i]) { grouped[key].periods[i].push(b); break; }
                 }
             }
-        });
-        return result;
-    },
+            return Object.values(grouped);
+        },
 
-    // توزيع عادل داخل قائمة حجوزات (نفس الفترة)
-    _distributeFairly(bookings, roleEmployees, countNeeded = 1) {
-        if (!roleEmployees.length || !bookings.length) return;
-        let idx = 0;
-        bookings.forEach(b => {
-            const assigned = b.assignedEmployees || [];
-            for (let i = 0; i < countNeeded; i++) {
-                const emp = roleEmployees[idx % roleEmployees.length];
-                if (!assigned.includes(emp.id)) assigned.push(emp.id);
-                idx++;
-            }
-            b.assignedEmployees = assigned;
-        });
-    },
-
-    // توزيع ذكي (متساوٍ بين الفترات)
-    async smartDistribute() {
-        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-        if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
-
-        // الموظفون النشطون حسب الدور
-        const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
-        const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
-        const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
-
-        // تقسيم الأوردرات للفترات الثلاث
-        const periods = this._splitByPeriod(pending);
-
-        // توزيع كل فترة
-        periods.forEach((periodBookings, periodIndex) => {
-            // قاعات كل حجز
-            const cafeBookings = periodBookings.filter(b => state.halls.find(h => h.id === b.hallId)?.type === 'cafe');
-            const otherBookings = periodBookings.filter(b => state.halls.find(h => h.id === b.hallId)?.type !== 'cafe');
-
-            // توزيع الكافيه (مصور واحد)
-            this._distributeFairly(cafeBookings, phs, 1);
-
-            // توزيع باقي القاعات (مخرج + مصورين + كرين)
-            const dirBookings = [...otherBookings];
-            this._distributeFairly(dirBookings, dirs, 1);
-
-            const phBookings = [...otherBookings];
-            this._distributeFairly(phBookings, phs, 2);
-
-            const crBookings = [...otherBookings];
-            this._distributeFairly(crBookings, crs, 1);
-        });
-
-        DataManager.updateEmployeeOrders();
-        await DataManager.saveAllData();
-
-        // إرسال إشعارات
-        for (let b of pending) {
-            b.assignedEmployees.forEach(eid => {
-                const emp = state.employees.find(e => e.id === eid);
-                if (emp) NotificationManager.notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
-            });
-        }
-
-        DataManager.addActivity('توزيع ذكي', `تم توزيع ${pending.length} حجز بالتساوي بين الفترات`);
-        AppRenderer.renderBookings();
-        AppRenderer.renderDistribution();
-        Utils.showMsg(`✅ تم توزيع ${pending.length} حجز بالتساوي على الفترات`);
-    },
-
-    // تدوير متساوٍ عبر الفترات
-    async rotateDistribution() {
-        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-        if (!pending.length) { Utils.showWarning('لا حجوزات معلقة'); return; }
-
-        const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
-        const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
-        const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
-
-        let dirIdx = state.rotationCounters.dir % Math.max(1, dirs.length);
-        let phIdx  = state.rotationCounters.ph % Math.max(1, phs.length);
-        let crIdx  = state.rotationCounters.cr % Math.max(1, crs.length);
-
-        const periods = this._splitByPeriod(pending);
-
-        periods.forEach(periodBookings => {
-            periodBookings.forEach(b => {
+        _buildSlots(bookings, role) {
+            const slots = [];
+            for (const b of bookings) {
                 const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
-                const assigned = [];
+                if (role === 'مخرج' && hallType !== 'cafe') { slots.push({ booking: b }); }
+                else if (role === 'مصور') {
+                    if (hallType === 'cafe') { slots.push({ booking: b }); }
+                    else { slots.push({ booking: b }, { booking: b }); }
+                } else if (role === 'كرين' && hallType !== 'cafe') { slots.push({ booking: b }); }
+            }
+            return slots;
+        },
 
-                if (hallType === 'cafe') {
-                    if (phs.length) {
-                        assigned.push(phs[phIdx % phs.length].id);
-                        phIdx++;
+        _distributeMonth(monthBookings, dirs, phs, crs) {
+            const periods = this._splitByPeriod(monthBookings);
+            for (const group of periods) {
+                const periodBookings = group.periods;
+                monthBookings.forEach(b => b.assignedEmployees = []);
+
+                const buildSlotsWithPeriod = (bookings, role, periodIdx) => {
+                    const slots = [];
+                    for (const b of bookings) {
+                        const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
+                        if (role === 'مخرج' && hallType !== 'cafe') slots.push({ booking: b, period: periodIdx });
+                        else if (role === 'مصور') {
+                            if (hallType === 'cafe') slots.push({ booking: b, period: periodIdx });
+                            else { slots.push({ booking: b, period: periodIdx }, { booking: b, period: periodIdx }); }
+                        } else if (role === 'كرين' && hallType !== 'cafe') slots.push({ booking: b, period: periodIdx });
                     }
-                } else {
-                    if (dirs.length) { assigned.push(dirs[dirIdx % dirs.length].id); dirIdx++; }
-                    if (phs.length) {
-                        assigned.push(phs[phIdx % phs.length].id); phIdx++;
-                        if (phs.length > 1) { assigned.push(phs[phIdx % phs.length].id); phIdx++; }
-                    }
-                    if (crs.length) { assigned.push(crs[crIdx % crs.length].id); crIdx++; }
+                    return slots;
+                };
+
+                const allDirSlots = []; const allPhSlots = []; const allCrSlots = [];
+                for (let p = 0; p < 3; p++) {
+                    allDirSlots.push(...buildSlotsWithPeriod(periodBookings[p], 'مخرج', p));
+                    allPhSlots.push(...buildSlotsWithPeriod(periodBookings[p], 'مصور', p));
+                    allCrSlots.push(...buildSlotsWithPeriod(periodBookings[p], 'كرين', p));
                 }
 
-                b.assignedEmployees = assigned;
-            });
-        });
+                const distributeRole = (allSlots, employees) => {
+                    if (!employees.length || !allSlots.length) return;
+                    const slotsByPeriod = [[], [], []];
+                    allSlots.forEach(slot => slotsByPeriod[slot.period].push(slot));
+                    const T = [0,0,0]; for (let p=0; p<3; p++) T[p] = slotsByPeriod[p].length;
 
-        state.rotationCounters = { dir: dirIdx, ph: phIdx, cr: crIdx };
-        DataManager.updateEmployeeOrders();
-        await DataManager.saveAllData();
-        AppRenderer.renderBookings();
-        AppRenderer.renderDistribution();
-        Utils.showMsg('✅ تم التوزيع بالتدوير (متساوٍ بين الفترات)');
-    },
+                    const n = employees.length;
+                    const totalT = T[0] + T[1] + T[2];
+                    const baseTotal = Math.floor(totalT / n);
+                    let remTotal = totalT % n;
+                    const sortedEmps = [...employees].sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+                    const Xi = new Map();
+                    sortedEmps.forEach(emp => Xi.set(emp.id, baseTotal + (remTotal-- > 0 ? 1 : 0)));
 
-    // (دوال manualAssign و saveManualAssign كما هي)
-    manualAssign(bookingId) {
-        const b = state.bookings.find(b => b.id === bookingId);
-        if (!b) return;
-        const opts = state.employees.filter(e => e.active).map(e => `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`).join('');
-        Utils.openModal(`<h3>تعيين يدوي</h3><select id="manualSelect" multiple class="w-full border-2 p-3 rounded-xl h-48">${opts}</select><button onclick="DistributionManager.saveManualAssign('${bookingId}')" class="btn-primary mt-2 w-full">حفظ</button>`);
-    },
-    async saveManualAssign(bookingId) {
-        const sel = document.getElementById('manualSelect');
-        if (!sel) return;
-        const b = state.bookings.find(b => b.id === bookingId);
-        if (!b) return;
-        b.assignedEmployees = Array.from(sel.selectedOptions).map(o => o.value);
-        DataManager.updateEmployeeOrders();
-        await DataManager.saveAllData();
-        AppRenderer.renderBookings();
-        AppRenderer.renderDistribution();
-        Utils.closeModal();
-        Utils.showMsg('✅ تم التعيين');
-    }
-};
+                    const periodPlan = new Map();
+                    for (const emp of employees) {
+                        const xi = Xi.get(emp.id);
+                        const base = Math.floor(xi / 3);
+                        const rem = xi % 3;
+                        const targets = [base, base, base];
+                        for (let i = 0; i < rem; i++) targets[i]++;
+                        periodPlan.set(emp.id, targets);
+                    }
+
+                    const busy = new Map();
+                    for (let p = 0; p < 3; p++) {
+                        const slots = slotsByPeriod[p];
+                        if (!slots.length) continue;
+                        slots.sort((a,b) => a.booking.date.localeCompare(b.booking.date));
+                        for (const slot of slots) {
+                            const date = slot.booking.date;
+                            if (!busy.has(date)) busy.set(date, new Set());
+                            const busySet = busy.get(date);
+                            const alreadyAssigned = new Set(slot.booking.assignedEmployees || []);
+                            const candidates = employees.filter(emp => {
+                                const t = periodPlan.get(emp.id);
+                                return t && t[p] > 0 && !busySet.has(emp.id) && !alreadyAssigned.has(emp.id);
+                            });
+                            if (!candidates.length) continue;
+                            candidates.sort((a,b) => (periodPlan.get(b.id)[p] || 0) - (periodPlan.get(a.id)[p] || 0));
+                            const chosen = candidates[0];
+                            if (!slot.booking.assignedEmployees) slot.booking.assignedEmployees = [];
+                            slot.booking.assignedEmployees.push(chosen.id);
+                            busySet.add(chosen.id);
+                            periodPlan.get(chosen.id)[p]--;
+                        }
+                    }
+                };
+
+                distributeRole(allDirSlots, dirs);
+                distributeRole(allPhSlots, phs);
+                distributeRole(allCrSlots, crs);
+            }
+        },
+
+        async smartDistribute() {
+            const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+            if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
+            pending.forEach(b => b.assignedEmployees = []);
+
+            const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
+            const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
+            const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
+
+            const grouped = {};
+            for (const b of pending) {
+                const d = new Date(b.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(b);
+            }
+
+            for (const monthBookings of Object.values(grouped)) {
+                this._distributeMonth(monthBookings, dirs, phs, crs);
+            }
+
+            DataManager.updateEmployeeOrders();
+            await DataManager.saveAllData();
+
+            for (const b of pending)
+                for (const eid of (b.assignedEmployees || [])) {
+                    const emp = state.employees.find(e => e.id === eid);
+                    if (emp) NotificationManager.notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
+                }
+
+            DataManager.addActivity('توزيع ذكي', `تم توزيع ${pending.length} حجز بعدالة`);
+            AppRenderer.renderBookings(); AppRenderer.renderDistribution();
+            Utils.showMsg(`✅ توزيع ${pending.length} حجز بالتساوي على الفترات`);
+        },
+
+        async rotateDistribution() {
+            await this.smartDistribute();
+        },
+
+        async resetAndDistribute() {
+            const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+            if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
+            pending.forEach(b => b.assignedEmployees = []);
+            await DataManager.saveAllData();
+            Utils.showMsg('🗑️ تم مسح التوزيعات السابقة. جارٍ إعادة التوزيع...');
+            await this.smartDistribute();
+        },
+
+        async distributeSingle(bookingId) {
+            const b = state.bookings.find(bk => bk.id === bookingId);
+            if (!b) return;
+            const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
+            const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
+            const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
+            const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
+            const assigned = [];
+
+            const pick = (emps) => { const sorted = [...emps].sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0)); return sorted[0] || null; };
+
+            if (hallType === 'cafe') { const emp = pick(phs); if (emp) assigned.push(emp.id); }
+            else {
+                const dir = pick(dirs); if (dir) assigned.push(dir.id);
+                const phList = [...phs].sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0)).slice(0,2);
+                phList.forEach(p => assigned.push(p.id));
+                const cr = pick(crs); if (cr) assigned.push(cr.id);
+            }
+
+            b.assignedEmployees = assigned;
+            DataManager.updateEmployeeOrders();
+            await DataManager.saveAllData();
+            AppRenderer.renderBookings();
+            Utils.showMsg('✅ تم توزيع الحجز');
+        },
+
+        substitutePrompt(bookingId, absentEmpId) {
+            const b = state.bookings.find(b => b.id === bookingId);
+            if (!b) return;
+            const absentEmp = state.employees.find(e => e.id === absentEmpId);
+            const candidates = state.employees.filter(e => e.active && e.id !== absentEmpId && !(b.assignedEmployees||[]).includes(e.id));
+            if (!candidates.length) { Utils.showError('لا يوجد موظفين متاحين للاستبدال'); return; }
+            const opts = candidates.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
+            Utils.openModal(`<h3 class="text-xl font-bold mb-4">🔄 استبدال ${absentEmp?.name || 'الغائب'}</h3>
+                <p class="mb-2 text-sm text-gray-500">اختر الموظف البديل:</p>
+                <select id="substituteSelect" class="w-full border-2 p-2 rounded-xl mb-4">${opts}</select>
+                <div class="flex gap-2"><button onclick="DistributionManager.executeSubstitution('${bookingId}', '${absentEmpId}')" class="btn-primary flex-1">💾 حفظ الاستبدال</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
+        },
+
+        async executeSubstitution(bookingId, absentEmpId) {
+            const sel = document.getElementById('substituteSelect');
+            if (!sel) return;
+            const substituteId = sel.value;
+            if (!substituteId) return Utils.showError('اختر موظفاً');
+            const b = state.bookings.find(b => b.id === bookingId);
+            if (!b) return;
+            b.assignedEmployees = (b.assignedEmployees || []).filter(id => id !== absentEmpId);
+            if (!b.assignedEmployees.includes(substituteId)) b.assignedEmployees.push(substituteId);
+            const today = Utils.getTodayDateStr();
+            const exist = state.attendanceRecords.find(a => a.empId === substituteId && a.date === today);
+            if (!exist || !exist.checkIn) {
+                const time = Utils.getCurrentTime();
+                if (exist) { exist.checkIn = time; exist.status = 'present'; }
+                else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: substituteId, date: today, checkIn: time, checkOut: null, status: 'present' });
+            }
+            DataManager.updateEmployeeOrders();
+            await DataManager.saveAllData();
+            Utils.closeModal();
+            AppRenderer.renderBookings();
+            Utils.showMsg('✅ تم الاستبدال بنجاح');
+        },
+
+        manualAssign(bookingId) {
+            const b = state.bookings.find(b => b.id === bookingId);
+            if (!b) return;
+            const opts = state.employees.filter(e => e.active).map(e => `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`).join('');
+            Utils.openModal(`<h3>تعيين يدوي</h3><select id="manualSelect" multiple class="w-full border-2 p-3 rounded-xl h-48">${opts}</select><button onclick="DistributionManager.saveManualAssign('${bookingId}')" class="btn-primary mt-2 w-full">حفظ</button>`);
+        },
+        async saveManualAssign(bookingId) {
+            const sel = document.getElementById('manualSelect');
+            if (!sel) return;
+            const b = state.bookings.find(b => b.id === bookingId);
+            if (!b) return;
+            b.assignedEmployees = Array.from(sel.selectedOptions).map(o => o.value);
+            DataManager.updateEmployeeOrders();
+            await DataManager.saveAllData();
+            AppRenderer.renderBookings(); AppRenderer.renderDistribution();
+            Utils.closeModal();
+            Utils.showMsg('✅ تم التعيين');
+        }
+    };
 
     // ========================================================
     // مدير الحجوزات
@@ -978,10 +726,7 @@ const DistributionManager = {
                 state.bookings.splice(idx,1); DataManager.addActivity('حذف حجز', `تم نقل حجز ${item.clientName} لسلة المحذوفات`); DataManager.saveAllData(); AppRenderer.renderBookings(); Utils.showMsg('🗑️ تم النقل لسلة المحذوفات');
             }
         },
-        deleteSelected() {
-            const ids = Array.from(document.querySelectorAll('.booking-check:checked')).map(cb=>cb.value); if (!ids.length) { Utils.showError('لم يتم تحديد حجوزات'); return; }
-            ids.forEach(id => this.deleteSoft(id)); AppRenderer.renderBookings(); Utils.showMsg(`🗑️ تم حذف ${ids.length} حجز`);
-        },
+        deleteSelected() { const ids = Array.from(document.querySelectorAll('.booking-check:checked')).map(cb=>cb.value); if (!ids.length) { Utils.showError('لم يتم تحديد حجوزات'); return; } ids.forEach(id => this.deleteSoft(id)); AppRenderer.renderBookings(); Utils.showMsg(`🗑️ تم حذف ${ids.length} حجز`); },
         async importFromFile() {
             Utils.openModal(`<h3 class="text-xl font-bold mb-3">📂 استيراد حجوزات (Excel/PDF)</h3>
                 <label class="text-sm font-semibold block mb-1">🏷️ نوع القاعة:</label>
@@ -1028,17 +773,12 @@ const DistributionManager = {
                 <div class="flex gap-2 mt-4"><button onclick="FlashManager.save()" class="btn-primary flex-1">💾 حفظ</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
         },
         autoFillDate() { const b = state.bookings.find(b => b.id === document.getElementById('flashBooking')?.value); if (b) document.getElementById('flashDate').value = b.date; },
-        save() {
-            const bookingId = document.getElementById('flashBooking')?.value; const b = state.bookings.find(b => b.id === bookingId); if (!b) { Utils.showError('اختر حجزاً'); return; }
-            state.flashDrives.push({ id: Utils.generateId('fl_'), bookingId: b.id, clientName: b.clientName, date: document.getElementById('flashDate')?.value || Utils.getTodayDateStr(), status:'تم الاستلام من الحسابات', currentHolder:'الحسابات', history: [{ date: new Date().toISOString(), action:'استلام من الحسابات', user: state.currentUser?.name || 'النظام' }] });
-            DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.closeModal(); Utils.showMsg('✅ تمت الإضافة');
-        },
+        save() { const bookingId = document.getElementById('flashBooking')?.value; const b = state.bookings.find(b => b.id === bookingId); if (!b) { Utils.showError('اختر حجزاً'); return; } state.flashDrives.push({ id: Utils.generateId('fl_'), bookingId: b.id, clientName: b.clientName, date: document.getElementById('flashDate')?.value || Utils.getTodayDateStr(), status:'تم الاستلام من الحسابات', currentHolder:'الحسابات', history: [{ date: new Date().toISOString(), action:'استلام من الحسابات', user: state.currentUser?.name || 'النظام' }] }); DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.closeModal(); Utils.showMsg('✅ تمت الإضافة'); },
         moveTo(flashId, targetHolder) {
             if (!targetHolder) return; const f = state.flashDrives.find(f => f.id === flashId); if (!f) return;
             const role = state.currentUser?.role;
-            if (role === 'admin' || role === 'manager' || role === 'accountant') {
-                f.currentHolder = targetHolder; f.status = 'تم النقل إدارياً إلى ' + targetHolder;
-            } else {
+            if (role === 'admin' || role === 'manager' || role === 'accountant') { f.currentHolder = targetHolder; f.status = 'تم النقل إدارياً إلى ' + targetHolder; }
+            else {
                 const allowedMoves = { 'الحسابات': { allowedRoles: ['accountant'], next: 'المونتير' }, 'المونتير': { allowedRoles: ['montage'], next: 'المصور' }, 'المصور': { allowedRoles: ['photo'], next: 'المبيعات' }, 'المبيعات': { allowedRoles: ['sales'], next: 'العريس' } };
                 const move = allowedMoves[f.currentHolder]; if (!move || !move.allowedRoles.includes(role)) { Utils.showError('غير مسموح لك بهذه الحركة'); return; }
                 if (targetHolder !== move.next) { Utils.showError(`يجب التسليم إلى ${move.next} فقط`); return; }
@@ -1049,46 +789,19 @@ const DistributionManager = {
             DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg('✅ تم النقل');
             DataManager.addActivity('تسليم فلاشة', `${state.currentUser?.name} نقل فلاشة ${f.clientName} إلى ${targetHolder}`);
         },
-        updateStatus(flashId, newStatus) {
-            const f = state.flashDrives.find(f => f.id === flashId); if (!f) return; f.status = newStatus;
-            if (!f.history) f.history = []; f.history.push({ date: new Date().toISOString(), action: `تغيير الحالة إلى: ${newStatus}`, user: state.currentUser?.name || 'النظام' });
-            DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg('✅ تم تحديث الحالة');
-        },
-        updateHolder(flashId, newHolder) {
-            const f = state.flashDrives.find(f => f.id === flashId); if (!f) return; f.currentHolder = newHolder;
-            if (!f.history) f.history = []; f.history.push({ date: new Date().toISOString(), action: `نقل إلى: ${newHolder}`, user: state.currentUser?.name || 'النظام' });
-            DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg('✅ تم نقل الفلاشة');
-        },
+        updateStatus(flashId, newStatus) { const f = state.flashDrives.find(f => f.id === flashId); if (!f) return; f.status = newStatus; if (!f.history) f.history = []; f.history.push({ date: new Date().toISOString(), action: `تغيير الحالة إلى: ${newStatus}`, user: state.currentUser?.name || 'النظام' }); DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg('✅ تم تحديث الحالة'); },
+        updateHolder(flashId, newHolder) { const f = state.flashDrives.find(f => f.id === flashId); if (!f) return; f.currentHolder = newHolder; if (!f.history) f.history = []; f.history.push({ date: new Date().toISOString(), action: `نقل إلى: ${newHolder}`, user: state.currentUser?.name || 'النظام' }); DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg('✅ تم نقل الفلاشة'); },
         edit(id) {
             const f = state.flashDrives.find(f => f.id === id); if (!f) return;
             const bookingOpts = state.bookings.map(b => `<option value="${b.id}" ${f.bookingId===b.id?'selected':''}>${b.clientName} - ${b.date}</option>`).join('');
             Utils.openModal(`<h3 class="text-xl font-bold mb-4">✏️ تعديل فلاشة</h3><select id="editFlashBooking" class="w-full border-2 p-2 my-2 rounded-xl">${bookingOpts}</select><input type="date" id="editFlashDate" value="${f.date}" class="w-full border-2 p-2 my-2 rounded-xl"><div class="flex gap-2 mt-4"><button onclick="FlashManager.saveEdit('${id}')" class="btn-primary flex-1">💾 حفظ</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
         },
-        saveEdit(id) {
-            const f = state.flashDrives.find(f => f.id === id); if (!f) return;
-            f.bookingId = document.getElementById('editFlashBooking')?.value || f.bookingId; f.date = document.getElementById('editFlashDate')?.value || f.date;
-            DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.closeModal(); Utils.showMsg('✅ تم التعديل');
-        },
+        saveEdit(id) { const f = state.flashDrives.find(f => f.id === id); if (!f) return; f.bookingId = document.getElementById('editFlashBooking')?.value || f.bookingId; f.date = document.getElementById('editFlashDate')?.value || f.date; DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.closeModal(); Utils.showMsg('✅ تم التعديل'); },
         deleteSingle(id) { if (confirm('حذف هذه الفلاشة؟')) { state.flashDrives = state.flashDrives.filter(f => f.id !== id); DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg('🗑️ تم الحذف'); } },
-        deleteSelected() {
-            const ids = Array.from(document.querySelectorAll('.flash-check:checked')).map(cb => cb.value); if (!ids.length) { Utils.showError('لم يتم تحديد فلاشات'); return; }
-            if (confirm(`حذف ${ids.length} فلاشة؟`)) { state.flashDrives = state.flashDrives.filter(f => !ids.includes(f.id)); DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg(`🗑️ تم حذف ${ids.length} فلاشة`); }
-        },
-        syncFromBookings() {
-            let added = 0;
-            state.bookings.forEach(b => { if (b.deleted || b.status === 'cancelled') return; if (!state.flashDrives.some(f => f.bookingId === b.id)) { state.flashDrives.push({ id: Utils.generateId('fl_'), bookingId: b.id, clientName: b.clientName, date: b.date, status:'تم الاستلام من الحسابات', currentHolder:'الحسابات', history: [{ date: new Date().toISOString(), action:'إنشاء تلقائي من الحجز', user:'النظام' }] }); added++; } });
-            if (added > 0) { DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg(`✅ تمت إضافة ${added} فلاشة`); } else Utils.showMsg('ℹ️ جميع الحجوزات لها فلاشات بالفعل');
-        },
-        getActions(f) {
-            const user = state.currentUser; if (!user) return '<span class="text-gray-400 text-xs">—</span>';
-            const role = user.role;
-            if (['admin','manager','accountant'].includes(role)) return `<select onchange="FlashManager.moveTo('${f.id}', this.value)" class="border p-1 rounded text-sm"><option value="">-- حركة --</option><option value="الحسابات">الحسابات</option><option value="المونتير">المونتير</option><option value="المصور">المصور</option><option value="المبيعات">المبيعات</option><option value="العريس">العريس</option></select>`;
-            const moves = { 'الحسابات': { roles: ['accountant'], next: 'المونتير' }, 'المونتير': { roles: ['montage'], next: 'المصور' }, 'المصور': { roles: ['photo'], next: 'المبيعات' }, 'المبيعات': { roles: ['sales'], next: 'العريس' } };
-            const m = moves[f.currentHolder]; if (m?.roles.includes(role)) return `<select onchange="FlashManager.moveTo('${f.id}', this.value)" class="border p-1 rounded text-sm"><option value="">-- حركة --</option><option value="${m.next}">تسليم إلى ${m.next}</option></select>`;
-            return '<span class="text-gray-400 text-xs">لا توجد صلاحية</span>';
-        }
+        deleteSelected() { const ids = Array.from(document.querySelectorAll('.flash-check:checked')).map(cb => cb.value); if (!ids.length) { Utils.showError('لم يتم تحديد فلاشات'); return; } if (confirm(`حذف ${ids.length} فلاشة؟`)) { state.flashDrives = state.flashDrives.filter(f => !ids.includes(f.id)); DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg(`🗑️ تم حذف ${ids.length} فلاشة`); } },
+        syncFromBookings() { let added = 0; state.bookings.forEach(b => { if (b.deleted || b.status === 'cancelled') return; if (!state.flashDrives.some(f => f.bookingId === b.id)) { state.flashDrives.push({ id: Utils.generateId('fl_'), bookingId: b.id, clientName: b.clientName, date: b.date, status:'تم الاستلام من الحسابات', currentHolder:'الحسابات', history: [{ date: new Date().toISOString(), action:'إنشاء تلقائي من الحجز', user:'النظام' }] }); added++; } }); if (added > 0) { DataManager.saveAllData(); AppRenderer.renderFlash(); Utils.showMsg(`✅ تمت إضافة ${added} فلاشة`); } else Utils.showMsg('ℹ️ جميع الحجوزات لها فلاشات بالفعل'); },
+        getActions(f) { const user = state.currentUser; if (!user) return '<span class="text-gray-400 text-xs">—</span>'; const role = user.role; if (['admin','manager','accountant'].includes(role)) return `<select onchange="FlashManager.moveTo('${f.id}', this.value)" class="border p-1 rounded text-sm"><option value="">-- حركة --</option><option value="الحسابات">الحسابات</option><option value="المونتير">المونتير</option><option value="المصور">المصور</option><option value="المبيعات">المبيعات</option><option value="العريس">العريس</option></select>`; const moves = { 'الحسابات': { roles: ['accountant'], next: 'المونتير' }, 'المونتير': { roles: ['montage'], next: 'المصور' }, 'المصور': { roles: ['photo'], next: 'المبيعات' }, 'المبيعات': { roles: ['sales'], next: 'العريس' } }; const m = moves[f.currentHolder]; if (m?.roles.includes(role)) return `<select onchange="FlashManager.moveTo('${f.id}', this.value)" class="border p-1 rounded text-sm"><option value="">-- حركة --</option><option value="${m.next}">تسليم إلى ${m.next}</option></select>`; return '<span class="text-gray-400 text-xs">لا توجد صلاحية</span>'; }
     };
-
     // ========================================================
     // مدير المستخدمين
     // ========================================================
@@ -1126,8 +839,9 @@ const DistributionManager = {
         delete(id) { if (id === 'admin1') { Utils.showError('لا يمكن حذف المدير الأساسي'); return; } state.USERS = state.USERS.filter(u=>u.id!==id); DataManager.saveAllData(); AppRenderer.renderUsers(); Utils.showMsg('🗑️ تم الحذف'); },
         deleteSelected() { const ids = Array.from(document.querySelectorAll('.user-check:checked')).map(cb=>cb.value); if (!ids.length) { Utils.showError('لم يتم تحديد مستخدمين'); return; } if (ids.includes('admin1')) { Utils.showError('لا يمكن حذف المدير الأساسي'); return; } ids.forEach(id => this.delete(id)); AppRenderer.renderUsers(); }
     };
+
     // ========================================================
-    // عرض الواجهات (AppRenderer) – جميع التبويبات
+    // عرض الواجهات (AppRenderer) – جميع التبويبات (كاملة)
     // ========================================================
     const AppRenderer = {
         pages: ['dashboard','bookings','employees','halls','clients','equipment','attendance','payroll','calendar','distribution','reports','advancedReports','notifications','users','trash','activityLog','flash','internet','settings','substitutions','archive'],
@@ -1213,6 +927,7 @@ const DistributionManager = {
                         <button onclick="BookingManager.importFromFile()" class="btn-secondary">📂 استيراد</button>
                         <button onclick="DistributionManager.smartDistribute()" class="btn-secondary">🧠 توزيع الكل</button>
                         <button onclick="DistributionManager.rotateDistribution()" class="btn-secondary">🔄 تدوير الكل</button>
+                        <button onclick="DistributionManager.resetAndDistribute()" class="btn-secondary">🔄 إعادة التوزيع</button>
                         <button onclick="BookingManager.deleteSelected()" class="btn-danger">🗑️ حذف المحدد</button>
                     </div>
                 </div>
@@ -1225,7 +940,20 @@ const DistributionManager = {
                 <div class="text-sm mb-2">الإيرادات: <strong>${Utils.formatCurrency(filtered.reduce((s, b) => s + (b.price || 0), 0))}</strong></div>
                 <div class="overflow-x-auto"><table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.booking-check').forEach(cb=>cb.checked=this.checked)"></th><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>السعر</th><th>الحالة</th><th>الموظفون</th><th>إجراءات</th></tr></thead><tbody>
                     ${filtered.length ? filtered.map(b => {
-                        const assigned = (b.assignedEmployees || []).map(id => state.employees.find(e => e.id === id)?.name).filter(n => n).join(', ') || '<span class="text-red-500">غير معين</span>';
+                        const assigned = (b.assignedEmployees || []).map(id => {
+                            const emp = state.employees.find(e => e.id === id);
+                            if (!emp) return '';
+                            const status = Utils.getAttendanceStatus(id, b.date);
+                            let color = '';
+                            if (status === 'present') color = 'color: #16a34a; font-weight: bold;';
+                            else if (status === 'absent') color = 'color: #dc2626; font-weight: bold;';
+                            else color = 'color: #6b7280;';
+                            let substituteBtn = '';
+                            if (status === 'absent' && (Utils.isAdmin() || Utils.isManager())) {
+                                substituteBtn = ` <span onclick="event.stopPropagation(); DistributionManager.substitutePrompt('${b.id}', '${id}')" style="cursor:pointer; color:#2563eb; margin-right:4px;" title="استبدال">🔄</span>`;
+                            }
+                            return `<span style="${color}" title="${status === 'present' ? 'حضر' : status === 'absent' ? 'غائب' : 'قادم'}">${emp.name}${substituteBtn}</span>`;
+                        }).filter(n => n).join(', ') || '<span class="text-red-500">غير معين</span>';
                         return `<tr><td><input type="checkbox" class="booking-check" value="${b.id}"></td><td>${b.clientName}<br><small>${b.phone || ''}</small></td><td>${b.date}<br><small>${Utils.getWeekDayArabic(b.date)}</small></td><td>${b.hallName}</td><td>${Utils.formatCurrency(b.price)}</td><td><span class="status-badge ${statusColors[b.status]}" onclick="AppRenderer.toggleBookingStatus('${b.id}')" style="cursor:pointer;">${statusLabels[b.status]}</span><select id="status-select-${b.id}" class="hidden border p-1 rounded text-sm mt-1" onchange="BookingManager.changeStatus('${b.id}', this.value)"><option value="pending">معلق</option><option value="completed">مكتمل</option><option value="cancelled">ملغي</option></select></td><td>${assigned}</td><td class="flex gap-1"><button onclick="BookingManager.edit('${b.id}')">✏️</button><button onclick="DistributionManager.distributeSingle('${b.id}')">⚙️</button><button onclick="BookingManager.deleteSoft('${b.id}')">🗑️</button></td></tr>`;
                     }).join('') : '<tr><td colspan="7" class="text-center py-8 text-gray-400">لا توجد حجوزات</td></tr>'}
                 </tbody></table></div><div class="footer-bar">${APP_CONFIG.footerText}</div></div>`;
@@ -1398,7 +1126,7 @@ const DistributionManager = {
             const today = Utils.getTodayDateStr(); const todayRecs = state.attendanceRecords.filter(a => a.date === today);
             let filteredRecords = state.attendanceRecords; if (filterYear) filteredRecords = filteredRecords.filter(a => new Date(a.date).getFullYear() === filterYear); if (filterMonth) filteredRecords = filteredRecords.filter(a => (new Date(a.date).getMonth() + 1) === filterMonth); if (filterDay) filteredRecords = filteredRecords.filter(a => a.date === filterDay);
             let html = `<div class="bg-card"><h2 class="text-xl font-bold">📋 ${Utils.t('attendance')}</h2>
-                <div class="mb-4 p-4 border-2 border-emerald-200 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 text-center"><h3 class="font-semibold mb-2">📷 مسح QR للحضور والانصراف</h3><div id="attendanceQrContainer" class="flex justify-center my-3"></div><div class="flex gap-2 justify-center"><button onclick="AttendanceManager.generateAttendanceQR()" class="btn-primary text-sm">🔄 تحديث QR</button><button onclick="AttendanceManager.startQRScanner()" class="btn-secondary text-sm">📷 فتح الماسح</button></div></div>
+                <div class="mb-4 p-4 border-2 border-emerald-200 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 text-center"><h3 class="font-semibold mb-2">📷 مسح QR للحضور والانصراف</h3><div id="attendanceQrContainer" class="flex justify-center my-3"></div><div class="flex gap-2 justify-center"><button onclick="AttendanceManager.generateAttendanceQR()" class="btn-primary text-sm">🔄 تحديث QR</button><button onclick="AppRenderer.printAttendanceQR()" class="btn-secondary text-sm">🖨️ طباعة QR</button></div></div>
                 <div class="flex gap-2 mb-4"><input type="number" id="attYear" placeholder="السنة" value="${filterYear}" class="border-2 p-2 rounded-xl w-24" onchange="AppRenderer.renderAttendance()"><select id="attMonth" class="border-2 p-2 rounded-xl" onchange="AppRenderer.renderAttendance()"><option value="">كل الشهور</option>${['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'].map((m,i) => `<option value="${i+1}" ${(i+1)===filterMonth?'selected':''}>${m}</option>`).join('')}</select><input type="date" id="attDay" class="border-2 p-2 rounded-xl w-40" value="${filterDay}" onchange="AppRenderer.renderAttendance()"></div>
                 <div class="flex gap-2 mb-2"><button onclick="AttendanceManager.markAllAttendance()" class="btn-primary text-sm">✅ تسجيل حضور الكل</button><button onclick="AppRenderer.showPastAttendanceModal()" class="btn-outline text-sm">📅 حضور سابق</button><button onclick="AppRenderer.deleteSelectedAttendance()" class="btn-danger text-sm">🗑️ حذف المحدد</button></div>
                 <table><thead><tr><th><input type="checkbox" onchange="document.querySelectorAll('.att-check').forEach(cb=>cb.checked=this.checked)"></th><th>الموظف</th><th>الحضور</th><th>الانصراف</th><th>إجراءات</th></tr></thead><tbody>`;
@@ -1456,7 +1184,8 @@ const DistributionManager = {
             document.getElementById('pageTitle').textContent = Utils.t('distribution');
             const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted).sort((a,b) => a.date.localeCompare(b.date));
             c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold">⚙️ ${Utils.t('distribution')}</h2>
-                <div class="flex gap-2 mb-4 flex-wrap"><button onclick="DistributionManager.smartDistribute()" class="btn-primary">🧠 توزيع ذكي</button><button onclick="DistributionManager.rotateDistribution()" class="btn-secondary">🔄 تدوير</button></div>
+                <div class="flex gap-2 mb-4 flex-wrap"><button onclick="DistributionManager.smartDistribute()" class="btn-primary">🧠 توزيع ذكي</button><button onclick="DistributionManager.rotateDistribution()" class="btn-secondary">🔄 تدوير</button>
+                <button onclick="DistributionManager.resetAndDistribute()" class="btn-secondary">🔄 إعادة التوزيع</button></div>
                 <div class="overflow-x-auto"><table><thead><tr><th>العميل</th><th>التاريخ</th><th>القاعة</th><th>الموظفون</th><th>تعيين</th></tr></thead><tbody>
                     ${pending.map(b => `<tr><td>${b.clientName}</td><td>${b.date} (${Utils.getWeekDayArabic(b.date)})</td><td>${b.hallName}</td><td>${(b.assignedEmployees||[]).map(id=>state.employees.find(e=>e.id===id)?.name).join('، ')||'<span class="text-red-500">غير معين</span>'}</td><td><button onclick="DistributionManager.manualAssign('${b.id}')" class="text-blue-600 font-bold">✋ تعيين</button></td></tr>`).join('') || '<tr><td colspan="5" class="text-center py-4">لا توجد حجوزات معلقة</td></tr>'}
                 </tbody></table></div><div class="footer-bar">${APP_CONFIG.footerText}</div></div>`;
@@ -1623,6 +1352,18 @@ const DistributionManager = {
                     <div class="bg-card mb-4"><h3 class="font-bold mb-2">💰 متابعة الراتب (${year}-${month+1})</h3><table class="w-full text-sm"><thead><tr><th>الفترة</th><th>أوردرات حضرتها</th><th>المستحق</th></tr></thead><tbody>${periodDetails.map(pd=>`<tr><td>${pd.period}</td><td>${pd.orders}</td><td>${Utils.formatCurrency(pd.salary)}</td></tr>`).join('')}</tbody></table></div>
                     <div class="bg-card"><h3 class="font-bold mb-2">📋 جميع الأوردرات</h3><div class="max-h-60 overflow-y-auto">${myBookings.map(b=>`<div class="border-b py-2 flex justify-between text-sm"><span>${b.date} - ${b.clientName} (${b.hallName})</span><span class="${b.status==='completed'?'text-green-600':'text-yellow-600'}">${b.status==='completed'?'✅':'⏳'}</span></div>`).join('')||'<p class="text-gray-400">لا توجد</p>'}</div></div>
                 </main><footer class="footer-bar">${APP_CONFIG.footerText}</footer></div>`;
+        },
+
+        // ========== طباعة QR الحضور ==========
+        printAttendanceQR() {
+            const qc = document.getElementById('attendanceQrContainer');
+            if (!qc) return;
+            const canvas = qc.querySelector('canvas');
+            if (!canvas) { Utils.showError('لا يوجد كود QR للطباعة'); return; }
+            const dataUrl = canvas.toDataURL('image/png');
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`<!DOCTYPE html><html><head><title>طباعة QR الحضور</title></head><body style="text-align:center;margin:20px;font-family:Tahoma;"><h2>🎯 امسح الكود لتسجيل الحضور</h2><img src="${dataUrl}" style="width:300px;height:300px;border:2px solid #16a34a;padding:10px;border-radius:12px;"><p style="margin-top:20px;font-size:18px;color:#333;">${state.companyName}</p><script>window.onload=function(){window.print();}<\/script></body></html>`);
+            printWindow.document.close();
         }
     };
 
@@ -1695,164 +1436,6 @@ const DistributionManager = {
             if (!sidebar.contains(e.target) && !e.target.closest('[onclick*="sidebar"]')) sidebar.classList.remove('open');
         }
     });
-
-const DistributionManager = {
-    // تقسيم قائمة الحجوزات إلى ثلاث فترات شهرية
-    _splitByPeriod(bookings) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
-        const periods = [
-            { start: 1, end: 10 },
-            { start: 11, end: 20 },
-            { start: 21, end: new Date(year, month + 1, 0).getDate() }
-        ];
-        const result = [[], [], []];
-        bookings.forEach(b => {
-            const d = parseInt(b.date.slice(8, 10));
-            for (let i = 0; i < 3; i++) {
-                if (d >= periods[i].start && d <= periods[i].end) {
-                    result[i].push(b);
-                    break;
-                }
-            }
-        });
-        return result;
-    },
-
-    // توزيع عادل داخل قائمة حجوزات (نفس الفترة)
-    _distributeFairly(bookings, roleEmployees, countNeeded = 1) {
-        if (!roleEmployees.length || !bookings.length) return;
-        let idx = 0;
-        bookings.forEach(b => {
-            const assigned = b.assignedEmployees || [];
-            for (let i = 0; i < countNeeded; i++) {
-                const emp = roleEmployees[idx % roleEmployees.length];
-                if (!assigned.includes(emp.id)) assigned.push(emp.id);
-                idx++;
-            }
-            b.assignedEmployees = assigned;
-        });
-    },
-
-    // توزيع ذكي (متساوٍ بين الفترات)
-    async smartDistribute() {
-        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-        if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
-
-        // الموظفون النشطون حسب الدور
-        const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
-        const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
-        const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
-
-        // تقسيم الأوردرات للفترات الثلاث
-        const periods = this._splitByPeriod(pending);
-
-        // توزيع كل فترة
-        periods.forEach((periodBookings, periodIndex) => {
-            // قاعات كل حجز
-            const cafeBookings = periodBookings.filter(b => state.halls.find(h => h.id === b.hallId)?.type === 'cafe');
-            const otherBookings = periodBookings.filter(b => state.halls.find(h => h.id === b.hallId)?.type !== 'cafe');
-
-            // توزيع الكافيه (مصور واحد)
-            this._distributeFairly(cafeBookings, phs, 1);
-
-            // توزيع باقي القاعات (مخرج + مصورين + كرين)
-            const dirBookings = [...otherBookings]; // كل الأوردرات تحتاج مخرج
-            this._distributeFairly(dirBookings, dirs, 1);
-
-            const phBookings = [...otherBookings]; // مصورين
-            this._distributeFairly(phBookings, phs, 2);
-
-            const crBookings = [...otherBookings]; // كرين
-            this._distributeFairly(crBookings, crs, 1);
-        });
-
-        DataManager.updateEmployeeOrders();
-        await DataManager.saveAllData();
-
-        // إرسال إشعارات
-        for (let b of pending) {
-            b.assignedEmployees.forEach(eid => {
-                const emp = state.employees.find(e => e.id === eid);
-                if (emp) NotificationManager.notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
-            });
-        }
-
-        DataManager.addActivity('توزيع ذكي', `تم توزيع ${pending.length} حجز بالتساوي بين الفترات`);
-        AppRenderer.renderBookings();
-        AppRenderer.renderDistribution();
-        Utils.showMsg(`✅ تم توزيع ${pending.length} حجز بالتساوي على الفترات`);
-    },
-
-    // تدوير متساوٍ عبر الفترات
-    async rotateDistribution() {
-        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-        if (!pending.length) { Utils.showWarning('لا حجوزات معلقة'); return; }
-
-        const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
-        const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
-        const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
-
-        // مؤشرات الدورات (يمكن تخزينها في state.rotationCounters إذا أردت الحفظ عبر الجلسات)
-        let dirIdx = state.rotationCounters.dir % Math.max(1, dirs.length);
-        let phIdx  = state.rotationCounters.ph % Math.max(1, phs.length);
-        let crIdx  = state.rotationCounters.cr % Math.max(1, crs.length);
-
-        const periods = this._splitByPeriod(pending);
-
-        periods.forEach(periodBookings => {
-            periodBookings.forEach(b => {
-                const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
-                const assigned = [];
-
-                if (hallType === 'cafe') {
-                    if (phs.length) {
-                        assigned.push(phs[phIdx % phs.length].id);
-                        phIdx++;
-                    }
-                } else {
-                    if (dirs.length) { assigned.push(dirs[dirIdx % dirs.length].id); dirIdx++; }
-                    if (phs.length) {
-                        assigned.push(phs[phIdx % phs.length].id); phIdx++;
-                        if (phs.length > 1) { assigned.push(phs[phIdx % phs.length].id); phIdx++; }
-                    }
-                    if (crs.length) { assigned.push(crs[crIdx % crs.length].id); crIdx++; }
-                }
-
-                b.assignedEmployees = assigned;
-            });
-        });
-
-        state.rotationCounters = { dir: dirIdx, ph: phIdx, cr: crIdx };
-        DataManager.updateEmployeeOrders();
-        await DataManager.saveAllData();
-        AppRenderer.renderBookings();
-        AppRenderer.renderDistribution();
-        Utils.showMsg('✅ تم التوزيع بالتدوير (متساوٍ بين الفترات)');
-    },
-
-    // (دوال manualAssign و saveManualAssign تبقى كما هي دون تغيير)
-    manualAssign(bookingId) {
-        const b = state.bookings.find(b => b.id === bookingId);
-        if (!b) return;
-        const opts = state.employees.filter(e => e.active).map(e => `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`).join('');
-        Utils.openModal(`<h3>تعيين يدوي</h3><select id="manualSelect" multiple class="w-full border-2 p-3 rounded-xl h-48">${opts}</select><button onclick="DistributionManager.saveManualAssign('${bookingId}')" class="btn-primary mt-2 w-full">حفظ</button>`);
-    },
-    async saveManualAssign(bookingId) {
-        const sel = document.getElementById('manualSelect');
-        if (!sel) return;
-        const b = state.bookings.find(b => b.id === bookingId);
-        if (!b) return;
-        b.assignedEmployees = Array.from(sel.selectedOptions).map(o => o.value);
-        DataManager.updateEmployeeOrders();
-        await DataManager.saveAllData();
-        AppRenderer.renderBookings();
-        AppRenderer.renderDistribution();
-        Utils.closeModal();
-        Utils.showMsg('✅ تم التعيين');
-    }
-};
     </script>
 </body>
 </html>
