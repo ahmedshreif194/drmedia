@@ -1436,196 +1436,88 @@
             if (!sidebar.contains(e.target) && !e.target.closest('[onclick*="sidebar"]')) sidebar.classList.remove('open');
         }
     });
-        // ========================================================
-// [اسم الميزة الجديدة]
+     // ========================================================
+// التحديث التلقائي من GitHub
 // ========================================================
 (function() {
     'use strict';
 
-    // انتظر حتى يصبح AppRenderer معرفاً (أي أننا تجاوزنا صفحة الدخول)
+    async function fetchAndApplyUpdates(url) {
+        try {
+            const response = await fetch(url, { cache: 'no-store' });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const code = await response.text();
+            // تنفيذ الكود المُحمَّل
+            const script = document.createElement('script');
+            script.textContent = code;
+            document.body.appendChild(script);
+            console.log('✅ تم تطبيق التحديثات من: ' + url);
+            return true;
+        } catch (err) {
+            console.warn('⚠️ فشل جلب التحديثات من GitHub:', err.message);
+            return false;
+        }
+    }
+
     function waitForApp(callback) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
             callback();
         } else {
-            setTimeout(() => waitForApp(callback), 100);
-        }
-    }
-
-    // بعد تحميل الصفحة ودخول المستخدم
-    window.addEventListener('DOMContentLoaded', function() {
-        waitForApp(function() {
-            // --------------------------------------------------
-            // هنا ضع دوالك الجديدة أو التعديلات
-            // --------------------------------------------------
-
-            // مثال: إضافة زر جديد في لوحة التحكم
-            // const origDashboard = AppRenderer.renderDashboard;
-            // AppRenderer.renderDashboard = function() {
-            //     origDashboard.apply(this, arguments);
-            //     setTimeout(() => {
-            //         // أضف عناصر إضافية إلى الـ DOM بعد رسم الداشبورد
-            //     }, 100);
-            // };
-
-            // مثال: دالة منفصلة تماماً
-            // window.myNewFeature = function() {
-            //     Utils.showMsg('تم تنفيذ الميزة الجديدة');
-            // };
-
-            console.log('✅ تم تحميل ميزة: [اسم الميزة]');
-            // --------------------------------------------------
-        });
-    });
-})();
-        // ========================================================
-// تحسين سرعة تحميل البيانات (Patch)
-// ========================================================
-(function() {
-    'use strict';
-
-    function waitForApp(callback) {
-        if (typeof DataManager !== 'undefined' && typeof state !== 'undefined') {
-            callback();
-        } else {
             setTimeout(() => waitForApp(callback), 50);
         }
     }
 
     window.addEventListener('DOMContentLoaded', function() {
-        waitForApp(function() {
-            // ===== 1. تحميل سريع من localStorage أولاً =====
-            const origLoadAll = DataManager.loadAllData;
-            DataManager.loadAllData = async function() {
-                // 1- حمل من localStorage فوراً (لا ينتظر Firebase)
-                try {
-                    const raw = localStorage.getItem('drmedia_data');
-                    if (raw) {
-                        this._loadDataObject(JSON.parse(raw));
-                    } else {
-                        this._initializeDefaultData();
-                    }
-                } catch(e) {
-                    this._initializeDefaultData();
-                }
+        waitForApp(async function() {
+            // قراءة الإعدادات المخزنة
+            const config = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
+            const repoURL = config.repoURL || 'https://raw.githubusercontent.com/username/repo/main/updates.js';
+            const autoUpdate = config.autoUpdate !== undefined ? config.autoUpdate : true;
 
-                this._ensureMinimumData();
-                this.updateEmployeeOrders();
-                Utils.applyTheme(state.appTheme);
+            if (autoUpdate && repoURL) {
+                // تطبيق التحديثات بعد 2 ثانية من الدخول (لإعطاء وقت للواجهة)
+                setTimeout(() => fetchAndApplyUpdates(repoURL), 2000);
+            }
 
-                // 2- حاول مزامنة Firebase في الخلفية (لا تمنع التحميل)
-                if (state.useFirebase && state.db && !state.systemOfflineMode) {
-                    setTimeout(async () => {
-                        try {
-                            const s = await state.db.ref('/').get();
-                            if (s.exists()) {
-                                this._loadDataObject(s.val());
-                                state.online = true;
-                                state.lastSync = new Date();
-                                this._ensureMinimumData();
-                                this.updateEmployeeOrders();
-                                await this.saveAllData();
-                                Utils.applyTheme(state.appTheme);
-                                // تحديث الواجهة لو مفتوحة
-                                if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) {
-                                    AppRenderer.renderBookings();
-                                }
-                            }
-                        } catch(e) {
-                            state.online = false;
-                        }
-                    }, 50);
-                }
+            // ===== إضافة إعدادات GitHub في صفحة الإعدادات =====
+            const origRenderSettings = AppRenderer.renderSettings;
+            AppRenderer.renderSettings = function() {
+                origRenderSettings.apply(this, arguments);
+                setTimeout(() => {
+                    const waTemplate = document.getElementById('waMsgTemplate');
+                    if (!waTemplate || document.getElementById('githubUpdateSection')) return;
 
-                // 3- أعد حفظ البيانات التي تم تحميلها محلياً لضمان الاتساق
-                await this.saveAllData();
+                    const html = `
+                    <div id="githubUpdateSection" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <h3 class="font-semibold mb-2">🔄 التحديثات من GitHub</h3>
+                        <div class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoGitHubUpdate" ${autoUpdate ? 'checked' : ''} onchange="window._toggleGitHubUpdate()"> <label>تفعيل التحميل التلقائي</label>
+                        </div>
+                        <label class="text-sm">رابط ملف التحديثات (Raw URL)</label>
+                        <input id="githubRepoURL" value="${repoURL}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="https://raw.githubusercontent.com/...">
+                        <button onclick="window._saveGitHubSettings()" class="btn-primary w-full">💾 حفظ الإعدادات</button>
+                    </div>`;
+                    waTemplate.insertAdjacentHTML('afterend', html);
+                }, 200);
             };
 
-            // ===== 2. حفظ سريع (localStorage فوري، ثم Firebase خلفي) =====
-            const origSave = DataManager.saveAllData;
-            DataManager.saveAllData = async function() {
-                const fd = {
-                    bookings: state.bookings, employees: state.employees, halls: state.halls,
-                    clients: state.clients, equipmentInventory: state.equipmentInventory,
-                    attendanceRecords: state.attendanceRecords, employeeLoans: state.employeeLoans,
-                    notifications: state.notifications, trashBin: state.trashBin, activityLog: state.activityLog,
-                    companyName: state.companyName, companyLogo: state.companyLogoBase64 || state.companyLogo,
-                    USERS: state.USERS, rotationCounters: state.rotationCounters,
-                    whatsappEnabled: state.whatsapp.enabled, whatsappBusinessNumber: state.whatsapp.businessNumber,
-                    whatsappMessageTemplate: state.whatsapp.messageTemplate,
-                    appTheme: state.appTheme, appLanguage: state.appLanguage,
-                    flashDrives: state.flashDrives, holidays: state.holidays,
-                    systemOfflineMode: state.systemOfflineMode
-                };
-
-                // حفظ محلي فوري
-                try {
-                    localStorage.setItem('drmedia_data', JSON.stringify(fd));
-                } catch(e) {}
-
-                // مزامنة Firebase لاحقاً
-                if (state.useFirebase && state.db && state.online && !state.systemOfflineMode) {
-                    setTimeout(async () => {
-                        try {
-                            await state.db.ref('/').set(fd);
-                            state.lastSync = new Date();
-                            state.online = true;
-                        } catch(e) {
-                            state.online = false;
-                        }
-                    }, 5);
-                }
-
-                Utils.applyTheme(state.appTheme);
+            // دوال التحكم
+            window._toggleGitHubUpdate = function() {
+                const enabled = document.getElementById('autoGitHubUpdate').checked;
+                const current = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
+                current.autoUpdate = enabled;
+                localStorage.setItem('drmedia_github_updates', JSON.stringify(current));
             };
 
-            console.log('✅ تحسين تحميل البيانات جاهز');
-        });
-    });
-})();
-// ========================================================
-// تذكر التبويب النشط عند الريفريش (نسخة محسنة)
-// ========================================================
-(function() {
-    'use strict';
-
-    function waitForApp(callback) {
-        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined' && document.getElementById('content-area')) {
-            callback();
-        } else {
-            setTimeout(() => waitForApp(callback), 50);
-        }
-    }
-
-    window.addEventListener('DOMContentLoaded', function() {
-        waitForApp(function() {
-            // حفظ التبويب عند الانتقال
-            const origNavigate = AppRenderer.navigateTo;
-            AppRenderer.navigateTo = function(page) {
-                localStorage.setItem('drmedia_last_page', page);
-                origNavigate.call(this, page);
+            window._saveGitHubSettings = function() {
+                const url = document.getElementById('githubRepoURL').value.trim();
+                const enabled = document.getElementById('autoGitHubUpdate').checked;
+                const settings = { repoURL: url, autoUpdate: enabled };
+                localStorage.setItem('drmedia_github_updates', JSON.stringify(settings));
+                Utils.showMsg('✅ تم حفظ إعدادات GitHub');
             };
 
-            // عند تحميل الواجهة الرئيسية (بعد تسجيل الدخول) ننتقل للصفحة المحفوظة
-            const origRenderAdminDashboard = AppRenderer.renderAdminDashboard;
-            AppRenderer.renderAdminDashboard = function() {
-                origRenderAdminDashboard.apply(this, arguments);
-                // استعادة الصفحة المحفوظة بعد اكتمال الرسم
-                const lastPage = localStorage.getItem('drmedia_last_page');
-                if (lastPage && lastPage !== 'dashboard') {
-                    // ننتظر قليلاً حتى تنتهي عناصر DOM من الظهور
-                    setTimeout(() => {
-                        const item = document.querySelector(`.sidebar-item[data-page="${lastPage}"]`);
-                        if (item) {
-                            AppRenderer.navigateTo(lastPage);
-                        } else {
-                            // إذا كانت الصفحة غير موجودة بالقائمة، نزيل التخزين
-                            localStorage.removeItem('drmedia_last_page');
-                        }
-                    }, 200);
-                }
-            };
-
-            console.log('✅ تذكر التبويب المحسن جاهز');
+            console.log('✅ نظام التحديث من GitHub جاهز');
         });
     });
 })();
