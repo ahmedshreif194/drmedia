@@ -1582,6 +1582,47 @@
         });
     });
 })();
+        // ========================================================
+// تذكر التبويب النشط عند الريفريش
+// ========================================================
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 100);
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(function() {
+            // حفظ التبويب عند الانتقال
+            const origNavigate = AppRenderer.navigateTo;
+            AppRenderer.navigateTo = function(page) {
+                // حفظ الصفحة الحالية
+                sessionStorage.setItem('drmedia_last_page', page);
+                origNavigate.call(this, page);
+            };
+
+            // عند تحميل الواجهة الرئيسية (بعد تسجيل الدخول) ننتقل للصفحة المحفوظة
+            const origRenderAdminDashboard = AppRenderer.renderAdminDashboard;
+            AppRenderer.renderAdminDashboard = function() {
+                origRenderAdminDashboard.apply(this, arguments);
+                // بعد رسم الواجهة، ننتقل للصفحة المحفوظة إذا وجدت
+                const lastPage = sessionStorage.getItem('drmedia_last_page');
+                if (lastPage && lastPage !== 'dashboard') {
+                    setTimeout(() => {
+                        AppRenderer.navigateTo(lastPage);
+                    }, 100);
+                }
+            };
+
+            console.log('✅ تذكر التبويب جاهز');
+        });
+    });
+})();
     </script>
 </body>
 </html>
