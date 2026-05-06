@@ -1477,6 +1477,111 @@
         });
     });
 })();
+        // ========================================================
+// تحسين سرعة تحميل البيانات (Patch)
+// ========================================================
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof DataManager !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(function() {
+            // ===== 1. تحميل سريع من localStorage أولاً =====
+            const origLoadAll = DataManager.loadAllData;
+            DataManager.loadAllData = async function() {
+                // 1- حمل من localStorage فوراً (لا ينتظر Firebase)
+                try {
+                    const raw = localStorage.getItem('drmedia_data');
+                    if (raw) {
+                        this._loadDataObject(JSON.parse(raw));
+                    } else {
+                        this._initializeDefaultData();
+                    }
+                } catch(e) {
+                    this._initializeDefaultData();
+                }
+
+                this._ensureMinimumData();
+                this.updateEmployeeOrders();
+                Utils.applyTheme(state.appTheme);
+
+                // 2- حاول مزامنة Firebase في الخلفية (لا تمنع التحميل)
+                if (state.useFirebase && state.db && !state.systemOfflineMode) {
+                    setTimeout(async () => {
+                        try {
+                            const s = await state.db.ref('/').get();
+                            if (s.exists()) {
+                                this._loadDataObject(s.val());
+                                state.online = true;
+                                state.lastSync = new Date();
+                                this._ensureMinimumData();
+                                this.updateEmployeeOrders();
+                                await this.saveAllData();
+                                Utils.applyTheme(state.appTheme);
+                                // تحديث الواجهة لو مفتوحة
+                                if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) {
+                                    AppRenderer.renderBookings();
+                                }
+                            }
+                        } catch(e) {
+                            state.online = false;
+                        }
+                    }, 50);
+                }
+
+                // 3- أعد حفظ البيانات التي تم تحميلها محلياً لضمان الاتساق
+                await this.saveAllData();
+            };
+
+            // ===== 2. حفظ سريع (localStorage فوري، ثم Firebase خلفي) =====
+            const origSave = DataManager.saveAllData;
+            DataManager.saveAllData = async function() {
+                const fd = {
+                    bookings: state.bookings, employees: state.employees, halls: state.halls,
+                    clients: state.clients, equipmentInventory: state.equipmentInventory,
+                    attendanceRecords: state.attendanceRecords, employeeLoans: state.employeeLoans,
+                    notifications: state.notifications, trashBin: state.trashBin, activityLog: state.activityLog,
+                    companyName: state.companyName, companyLogo: state.companyLogoBase64 || state.companyLogo,
+                    USERS: state.USERS, rotationCounters: state.rotationCounters,
+                    whatsappEnabled: state.whatsapp.enabled, whatsappBusinessNumber: state.whatsapp.businessNumber,
+                    whatsappMessageTemplate: state.whatsapp.messageTemplate,
+                    appTheme: state.appTheme, appLanguage: state.appLanguage,
+                    flashDrives: state.flashDrives, holidays: state.holidays,
+                    systemOfflineMode: state.systemOfflineMode
+                };
+
+                // حفظ محلي فوري
+                try {
+                    localStorage.setItem('drmedia_data', JSON.stringify(fd));
+                } catch(e) {}
+
+                // مزامنة Firebase لاحقاً
+                if (state.useFirebase && state.db && state.online && !state.systemOfflineMode) {
+                    setTimeout(async () => {
+                        try {
+                            await state.db.ref('/').set(fd);
+                            state.lastSync = new Date();
+                            state.online = true;
+                        } catch(e) {
+                            state.online = false;
+                        }
+                    }, 5);
+                }
+
+                Utils.applyTheme(state.appTheme);
+            };
+
+            console.log('✅ تحسين تحميل البيانات جاهز');
+        });
+    });
+})();
     <script src="https://cdn.tailwindcss.com" defer></script>
 </body>
 </html>
