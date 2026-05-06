@@ -1435,7 +1435,48 @@
         if (sidebar && window.innerWidth <= 768 && sidebar.classList.contains('open')) {
             if (!sidebar.contains(e.target) && !e.target.closest('[onclick*="sidebar"]')) sidebar.classList.remove('open');
         }
-    });        
+    });
+        // ========================================================
+// [اسم الميزة الجديدة]
+// ========================================================
+(function() {
+    'use strict';
+
+    // انتظر حتى يصبح AppRenderer معرفاً (أي أننا تجاوزنا صفحة الدخول)
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 100);
+        }
+    }
+
+    // بعد تحميل الصفحة ودخول المستخدم
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(function() {
+            // --------------------------------------------------
+            // هنا ضع دوالك الجديدة أو التعديلات
+            // --------------------------------------------------
+
+            // مثال: إضافة زر جديد في لوحة التحكم
+            // const origDashboard = AppRenderer.renderDashboard;
+            // AppRenderer.renderDashboard = function() {
+            //     origDashboard.apply(this, arguments);
+            //     setTimeout(() => {
+            //         // أضف عناصر إضافية إلى الـ DOM بعد رسم الداشبورد
+            //     }, 100);
+            // };
+
+            // مثال: دالة منفصلة تماماً
+            // window.myNewFeature = function() {
+            //     Utils.showMsg('تم تنفيذ الميزة الجديدة');
+            // };
+
+            console.log('✅ تم تحميل ميزة: [اسم الميزة]');
+            // --------------------------------------------------
+        });
+    });
+})();
     </script>
 </body>
 </html>
