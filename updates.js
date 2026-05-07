@@ -626,3 +626,196 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: قائمة Styles في الإعدادات لتغيير شكل النظام ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    // تعريف الأنماط (Presets)
+    var STYLES = {
+        default: {
+            name: 'Default',
+            css: `
+                :root {
+                    --radius-btn: 30px;
+                    --radius-lg: 20px;
+                    --radius-xl: 24px;
+                    --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.1);
+                    --shadow-lg: 0 25px 50px -12px rgba(0,0,0,0.25);
+                    --font-family: 'Segoe UI', Tahoma, sans-serif;
+                    --font-size-base: 1rem;
+                }
+            `
+        },
+        rounded: {
+            name: 'Rounded',
+            css: `
+                :root {
+                    --radius-btn: 40px;
+                    --radius-lg: 28px;
+                    --radius-xl: 32px;
+                    --shadow-sm: 0 6px 10px -2px rgba(0,0,0,0.1);
+                    --shadow-lg: 0 30px 60px -15px rgba(0,0,0,0.3);
+                    --font-family: 'Segoe UI', Tahoma, sans-serif;
+                    --font-size-base: 1rem;
+                }
+                .btn, .stat-card, .bg-card { border-radius: var(--radius-lg) !important; }
+                .modal-content { border-radius: var(--radius-xl) !important; }
+            `
+        },
+        compact: {
+            name: 'Compact',
+            css: `
+                :root {
+                    --radius-btn: 10px;
+                    --radius-lg: 10px;
+                    --radius-xl: 12px;
+                    --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+                    --shadow-lg: 0 10px 20px rgba(0,0,0,0.15);
+                    --font-family: 'Segoe UI', Tahoma, sans-serif;
+                    --font-size-base: 0.875rem;
+                }
+                .btn { padding: 6px 14px; font-size: 0.8rem; }
+                table { font-size: 0.8rem; }
+                .stat-card, .bg-card { padding: 12px; }
+            `
+        },
+        spacious: {
+            name: 'Spacious',
+            css: `
+                :root {
+                    --radius-btn: 30px;
+                    --radius-lg: 24px;
+                    --radius-xl: 28px;
+                    --shadow-sm: 0 8px 15px -3px rgba(0,0,0,0.1);
+                    --shadow-lg: 0 35px 60px -15px rgba(0,0,0,0.3);
+                    --font-family: 'Segoe UI', Tahoma, sans-serif;
+                    --font-size-base: 1.1rem;
+                }
+                .main-content { padding: 40px; padding-top: calc(var(--topbar-height) + 40px); }
+                .stat-card, .bg-card { padding: 30px; margin-bottom: 30px; }
+                .btn { padding: 12px 28px; font-size: 1rem; }
+            `
+        },
+        minimal: {
+            name: 'Minimal',
+            css: `
+                :root {
+                    --radius-btn: 6px;
+                    --radius-lg: 8px;
+                    --radius-xl: 10px;
+                    --shadow-sm: none;
+                    --shadow-lg: none;
+                    --font-family: Arial, Helvetica, sans-serif;
+                    --font-size-base: 0.9rem;
+                }
+                .btn, .stat-card, .bg-card { box-shadow: none !important; border: 1px solid var(--border); }
+                .modal-content { box-shadow: none; border: 1px solid var(--border); }
+                .sidebar { border-left: 1px solid var(--border); }
+            `
+        },
+        elegant: {
+            name: 'Elegant',
+            css: `
+                :root {
+                    --radius-btn: 50px;
+                    --radius-lg: 30px;
+                    --radius-xl: 36px;
+                    --shadow-sm: 0 10px 25px -5px rgba(0,0,0,0.15);
+                    --shadow-lg: 0 40px 70px -20px rgba(0,0,0,0.3);
+                    --font-family: 'Georgia', serif;
+                    --font-size-base: 1rem;
+                }
+                .topbar { background: linear-gradient(135deg, var(--primary), #0d9488); color: white; }
+                .sidebar-item.active { background: rgba(255,255,255,0.15); border-radius: 12px; }
+                .btn { font-weight: 400; letter-spacing: 0.5px; }
+            `
+        }
+    };
+
+    // تطبيق النمط
+    function applyStyle(styleName) {
+        var styleId = 'dynamic-style-patch';
+        var oldStyle = document.getElementById(styleId);
+        if (oldStyle) oldStyle.remove();
+
+        if (styleName === 'default') {
+            // العودة للقيم الأصلية في الـ CSS الأصلي (نزيل التعديلات)
+            localStorage.setItem('drmedia_style', 'default');
+            return;
+        }
+
+        var preset = STYLES[styleName];
+        if (!preset) return;
+
+        var style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = preset.css;
+        document.head.appendChild(style);
+        localStorage.setItem('drmedia_style', styleName);
+    }
+
+    // تحميل النمط المحفوظ عند بدء التشغيل
+    var savedStyle = localStorage.getItem('drmedia_style') || 'default';
+    applyStyle(savedStyle);
+
+    // ====== إدراج قسم الأنماط في صفحة الإعدادات ======
+    function injectStyleSelector() {
+        // ننتظر حتى تظهر الإعدادات
+        var checkInterval = setInterval(function() {
+            var waTemplate = document.getElementById('waMsgTemplate');
+            if (waTemplate && !document.getElementById('styleSelectContainer')) {
+                clearInterval(checkInterval);
+
+                var html = `
+                <div id="styleSelectContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <label class="text-sm font-semibold">🎨 شكل الواجهة (Style)</label>
+                    <select id="styleSelect" class="w-full border-2 p-2 rounded-xl mt-1" onchange="window._applyGlobalStyle(this.value)">
+                        ${Object.keys(STYLES).map(function(key) {
+                            var selected = (key === savedStyle) ? 'selected' : '';
+                            return '<option value="' + key + '" ' + selected + '>' + STYLES[key].name + '</option>';
+                        }).join('')}
+                    </select>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+            }
+        }, 300);
+        setTimeout(function() { clearInterval(checkInterval); }, 10000);
+    }
+
+    // دالة عامة لتبديل النمط
+    window._applyGlobalStyle = function(styleName) {
+        applyStyle(styleName);
+        Utils.showMsg('✅ تم تغيير شكل الواجهة');
+    };
+
+    // ====== بدء التشغيل ======
+    function init() {
+        // مراقبة ظهور صفحة الإعدادات
+        var appObserver = new MutationObserver(function() {
+            if (document.getElementById('waMsgTemplate')) {
+                injectStyleSelector();
+            }
+        });
+        var appEl = document.getElementById('app');
+        if (appEl) {
+            appObserver.observe(appEl, { childList: true, subtree: true });
+        }
+        injectStyleSelector(); // محاولة أولى
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
