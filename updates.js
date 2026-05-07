@@ -352,3 +352,150 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: تحسين تنسيق صفحة الحجوزات (بدون مسح أي محتوى) ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    // ========== 1. حقن CSS مخصص لصفحة الحجوزات ==========
+    function injectBookingStyles() {
+        if (document.getElementById('booking-enhanced-styles')) return;
+        var style = document.createElement('style');
+        style.id = 'booking-enhanced-styles';
+        style.textContent = `
+            /* تحسينات عامة لجدول الحجوزات */
+            #content-area .bg-card {
+                padding: 18px !important;
+                border-radius: 18px !important;
+            }
+            #content-area table {
+                border-collapse: collapse;
+                font-size: 0.85rem;
+                width: 100%;
+            }
+            #content-area table th {
+                background: var(--primary);
+                color: white;
+                font-weight: 600;
+                padding: 12px 6px;
+                white-space: nowrap;
+            }
+            #content-area table td {
+                padding: 10px 6px;
+                vertical-align: middle;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            #content-area table tbody tr:hover {
+                background: #f0fdf4;
+            }
+            /* تحسين الأزرار داخل الجدول */
+            #content-area table td .btn,
+            #content-area table td button {
+                margin: 2px;
+                font-size: 0.75rem;
+                padding: 6px 10px;
+            }
+            /* القوائم المنسدلة للموظفين */
+            .emp-swap-select {
+                font-size: 0.75rem;
+                padding: 4px;
+                border-radius: 6px;
+                border: 1px solid #d1d5db;
+                margin-bottom: 3px;
+            }
+            .add-emp-btn {
+                font-size: 0.7rem;
+                padding: 4px 8px;
+            }
+            /* مربع البحث والفلاتر */
+            #content-area .grid.gap-2.mb-3 input,
+            #content-area .grid.gap-2.mb-3 select {
+                font-size: 0.8rem;
+            }
+            /* جعل قسم الأزرار العلوية أكثر تنظيماً */
+            .flex.justify-between.flex-wrap.gap-2.mb-3 {
+                align-items: center;
+            }
+            /* تحسين شكل checkbox الحالة */
+            .status-checkbox {
+                width: 18px;
+                height: 18px;
+                accent-color: var(--primary);
+            }
+            /* تنسيق عام للـ status-badge */
+            .status-badge {
+                font-size: 0.7rem;
+                padding: 4px 10px;
+            }
+            /* الهوامش */
+            #content-area .text-sm.mb-2 {
+                font-size: 0.85rem;
+                margin-bottom: 8px;
+            }
+            /* جعل الجدول قابل للتمرير بشكل أفضل */
+            #content-area .overflow-x-auto {
+                border-radius: 12px;
+                border: 1px solid var(--border);
+            }
+            /* تحسينات للوضع الداكن */
+            body.dark #content-area table th {
+                background: #2d3a4a;
+            }
+            body.dark #content-area table tbody tr:hover {
+                background: #2d3a3a;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // ========== 2. تحسين هيكلي بسيط (إضافة غلاف للجدول إن لم يوجد) ==========
+    function enhanceTableStructure() {
+        var table = document.querySelector('#content-area table');
+        if (!table) return;
+        var existingWrapper = table.closest('.booking-table-wrapper');
+        if (!existingWrapper) {
+            var wrapper = document.createElement('div');
+            wrapper.className = 'booking-table-wrapper overflow-x-auto';
+            wrapper.style.cssText = 'border-radius:12px; border:1px solid var(--border);';
+            table.parentNode.insertBefore(wrapper, table);
+            wrapper.appendChild(table);
+        }
+    }
+
+    // ========== 3. تنفيذ التنسيقات ==========
+    function applyEnhancements() {
+        injectBookingStyles();
+        enhanceTableStructure();
+    }
+
+    function init() {
+        // نطبق عند أول رسم للصفحة
+        if (document.getElementById('content-area')) {
+            applyEnhancements();
+        }
+        // نربط بـ renderBookings ليطبق كل مرة
+        var origRenderBookings = AppRenderer.renderBookings;
+        AppRenderer.renderBookings = function() {
+            origRenderBookings.apply(this, arguments);
+            requestAnimationFrame(function() {
+                applyEnhancements();
+            });
+        };
+        console.log('✅ تم تحسين تنسيق صفحة الحجوزات');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
