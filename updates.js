@@ -499,3 +499,130 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: تشيك بوكس للحالات الثلاث + زر إلغاء في المنبثقات ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    // ========== 1. أزرار إلغاء بجانب حفظ في النوافذ ==========
+    function addCancelButtonsToModals() {
+        var modalObserver = new MutationObserver(function() {
+            var modal = document.getElementById('modal');
+            if (!modal || !modal.classList.contains('show')) return;
+            var modalContent = document.getElementById('modalContent');
+            if (!modalContent) return;
+            modalContent.querySelectorAll('button').forEach(function(btn) {
+                if ((btn.textContent.includes('حفظ') || btn.textContent.includes('💾')) &&
+                    !btn.nextElementSibling?.classList.contains('cancel-btn-auto')) {
+                    var cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = 'إلغاء';
+                    cancelBtn.className = btn.className + ' cancel-btn-auto';
+                    cancelBtn.style.marginRight = '8px';
+                    cancelBtn.onclick = function(e) {
+                        e.preventDefault();
+                        Utils.closeModal();
+                    };
+                    btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+                }
+            });
+        });
+        modalObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+
+    // ========== 2. تحويل عمود الحالة إلى radio buttons أنيقة ==========
+    function enhanceStatusColumn() {
+        var rows = document.querySelectorAll('#content-area table tbody tr');
+        rows.forEach(function(row) {
+            var cells = row.querySelectorAll('td');
+            if (cells.length < 5) return;
+            var statusCell = cells[4];
+            if (!statusCell || statusCell.querySelector('.status-radio-group')) return;
+
+            var checkbox = row.querySelector('input.booking-check');
+            if (!checkbox) return;
+            var bookingId = checkbox.value;
+            var booking = state.bookings.find(b => b.id === bookingId);
+            if (!booking) return;
+
+            var currentStatus = booking.status || 'pending';
+            var statuses = [
+                { value: 'pending', label: 'معلق', color: '#f59e0b' },
+                { value: 'completed', label: 'مكتمل', color: '#10b981' },
+                { value: 'cancelled', label: 'ملغي', color: '#ef4444' }
+            ];
+
+            statusCell.innerHTML = '';
+            var container = document.createElement('div');
+            container.className = 'status-radio-group';
+            container.style.cssText = 'display:flex; gap:6px; align-items:center;';
+
+            statuses.forEach(function(st) {
+                var label = document.createElement('label');
+                label.style.cssText = 'display:flex; align-items:center; gap:4px; cursor:pointer; font-size:0.75rem; padding:4px 8px; border-radius:20px; transition:0.2s;';
+                label.style.backgroundColor = currentStatus === st.value ? st.color : '#f3f4f6';
+                label.style.color = currentStatus === st.value ? '#fff' : '#374151';
+                label.style.border = '1px solid ' + st.color;
+
+                var radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'status-' + bookingId;
+                radio.value = st.value;
+                radio.checked = (currentStatus === st.value);
+                radio.style.cssText = 'display:none;';
+                radio.setAttribute('data-booking-id', bookingId);
+                radio.classList.add('status-radio');
+
+                radio.addEventListener('change', function() {
+                    var newStatus = this.value;
+                    BookingManager.changeStatus(bookingId, newStatus);
+                    // تحديث ألوان المجموعة
+                    container.querySelectorAll('label').forEach(function(lbl) {
+                        var r = lbl.querySelector('input');
+                        var s = statuses.find(function(x) { return x.value === r.value; });
+                        lbl.style.backgroundColor = r.checked ? s.color : '#f3f4f6';
+                        lbl.style.color = r.checked ? '#fff' : '#374151';
+                    });
+                });
+
+                label.appendChild(radio);
+                label.appendChild(document.createTextNode(st.label));
+                container.appendChild(label);
+            });
+
+            statusCell.appendChild(container);
+        });
+    }
+
+    // ========== 3. تشغيل التعديلات ==========
+    function init() {
+        addCancelButtonsToModals();
+
+        var origRenderBookings = AppRenderer.renderBookings;
+        AppRenderer.renderBookings = function() {
+            origRenderBookings.apply(this, arguments);
+            requestAnimationFrame(function() {
+                enhanceStatusColumn();
+            });
+        };
+
+        if (document.querySelector('#content-area table tbody')) {
+            enhanceStatusColumn();
+        }
+        console.log('✅ حالة ثلاثية + أزرار إلغاء جاهزة');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
