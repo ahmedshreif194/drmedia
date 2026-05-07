@@ -1521,6 +1521,198 @@
         });
     });
 })();
+        // ========================================================
+// تجميع جميع تحسينات الإعدادات + GitHub Updater
+// ========================================================
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(function() {
+            // ---------- 1. كل الإضافات في renderSettings مرة واحدة ----------
+            const origRenderSettings = AppRenderer.renderSettings;
+            AppRenderer.renderSettings = function() {
+                origRenderSettings.apply(this, arguments);
+                setTimeout(injectAllSettings, 200);
+            };
+
+            function injectAllSettings() {
+                const waTemplate = document.getElementById('waMsgTemplate');
+                if (!waTemplate) return;
+                // نمنع الحقن المتكرر
+                if (document.getElementById('injectedSettingsContainer')) return;
+
+                const savedTheme = localStorage.getItem('drmedia_theme') || 'light';
+                const backupSettings = JSON.parse(localStorage.getItem('drmedia_auto_backup') || '{"enabled":false,"interval":24}');
+                const refreshSettings = JSON.parse(localStorage.getItem('drmedia_auto_refresh') || '{"enabled":false,"seconds":30}');
+                const githubSettings = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{"autoUpdate":false,"repoURL":""}');
+
+                const html = `
+                <div id="injectedSettingsContainer">
+                    <!-- ====== الثيمات ====== -->
+                    <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <label class="text-sm font-semibold">🎨 سمة الواجهة</label>
+                        <select id="themeSelectNew" class="w-full border-2 p-2 rounded-xl mt-1" onchange="window._applyTheme(this.value)">
+                            <option value="light" ${savedTheme==='light'?'selected':''}>فاتح</option>
+                            <option value="dark" ${savedTheme==='dark'?'selected':''}>داكن</option>
+                            <option value="blue" ${savedTheme==='blue'?'selected':''}>أزرق</option>
+                            <option value="green" ${savedTheme==='green'?'selected':''}>أخضر</option>
+                            <option value="highcontrast" ${savedTheme==='highcontrast'?'selected':''}>تباين عالي</option>
+                        </select>
+                    </div>
+
+                    <!-- ====== باك أب تلقائي ====== -->
+                    <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <h3 class="font-semibold mb-2">💾 النسخ الاحتياطي التلقائي</h3>
+                        <div class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoBackupEnabled" ${backupSettings.enabled?'checked':''} onchange="window._toggleAutoBackup()"> <label>تفعيل</label>
+                        </div>
+                        <select id="autoBackupInterval" class="border-2 p-2 rounded-xl w-full" onchange="window._updateAutoBackup()" ${backupSettings.enabled?'':'disabled'}>
+                            <option value="12" ${backupSettings.interval==12?'selected':''}>كل 12 ساعة</option>
+                            <option value="24" ${backupSettings.interval==24?'selected':''}>كل 24 ساعة</option>
+                            <option value="168" ${backupSettings.interval==168?'selected':''}>كل أسبوع</option>
+                            <option value="720" ${backupSettings.interval==720?'selected':''}>كل شهر</option>
+                        </select>
+                        <button onclick="window._exportAndShare()" class="btn-secondary w-full mt-2">📧 تصدير وإرسال بالإيميل</button>
+                    </div>
+
+                    <!-- ====== ريفرش تلقائي ====== -->
+                    <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <h3 class="font-semibold mb-2">🔄 التحديث التلقائي للصفحة</h3>
+                        <div class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoRefreshEnabled" ${refreshSettings.enabled?'checked':''} onchange="window._toggleAutoRefresh()"> <label>تفعيل</label>
+                        </div>
+                        <select id="autoRefreshInterval" class="border-2 p-2 rounded-xl w-full" onchange="window._updateAutoRefresh()" ${refreshSettings.enabled?'':'disabled'}>
+                            ${[5,10,15,20,25,30,35,40,45,50,55,60].map(s => `<option value="${s}" ${refreshSettings.seconds==s?'selected':''}>${s} ثانية</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- ====== تحديثات GitHub ====== -->
+                    <div style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <h3 class="font-semibold mb-2">🔄 التحديثات من GitHub</h3>
+                        <div class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoGitHubUpdate" ${githubSettings.autoUpdate?'checked':''} onchange="window._toggleGitHubUpdate()"> <label>تفعيل التحميل التلقائي</label>
+                        </div>
+                        <label class="text-sm">رابط ملف التحديثات (Raw URL)</label>
+                        <input id="githubRepoURL" value="${githubSettings.repoURL}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="https://raw.githubusercontent.com/...">
+                        <button onclick="window._saveGitHubSettings()" class="btn-primary w-full">💾 حفظ الإعدادات</button>
+                        <small class="text-gray-500">مثال: https://raw.githubusercontent.com/username/repo/main/updates.js</small>
+                    </div>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+            }
+
+            // ---------- 2. دوال الثيم ----------
+            const THEMES = {
+                light: { '--primary': '#16a34a', '--bg': '#f3f4f6', '--card': '#ffffff', '--text': '#1f2937', '--text-secondary': '#6b7280', '--border': '#e5e7eb' },
+                dark: { '--primary': '#22c55e', '--bg': '#0f172a', '--card': '#1e293b', '--text': '#e2e8f0', '--text-secondary': '#94a3b8', '--border': '#334155' },
+                blue: { '--primary': '#2563eb', '--bg': '#eff6ff', '--card': '#ffffff', '--text': '#1e3a5f', '--text-secondary': '#64748b', '--border': '#bfdbfe' },
+                green: { '--primary': '#059669', '--bg': '#ecfdf5', '--card': '#ffffff', '--text': '#064e3b', '--text-secondary': '#475569', '--border': '#a7f3d0' },
+                highcontrast: { '--primary': '#facc15', '--bg': '#000000', '--card': '#1a1a1a', '--text': '#ffffff', '--text-secondary': '#cccccc', '--border': '#444444' }
+            };
+            window._applyTheme = function(name) {
+                const t = THEMES[name] || THEMES.light;
+                Object.entries(t).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+                document.body.classList.toggle('dark', name === 'dark' || name === 'highcontrast');
+                localStorage.setItem('drmedia_theme', name);
+            };
+
+            // ---------- 3. دوال الباك أب ----------
+            function exportBackupData() {
+                const data = {
+                    bookings: state.bookings, employees: state.employees, halls: state.halls,
+                    clients: state.clients, equipmentInventory: state.equipmentInventory,
+                    attendanceRecords: state.attendanceRecords, employeeLoans: state.employeeLoans,
+                    notifications: state.notifications, trashBin: state.trashBin, activityLog: state.activityLog,
+                    flashDrives: state.flashDrives, substitutions: state.substitutions,
+                    payrollPayments: state.payrollPayments, rotationCounters: state.rotationCounters,
+                    USERS: state.USERS, companyName: state.companyName, whatsapp: state.whatsapp,
+                    appTheme: state.appTheme, appLanguage: state.appLanguage,
+                    systemOfflineMode: state.systemOfflineMode, exportedAt: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `backup_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                return blob;
+            }
+            window._exportAndShare = function() {
+                const blob = exportBackupData();
+                const subject = encodeURIComponent('نسخة احتياطية Dr Media Pro');
+                const body = encodeURIComponent('الرجاء تحميل ملف الباك أب.\n' + URL.createObjectURL(blob));
+                window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+            };
+            window._toggleAutoBackup = function() {
+                const enabled = document.getElementById('autoBackupEnabled').checked;
+                const interval = parseInt(document.getElementById('autoBackupInterval').value) || 24;
+                localStorage.setItem('drmedia_auto_backup', JSON.stringify({ enabled, interval }));
+            };
+            window._updateAutoBackup = function() {
+                if (document.getElementById('autoBackupEnabled')?.checked) {
+                    const interval = parseInt(document.getElementById('autoBackupInterval').value) || 24;
+                    localStorage.setItem('drmedia_auto_backup', JSON.stringify({ enabled: true, interval }));
+                }
+            };
+
+            // ---------- 4. دوال الرفريش ----------
+            window._toggleAutoRefresh = function() {
+                const enabled = document.getElementById('autoRefreshEnabled').checked;
+                const seconds = parseInt(document.getElementById('autoRefreshInterval').value) || 30;
+                localStorage.setItem('drmedia_auto_refresh', JSON.stringify({ enabled, seconds }));
+            };
+            window._updateAutoRefresh = function() {
+                if (document.getElementById('autoRefreshEnabled')?.checked) {
+                    const seconds = parseInt(document.getElementById('autoRefreshInterval').value) || 30;
+                    localStorage.setItem('drmedia_auto_refresh', JSON.stringify({ enabled: true, seconds }));
+                }
+            };
+
+            // ---------- 5. دوال GitHub ----------
+            window._toggleGitHubUpdate = function() {
+                const current = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
+                current.autoUpdate = document.getElementById('autoGitHubUpdate').checked;
+                localStorage.setItem('drmedia_github_updates', JSON.stringify(current));
+            };
+            window._saveGitHubSettings = function() {
+                const url = document.getElementById('githubRepoURL').value.trim();
+                const enabled = document.getElementById('autoGitHubUpdate').checked;
+                localStorage.setItem('drmedia_github_updates', JSON.stringify({ repoURL: url, autoUpdate: enabled }));
+                Utils.showMsg('✅ تم حفظ إعدادات GitHub');
+            };
+
+            // ---------- 6. تحميل التحديثات من GitHub عند البدء ----------
+            async function fetchAndApplyUpdates(url) {
+                try {
+                    const response = await fetch(url, { cache: 'no-store' });
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    const code = await response.text();
+                    const script = document.createElement('script');
+                    script.textContent = code;
+                    document.body.appendChild(script);
+                    console.log('✅ تم تطبيق التحديثات من: ' + url);
+                } catch (err) {
+                    console.warn('⚠️ فشل جلب التحديثات من GitHub:', err.message);
+                }
+            }
+
+            const githubConfig = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
+            if (githubConfig.autoUpdate && githubConfig.repoURL) {
+                setTimeout(() => fetchAndApplyUpdates(githubConfig.repoURL), 2000);
+            }
+
+            console.log('✅ جميع تحسينات الإعدادات جاهزة');
+        });
+    });
+})();
     </script>
 </body>
 </html>
