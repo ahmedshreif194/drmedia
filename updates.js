@@ -1229,3 +1229,318 @@
         waitForApp(init);
     }
 })();
+// ==============================================
+// تحديث شامل: 10 مميزات متقدمة
+// ==============================================
+(function() {
+    'use strict';
+
+    // انتظار AppRenderer
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            cb();
+        } else {
+            setTimeout(() => waitForApp(cb), 50);
+        }
+    }
+
+    // ==================== 1. تنبيهات ذكية ====================
+    function initSmartAlerts() {
+        function checkAlerts() {
+            var today = Utils.getTodayDateStr();
+            var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+            var tomorrowStr = tomorrow.toISOString().slice(0,10);
+            var warnings = [];
+            state.bookings.forEach(b => {
+                if (b.status === 'pending' && !b.deleted && (b.date === today || b.date === tomorrowStr)) {
+                    if (!b.assignedEmployees || b.assignedEmployees.length === 0) {
+                        warnings.push(`⚠️ حجز ${b.clientName} في ${b.date} بدون موظفين`);
+                    }
+                }
+            });
+            state.flashDrives.forEach(f => {
+                var b = state.bookings.find(bk => bk.id === f.bookingId);
+                if (b && f.currentHolder !== 'العريس') {
+                    var daysSince = Math.floor((new Date() - new Date(b.date)) / (1000*60*60*24));
+                    if (daysSince > 2 && f.status !== 'مكتملة') {
+                        warnings.push(`⏰ فلاشة ${b.clientName} متأخرة منذ ${daysSince} يوم`);
+                    }
+                }
+            });
+            if (warnings.length > 0) {
+                console.warn('تنبيهات:', warnings.join(' | '));
+            }
+        }
+        setInterval(checkAlerts, 60000);
+        checkAlerts();
+    }
+
+    // ==================== 2. جدول زمني يومي ====================
+    function initTimelinePage() {
+        if (!AppRenderer.pages.includes('timeline')) {
+            AppRenderer.pages.push('timeline');
+        }
+        AppRenderer.renderTimeline = function() {
+            var c = document.getElementById('content-area');
+            if (!c) return;
+            document.getElementById('pageTitle').textContent = '⏱️ الجدول الزمني';
+            var today = Utils.getTodayDateStr();
+            var todayBookings = state.bookings.filter(b => b.date === today && !b.deleted && b.status !== 'cancelled');
+            todayBookings.sort((a,b) => (a.time || '').localeCompare(b.time || ''));
+            c.innerHTML = `<div class="bg-card"><h2 class="text-xl font-bold mb-4">حجوزات اليوم (${today})</h2>
+                <div class="overflow-x-auto"><table><thead><tr><th>العميل</th><th>القاعة</th><th>السعر</th><th>الموظفون</th><th>الحالة</th></tr></thead><tbody>
+                ${todayBookings.map(b => `<tr><td>${b.clientName}</td><td>${b.hallName}</td><td>${Utils.formatCurrency(b.price)}</td><td>${(b.assignedEmployees||[]).map(id=>state.employees.find(e=>e.id===id)?.name).join(', ')||'—'}</td><td>${b.status==='completed'?'✅':'⏳'}</td></tr>`).join('')}
+                </tbody></table></div><div class="footer-bar">${APP_CONFIG.footerText}</div></div>`;
+        };
+        var sidebar = document.querySelector('.sidebar .py-2');
+        if (sidebar && !document.querySelector('[data-page="timeline"]')) {
+            var item = document.createElement('div');
+            item.className = 'sidebar-item';
+            item.setAttribute('data-page', 'timeline');
+            item.onclick = function(){ AppRenderer.navigateTo('timeline'); };
+            item.innerHTML = '<span>⏱️ الجدول الزمني</span>';
+            sidebar.appendChild(item);
+        }
+    }
+
+    // ==================== 3. صلاحيات متقدمة (مشرف قاعة) ====================
+    function initSupervisorRole() {
+        var origRenderBookings = AppRenderer.renderBookings;
+        AppRenderer.renderBookings = function() {
+            if (state.currentUser && state.currentUser.role === 'supervisor' && state.currentUser.supervisedHallId) {
+                var hallId = state.currentUser.supervisedHallId;
+                var origFilter = state.filters.bookingHall;
+                state.filters.bookingHall = hallId;
+                origRenderBookings.apply(this, arguments);
+                state.filters.bookingHall = origFilter;
+            } else {
+                origRenderBookings.apply(this, arguments);
+            }
+        };
+        if (!state.USERS.find(u => u.role === 'supervisor')) {
+            state.USERS.push({ id:'sup1', username:'supervisor', password:'super123', role:'supervisor', name:'مشرف قاعة', employeeId:null, supervisedHallId:'h1' });
+        }
+    }
+
+    // ==================== 4. دورة حياة الفلاشة ====================
+    function enhanceFlashPage() {
+        var origRenderFlash = AppRenderer.renderFlash;
+        AppRenderer.renderFlash = function() {
+            origRenderFlash.apply(this, arguments);
+            setTimeout(() => {
+                var rows = document.querySelectorAll('#content-area table tbody tr');
+                rows.forEach(row => {
+                    var cells = row.querySelectorAll('td');
+                    if (cells.length > 6) {
+                        var statusText = cells[5].textContent.trim();
+                        if (statusText !== 'تم التسليم للعريس' && statusText !== 'مكتملة') {
+                            var dateCell = cells[2];
+                            var date = new Date(dateCell.textContent);
+                            var daysDiff = Math.floor((new Date() - date) / (1000*60*60*24));
+                            if (daysDiff > 2) {
+                                row.style.backgroundColor = '#ffe0e0';
+                            }
+                        }
+                    }
+                });
+            }, 200);
+        };
+    }
+
+    // ==================== 5. أتمتة التوزيع الدوري ====================
+    function initAutoDistribution() {
+        var autoDistConfig = JSON.parse(localStorage.getItem('drmedia_auto_dist') || '{"enabled":false,"dayOfWeek":0}');
+        function checkAutoDist() {
+            if (!autoDistConfig.enabled) return;
+            var now = new Date();
+            if (now.getDay() === autoDistConfig.dayOfWeek && now.getHours() === 8) {
+                DistributionManager.smartDistribute();
+            }
+        }
+        setInterval(checkAutoDist, 3600000);
+        var origRenderSettings = AppRenderer.renderSettings;
+        AppRenderer.renderSettings = function() {
+            origRenderSettings.apply(this, arguments);
+            setTimeout(() => {
+                var waTemplate = document.getElementById('waMsgTemplate');
+                if (!waTemplate || document.getElementById('autoDistContainer')) return;
+                var days = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+                var html = `<div id="autoDistContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <h3 class="font-semibold mb-2">🔄 أتمتة التوزيع الأسبوعي</h3>
+                    <div class="flex items-center gap-2 mb-2"><input type="checkbox" id="autoDistEnable" ${autoDistConfig.enabled?'checked':''} onchange="window._toggleAutoDist()"> <label>تفعيل</label></div>
+                    <select id="autoDistDay" class="border-2 p-2 rounded-xl w-full" onchange="window._updateAutoDist()">
+                        ${days.map((d,i) => `<option value="${i}" ${i===autoDistConfig.dayOfWeek?'selected':''}>${d}</option>`).join('')}
+                    </select>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+            }, 200);
+        };
+        window._toggleAutoDist = function() {
+            autoDistConfig.enabled = document.getElementById('autoDistEnable').checked;
+            localStorage.setItem('drmedia_auto_dist', JSON.stringify(autoDistConfig));
+        };
+        window._updateAutoDist = function() {
+            autoDistConfig.dayOfWeek = parseInt(document.getElementById('autoDistDay').value);
+            localStorage.setItem('drmedia_auto_dist', JSON.stringify(autoDistConfig));
+        };
+    }
+
+    // ==================== 6. قوالب واتساب متعددة ====================
+    function initWhatsAppTemplates() {
+        var templates = JSON.parse(localStorage.getItem('drmedia_wa_templates') || '["مرحباً {name}، تم توزيع أوردر {client} في {date} بقاعة {hall}", "تذكير: لديك أوردر غداً {client} في قاعة {hall}"]');
+        window._getWATemplates = function() { return templates; };
+        var origRenderSettings = AppRenderer.renderSettings;
+        AppRenderer.renderSettings = function() {
+            origRenderSettings.apply(this, arguments);
+            setTimeout(() => {
+                var waMsg = document.getElementById('waMsgTemplate');
+                if (!waMsg || document.getElementById('waTemplatesContainer')) return;
+                var html = `<div id="waTemplatesContainer" style="margin-top:10px;">
+                    <label class="text-sm font-semibold">قوالب إضافية (كل سطر قالب)</label>
+                    <textarea id="waExtraTemplates" class="w-full border-2 p-2 rounded-xl" rows="3" onchange="window._saveWATemplates()">${templates.join('\n')}</textarea>
+                </div>`;
+                waMsg.insertAdjacentHTML('afterend', html);
+            }, 200);
+        };
+        window._saveWATemplates = function() {
+            var val = document.getElementById('waExtraTemplates').value;
+            var lines = val.split('\n').filter(l => l.trim() !== '');
+            localStorage.setItem('drmedia_wa_templates', JSON.stringify(lines));
+            templates = lines;
+        };
+    }
+
+    // ==================== 7. تصدير PDF للتقارير ====================
+    function initPDFExport() {
+        if (!window.jspdf) {
+            var script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+            document.head.appendChild(script);
+        }
+        window.exportToPDF = function(tableId, filename) {
+            if (!window.jspdf) {
+                Utils.showError('مكتبة PDF غير محملة بعد');
+                return;
+            }
+            var { jsPDF } = window.jspdf;
+            var doc = new jsPDF();
+            var table = document.getElementById(tableId) || document.querySelector('table');
+            if (!table) return;
+            var rows = table.querySelectorAll('tr');
+            var y = 20;
+            rows.forEach(row => {
+                var cells = row.querySelectorAll('th, td');
+                var text = Array.from(cells).map(c => c.textContent).join(' | ');
+                doc.text(text, 10, y);
+                y += 8;
+                if (y > 280) { doc.addPage(); y = 20; }
+            });
+            doc.save(filename || 'report.pdf');
+        };
+        AppRenderer.renderReports = (function(old) {
+            return function() {
+                old.apply(this, arguments);
+                setTimeout(() => {
+                    var contentArea = document.getElementById('content-area');
+                    if (contentArea && !document.getElementById('pdfExportBtn')) {
+                        var btn = document.createElement('button');
+                        btn.id = 'pdfExportBtn';
+                        btn.className = 'btn-primary';
+                        btn.textContent = '📄 تصدير PDF';
+                        btn.onclick = function() { window.exportToPDF('bookingsTable', 'تقرير.pdf'); };
+                        var card = contentArea.querySelector('.bg-card');
+                        if (card) card.appendChild(btn);
+                    }
+                }, 200);
+            };
+        })(AppRenderer.renderReports);
+    }
+
+    // ==================== 8. وضع عدم الاتصال المحسن ====================
+    function initOfflineMode() {
+        var statusBar = document.createElement('div');
+        statusBar.id = 'offlineStatusBar';
+        statusBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;padding:6px;text-align:center;font-weight:bold;z-index:9999;';
+        document.body.appendChild(statusBar);
+        function updateStatus() {
+            if (navigator.onLine) {
+                statusBar.style.background = '#10b981';
+                statusBar.textContent = '🟢 متصل بالإنترنت';
+            } else {
+                statusBar.style.background = '#f59e0b';
+                statusBar.textContent = '🟠 وضع عدم الاتصال - البيانات محفوظة محلياً';
+            }
+        }
+        window.addEventListener('online', updateStatus);
+        window.addEventListener('offline', updateStatus);
+        updateStatus();
+    }
+
+    // ==================== 9. شاشة عرض عامة ====================
+    function initPublicView() {
+        if (window.location.search.includes('public')) {
+            document.body.innerHTML = '';
+            var today = new Date().toISOString().slice(0,10);
+            var bookings = JSON.parse(localStorage.getItem('drmedia_data')).bookings.filter(b => b.date === today && !b.deleted);
+            var html = '<div style="padding:20px;font-family:Tahoma;text-align:center;"><h1>📋 حجوزات اليوم</h1><table style="margin:auto;border-collapse:collapse;"><tr><th>القاعة</th><th>العميل</th><th>الوقت</th></tr>';
+            bookings.forEach(b => { html += `<tr><td>${b.hallName}</td><td>${b.clientName}</td><td>${b.time||'—'}</td></tr>`; });
+            html += '</table></div>';
+            document.body.innerHTML = html;
+        }
+    }
+
+    // ==================== 10. نسخ احتياطي إلى Google Drive ====================
+    function initGoogleDriveBackup() {
+        window.uploadToDrive = function() {
+            var data = JSON.stringify(state);
+            var blob = new Blob([data], {type:'application/json'});
+            var scriptURL = localStorage.getItem('drmedia_gdrive_script_url');
+            if (!scriptURL) {
+                Utils.showError('الرجاء إعداد رابط Google Apps Script في الإعدادات');
+                return;
+            }
+            var formData = new FormData();
+            formData.append('file', blob, 'backup.json');
+            fetch(scriptURL, { method: 'POST', body: formData }).then(() => {
+                Utils.showMsg('✅ تم رفع النسخ الاحتياطي إلى Google Drive');
+            }).catch(() => Utils.showError('فشل الرفع'));
+        };
+        var origSettings = AppRenderer.renderSettings;
+        AppRenderer.renderSettings = function() {
+            origSettings.apply(this, arguments);
+            setTimeout(() => {
+                var wa = document.getElementById('waMsgTemplate');
+                if (wa && !document.getElementById('gdriveContainer')) {
+                    var html = `<div id="gdriveContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                        <label class="text-sm font-semibold">Google Drive Script URL</label>
+                        <input id="gdriveURL" class="w-full border-2 p-2 rounded-xl" value="${localStorage.getItem('drmedia_gdrive_script_url')||''}" onchange="localStorage.setItem('drmedia_gdrive_script_url', this.value)">
+                        <button onclick="window.uploadToDrive()" class="btn-primary w-full mt-2">📤 رفع نسخة احتياطية الآن</button>
+                    </div>`;
+                    wa.insertAdjacentHTML('afterend', html);
+                }
+            }, 200);
+        };
+    }
+
+    // ==================== بدء جميع الميزات ====================
+    function initAll() {
+        initSmartAlerts();
+        initTimelinePage();
+        initSupervisorRole();
+        enhanceFlashPage();
+        initAutoDistribution();
+        initWhatsAppTemplates();
+        initPDFExport();
+        initOfflineMode();
+        initPublicView();
+        initGoogleDriveBackup();
+        console.log('✅ تم تحميل جميع الميزات العشر');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(initAll);
+    });
+    if (document.readyState !== 'loading') {
+        waitForApp(initAll);
+    }
+})();
