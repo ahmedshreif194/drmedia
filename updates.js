@@ -232,3 +232,123 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: إظهار الحالة كـ checkbox + زر إلغاء في النوافذ المنبثقة ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    // ========== 1. إضافة أزرار إلغاء بجانب كل زر حفظ في النوافذ المنبثقة ==========
+    function addCancelButtonsToModals() {
+        // نستخدم MutationObserver لمشاهدة ظهور النوافذ المنبثقة
+        var modalObserver = new MutationObserver(function(mutations) {
+            var modal = document.getElementById('modal');
+            if (!modal || !modal.classList.contains('show')) return;
+            var modalContent = document.getElementById('modalContent');
+            if (!modalContent) return;
+            // نبحث عن أي زر يحتوي على "حفظ" أو 💾 وليس بجانبه زر إلغاء مسبقاً
+            var saveButtons = modalContent.querySelectorAll('button');
+            saveButtons.forEach(function(btn) {
+                if ((btn.textContent.includes('حفظ') || btn.textContent.includes('💾')) &&
+                    !btn.nextElementSibling?.classList.contains('cancel-btn-auto')) {
+                    var cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = 'إلغاء';
+                    cancelBtn.className = btn.className + ' cancel-btn-auto';
+                    cancelBtn.style.marginRight = '8px';
+                    cancelBtn.onclick = function(e) {
+                        e.preventDefault();
+                        Utils.closeModal();
+                    };
+                    btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+                }
+            });
+        });
+        modalObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+
+    // ========== 2. تحويل عمود الحالة إلى checkbox ==========
+    function enhanceStatusColumn() {
+        var rows = document.querySelectorAll('#content-area table tbody tr');
+        rows.forEach(function(row) {
+            var cells = row.querySelectorAll('td');
+            if (cells.length < 5) return;
+            // عمود الحالة هو الخامس (index 4)
+            var statusCell = cells[4];
+            if (!statusCell || statusCell.querySelector('.status-checkbox')) return;
+
+            var checkbox = row.querySelector('input.booking-check');
+            if (!checkbox) return;
+            var bookingId = checkbox.value;
+            var booking = state.bookings.find(b => b.id === bookingId);
+            if (!booking) return;
+
+            // نحفظ المرجع للـ span القديم (قد يكون موجوداً)
+            var oldSpan = statusCell.querySelector('.status-badge');
+            var oldSelect = statusCell.querySelector('select');
+
+            // نزيل المحتوى القديم
+            statusCell.innerHTML = '';
+
+            // ننشئ checkbox
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'status-checkbox';
+            cb.checked = (booking.status === 'completed');
+            cb.setAttribute('data-booking-id', bookingId);
+            cb.style.cssText = 'width:20px; height:20px; cursor:pointer;';
+            cb.title = 'تحديد كمكتمل';
+
+            // نضيف نص بجانبه (اختياري)
+            var label = document.createElement('span');
+            label.textContent = ' مكتمل';
+            label.style.cssText = 'font-size:0.8rem; vertical-align:middle;';
+
+            statusCell.appendChild(cb);
+            statusCell.appendChild(label);
+
+            // التعامل مع تغيير الـ checkbox
+            cb.addEventListener('change', function() {
+                var newStatus = this.checked ? 'completed' : 'pending';
+                BookingManager.changeStatus(bookingId, newStatus);
+                // تحديث النص إذا أردت
+                label.textContent = this.checked ? ' مكتمل' : ' معلق';
+            });
+        });
+    }
+
+    // ========== 3. تشغيل التعديلات بعد تحميل AppRenderer ==========
+    function init() {
+        // إضافة أزرار الإلغاء
+        addCancelButtonsToModals();
+
+        // ربط تحسين حالة checkbox برسم الجدول
+        var origRenderBookings = AppRenderer.renderBookings;
+        AppRenderer.renderBookings = function() {
+            origRenderBookings.apply(this, arguments);
+            requestAnimationFrame(function() {
+                enhanceStatusColumn();
+            });
+        };
+
+        // إذا كان الجدول موجوداً بالفعل
+        if (document.querySelector('#content-area table tbody')) {
+            enhanceStatusColumn();
+        }
+
+        console.log('✅ تم تفعيل checkbox الحالة وأزرار الإلغاء');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
