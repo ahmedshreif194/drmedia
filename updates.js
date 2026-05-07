@@ -819,3 +819,219 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: أنماط شاملة للواجهة (تغيير القوائم والأيقونات والتبويبات والمربعات) ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    var STYLES = {
+        default: {
+            name: 'الافتراضي',
+            css: ''
+        },
+        rounded: {
+            name: 'دائري ناعم',
+            css: `
+                :root {
+                    --radius-btn: 40px;
+                    --radius-lg: 28px;
+                    --radius-xl: 32px;
+                    --radius-sm: 16px;
+                }
+                .btn, .stat-card, .bg-card, .sidebar-item, .calendar-day,
+                .status-badge, .modal-content, table, .badge-active, .badge-inactive {
+                    border-radius: var(--radius-lg) !important;
+                }
+                .btn { border-radius: var(--radius-btn) !important; }
+                .modal-content { border-radius: var(--radius-xl) !important; }
+                .sidebar-item { margin: 4px 8px; border-radius: var(--radius-sm) !important; }
+                .sidebar-item:hover { background: #f0fdf4; transform: translateX(-2px); }
+                .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.12); }
+                .topbar { border-bottom: none; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
+            `
+        },
+        compact: {
+            name: 'مدمج',
+            css: `
+                :root {
+                    --radius-btn: 8px;
+                    --radius-lg: 8px;
+                    --radius-xl: 10px;
+                    --radius-sm: 4px;
+                }
+                .btn { padding: 6px 14px; font-size: 0.8rem; border-radius: var(--radius-btn) !important; }
+                table { font-size: 0.78rem; }
+                th, td { padding: 6px 5px; }
+                .stat-card, .bg-card { padding: 12px; border-radius: var(--radius-lg) !important; }
+                .sidebar-item { padding: 8px 14px; font-size: 0.85rem; gap: 8px; }
+                .sidebar { width: 220px; }
+                .main-content { margin-right: 220px; padding: 16px; padding-top: calc(60px + 16px); }
+                .topbar { height: 60px; padding: 10px 16px; right: 220px; }
+                .modal-content { padding: 16px; border-radius: var(--radius-xl) !important; }
+            `
+        },
+        spacious: {
+            name: 'واسع',
+            css: `
+                :root {
+                    --radius-btn: 30px;
+                    --radius-lg: 24px;
+                    --radius-xl: 28px;
+                    --radius-sm: 18px;
+                }
+                .main-content { padding: 40px; padding-top: calc(80px + 40px); }
+                .stat-card, .bg-card { padding: 30px; margin-bottom: 30px; border-radius: var(--radius-lg) !important; }
+                .btn { padding: 12px 28px; font-size: 1rem; border-radius: var(--radius-btn) !important; }
+                .sidebar-item { padding: 16px 22px; font-size: 1rem; gap: 14px; }
+                .sidebar { width: 280px; }
+                .main-content { margin-right: 280px; }
+                .topbar { right: 280px; height: 80px; padding: 18px 28px; }
+                th, td { padding: 14px 12px; }
+                .modal-content { padding: 30px; border-radius: var(--radius-xl) !important; }
+            `
+        },
+        minimal: {
+            name: 'بسيط',
+            css: `
+                :root {
+                    --radius-btn: 4px;
+                    --radius-lg: 4px;
+                    --radius-xl: 6px;
+                    --radius-sm: 2px;
+                }
+                .btn, .stat-card, .bg-card, .sidebar-item, .calendar-day,
+                .status-badge, .modal-content {
+                    box-shadow: none !important;
+                    border: 1px solid var(--border);
+                    border-radius: var(--radius-lg) !important;
+                }
+                .btn { border-radius: var(--radius-btn) !important; }
+                .modal-content { border-radius: var(--radius-xl) !important; }
+                .sidebar { border-left: 1px solid var(--border); box-shadow: none; }
+                .topbar { border-bottom: 1px solid var(--border); box-shadow: none; }
+                .sidebar-item.active { background: #f0fdf4; font-weight: 600; }
+            `
+        },
+        elegant: {
+            name: 'أنيق',
+            css: `
+                :root {
+                    --radius-btn: 50px;
+                    --radius-lg: 30px;
+                    --radius-xl: 36px;
+                    --radius-sm: 20px;
+                }
+                .topbar { background: linear-gradient(135deg, var(--primary), #0d9488); color: white; border-bottom: none; }
+                .topbar .btn { background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); }
+                .sidebar-item { margin: 6px 10px; border-radius: var(--radius-sm) !important; font-weight: 400; }
+                .sidebar-item.active { background: rgba(22,163,74,0.1); border-right: 4px solid var(--primary); font-weight: 600; }
+                .sidebar-item:hover { background: rgba(0,0,0,0.03); }
+                .stat-card { background: linear-gradient(145deg, #fff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); }
+                .btn { letter-spacing: 0.5px; border-radius: var(--radius-btn) !important; }
+                .modal-content { border-radius: var(--radius-xl) !important; backdrop-filter: blur(10px); }
+                body.dark .stat-card { background: linear-gradient(145deg, #2d3a4a, #1e293b); }
+                body.dark .topbar { background: linear-gradient(135deg, #064e3b, #0f172a); }
+            `
+        },
+        modern: {
+            name: 'مودرن',
+            css: `
+                :root {
+                    --radius-btn: 20px;
+                    --radius-lg: 16px;
+                    --radius-xl: 20px;
+                    --radius-sm: 10px;
+                }
+                .sidebar { background: #1e293b; color: #e2e8f0; }
+                .sidebar-item { color: #94a3b8; margin: 2px 6px; border-radius: var(--radius-sm) !important; }
+                .sidebar-item:hover { background: #334155; color: white; }
+                .sidebar-item.active { background: var(--primary); color: white; border-right: none; }
+                .topbar { background: white; border-bottom: 2px solid var(--primary); }
+                .btn { border-radius: var(--radius-btn) !important; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.5px; }
+                .stat-card { border-left: 4px solid var(--primary); border-radius: var(--radius-lg) !important; }
+                .bg-card { border-radius: var(--radius-lg) !important; }
+                .modal-content { border-radius: var(--radius-xl) !important; }
+                body.dark .sidebar { background: #0f172a; }
+                body.dark .sidebar-item:hover { background: #1e293b; }
+                body.dark .topbar { background: #1e293b; border-bottom-color: #22c55e; }
+            `
+        }
+    };
+
+    function applyStyle(styleName) {
+        var styleId = 'dynamic-style-patch';
+        var oldStyle = document.getElementById(styleId);
+        if (oldStyle) oldStyle.remove();
+
+        if (styleName === 'default') {
+            localStorage.setItem('drmedia_style', 'default');
+            return;
+        }
+
+        var preset = STYLES[styleName];
+        if (!preset || !preset.css) return;
+
+        var style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = preset.css;
+        document.head.appendChild(style);
+        localStorage.setItem('drmedia_style', styleName);
+    }
+
+    var savedStyle = localStorage.getItem('drmedia_style') || 'default';
+    applyStyle(savedStyle);
+
+    function injectStyleSelector() {
+        var checkInterval = setInterval(function() {
+            var waTemplate = document.getElementById('waMsgTemplate');
+            if (waTemplate && !document.getElementById('styleSelectContainer')) {
+                clearInterval(checkInterval);
+
+                var html = `
+                <div id="styleSelectContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <label class="text-sm font-semibold">🎨 شكل الواجهة (Style)</label>
+                    <select id="styleSelect" class="w-full border-2 p-2 rounded-xl mt-1" onchange="window._applyGlobalStyle(this.value)">
+                        ${Object.keys(STYLES).map(function(key) {
+                            var selected = (key === savedStyle) ? 'selected' : '';
+                            return '<option value="' + key + '" ' + selected + '>' + STYLES[key].name + '</option>';
+                        }).join('')}
+                    </select>
+                    <small class="text-gray-500">يؤثر على شكل القوائم والأيقونات والتبويبات والمربعات</small>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+            }
+        }, 300);
+        setTimeout(function() { clearInterval(checkInterval); }, 10000);
+    }
+
+    window._applyGlobalStyle = function(styleName) {
+        applyStyle(styleName);
+        Utils.showMsg('✅ تم تغيير شكل الواجهة');
+    };
+
+    function init() {
+        var appObserver = new MutationObserver(function() {
+            if (document.getElementById('waMsgTemplate')) {
+                injectStyleSelector();
+            }
+        });
+        var appEl = document.getElementById('app');
+        if (appEl) appObserver.observe(appEl, { childList: true, subtree: true });
+        injectStyleSelector();
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
