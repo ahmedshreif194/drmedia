@@ -90,6 +90,7 @@
         startObserving();
     }
 })();
+
 // ====== تحديث: قائمة منسدلة لتبديل الموظفين (نسخة محسنة الأداء) ======
 (function() {
     function waitForApp(callback) {
