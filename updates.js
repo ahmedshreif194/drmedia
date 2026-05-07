@@ -1035,3 +1035,197 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: لوحة مراقبة حية + 3 رسوم بيانية في صفحة تقارير متقدمة ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    // ======================= 1. لوحة المراقبة الحية =======================
+    function injectLiveDashboard() {
+        var origDashboard = AppRenderer.renderDashboard;
+        AppRenderer.renderDashboard = function() {
+            origDashboard.apply(this, arguments);
+            setTimeout(injectCards, 200);
+        };
+
+        function injectCards() {
+            var contentArea = document.getElementById('content-area');
+            if (!contentArea || document.getElementById('liveMonitorCards')) return;
+
+            var today = Utils.getTodayDateStr();
+            var todayBookings = state.bookings.filter(b => b.date === today && !b.deleted && b.status !== 'cancelled');
+            var activeEmployees = state.employees.filter(e => {
+                var rec = state.attendanceRecords.find(a => a.empId === e.id && a.date === today);
+                return rec && rec.checkIn && !rec.checkOut;
+            });
+            var busyHallIds = new Set(todayBookings.filter(b => b.status !== 'cancelled').map(b => b.hallId));
+            var busyHalls = state.halls.filter(h => busyHallIds.has(h.id));
+
+            var html = `
+            <div id="liveMonitorCards" style="margin-top:20px;">
+                <h3 style="font-weight:bold; margin-bottom:12px; font-size:1.1rem;">📡 لوحة المراقبة الحية</h3>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px;">
+                    <div class="stat-card" style="border-left:4px solid #3b82f6;">
+                        <div class="stat-value" style="color:#3b82f6;">${todayBookings.length}</div>
+                        <div class="stat-label">حجوزات اليوم</div>
+                    </div>
+                    <div class="stat-card" style="border-left:4px solid #10b981;">
+                        <div class="stat-value" style="color:#10b981;">${activeEmployees.length}</div>
+                        <div class="stat-label">موظفون متواجدون</div>
+                    </div>
+                    <div class="stat-card" style="border-left:4px solid #f59e0b;">
+                        <div class="stat-value" style="color:#f59e0b;">${busyHalls.length}</div>
+                        <div class="stat-label">قاعات مشغولة</div>
+                    </div>
+                    <div class="stat-card" style="border-left:4px solid #8b5cf6;">
+                        <div class="stat-value" style="color:#8b5cf6; font-size:1.2rem;">${state.attendanceRecords[0]?.checkIn || '—'}</div>
+                        <div class="stat-label">آخر تسجيل حضور</div>
+                    </div>
+                </div>
+            </div>`;
+
+            var firstCard = contentArea.querySelector('.stat-card');
+            if (firstCard) {
+                var parentGrid = firstCard.closest('.grid');
+                if (parentGrid) {
+                    parentGrid.insertAdjacentHTML('afterend', html);
+                }
+            }
+        }
+
+        // تشغيل أولي
+        if (document.getElementById('content-area') && document.querySelector('.stat-card')) {
+            injectCards();
+        }
+    }
+
+    // ======================= 2. صفحة تقارير متقدمة جديدة =======================
+    function initAdvancedReportPage() {
+        // إضافة الصفحة إلى القائمة الجانبية
+        var sidebarContainer = document.querySelector('.sidebar .py-2');
+        if (sidebarContainer && !document.querySelector('[data-page="advancedReportsNew"]')) {
+            var item = document.createElement('div');
+            item.className = 'sidebar-item';
+            item.setAttribute('data-page', 'advancedReportsNew');
+            item.onclick = function() { AppRenderer.navigateTo('advancedReportsNew'); };
+            item.innerHTML = '<span>📈 تقارير متقدمة</span>';
+            sidebarContainer.appendChild(item);
+        }
+
+        // إضافة التبويب إلى صفحات AppRenderer
+        if (!AppRenderer.pages.includes('advancedReportsNew')) {
+            AppRenderer.pages.push('advancedReportsNew');
+        }
+
+        // تعريف دالة العرض
+        AppRenderer.renderAdvancedReportsNew = function() {
+            var c = document.getElementById('content-area');
+            if (!c) return;
+            document.getElementById('pageTitle').textContent = '📈 تقارير متقدمة';
+
+            c.innerHTML = `
+            <div class="bg-card">
+                <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+                    <button onclick="window._showAdvancedChart('occupancy', this)" class="btn-primary active-chart-btn">إشغال القاعات</button>
+                    <button onclick="window._showAdvancedChart('performance', this)" class="btn-outline">أداء الموظفين</button>
+                    <button onclick="window._showAdvancedChart('revenue', this)" class="btn-outline">الإيرادات</button>
+                </div>
+                <div id="advancedChartContainer" style="position:relative; height:400px; width:100%;">
+                    <canvas id="advancedChartCanvas" style="width:100%; height:100%;"></canvas>
+                </div>
+                <div class="footer-bar">${state.footerText || APP_CONFIG.footerText}</div>
+            </div>`;
+
+            window._showAdvancedChart('occupancy', document.querySelector('.active-chart-btn'));
+        };
+
+        // دالة عرض الرسم البياني المطلوب
+        window._showAdvancedChart = function(type, btn) {
+            // تنشيط الزر
+            document.querySelectorAll('.active-chart-btn').forEach(b => b.className = 'btn-outline');
+            if (btn) btn.className = 'btn-primary active-chart-btn';
+
+            var ctx = document.getElementById('advancedChartCanvas');
+            if (!ctx) return;
+
+            // تدمير الرسم السابق
+            var existingChart = Chart.getChart(ctx);
+            if (existingChart) existingChart.destroy();
+
+            var labels, data, title;
+
+            if (type === 'occupancy') {
+                // إشغال القاعات شهرياً
+                labels = state.halls.map(h => h.name);
+                var months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+                var currentMonth = new Date().getMonth();
+                data = state.halls.map(h => {
+                    return state.bookings.filter(b => b.hallId === h.id && !b.deleted &&
+                        new Date(b.date).getMonth() === currentMonth).length;
+                });
+                title = 'عدد الحجوزات لكل قاعة (الشهر الحالي)';
+            } else if (type === 'performance') {
+                // أداء الموظفين
+                labels = state.employees.map(e => e.name);
+                data = state.employees.map(e => e.totalOrders || 0);
+                title = 'إجمالي الأوردرات المكتملة لكل موظف';
+            } else if (type === 'revenue') {
+                // الإيرادات الشهرية
+                labels = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+                data = labels.map((_, i) => state.bookings.filter(b => {
+                    var d = new Date(b.date);
+                    return d.getMonth() === i && !b.deleted && b.status !== 'cancelled';
+                }).reduce((sum, b) => sum + (b.price || 0), 0));
+                title = 'الإيرادات الشهرية (بالجنيه)';
+            }
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: title,
+                        data: data,
+                        backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316'],
+                        borderRadius: 8,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0 }
+                        }
+                    }
+                }
+            });
+        };
+    }
+
+    // ======================= 3. تشغيل الكل =======================
+    function init() {
+        injectLiveDashboard();
+        initAdvancedReportPage();
+        console.log('✅ لوحة المراقبة والتقارير المتقدمة جاهزة');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
