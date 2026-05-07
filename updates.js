@@ -1,4 +1,3 @@
-// ====== تحديث: عرض التاريخ والوقت ======
 (function() {
     function waitForApp(callback) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
