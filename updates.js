@@ -90,8 +90,7 @@
         startObserving();
     }
 })();
-
-// ====== تحديث: قائمة منسدلة لتبديل الموظفين في صفحة الحجوزات ======
+// ====== تحديث: قائمة منسدلة لتبديل الموظفين (نسخة محسنة الأداء) ======
 (function() {
     function waitForApp(callback) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
@@ -102,36 +101,33 @@
     }
 
     function renderEmployeeDropdowns() {
-        // نبحث عن الصفوف في جدول الحجوزات (الموجودة داخل tbody)
         var rows = document.querySelectorAll('#content-area table tbody tr');
-        rows.forEach(function(row) {
-            // الخلية التي تحتوي على أسماء الموظفين (العمود قبل الأخير عادة، نعتمد على أنه يحوي span)
-            var cell = row.querySelector('td:nth-child(6)'); // عمود الموظفون
-            if (!cell || cell.querySelector('.custom-emp-select')) return; // تم التعديل مسبقاً
+        if (!rows.length) return;
 
-            // البحث عن booking id من checkbox
+        rows.forEach(function(row) {
+            var cell = row.querySelector('td:nth-child(6)');
+            if (!cell || cell.querySelector('.custom-emp-select')) return;
+
             var checkbox = row.querySelector('input.booking-check');
             if (!checkbox) return;
             var bookingId = checkbox.value;
             var booking = state.bookings.find(b => b.id === bookingId);
             if (!booking) return;
 
-            // تجهيز قائمة الموظفين حسب الدور
             var allEmployees = state.employees.filter(e => e.active);
             var assigned = booking.assignedEmployees || [];
 
-            // نمسح المحتوى القديم
             cell.innerHTML = '';
 
-            // نضيف قائمة منسدلة لكل موظف معين حالياً
             assigned.forEach(function(empId) {
                 var emp = state.employees.find(e => e.id === empId);
                 if (!emp) return;
-                // الموظفون من نفس الدور
                 var sameRole = allEmployees.filter(e => e.role === emp.role);
+                if (!sameRole.length) return;
+
                 var select = document.createElement('select');
-                select.className = 'custom-emp-select border p-1 rounded text-sm w-full mb-1';
-                select.style.cssText = 'margin-bottom:4px;';
+                select.className = 'custom-emp-select border p-1 rounded text-sm';
+                select.style.cssText = 'margin-bottom:4px; width:100%;';
                 sameRole.forEach(function(e) {
                     var opt = document.createElement('option');
                     opt.value = e.id;
@@ -140,7 +136,6 @@
                     select.appendChild(opt);
                 });
                 select.addEventListener('change', function() {
-                    // استبدال الموظف في المصفوفة
                     var idx = booking.assignedEmployees.indexOf(empId);
                     if (idx !== -1) {
                         booking.assignedEmployees[idx] = this.value;
@@ -152,13 +147,11 @@
                 cell.appendChild(select);
             });
 
-            // زر إضافة موظف جديد (من أي دور)
             var addBtn = document.createElement('button');
             addBtn.textContent = '+';
             addBtn.className = 'btn-secondary text-xs';
             addBtn.style.cssText = 'margin-top:4px;';
             addBtn.onclick = function() {
-                // نافذة صغيرة لاختيار دور ثم موظف
                 var roles = [...new Set(allEmployees.map(e => e.role))];
                 var roleOpts = roles.map(r => `<option value="${r}">${r}</option>`).join('');
                 Utils.openModal(`
@@ -169,18 +162,17 @@
                 `);
                 var roleSelect = document.getElementById('newEmpRole');
                 var empSelect = document.getElementById('newEmpSelect');
-                function updateEmpList() {
+                function updateList() {
                     var role = roleSelect.value;
                     var emps = allEmployees.filter(e => e.role === role && !(booking.assignedEmployees||[]).includes(e.id));
                     empSelect.innerHTML = emps.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
                 }
-                roleSelect.addEventListener('change', updateEmpList);
-                updateEmpList();
+                roleSelect.addEventListener('change', updateList);
+                updateList();
             };
             cell.appendChild(addBtn);
         });
 
-        // دالة الإضافة (معرفة على window)
         window._addEmpToBooking = function(bookingId) {
             var empId = document.getElementById('newEmpSelect')?.value;
             if (!empId) return Utils.showError('اختر موظفاً');
@@ -191,31 +183,42 @@
             DataManager.updateEmployeeOrders();
             DataManager.saveAllData();
             Utils.closeModal();
-            AppRenderer.renderBookings(); // إعادة رسم الجدول
+            AppRenderer.renderBookings();
         };
     }
 
-    // ====== تنفيذ ======
-    function init() {
-        // بعد تحميل الصفحة، نراقب التغييرات
-        var observer = new MutationObserver(function(mutations) {
-            if (document.getElementById('content-area') && document.querySelector('#content-area table')) {
-                renderEmployeeDropdowns();
-            }
-        });
-        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
-
-        // محاولة أولى
-        setTimeout(renderEmployeeDropdowns, 500);
-        setTimeout(renderEmployeeDropdowns, 1500);
+    // ====== تحسين المراقبة ======
+    var debounceTimer;
+    function debouncedRender() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(renderEmployeeDropdowns, 200);
     }
 
+    function startObserver() {
+        var target = document.getElementById('content-area');
+        if (!target) return;
+
+        var observer = new MutationObserver(function(mutations) {
+            // نتحقق فقط إذا كان هناك جدول في content-area
+            if (target.querySelector('table')) {
+                debouncedRender();
+            }
+        });
+        observer.observe(target, { childList: true, subtree: true });
+    }
+
+    // ====== البدء ======
     window.addEventListener('DOMContentLoaded', function() {
-        waitForApp(init);
+        waitForApp(function() {
+            startObserver();
+            setTimeout(renderEmployeeDropdowns, 800);
+        });
     });
 
-    // لو الحدث فات
     if (document.readyState === 'interactive' || document.readyState === 'complete') {
-        waitForApp(init);
+        waitForApp(function() {
+            startObserver();
+            setTimeout(renderEmployeeDropdowns, 800);
+        });
     }
 })();
