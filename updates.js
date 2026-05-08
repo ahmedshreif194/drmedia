@@ -1544,7 +1544,7 @@
         waitForApp(initAll);
     }
 })();
-// ====== تحديث: ترتيب تصاعدي للأوردرات في واجهة الموظف ======
+// ====== تحديث: ترتيب تصاعدي للأوردرات في واجهة الموظف (مُصحح) ======
 (function() {
     'use strict';
 
@@ -1557,34 +1557,35 @@
     }
 
     function sortBookingsAscending() {
-        // نبحث عن حاوية "جميع الأوردرات" (آخر div يحوي .max-h-60)
+        // نبحث عن الحاوية التي تحتوي على أوردرات الموظف (آخر div يحوي max-h-60)
         var containers = document.querySelectorAll('#app .max-h-60.overflow-y-auto');
         if (containers.length === 0) return;
-        // عادةً آخر حاوية هي المسؤولة عن عرض جميع الأوردرات
         var allBookingsContainer = containers[containers.length - 1];
         if (!allBookingsContainer) return;
 
-        // نجلب جميع العناصر (div.border-b)
+        // نجلب جميع العناصر التي تمثل أوردراً (تحتوي على تاريخ)
         var items = Array.from(allBookingsContainer.querySelectorAll('.border-b'));
         if (items.length === 0) return;
 
-        // نستخرج التاريخ من النص (نمط: YYYY-MM-DD)
+        // دالة استخراج التاريخ من النص (نمط YYYY-MM-DD)
         function extractDate(item) {
-            var text = item.textContent || '';
-            var match = text.match(/(\d{4}-\d{2}-\d{2})/);
+            var match = item.textContent.match(/(\d{4}-\d{2}-\d{2})/);
             return match ? match[0] : '9999-99-99';
         }
 
-        // نرتب تصاعدياً (الأقدم أولاً)
+        // فرز تصاعدي (الأقدم أولاً)
         items.sort(function(a, b) {
-            var dateA = extractDate(a);
-            var dateB = extractDate(b);
-            return dateA.localeCompare(dateB);
+            return extractDate(a).localeCompare(extractDate(b));
         });
 
-        // نعيد ترتيب العناصر في الـ DOM
+        // إزالة جميع العناصر الحالية من الحاوية
+        while (allBookingsContainer.firstChild) {
+            allBookingsContainer.removeChild(allBookingsContainer.firstChild);
+        }
+
+        // إعادة إضافة العناصر بالترتيب الجديد
         items.forEach(function(item) {
-            allBookingsContainer.appendChild(item); // بننقل العنصر للنهاية بالترتيب
+            allBookingsContainer.appendChild(item);
         });
     }
 
@@ -1593,10 +1594,12 @@
         var origRenderEmpDash = AppRenderer.renderEmpDash;
         AppRenderer.renderEmpDash = function() {
             origRenderEmpDash.apply(this, arguments);
-            // بعد رسم الواجهة، نعيد ترتيب الأوردرات
-            setTimeout(sortBookingsAscending, 250);
+            // ننتظر حتى يتم رسم الواجهة بالكامل ثم نعيد الترتيب
+            setTimeout(sortBookingsAscending, 300);
+            // محاولة إضافية بعد وقت أطول لضمان التنفيذ
+            setTimeout(sortBookingsAscending, 800);
         };
-        console.log('✅ ترتيب الأوردرات تصاعدياً جاهز');
+        console.log('✅ ترتيب تصاعدي للأوردرات جاهز');
     }
 
     window.addEventListener('DOMContentLoaded', function() {
