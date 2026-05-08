@@ -1677,3 +1677,111 @@
         waitForApp(init);
     }
 })();
+// ====== تحديث: إصلاح التزامن + تحسين التجاوب مع الموبايل ======
+(function() {
+    'use strict';
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ================== 1. إصلاح التزامن (Firebase → Local) ==================
+    function initSyncFix() {
+        // إجبار مزامنة عند التحميل إذا كان Firebase متاحاً
+        window.addEventListener('load', function() {
+            if (state.useFirebase && state.db && navigator.onLine) {
+                state.db.ref('/').once('value').then(function(snapshot) {
+                    if (snapshot.exists()) {
+                        DataManager._loadDataObject(snapshot.val());
+                        DataManager._ensureMinimumData();
+                        DataManager.updateEmployeeOrders();
+                        DataManager.saveAllData();
+                        Utils.applyTheme(state.appTheme);
+                        // إعادة رسم الواجهة الحالية إذا كانت موجودة
+                        if (AppRenderer.renderBookings && document.getElementById('content-area')) {
+                            var currentPage = sessionStorage.getItem('drmedia_last_page') || 'dashboard';
+                            AppRenderer.navigateTo(currentPage);
+                        }
+                        console.log('✅ مزامنة تلقائية من Firebase');
+                    }
+                }).catch(function() {});
+            }
+        });
+
+        // زر مزامنة يدوي في شريط المعلومات أو عند الحاجة
+        window._manualSync = async function() {
+            if (!state.useFirebase || !state.db) return Utils.showError('Firebase غير مهيأ');
+            Utils.showMsg('🔄 جاري المزامنة...');
+            try {
+                var s = await state.db.ref('/').once('value');
+                if (s.exists()) {
+                    DataManager._loadDataObject(s.val());
+                    DataManager._ensureMinimumData();
+                    DataManager.updateEmployeeOrders();
+                    await DataManager.saveAllData();
+                    Utils.applyTheme(state.appTheme);
+                    Utils.showMsg('✅ تمت المزامنة بنجاح');
+                }
+            } catch(e) {
+                Utils.showError('فشلت المزامنة');
+            }
+        };
+    }
+
+    // ================== 2. تحسين تجاوب الموبايل ==================
+    function injectMobileCSS() {
+        if (document.getElementById('mobile-responsive-fix')) return;
+        var style = document.createElement('style');
+        style.id = 'mobile-responsive-fix';
+        style.textContent = `
+            @media (max-width: 768px) {
+                /* إصلاح عام للهوامش */
+                .main-content { padding: 12px !important; padding-top: 60px !important; }
+                .topbar { padding: 10px 12px !important; height: 60px !important; right: 0 !important; }
+                
+                /* جعل الجداول قابلة للتمرير الأفقي */
+                .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+                
+                /* تكبير الأزرار ومسافات اللمس */
+                .btn, button { min-height: 44px; padding: 10px 16px; font-size: 0.9rem; }
+                
+                /* تحسين القوائم المنسدلة */
+                select, input { font-size: 16px !important; } /* لمنع زووم iOS */
+                
+                /* إصلاح النوافذ المنبثقة */
+                .modal-content { width: 95% !important; margin: 10px; border-radius: 16px; }
+                
+                /* إخفاء بعض الأعمدة غير الضرورية في الجداول على الموبايل */
+                table th:nth-child(4), table td:nth-child(4),
+                table th:nth-child(5), table td:nth-child(5) {
+                    /* يمكنك تعديل الأعمدة المراد إخفاؤها */
+                    /* display: none; */ 
+                }
+                
+                /* تحسين شكل البطاقات */
+                .stat-card { padding: 14px; }
+                .stat-value { font-size: 1.5rem; }
+                
+                /* إصلاح شريط البحث والفلاتر */
+                .grid-cols-1.md\\:grid-cols-4 {
+                    grid-template-columns: 1fr 1fr !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // ================== 3. تشغيل التحسينات ==================
+    function init() {
+        initSyncFix();
+        injectMobileCSS();
+        console.log('✅ إصلاح التزامن وتحسينات الموبايل جاهزة');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
