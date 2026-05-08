@@ -1544,6 +1544,7 @@
         waitForApp(initAll);
     }
 })();
+
 // ====== تحديث: تحسين واجهة الموظف وترتيب الأوردرات تصاعدياً ======
 (function() {
     'use strict';
@@ -1615,6 +1616,64 @@
     });
 
     if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
+// ====== تحديث: عرض الوقت والتاريخ في واجهة الموظف ======
+(function() {
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    function updateDateTime(element) {
+        var now = new Date();
+        var options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+        var dateStr = now.toLocaleDateString('ar-EG', options);
+        var timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        element.textContent = dateStr + ' - ' + timeStr;
+    }
+
+    function injectEmployeeDateTime() {
+        // نبحث عن header داخل #app (خاص بواجهة الموظف)
+        var empHeader = document.querySelector('#app header');
+        if (empHeader && !document.getElementById('liveDateTimeEmp')) {
+            var span = document.createElement('span');
+            span.id = 'liveDateTimeEmp';
+            span.style.cssText = 'font-weight:bold; color:#16a34a; white-space:nowrap; font-size:14px; margin-right:20px;';
+            var h1 = empHeader.querySelector('h1');
+            if (h1) {
+                h1.insertAdjacentElement('afterend', span);
+            } else {
+                empHeader.appendChild(span);
+            }
+            updateDateTime(span);
+            setInterval(function() { updateDateTime(span); }, 1000);
+        }
+    }
+
+    function init() {
+        // نلف دالة عرض واجهة الموظف لإضافة التاريخ بعد الرسم
+        var origRenderEmpDash = AppRenderer.renderEmpDash;
+        AppRenderer.renderEmpDash = function() {
+            origRenderEmpDash.apply(this, arguments);
+            setTimeout(injectEmployeeDateTime, 200);
+        };
+
+        // محاولة أولى في حال كانت الواجهة مرسومة مسبقاً
+        if (document.querySelector('#app header')) {
+            injectEmployeeDateTime();
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState !== 'loading') {
         waitForApp(init);
     }
 })();
