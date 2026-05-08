@@ -1544,3 +1544,66 @@
         waitForApp(initAll);
     }
 })();
+// ====== تحديث: ترتيب تصاعدي للأوردرات في واجهة الموظف ======
+(function() {
+    'use strict';
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    function sortBookingsAscending() {
+        // نبحث عن حاوية "جميع الأوردرات" (آخر div يحوي .max-h-60)
+        var containers = document.querySelectorAll('#app .max-h-60.overflow-y-auto');
+        if (containers.length === 0) return;
+        // عادةً آخر حاوية هي المسؤولة عن عرض جميع الأوردرات
+        var allBookingsContainer = containers[containers.length - 1];
+        if (!allBookingsContainer) return;
+
+        // نجلب جميع العناصر (div.border-b)
+        var items = Array.from(allBookingsContainer.querySelectorAll('.border-b'));
+        if (items.length === 0) return;
+
+        // نستخرج التاريخ من النص (نمط: YYYY-MM-DD)
+        function extractDate(item) {
+            var text = item.textContent || '';
+            var match = text.match(/(\d{4}-\d{2}-\d{2})/);
+            return match ? match[0] : '9999-99-99';
+        }
+
+        // نرتب تصاعدياً (الأقدم أولاً)
+        items.sort(function(a, b) {
+            var dateA = extractDate(a);
+            var dateB = extractDate(b);
+            return dateA.localeCompare(dateB);
+        });
+
+        // نعيد ترتيب العناصر في الـ DOM
+        items.forEach(function(item) {
+            allBookingsContainer.appendChild(item); // بننقل العنصر للنهاية بالترتيب
+        });
+    }
+
+    // نلف دالة renderEmpDash الأصلية
+    function init() {
+        var origRenderEmpDash = AppRenderer.renderEmpDash;
+        AppRenderer.renderEmpDash = function() {
+            origRenderEmpDash.apply(this, arguments);
+            // بعد رسم الواجهة، نعيد ترتيب الأوردرات
+            setTimeout(sortBookingsAscending, 250);
+        };
+        console.log('✅ ترتيب الأوردرات تصاعدياً جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        waitForApp(init);
+    }
+})();
