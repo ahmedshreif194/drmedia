@@ -1544,7 +1544,7 @@
         waitForApp(initAll);
     }
 })();
-// ====== تحديث: ترتيب تصاعدي للأوردرات في واجهة الموظف (مُصحح) ======
+// ====== تحديث: تحسين واجهة الموظف وترتيب الأوردرات تصاعدياً ======
 (function() {
     'use strict';
 
@@ -1556,50 +1556,58 @@
         }
     }
 
-    function sortBookingsAscending() {
-        // نبحث عن الحاوية التي تحتوي على أوردرات الموظف (آخر div يحوي max-h-60)
+    function enhanceEmpDash() {
+        // نبحث عن حاوية جميع الأوردرات (آخر div مع max-h-60 في #app)
         var containers = document.querySelectorAll('#app .max-h-60.overflow-y-auto');
         if (containers.length === 0) return;
         var allBookingsContainer = containers[containers.length - 1];
         if (!allBookingsContainer) return;
 
-        // نجلب جميع العناصر التي تمثل أوردراً (تحتوي على تاريخ)
+        // نجلب عناصر الأوردرات (div.border-b)
         var items = Array.from(allBookingsContainer.querySelectorAll('.border-b'));
         if (items.length === 0) return;
 
-        // دالة استخراج التاريخ من النص (نمط YYYY-MM-DD)
+        // استخراج التاريخ من نص العنصر
         function extractDate(item) {
             var match = item.textContent.match(/(\d{4}-\d{2}-\d{2})/);
             return match ? match[0] : '9999-99-99';
         }
 
-        // فرز تصاعدي (الأقدم أولاً)
+        // ترتيب تصاعدي (الأقدم أولاً)
         items.sort(function(a, b) {
             return extractDate(a).localeCompare(extractDate(b));
         });
 
-        // إزالة جميع العناصر الحالية من الحاوية
+        // إفراغ الحاوية وإعادة إضافة العناصر بالترتيب الجديد
         while (allBookingsContainer.firstChild) {
             allBookingsContainer.removeChild(allBookingsContainer.firstChild);
         }
-
-        // إعادة إضافة العناصر بالترتيب الجديد
         items.forEach(function(item) {
+            // إضافة بعض التنسيق الخفيف (اختياري)
+            item.style.padding = '12px 8px';
+            item.style.marginBottom = '2px';
+            item.style.borderRadius = '8px';
+            item.style.transition = 'background-color 0.2s';
+            item.addEventListener('mouseenter', function() {
+                this.style.backgroundColor = 'rgba(22,163,74,0.08)';
+            });
+            item.addEventListener('mouseleave', function() {
+                this.style.backgroundColor = '';
+            });
             allBookingsContainer.appendChild(item);
         });
     }
 
-    // نلف دالة renderEmpDash الأصلية
+    // تعديل دالة renderEmpDash لإضافة التحسين بعد الرسم
     function init() {
         var origRenderEmpDash = AppRenderer.renderEmpDash;
         AppRenderer.renderEmpDash = function() {
             origRenderEmpDash.apply(this, arguments);
-            // ننتظر حتى يتم رسم الواجهة بالكامل ثم نعيد الترتيب
-            setTimeout(sortBookingsAscending, 300);
-            // محاولة إضافية بعد وقت أطول لضمان التنفيذ
-            setTimeout(sortBookingsAscending, 800);
+            // انتظر حتى يتم رسم الواجهة ثم طبق التحسين
+            setTimeout(enhanceEmpDash, 250);
+            setTimeout(enhanceEmpDash, 600);
         };
-        console.log('✅ ترتيب تصاعدي للأوردرات جاهز');
+        console.log('✅ تحسين واجهة الموظف وترتيب الأوردرات جاهز');
     }
 
     window.addEventListener('DOMContentLoaded', function() {
