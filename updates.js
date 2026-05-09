@@ -729,3 +729,154 @@
     });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: زر استكمال / توزيع متساوي ======
+(function() {
+    console.log('🟢 تحميل: زر استكمال التوزيع المتساوي');
+
+    function waitForApp(cb) {
+        if (typeof DistributionManager !== 'undefined' && typeof AppRenderer !== 'undefined') {
+            cb();
+        } else {
+            setTimeout(() => waitForApp(cb), 50);
+        }
+    }
+
+    // دالة التوزيع المتساوي (استكمال)
+    async function equalizeDistribution() {
+        // جميع الحجوزات المعلقة
+        var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) {
+            Utils.showWarning('لا توجد حجوزات معلقة');
+            return;
+        }
+
+        // مسح جميع التعيينات الحالية
+        pending.forEach(b => b.assignedEmployees = []);
+
+        var allEmployees = state.employees.filter(e => e.active);
+        var dirs = allEmployees.filter(e => e.role === 'مخرج');
+        var phs  = allEmployees.filter(e => e.role === 'مصور');
+        var crs  = allEmployees.filter(e => e.role === 'كرين');
+
+        // ترتيب الموظفين تصاعدياً حسب totalOrders (الأقل أولاً)
+        dirs.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+        phs.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+        crs.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+
+        // مؤشرات دائرية لكل دور
+        var dirIdx = 0, phIdx = 0, crIdx = 0;
+
+        // تجميع الحجوزات حسب التاريخ لتجنب تعارض موظف في نفس اليوم
+        var byDate = {};
+        pending.forEach(b => {
+            if (!byDate[b.date]) byDate[b.date] = [];
+            byDate[b.date].push(b);
+        });
+
+        // معالجة كل يوم على حدة
+        Object.keys(byDate).sort().forEach(function(date) {
+            var dayBookings = byDate[date];
+            var busySet = new Set(); // موظفون مشغولون في هذا اليوم
+
+            dayBookings.forEach(function(b) {
+                var hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
+                var assigned = [];
+
+                if (hallType === 'cafe') {
+                    // نبحث عن أول مصور متاح (غير مشغول اليوم)
+                    var found = false;
+                    for (var i = 0; i < phs.length; i++) {
+                        var idx = (phIdx + i) % phs.length;
+                        var emp = phs[idx];
+                        if (!busySet.has(emp.id)) {
+                            assigned.push(emp.id);
+                            busySet.add(emp.id);
+                            phIdx = (idx + 1) % phs.length;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        // إذا لم نجد، نأخذ أول مصور (حتى لو مشغول) كحل أخير
+                        if (phs.length) assigned.push(phs[phIdx % phs.length].id);
+                    }
+                } else {
+                    // مخرج
+                    for (var i = 0; i < dirs.length; i++) {
+                        var idx = (dirIdx + i) % dirs.length;
+                        var emp = dirs[idx];
+                        if (!busySet.has(emp.id)) {
+                            assigned.push(emp.id);
+                            busySet.add(emp.id);
+                            dirIdx = (idx + 1) % dirs.length;
+                            break;
+                        }
+                    }
+                    // مصورين (حتى 2)
+                    for (var i = 0; i < 2; i++) {
+                        for (var j = 0; j < phs.length; j++) {
+                            var idx = (phIdx + j) % phs.length;
+                            var emp = phs[idx];
+                            if (!busySet.has(emp.id) && !assigned.includes(emp.id)) {
+                                assigned.push(emp.id);
+                                busySet.add(emp.id);
+                                phIdx = (idx + 1) % phs.length;
+                                break;
+                            }
+                        }
+                    }
+                    // كرين
+                    for (var i = 0; i < crs.length; i++) {
+                        var idx = (crIdx + i) % crs.length;
+                        var emp = crs[idx];
+                        if (!busySet.has(emp.id)) {
+                            assigned.push(emp.id);
+                            busySet.add(emp.id);
+                            crIdx = (idx + 1) % crs.length;
+                            break;
+                        }
+                    }
+                }
+
+                b.assignedEmployees = assigned;
+            });
+        });
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        DataManager.addActivity('توزيع متساوي', 'تم إعادة توزيع جميع الحجوزات المعلقة بتساوٍ');
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg('✅ تم توزيع الحجوزات بالتساوي (استكمال)');
+    }
+
+    // حقن الزر في صفحة التوزيع
+    function injectButton() {
+        var observer = new MutationObserver(function() {
+            var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+            if (container && !document.getElementById('equalizeDistBtn')) {
+                var btn = document.createElement('button');
+                btn.id = 'equalizeDistBtn';
+                btn.className = 'btn-secondary';
+                btn.style.backgroundColor = '#8b5cf6'; // بنفسجي
+                btn.style.color = 'white';
+                btn.textContent = '📊 استكمال / توزيع متساوي';
+                btn.onclick = equalizeDistribution;
+                container.appendChild(btn);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    function init() {
+        injectButton();
+        console.log('✅ زر استكمال التوزيع المتساوي جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
