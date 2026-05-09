@@ -1159,6 +1159,3 @@
         waitForApp(initSystemUpdater);
     }
 })();
-
-
-alert('مرحباً! التحديث يعمل 🎉');
