@@ -720,3 +720,155 @@
         }
     }, 300);
 })();
+// ====== تحديث: تبويب "تحديث النظام" الآمن مع دعم العربية ======
+(function() {
+    console.log('🟢 تحميل: تبويب تحديث النظام (يدعم العربية)');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ترميز base64 آمن يدعم UTF-8
+    function toBase64(str) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(str);
+        return btoa(String.fromCharCode(...data));
+    }
+
+    function initSystemUpdater() {
+        if (!AppRenderer.pages.includes('systemUpdater')) {
+            AppRenderer.pages.push('systemUpdater');
+        }
+
+        // إضافة التبويب للقائمة الجانبية
+        var sidebarContainer = document.querySelector('.sidebar .py-2');
+        if (sidebarContainer && !document.querySelector('[data-page="systemUpdater"]')) {
+            var item = document.createElement('div');
+            item.className = 'sidebar-item';
+            item.setAttribute('data-page', 'systemUpdater');
+            item.onclick = function() { AppRenderer.navigateTo('systemUpdater'); };
+            item.innerHTML = '<span>🔧 تحديث النظام</span>';
+            sidebarContainer.appendChild(item);
+        }
+
+        // تعريف صفحة التحديث
+        AppRenderer.renderSystemUpdater = function() {
+            var c = document.getElementById('content-area');
+            if (!c) return;
+            document.getElementById('pageTitle').textContent = '🔧 تحديث النظام';
+
+            var settings = JSON.parse(localStorage.getItem('drmedia_github_push') || '{}');
+            var token = settings.token || '';
+            var repoOwner = settings.repoOwner || '';
+            var repoName = settings.repoName || '';
+            var filePath = settings.filePath || 'updates.js';
+
+            c.innerHTML = `
+            <div class="bg-card">
+                <h2 class="text-xl font-bold mb-4">🔧 تحديث النظام عبر GitHub (يدعم العربية)</h2>
+                <p class="text-sm text-gray-500 mb-4">الصق كود JavaScript هنا واضغط "رفع إلى GitHub" لتحديث ملف التحديثات تلقائياً. <b style="color:green;">يتم إضافة الكود إلى نهاية الملف الحالي مع الحفاظ على الترميز.</b></p>
+
+                <div style="margin-bottom:20px; border:1px solid #e5e7eb; border-radius:12px; padding:15px;">
+                    <h3 class="font-semibold mb-2">⚙️ إعدادات الاتصال بـ GitHub</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                        <div><label class="text-xs">اسم المستخدم (Owner)</label><input id="repoOwner" value="${repoOwner}" class="w-full border-2 p-2 rounded-xl"></div>
+                        <div><label class="text-xs">اسم المستودع (Repo)</label><input id="repoName" value="${repoName}" class="w-full border-2 p-2 rounded-xl"></div>
+                        <div><label class="text-xs">مسار الملف</label><input id="filePath" value="${filePath}" class="w-full border-2 p-2 rounded-xl"></div>
+                    </div>
+                    <div>
+                        <label class="text-xs">GitHub Token (بصلاحية repo)</label>
+                        <input id="githubToken" type="password" value="${token}" class="w-full border-2 p-2 rounded-xl" placeholder="ghp_xxxxx">
+                        <small class="text-gray-500">أنشئ token من <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-600 underline">هنا</a> (حدد صلاحية repo)</small>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label class="font-semibold">📝 كود JavaScript للتحديث:</label>
+                    <textarea id="updateCode" class="w-full border-2 p-3 rounded-xl font-mono text-sm" rows="12" placeholder="الصق كود التحديث هنا..."></textarea>
+                </div>
+
+                <button id="pushToGitHubBtn" class="btn-primary w-full">🚀 رفع إلى GitHub</button>
+                <button id="saveSettingsBtn" class="btn-secondary w-full mt-2">💾 حفظ الإعدادات</button>
+                <div id="pushStatus" class="mt-3 text-center"></div>
+                <div class="footer-bar">${APP_CONFIG.footerText}</div>
+            </div>`;
+
+            // أحداث الأزرار
+            document.getElementById('saveSettingsBtn').onclick = function() {
+                var newSettings = {
+                    token: document.getElementById('githubToken').value.trim(),
+                    repoOwner: document.getElementById('repoOwner').value.trim(),
+                    repoName: document.getElementById('repoName').value.trim(),
+                    filePath: document.getElementById('filePath').value.trim() || 'updates.js'
+                };
+                localStorage.setItem('drmedia_github_push', JSON.stringify(newSettings));
+                Utils.showMsg('✅ تم حفظ الإعدادات');
+            };
+
+            document.getElementById('pushToGitHubBtn').onclick = async function() {
+                var newCode = document.getElementById('updateCode').value.trim();
+                if (!newCode) { Utils.showError('⚠️ الرجاء لصق كود التحديث'); return; }
+                var settings = JSON.parse(localStorage.getItem('drmedia_github_push') || '{}');
+                if (!settings.token || !settings.repoOwner || !settings.repoName) {
+                    Utils.showError('⚠️ الرجاء ملء إعدادات الاتصال بـ GitHub أولاً');
+                    return;
+                }
+
+                var statusDiv = document.getElementById('pushStatus');
+                statusDiv.innerHTML = '<span style="color:blue;">🔄 جاري جلب الملف الحالي...</span>';
+
+                var apiUrl = `https://api.github.com/repos/${settings.repoOwner}/${settings.repoName}/contents/${settings.filePath}`;
+                try {
+                    // جلب الملف الحالي
+                    var getRes = await fetch(apiUrl, { headers: { 'Authorization': `token ${settings.token}` } });
+                    var sha = null;
+                    var oldContent = '';
+                    if (getRes.ok) {
+                        var fileData = await getRes.json();
+                        sha = fileData.sha;
+                        // فك الترميز من base64
+                        oldContent = atob(fileData.content);
+                    }
+
+                    // دمج الكود الجديد
+                    var updatedContent = oldContent + '\n\n' + newCode;
+                    // ترميز base64 آمن مع UTF-8
+                    var contentEncoded = toBase64(updatedContent);
+
+                    var body = {
+                        message: 'تحديث من تبويب تحديث النظام (يدعم العربية)',
+                        content: contentEncoded,
+                        branch: 'main'
+                    };
+                    if (sha) body.sha = sha;
+
+                    statusDiv.innerHTML = '<span style="color:blue;">🔄 جاري رفع التحديث...</span>';
+
+                    var putRes = await fetch(apiUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${settings.token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    });
+
+                    if (putRes.ok) {
+                        statusDiv.innerHTML = '<span style="color:green;">✅ تم رفع التحديث بنجاح إلى GitHub! سيتم تطبيقه خلال 30 ثانية.</span>';
+                    } else {
+                        var err = await putRes.json();
+                        throw new Error(err.message || 'فشل الرفع');
+                    }
+                } catch(e) {
+                    statusDiv.innerHTML = `<span style="color:red;">❌ خطأ: ${e.message}</span>`;
+                }
+            };
+        };
+
+        console.log('✅ تبويب تحديث النظام (دعم العربية) جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(initSystemUpdater); });
+    if (document.readyState !== 'loading') waitForApp(initSystemUpdater);
+})();
