@@ -605,3 +605,127 @@
     });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: زر توزيع عادل للحضور فقط ======
+(function() {
+    console.log('🟢 تحميل: توزيع عادل للحضور');
+
+    // انتظار تعريف DistributionManager و AppRenderer
+    function waitForApp(cb) {
+        if (typeof DistributionManager !== 'undefined' && typeof AppRenderer !== 'undefined') {
+            cb();
+        } else {
+            setTimeout(() => waitForApp(cb), 50);
+        }
+    }
+
+    // دالة التوزيع العادل على الحضور فقط
+    async function distributeFairlyAmongPresent() {
+        var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) {
+            Utils.showWarning('لا توجد حجوزات معلقة');
+            return;
+        }
+
+        // الموظفون النشطون
+        var allEmployees = state.employees.filter(e => e.active);
+        var dirs = allEmployees.filter(e => e.role === 'مخرج');
+        var phs  = allEmployees.filter(e => e.role === 'مصور');
+        var crs  = allEmployees.filter(e => e.role === 'كرين');
+
+        // تفريغ التوزيعات السابقة للحجوزات المعلقة
+        pending.forEach(b => b.assignedEmployees = []);
+
+        // لكل حجز، نحدد الموظفين الحاضرين في ذلك اليوم
+        pending.forEach(function(b) {
+            var date = b.date;
+            // الموظفون الذين سجلوا حضورًا في هذا التاريخ
+            var presentIds = state.attendanceRecords
+                .filter(a => a.date === date && a.checkIn)
+                .map(a => a.empId);
+            
+            // دوال مساعدة لاختيار الأفضل من بين الحضور فقط
+            function pickBest(emps) {
+                var available = emps.filter(e => presentIds.includes(e.id));
+                if (!available.length) return null;
+                // ترتيب تصاعدي حسب عدد الأوردرات الحالية
+                available.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+                return available[0];
+            }
+
+            var hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
+            var assigned = [];
+
+            if (hallType === 'cafe') {
+                var p = pickBest(phs);
+                if (p) assigned.push(p.id);
+            } else {
+                var d = pickBest(dirs);
+                if (d) assigned.push(d.id);
+                
+                // مصورين (حتى 2)
+                var phList = phs.filter(e => presentIds.includes(e.id));
+                phList.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+                for (var i = 0; i < Math.min(2, phList.length); i++) {
+                    assigned.push(phList[i].id);
+                }
+                
+                var c = pickBest(crs);
+                if (c) assigned.push(c.id);
+            }
+
+            b.assignedEmployees = assigned;
+        });
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        // إشعارات (اختياري)
+        for (var b of pending) {
+            for (var eid of (b.assignedEmployees || [])) {
+                var emp = state.employees.find(e => e.id === eid);
+                if (emp) {
+                    NotificationManager.notifyEmployee(
+                        emp,
+                        'تم توزيع أوردر (للحضور)',
+                        `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`,
+                        true
+                    );
+                }
+            }
+        }
+
+        DataManager.addActivity('توزيع عادل للحضور', `تم توزيع ${pending.length} حجز على الحضور فقط`);
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg(`✅ تم توزيع ${pending.length} حجز بعدالة بين الحضور`);
+    }
+
+    // دالة لحقن الزر في صفحة التوزيع
+    function injectButtonInDistribution() {
+        // نراقب ظهور صفحة التوزيع
+        var observer = new MutationObserver(function(mutations) {
+            var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+            if (container && !document.getElementById('fairDistributeBtn')) {
+                var btn = document.createElement('button');
+                btn.id = 'fairDistributeBtn';
+                btn.className = 'btn-secondary'; // لون مختلف لتمييزه
+                btn.textContent = '🧑‍🤝‍🧑 توزيع عادل للحضور';
+                btn.onclick = distributeFairlyAmongPresent;
+                container.appendChild(btn);
+                observer.disconnect(); // اكتفينا
+            }
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    // بدء التشغيل
+    function init() {
+        injectButtonInDistribution();
+        console.log('✅ زر توزيع الحضور جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
