@@ -54,73 +54,159 @@
     injectDateTime();
 })();
 
-// ====== تحديث: قوائم منسدلة لتبديل الموظفين في الحجوزات ======
+// ====== تحديث: قوائم منسدلة لجميع الموظفين (بدون تقييد الدور) ======
 (function() {
-    console.log('🟢 تحميل: قوائم منسدلة للموظفين');
+    console.log('🟢 تحميل: قوائم منسدلة شاملة للموظفين');
+
+    // انتظار تعريف AppRenderer و state
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
     function enhanceBookingsTable() {
         var rows = document.querySelectorAll('#content-area table tbody tr');
         rows.forEach(function(row) {
             var cells = row.querySelectorAll('td');
             if (cells.length < 6) return;
-            var cell = cells[5];
+            var cell = cells[5]; // عمود الموظفون
             if (!cell || cell.querySelector('.emp-swap-select')) return;
+
             var checkbox = row.querySelector('input.booking-check');
             if (!checkbox) return;
             var bookingId = checkbox.value;
             var booking = state.bookings.find(b => b.id === bookingId);
             if (!booking) return;
+
             var assigned = booking.assignedEmployees || [];
             cell.innerHTML = '';
+
+            // قائمة جميع الموظفين النشطين (مرة واحدة لكل الخلية)
+            var allEmployees = state.employees.filter(e => e.active);
+
             assigned.forEach(function(empId) {
                 var emp = state.employees.find(e => e.id === empId);
                 if (!emp) return;
-                var sameRole = state.employees.filter(e => e.role === emp.role && e.active);
+
                 var select = document.createElement('select');
                 select.className = 'emp-swap-select border p-1 rounded text-sm';
                 select.style.cssText = 'margin-bottom:4px; width:100%;';
-                select.setAttribute('data-booking-id', bookingId);
-                select.setAttribute('data-old-emp-id', empId);
-                sameRole.forEach(function(e) {
+
+                // إضافة خيار فارغ للإزالة (اختياري)
+                var emptyOpt = document.createElement('option');
+                emptyOpt.value = '';
+                emptyOpt.textContent = '-- إزالة --';
+                select.appendChild(emptyOpt);
+
+                allEmployees.forEach(function(e) {
                     var opt = document.createElement('option');
                     opt.value = e.id;
-                    opt.textContent = e.name;
+                    opt.textContent = e.name + ' (' + e.role + ')';
                     if (e.id === empId) opt.selected = true;
                     select.appendChild(opt);
                 });
-                cell.appendChild(select);
+
                 select.addEventListener('change', function() {
-                    var idx = booking.assignedEmployees.indexOf(empId);
-                    if (idx !== -1) {
-                        booking.assignedEmployees[idx] = this.value;
-                        DataManager.saveAllData();
-                        Utils.showMsg('✅ تم تغيير الموظف');
+                    var newEmpId = this.value;
+                    var oldEmpId = empId;
+                    var booking = state.bookings.find(b => b.id === bookingId);
+                    if (!booking) return;
+
+                    // إذا اختار "إزالة" (فارغ)، نحذف الموظف
+                    if (!newEmpId) {
+                        booking.assignedEmployees = booking.assignedEmployees.filter(id => id !== oldEmpId);
+                    } else {
+                        // استبدال القديم بالجديد (إذا لم يكن موجوداً فعلاً)
+                        var idx = booking.assignedEmployees.indexOf(oldEmpId);
+                        if (idx !== -1) {
+                            booking.assignedEmployees[idx] = newEmpId;
+                        } else {
+                            // إذا حُذف القديم بطريقة ما، نضيف الجديد
+                            if (!booking.assignedEmployees.includes(newEmpId)) {
+                                booking.assignedEmployees.push(newEmpId);
+                            }
+                        }
                     }
+                    DataManager.updateEmployeeOrders();
+                    DataManager.saveAllData();
+                    Utils.showMsg('✅ تم تغيير الموظف');
+                    // إعادة رسم الصف ليظهر الترتيب الجديد (اختياري)
+                    AppRenderer.renderBookings();
                 });
+
+                cell.appendChild(select);
             });
+
+            // زر إضافة موظف جديد (يظهر جميع الموظفين غير المعينين)
             var addBtn = document.createElement('button');
             addBtn.textContent = '+';
             addBtn.className = 'btn-secondary text-xs';
-            addBtn.style.cssText = 'margin-top:4px;';
+            addBtn.style.cssText = 'margin-top:6px;';
             addBtn.onclick = function() {
-                // نافذة إضافة موظف
+                var booking = state.bookings.find(b => b.id === bookingId);
+                if (!booking) return;
+                var assignedSet = new Set(booking.assignedEmployees || []);
+                var available = allEmployees.filter(e => !assignedSet.has(e.id));
+                if (available.length === 0) {
+                    Utils.showWarning('جميع الموظفين معينون بالفعل');
+                    return;
+                }
+                var options = available.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
                 Utils.openModal(`
-                    <h3>إضافة موظف</h3>
-                    <select id="newEmpRole" class="border-2 p-2 rounded-xl w-full my-2"></select>
-                    <select id="newEmpSelect" class="border-2 p-2 rounded-xl w-full my-2"></select>
-                    <button onclick="window._addEmpToBooking('${bookingId}')" class="btn-primary w-full">حفظ</button>
+                    <h3>إضافة موظف للحجز</h3>
+                    <select id="addEmpSelect" class="w-full border-2 p-2 my-2 rounded-xl">${options}</select>
+                    <div class="flex gap-2 mt-4">
+                        <button onclick="window._addEmpToBooking('${bookingId}')" class="btn-primary flex-1">💾 حفظ</button>
+                        <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
+                    </div>
                 `);
-                // منطق النافذة هنا...
             };
             cell.appendChild(addBtn);
         });
     }
-    // ربط التعديل برسم الجدول
-    if (typeof AppRenderer !== 'undefined') {
+
+    // دالة الإضافة (عامة)
+    window._addEmpToBooking = function(bookingId) {
+        var empId = document.getElementById('addEmpSelect')?.value;
+        if (!empId) return Utils.showError('اختر موظفاً');
+        var booking = state.bookings.find(b => b.id === bookingId);
+        if (!booking) return;
+        if (!booking.assignedEmployees) booking.assignedEmployees = [];
+        if (booking.assignedEmployees.includes(empId)) {
+            Utils.showWarning('الموظف مضاف بالفعل');
+            return;
+        }
+        booking.assignedEmployees.push(empId);
+        DataManager.updateEmployeeOrders();
+        DataManager.saveAllData();
+        Utils.closeModal();
+        AppRenderer.renderBookings();
+    };
+
+    // ربط التحسين برسم جدول الحجوزات
+    function init() {
         var origRenderBookings = AppRenderer.renderBookings;
         AppRenderer.renderBookings = function() {
             origRenderBookings.apply(this, arguments);
-            setTimeout(enhanceBookingsTable, 200);
+            requestAnimationFrame(function() {
+                enhanceBookingsTable();
+            });
         };
+        // تحسين أولي إن وجد الجدول
+        if (document.querySelector('#content-area table tbody')) {
+            enhanceBookingsTable();
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+
+    if (document.readyState !== 'loading') {
+        waitForApp(init);
     }
 })();
 
