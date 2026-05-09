@@ -1,10 +1,10 @@
 // =============================================
-// Dr Media Pro - ÙÙÙ Ø§ÙØªØ­Ø¯ÙØ«Ø§Øª Ø§ÙÙÙØ­Ø¯ (ÙØ³Ø®Ø© Ø¢ÙÙØ©)
+// Dr Media Pro - ملف التحديثات الموحد (يشمل جميع التحسينات + مؤشر الاتصال)
 // =============================================
 
-// ====== ØªØ­Ø¯ÙØ«: Ø¹Ø±Ø¶ Ø§ÙØªØ§Ø±ÙØ® ÙØ§ÙÙÙØª (Ø§ÙÙØ¯ÙØ± + Ø§ÙÙÙØ¸Ù) ======
+// ====== تحديث: عرض التاريخ والوقت (المدير + الموظف) ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø§ÙØªØ§Ø±ÙØ® ÙØ§ÙÙÙØª');
+    console.log('🟢 تحميل: التاريخ والوقت');
     var observer = new MutationObserver(function(mutations) {
         injectDateTime();
     });
@@ -51,9 +51,9 @@
     injectDateTime();
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: ÙÙØ§Ø¦Ù ÙÙØ³Ø¯ÙØ© Ø´Ø§ÙÙØ© ÙÙÙÙØ¸ÙÙÙ ======
+// ====== تحديث: قوائم منسدلة شاملة للموظفين ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: ÙÙØ§Ø¦Ù ÙÙØ³Ø¯ÙØ© ÙÙÙÙØ¸ÙÙÙ');
+    console.log('🟢 تحميل: قوائم منسدلة للموظفين');
     function waitForApp(callback) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
             callback();
@@ -90,7 +90,7 @@
 
                 var emptyOpt = document.createElement('option');
                 emptyOpt.value = '';
-                emptyOpt.textContent = '-- Ø¥Ø²Ø§ÙØ© --';
+                emptyOpt.textContent = '-- إزالة --';
                 select.appendChild(emptyOpt);
 
                 allEmployees.forEach(function(e) {
@@ -120,7 +120,7 @@
                     }
                     DataManager.updateEmployeeOrders();
                     DataManager.saveAllData();
-                    Utils.showMsg('â ØªÙ ØªØºÙÙØ± Ø§ÙÙÙØ¸Ù');
+                    Utils.showMsg('✅ تم تغيير الموظف');
                     AppRenderer.renderBookings();
                 });
 
@@ -137,16 +137,16 @@
                 var assignedSet = new Set(booking.assignedEmployees || []);
                 var available = allEmployees.filter(e => !assignedSet.has(e.id));
                 if (available.length === 0) {
-                    Utils.showWarning('Ø¬ÙÙØ¹ Ø§ÙÙÙØ¸ÙÙÙ ÙØ¹ÙÙÙÙ Ø¨Ø§ÙÙØ¹Ù');
+                    Utils.showWarning('جميع الموظفين معينون بالفعل');
                     return;
                 }
                 var options = available.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
                 Utils.openModal(`
-                    <h3>Ø¥Ø¶Ø§ÙØ© ÙÙØ¸Ù</h3>
+                    <h3>إضافة موظف</h3>
                     <select id="addEmpSelect" class="w-full border-2 p-2 my-2 rounded-xl">${options}</select>
                     <div class="flex gap-2 mt-4">
-                        <button onclick="window._addEmpToBooking('${bookingId}')" class="btn-primary flex-1">ð¾ Ø­ÙØ¸</button>
-                        <button onclick="Utils.closeModal()" class="btn-outline flex-1">Ø¥ÙØºØ§Ø¡</button>
+                        <button onclick="window._addEmpToBooking('${bookingId}')" class="btn-primary flex-1">💾 حفظ</button>
+                        <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
                     </div>
                 `);
             };
@@ -156,12 +156,12 @@
 
     window._addEmpToBooking = function(bookingId) {
         var empId = document.getElementById('addEmpSelect')?.value;
-        if (!empId) return Utils.showError('Ø§Ø®ØªØ± ÙÙØ¸ÙØ§Ù');
+        if (!empId) return Utils.showError('اختر موظفاً');
         var booking = state.bookings.find(b => b.id === bookingId);
         if (!booking) return;
         if (!booking.assignedEmployees) booking.assignedEmployees = [];
         if (booking.assignedEmployees.includes(empId)) {
-            Utils.showWarning('Ø§ÙÙÙØ¸Ù ÙØ¶Ø§Ù Ø¨Ø§ÙÙØ¹Ù');
+            Utils.showWarning('الموظف مضاف بالفعل');
             return;
         }
         booking.assignedEmployees.push(empId);
@@ -192,9 +192,9 @@
     }
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: Ø£Ø²Ø±Ø§Ø± Ø§ÙØ­Ø§ÙØ© Ø§ÙØ«ÙØ§Ø«ÙØ© + Ø£Ø²Ø±Ø§Ø± Ø¥ÙØºØ§Ø¡ ======
+// ====== تحديث: أزرار الحالة الثلاثية + أزرار إلغاء ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø£Ø²Ø±Ø§Ø± Ø§ÙØ­Ø§ÙØ©');
+    console.log('🟢 تحميل: أزرار الحالة');
     function enhanceStatusColumn() {
         var rows = document.querySelectorAll('#content-area table tbody tr');
         rows.forEach(function(row) {
@@ -209,9 +209,9 @@
             if (!booking) return;
             var currentStatus = booking.status || 'pending';
             var statuses = [
-                { value: 'pending', label: 'ÙØ¹ÙÙ', color: '#f59e0b' },
-                { value: 'completed', label: 'ÙÙØªÙÙ', color: '#10b981' },
-                { value: 'cancelled', label: 'ÙÙØºÙ', color: '#ef4444' }
+                { value: 'pending', label: 'معلق', color: '#f59e0b' },
+                { value: 'completed', label: 'مكتمل', color: '#10b981' },
+                { value: 'cancelled', label: 'ملغي', color: '#ef4444' }
             ];
             statusCell.innerHTML = '';
             var container = document.createElement('div');
@@ -251,10 +251,10 @@
                 var content = document.getElementById('modalContent');
                 if (content) {
                     content.querySelectorAll('button').forEach(function(btn) {
-                        if ((btn.textContent.includes('Ø­ÙØ¸') || btn.textContent.includes('ð¾')) &&
+                        if ((btn.textContent.includes('حفظ') || btn.textContent.includes('💾')) &&
                             !btn.nextElementSibling?.classList.contains('cancel-btn-auto')) {
                             var cancelBtn = document.createElement('button');
-                            cancelBtn.textContent = 'Ø¥ÙØºØ§Ø¡';
+                            cancelBtn.textContent = 'إلغاء';
                             cancelBtn.className = btn.className + ' cancel-btn-auto';
                             cancelBtn.onclick = function(e) { e.preventDefault(); Utils.closeModal(); };
                             btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
@@ -274,9 +274,9 @@
     }
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: ØªØ­Ø³ÙÙ ØªÙØ³ÙÙ Ø§ÙØ¬Ø¯ÙÙ ======
+// ====== تحديث: تحسين تنسيق الجدول ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: ØªÙØ³ÙÙØ§Øª Ø¬Ø¯ÙÙ Ø§ÙØ­Ø¬ÙØ²Ø§Øª');
+    console.log('🟢 تحميل: تنسيقات جدول الحجوزات');
     if (document.getElementById('booking-enhanced-styles')) return;
     var style = document.createElement('style');
     style.id = 'booking-enhanced-styles';
@@ -293,18 +293,18 @@
     document.head.appendChild(style);
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: Ø£ÙÙØ§Ø· Ø§ÙØ´ÙÙ (Styles) ======
+// ====== تحديث: أنماط الشكل (Styles) ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø£ÙÙØ§Ø· Ø§ÙØ´ÙÙ');
+    console.log('🟢 تحميل: أنماط الشكل');
     var STYLES = {
-        default: { name: 'Ø§ÙØ§ÙØªØ±Ø§Ø¶Ù', css: '' },
-        rounded: { name: 'Ø¯Ø§Ø¦Ø±Ù ÙØ§Ø¹Ù', css: `
+        default: { name: 'الافتراضي', css: '' },
+        rounded: { name: 'دائري ناعم', css: `
             :root { --radius-btn: 40px; --radius-lg: 28px; --radius-xl: 32px; }
             .btn, .stat-card, .bg-card, .sidebar-item, .modal-content { border-radius: var(--radius-lg) !important; }
             .btn { border-radius: var(--radius-btn) !important; }
             .modal-content { border-radius: var(--radius-xl) !important; }
         `},
-        compact: { name: 'ÙØ¯ÙØ¬', css: `
+        compact: { name: 'مدمج', css: `
             :root { --radius-btn: 8px; --radius-lg: 8px; --radius-xl: 10px; }
             .btn { padding: 6px 14px; font-size: 0.8rem; }
             table { font-size: 0.78rem; }
@@ -314,7 +314,7 @@
             .main-content { margin-right: 220px; padding: 16px; padding-top: calc(60px + 16px); }
             .topbar { height: 60px; padding: 10px 16px; right: 220px; }
         `},
-        spacious: { name: 'ÙØ§Ø³Ø¹', css: `
+        spacious: { name: 'واسع', css: `
             :root { --radius-btn: 30px; --radius-lg: 24px; --radius-xl: 28px; }
             .main-content { padding: 40px; padding-top: calc(80px + 40px); }
             .stat-card, .bg-card { padding: 30px; margin-bottom: 30px; }
@@ -323,7 +323,7 @@
             .main-content { margin-right: 280px; }
             .topbar { right: 280px; height: 80px; padding: 18px 28px; }
         `},
-        modern: { name: 'ÙÙØ¯Ø±Ù', css: `
+        modern: { name: 'مودرن', css: `
             :root { --radius-btn: 20px; --radius-lg: 16px; --radius-xl: 20px; }
             .sidebar { background: #1e293b; color: #e2e8f0; }
             .sidebar-item { color: #94a3b8; }
@@ -349,7 +349,7 @@
     applyStyle(savedStyle);
     window._applyGlobalStyle = function(name) {
         applyStyle(name);
-        Utils.showMsg('â ØªÙ ØªØºÙÙØ± Ø´ÙÙ Ø§ÙÙØ§Ø¬ÙØ©');
+        Utils.showMsg('✅ تم تغيير شكل الواجهة');
     };
 
     var checkInterval = setInterval(function() {
@@ -357,7 +357,7 @@
         if (wa && !document.getElementById('styleSelectContainer')) {
             clearInterval(checkInterval);
             var html = `<div id="styleSelectContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
-                <label class="text-sm font-semibold">ð¨ Ø´ÙÙ Ø§ÙÙØ§Ø¬ÙØ© (Style)</label>
+                <label class="text-sm font-semibold">🎨 شكل الواجهة (Style)</label>
                 <select id="styleSelect" class="w-full border-2 p-2 rounded-xl mt-1" onchange="window._applyGlobalStyle(this.value)">
                     ${Object.keys(STYLES).map(k => `<option value="${k}" ${savedStyle===k?'selected':''}>${STYLES[k].name}</option>`).join('')}
                 </select>
@@ -367,9 +367,9 @@
     }, 300);
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: ÙÙØ­Ø© ÙØ±Ø§ÙØ¨Ø© Ø­ÙØ© (Ø¥ØµÙØ§Ø­ Ø§ÙÙØµÙØµ) ======
+// ====== تحديث: لوحة مراقبة حية (إصلاح النصوص) ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: ÙÙØ­Ø© Ø§ÙÙØ±Ø§ÙØ¨Ø©');
+    console.log('🟢 تحميل: لوحة المراقبة');
     if (typeof AppRenderer !== 'undefined') {
         var origDashboard = AppRenderer.renderDashboard;
         AppRenderer.renderDashboard = function() {
@@ -386,7 +386,7 @@
                 container.style.marginTop = '20px';
                 var title = document.createElement('h3');
                 title.style.fontWeight = 'bold';
-                title.textContent = 'ð¡ ÙÙØ­Ø© Ø§ÙÙØ±Ø§ÙØ¨Ø© Ø§ÙØ­ÙØ©';
+                title.textContent = '📡 لوحة المراقبة الحية';
                 container.appendChild(title);
                 var grid = document.createElement('div');
                 grid.style.display = 'grid';
@@ -409,9 +409,9 @@
                     grid.appendChild(card);
                 }
 
-                addCard(todayBookings, 'Ø­Ø¬ÙØ²Ø§Øª Ø§ÙÙÙÙ', '#3b82f6');
-                addCard(activeEmps, 'ÙÙØ¸ÙÙÙ ÙØªÙØ§Ø¬Ø¯ÙÙ', '#10b981');
-                addCard(busyHalls, 'ÙØ§Ø¹Ø§Øª ÙØ´ØºÙÙØ©', '#f59e0b');
+                addCard(todayBookings, 'حجوزات اليوم', '#3b82f6');
+                addCard(activeEmps, 'موظفون متواجدون', '#10b981');
+                addCard(busyHalls, 'قاعات مشغولة', '#f59e0b');
 
                 container.appendChild(grid);
                 var contentArea = document.getElementById('content-area');
@@ -426,16 +426,16 @@
     }
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: 10 ÙÙÙØ²Ø§Øª ÙØªÙØ¯ÙØ© ======
+// ====== تحديث: 10 مميزات متقدمة (مدمجة بشكل آمن) ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø§ÙÙÙÙØ²Ø§Øª Ø§ÙØ¹Ø´Ø±');
+    console.log('🟢 تحميل: المميزات العشر');
     setInterval(function() {
         var today = Utils.getTodayDateStr();
         var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0,10);
         state.bookings.forEach(function(b) {
             if (b.status === 'pending' && !b.deleted && (b.date === today || b.date === tomorrow)) {
                 if (!b.assignedEmployees || b.assignedEmployees.length === 0) {
-                    console.warn('â ï¸ Ø­Ø¬Ø² Ø¨Ø¯ÙÙ ÙÙØ¸ÙÙÙ:', b.clientName);
+                    console.warn('⚠️ حجز بدون موظفين:', b.clientName);
                 }
             }
         });
@@ -449,7 +449,7 @@
                     var cells = row.querySelectorAll('td');
                     if (cells.length > 6) {
                         var date = new Date(cells[2]?.textContent);
-                        if (!isNaN(date) && (new Date() - date) > 2*86400000 && cells[5]?.textContent.trim() !== 'Ø§ÙØ¹Ø±ÙØ³') {
+                        if (!isNaN(date) && (new Date() - date) > 2*86400000 && cells[5]?.textContent.trim() !== 'العريس') {
                             row.style.backgroundColor = '#ffe0e0';
                         }
                     }
@@ -457,26 +457,63 @@
             }, 200);
         };
     }
-    var statusBar = document.createElement('div');
-    statusBar.id = 'offlineStatusBar';
-    statusBar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;padding:6px;text-align:center;font-weight:bold;z-index:9999;';
-    document.body.appendChild(statusBar);
-    function updateOnlineStatus() {
-        statusBar.style.background = navigator.onLine ? '#10b981' : '#f59e0b';
-        statusBar.textContent = navigator.onLine ? 'ð¢ ÙØªØµÙ' : 'ð  ØºÙØ± ÙØªØµÙ - Ø§ÙØ¨ÙØ§ÙØ§Øª ÙØ­ÙÙØ¸Ø© ÙØ­ÙÙØ§Ù';
+    // مؤشر الاتصال في الأعلى
+    function updateConnectionIndicator() {
+        var indicator = document.getElementById('connectionIndicator');
+        if (!indicator) return;
+        var online = navigator.onLine;
+        indicator.innerHTML = (online ? '🟢 متصل' : '🟠 غير متصل');
+        indicator.style.color = online ? '#16a34a' : '#f59e0b';
     }
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-    updateOnlineStatus();
+    // حقن المؤشر
+    function injectConnectionIndicator() {
+        // إخفاء الشريط السفلي
+        var oldBar = document.getElementById('offlineStatusBar');
+        if (oldBar) oldBar.style.display = 'none';
+
+        var topbar = document.querySelector('.topbar');
+        if (!topbar || document.getElementById('connectionIndicator')) return;
+
+        var span = document.createElement('span');
+        span.id = 'connectionIndicator';
+        span.style.cssText = 'margin-right:15px; font-weight:bold; font-size:14px;';
+        updateConnectionIndicator();
+
+        var logoutBtn = topbar.querySelector('button');
+        if (logoutBtn) {
+            logoutBtn.parentNode.insertBefore(span, logoutBtn);
+        } else {
+            topbar.appendChild(span);
+        }
+
+        window.addEventListener('online', updateConnectionIndicator);
+        window.addEventListener('offline', updateConnectionIndicator);
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var check = setInterval(function() {
+            if (document.querySelector('.topbar')) {
+                injectConnectionIndicator();
+                clearInterval(check);
+            }
+        }, 200);
+    });
+
+    // لو النظام جاهز
+    if (document.querySelector('.topbar')) {
+        injectConnectionIndicator();
+    }
+
+    // الصفحة العامة
     if (window.location.search.includes('public')) {
-        document.body.innerHTML = '<div style="padding:20px;font-family:Tahoma;text-align:center;"><h1>ð Ø­Ø¬ÙØ²Ø§Øª Ø§ÙÙÙÙ</h1>' +
+        document.body.innerHTML = '<div style="padding:20px;font-family:Tahoma;text-align:center;"><h1>📋 حجوزات اليوم</h1>' +
         state.bookings.filter(b => b.date === Utils.getTodayDateStr() && !b.deleted).map(b => `<p>${b.hallName} - ${b.clientName}</p>`).join('') + '</div>';
     }
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: ØªØ±ØªÙØ¨ Ø§ÙØ£ÙØ±Ø¯Ø±Ø§Øª ÙÙ ÙØ§Ø¬ÙØ© Ø§ÙÙÙØ¸Ù ======
+// ====== تحديث: ترتيب الأوردرات في واجهة الموظف ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: ØªØ±ØªÙØ¨ Ø§ÙØ£ÙØ±Ø¯Ø±Ø§Øª');
+    console.log('🟢 تحميل: ترتيب الأوردرات');
     if (typeof AppRenderer !== 'undefined') {
         var origEmpDash = AppRenderer.renderEmpDash;
         AppRenderer.renderEmpDash = function() {
@@ -501,11 +538,11 @@
     }
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: Ø¥ØµÙØ§Ø­ Ø§ÙØªØ²Ø§ÙÙ + ØªØ­Ø³ÙÙ Ø§ÙÙÙØ¨Ø§ÙÙ ======
+// ====== تحديث: إصلاح التزامن + تحسين الموبايل ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø¥ØµÙØ§Ø­ Ø§ÙØªØ²Ø§ÙÙ ÙØ§ÙÙÙØ¨Ø§ÙÙ');
+    console.log('🟢 تحميل: إصلاح التزامن والموبايل');
     window._manualSync = async function() {
-        if (!state.useFirebase || !state.db) return Utils.showError('Firebase ØºÙØ± ÙÙÙØ£');
+        if (!state.useFirebase || !state.db) return Utils.showError('Firebase غير مهيأ');
         try {
             var s = await state.db.ref('/').once('value');
             if (s.exists()) {
@@ -513,9 +550,9 @@
                 DataManager._ensureMinimumData();
                 DataManager.updateEmployeeOrders();
                 await DataManager.saveAllData();
-                Utils.showMsg('â ØªÙØª Ø§ÙÙØ²Ø§ÙÙØ©');
+                Utils.showMsg('✅ تمت المزامنة');
             }
-        } catch(e) { Utils.showError('ÙØ´ÙØª Ø§ÙÙØ²Ø§ÙÙØ©'); }
+        } catch(e) { Utils.showError('فشلت المزامنة'); }
     };
     if (!document.getElementById('mobile-responsive-fix')) {
         var style = document.createElement('style');
@@ -533,9 +570,9 @@
     }
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: Ø­Ø¶ÙØ± Ø³Ø§Ø¨Ù ÙØªØ¹Ø¯Ø¯ ======
+// ====== تحديث: حضور سابق متعدد ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø­Ø¶ÙØ± Ø³Ø§Ø¨Ù ÙØªØ¹Ø¯Ø¯');
+    console.log('🟢 تحميل: حضور سابق متعدد');
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined') cb();
         else setTimeout(() => waitForApp(cb), 50);
@@ -547,13 +584,13 @@
                 `<option value="${e.id}">${e.name} (${e.role})</option>`
             ).join('');
             Utils.openModal(`
-                <h3 class="text-xl font-bold mb-4">ð ØªØ³Ø¬ÙÙ Ø­Ø¶ÙØ± / Ø§ÙØµØ±Ø§Ù (ÙØªØ¹Ø¯Ø¯)</h3>
-                <p class="text-sm mb-2">Ø§Ø®ØªØ± Ø§ÙÙÙØ¸ÙÙÙ:</p>
+                <h3 class="text-xl font-bold mb-4">📅 تسجيل حضور / انصراف (متعدد)</h3>
+                <p class="text-sm mb-2">اختر الموظفين:</p>
                 <select id="pastEmpSelect" multiple class="w-full border-2 p-2 my-2 rounded-xl h-40">${empOpts}</select>
                 <input type="date" id="pastDate" class="w-full border-2 p-2 my-2 rounded-xl" value="${Utils.getTodayDateStr()}">
                 <div class="flex gap-2 mt-4">
-                    <button onclick="AppRenderer.recordPastAttendanceMulti()" class="btn-primary flex-1">â Ø­Ø¶ÙØ± ÙØ§ÙØµØ±Ø§Ù</button>
-                    <button onclick="Utils.closeModal()" class="btn-outline flex-1">Ø¥ÙØºØ§Ø¡</button>
+                    <button onclick="AppRenderer.recordPastAttendanceMulti()" class="btn-primary flex-1">✅ حضور وانصراف</button>
+                    <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
                 </div>
             `);
         };
@@ -563,14 +600,14 @@
             var dateInput = document.getElementById('pastDate');
             if (!empSelect || !dateInput) return;
             var opts = Array.from(empSelect.selectedOptions);
-            if (!opts.length) return Utils.showError('Ø§Ø®ØªØ± ÙÙØ¸ÙÙØ§ ÙØ§Ø­Ø¯ÙØ§ Ø¹ÙÙ Ø§ÙØ£ÙÙ');
+            if (!opts.length) return Utils.showError('اختر موظفًا واحدًا على الأقل');
             opts.forEach(function(opt) {
                 AttendanceManager.recordAttendanceForDate(opt.value, dateInput.value, 'checkIn');
                 AttendanceManager.recordAttendanceForDate(opt.value, dateInput.value, 'checkOut');
             });
             Utils.closeModal();
             AppRenderer.renderAttendance();
-            Utils.showMsg(`â ØªÙ ØªØ³Ø¬ÙÙ ${opts.length} ÙÙØ¸Ù`);
+            Utils.showMsg(`✅ تم تسجيل ${opts.length} موظف`);
         };
     }
 
@@ -578,9 +615,9 @@
     if (document.readyState !== 'loading') waitForApp(init);
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: Ø£Ø²Ø±Ø§Ø± Ø§ÙØªÙØ²ÙØ¹ Ø§ÙØ¥Ø¶Ø§ÙÙØ© (Ø§ÙØ¹Ø§Ø¯Ù + ØºÙØ± Ø§ÙÙØ¹ÙÙÙÙ + Ø§ÙØ§Ø³ØªÙÙØ§Ù) ======
+// ====== تحديث: أزرار التوزيع الإضافية (العادل + غير المعينين + الاستكمال) ======
 (function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: Ø£Ø²Ø±Ø§Ø± Ø§ÙØªÙØ²ÙØ¹ Ø§ÙØ¥Ø¶Ø§ÙÙØ©');
+    console.log('🟢 تحميل: أزرار التوزيع الإضافية');
 
     function waitForApp(cb) {
         if (typeof DistributionManager !== 'undefined' && typeof AppRenderer !== 'undefined') cb();
@@ -596,14 +633,14 @@
                 var btn1 = document.createElement('button');
                 btn1.id = 'fairDistributeBtn';
                 btn1.className = 'btn-secondary';
-                btn1.textContent = 'ð§âð¤âð§ ØªÙØ²ÙØ¹ Ø¹Ø§Ø¯Ù ÙÙØ­Ø¶ÙØ±';
+                btn1.textContent = '🧑‍🤝‍🧑 توزيع عادل للحضور';
                 btn1.onclick = async function() {
                     var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-                    if (!pending.length) return Utils.showWarning('ÙØ§ ØªÙØ¬Ø¯ Ø­Ø¬ÙØ²Ø§Øª');
+                    if (!pending.length) return Utils.showWarning('لا توجد حجوزات');
                     pending.forEach(b => b.assignedEmployees = []);
-                    var dirs = state.employees.filter(e => e.role === 'ÙØ®Ø±Ø¬' && e.active);
-                    var phs = state.employees.filter(e => e.role === 'ÙØµÙØ±' && e.active);
-                    var crs = state.employees.filter(e => e.role === 'ÙØ±ÙÙ' && e.active);
+                    var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
+                    var phs = state.employees.filter(e => e.role === 'مصور' && e.active);
+                    var crs = state.employees.filter(e => e.role === 'كرين' && e.active);
                     pending.forEach(function(b) {
                         var presentIds = state.attendanceRecords.filter(a => a.date === b.date && a.checkIn).map(a => a.empId);
                         function pick(emps) { var av = emps.filter(e => presentIds.includes(e.id)); av.sort((a,b)=> (a.totalOrders||0)-(b.totalOrders||0)); return av[0] || null; }
@@ -619,7 +656,7 @@
                     });
                     DataManager.updateEmployeeOrders(); await DataManager.saveAllData();
                     AppRenderer.renderBookings(); AppRenderer.renderDistribution();
-                    Utils.showMsg('â ØªÙØ²ÙØ¹ Ø¹Ø§Ø¯Ù ÙÙØ­Ø¶ÙØ±');
+                    Utils.showMsg('✅ توزيع عادل للحضور');
                 };
                 container.appendChild(btn1);
             }
@@ -629,13 +666,13 @@
                 btn2.id = 'distributeUnassignedBtn';
                 btn2.className = 'btn-secondary';
                 btn2.style.backgroundColor = '#f97316'; btn2.style.color = 'white';
-                btn2.textContent = 'â¡ ØªÙØ²ÙØ¹ ØºÙØ± Ø§ÙÙØ¹ÙÙÙÙ';
+                btn2.textContent = '⚡ توزيع غير المعينين';
                 btn2.onclick = async function() {
                     var unassigned = state.bookings.filter(b => b.status === 'pending' && !b.deleted && (!b.assignedEmployees || b.assignedEmployees.length === 0));
-                    if (!unassigned.length) return Utils.showWarning('ÙØ§ ØªÙØ¬Ø¯ Ø­Ø¬ÙØ²Ø§Øª ØºÙØ± ÙØ¹ÙÙØ©');
-                    var dirs = state.employees.filter(e => e.role === 'ÙØ®Ø±Ø¬' && e.active);
-                    var phs = state.employees.filter(e => e.role === 'ÙØµÙØ±' && e.active);
-                    var crs = state.employees.filter(e => e.role === 'ÙØ±ÙÙ' && e.active);
+                    if (!unassigned.length) return Utils.showWarning('لا توجد حجوزات غير معينة');
+                    var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
+                    var phs = state.employees.filter(e => e.role === 'مصور' && e.active);
+                    var crs = state.employees.filter(e => e.role === 'كرين' && e.active);
                     unassigned.forEach(function(b) {
                         var presentIds = state.attendanceRecords.filter(a => a.date === b.date && a.checkIn).map(a => a.empId);
                         function pick(emps) { var av = emps.filter(e => presentIds.includes(e.id)); av.sort((a,b)=> (a.totalOrders||0)-(b.totalOrders||0)); return av[0] || null; }
@@ -651,7 +688,7 @@
                     });
                     DataManager.updateEmployeeOrders(); await DataManager.saveAllData();
                     AppRenderer.renderBookings(); AppRenderer.renderDistribution();
-                    Utils.showMsg('â ØªÙØ²ÙØ¹ ØºÙØ± Ø§ÙÙØ¹ÙÙÙÙ');
+                    Utils.showMsg('✅ توزيع غير المعينين');
                 };
                 container.appendChild(btn2);
             }
@@ -661,14 +698,14 @@
                 btn3.id = 'equalizeDistBtn';
                 btn3.className = 'btn-secondary';
                 btn3.style.backgroundColor = '#8b5cf6'; btn3.style.color = 'white';
-                btn3.textContent = 'ð Ø§Ø³ØªÙÙØ§Ù / ØªÙØ²ÙØ¹ ÙØªØ³Ø§ÙÙ';
+                btn3.textContent = '📊 استكمال / توزيع متساوي';
                 btn3.onclick = async function() {
                     var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-                    if (!pending.length) return Utils.showWarning('ÙØ§ ØªÙØ¬Ø¯ Ø­Ø¬ÙØ²Ø§Øª');
+                    if (!pending.length) return Utils.showWarning('لا توجد حجوزات');
                     pending.forEach(b => b.assignedEmployees = []);
-                    var dirs = state.employees.filter(e => e.role === 'ÙØ®Ø±Ø¬' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
-                    var phs = state.employees.filter(e => e.role === 'ÙØµÙØ±' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
-                    var crs = state.employees.filter(e => e.role === 'ÙØ±ÙÙ' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+                    var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+                    var phs = state.employees.filter(e => e.role === 'مصور' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+                    var crs = state.employees.filter(e => e.role === 'كرين' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
                     var dirIdx=0, phIdx=0, crIdx=0;
                     var byDate = {};
                     pending.forEach(b => { if(!byDate[b.date]) byDate[b.date]=[]; byDate[b.date].push(b); });
@@ -690,7 +727,7 @@
                     });
                     DataManager.updateEmployeeOrders(); await DataManager.saveAllData();
                     AppRenderer.renderBookings(); AppRenderer.renderDistribution();
-                    Utils.showMsg('â ØªÙØ²ÙØ¹ ÙØªØ³Ø§Ù');
+                    Utils.showMsg('✅ توزيع متساو');
                 };
                 container.appendChild(btn3);
             }
@@ -703,228 +740,20 @@
     if (document.readyState !== 'loading') waitForApp(injectButtons);
 })();
 
-// ====== ØªØ­Ø¯ÙØ«: Ø§Ø®ØªØ¨Ø§Ø± Ø§ÙØªØ­Ø¯ÙØ« ======
+// ====== تحديث: اختبار التحديث ======
 (function() {
-    console.log('ð¢ ØªÙ ØªØ­ÙÙÙ ÙÙØ²Ø© Ø§Ø®ØªØ¨Ø§Ø± Ø§ÙØªØ­Ø¯ÙØ«');
+    console.log('🟢 تم تحميل ميزة اختبار التحديث');
     var checkInterval = setInterval(function() {
         var topbar = document.querySelector('.topbar');
         if (topbar && !document.getElementById('testUpdateBtn')) {
             clearInterval(checkInterval);
             var btn = document.createElement('button');
             btn.id = 'testUpdateBtn';
-            btn.textContent = 'ð§ª Ø§Ø®ØªØ¨Ø§Ø± Ø§ÙØªØ­Ø¯ÙØ«';
+            btn.textContent = '🧪 اختبار التحديث';
             btn.style.cssText = 'margin:0 10px; padding:6px 14px; background:#f59e0b; color:white; border:none; border-radius:20px; cursor:pointer; font-weight:bold;';
-            btn.onclick = function() { Utils.showMsg('â Ø§ÙØªØ­Ø¯ÙØ«Ø§Øª ØªØ¹ÙÙ Ø¨ÙØ¬Ø§Ø­!', 'success'); };
+            btn.onclick = function() { Utils.showMsg('✅ التحديثات تعمل بنجاح!', 'success'); };
             var logoutBtn = topbar.querySelector('button');
-            if (logoutBtn) { logoutBtn.parentNode.insertBefore(btn, logoutBtn); } else { topbar.appendChild(btn); }
+            if (logoutBtn) { logoutBtn.parentNode.insertBefore(span, btn); } else { topbar.appendChild(btn); }
         }
     }, 300);
-})();
-// ====== ØªØ­Ø¯ÙØ«: ØªØ¨ÙÙØ¨ "ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù" Ø§ÙØ¢ÙÙ ÙØ¹ Ø¯Ø¹Ù Ø§ÙØ¹Ø±Ø¨ÙØ© ======
-(function() {
-    console.log('ð¢ ØªØ­ÙÙÙ: ØªØ¨ÙÙØ¨ ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù (ÙØ¯Ø¹Ù Ø§ÙØ¹Ø±Ø¨ÙØ©)');
-
-    function waitForApp(cb) {
-        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
-        else setTimeout(() => waitForApp(cb), 50);
-    }
-
-    // ØªØ±ÙÙØ² base64 Ø¢ÙÙ ÙØ¯Ø¹Ù UTF-8
-    function toBase64(str) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(str);
-        return btoa(String.fromCharCode(...data));
-    }
-
-    function initSystemUpdater() {
-        if (!AppRenderer.pages.includes('systemUpdater')) {
-            AppRenderer.pages.push('systemUpdater');
-        }
-
-        // Ø¥Ø¶Ø§ÙØ© Ø§ÙØªØ¨ÙÙØ¨ ÙÙÙØ§Ø¦ÙØ© Ø§ÙØ¬Ø§ÙØ¨ÙØ©
-        var sidebarContainer = document.querySelector('.sidebar .py-2');
-        if (sidebarContainer && !document.querySelector('[data-page="systemUpdater"]')) {
-            var item = document.createElement('div');
-            item.className = 'sidebar-item';
-            item.setAttribute('data-page', 'systemUpdater');
-            item.onclick = function() { AppRenderer.navigateTo('systemUpdater'); };
-            item.innerHTML = '<span>ð§ ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù</span>';
-            sidebarContainer.appendChild(item);
-        }
-
-        // ØªØ¹Ø±ÙÙ ØµÙØ­Ø© Ø§ÙØªØ­Ø¯ÙØ«
-        AppRenderer.renderSystemUpdater = function() {
-            var c = document.getElementById('content-area');
-            if (!c) return;
-            document.getElementById('pageTitle').textContent = 'ð§ ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù';
-
-            var settings = JSON.parse(localStorage.getItem('drmedia_github_push') || '{}');
-            var token = settings.token || '';
-            var repoOwner = settings.repoOwner || '';
-            var repoName = settings.repoName || '';
-            var filePath = settings.filePath || 'updates.js';
-
-            c.innerHTML = `
-            <div class="bg-card">
-                <h2 class="text-xl font-bold mb-4">ð§ ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù Ø¹Ø¨Ø± GitHub (ÙØ¯Ø¹Ù Ø§ÙØ¹Ø±Ø¨ÙØ©)</h2>
-                <p class="text-sm text-gray-500 mb-4">Ø§ÙØµÙ ÙÙØ¯ JavaScript ÙÙØ§ ÙØ§Ø¶ØºØ· "Ø±ÙØ¹ Ø¥ÙÙ GitHub" ÙØªØ­Ø¯ÙØ« ÙÙÙ Ø§ÙØªØ­Ø¯ÙØ«Ø§Øª ØªÙÙØ§Ø¦ÙØ§Ù. <b style="color:green;">ÙØªÙ Ø¥Ø¶Ø§ÙØ© Ø§ÙÙÙØ¯ Ø¥ÙÙ ÙÙØ§ÙØ© Ø§ÙÙÙÙ Ø§ÙØ­Ø§ÙÙ ÙØ¹ Ø§ÙØ­ÙØ§Ø¸ Ø¹ÙÙ Ø§ÙØªØ±ÙÙØ².</b></p>
-
-                <div style="margin-bottom:20px; border:1px solid #e5e7eb; border-radius:12px; padding:15px;">
-                    <h3 class="font-semibold mb-2">âï¸ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§ÙØ§ØªØµØ§Ù Ø¨Ù GitHub</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-                        <div><label class="text-xs">Ø§Ø³Ù Ø§ÙÙØ³ØªØ®Ø¯Ù (Owner)</label><input id="repoOwner" value="${repoOwner}" class="w-full border-2 p-2 rounded-xl"></div>
-                        <div><label class="text-xs">Ø§Ø³Ù Ø§ÙÙØ³ØªÙØ¯Ø¹ (Repo)</label><input id="repoName" value="${repoName}" class="w-full border-2 p-2 rounded-xl"></div>
-                        <div><label class="text-xs">ÙØ³Ø§Ø± Ø§ÙÙÙÙ</label><input id="filePath" value="${filePath}" class="w-full border-2 p-2 rounded-xl"></div>
-                    </div>
-                    <div>
-                        <label class="text-xs">GitHub Token (Ø¨ØµÙØ§Ø­ÙØ© repo)</label>
-                        <input id="githubToken" type="password" value="${token}" class="w-full border-2 p-2 rounded-xl" placeholder="ghp_xxxxx">
-                        <small class="text-gray-500">Ø£ÙØ´Ø¦ token ÙÙ <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-600 underline">ÙÙØ§</a> (Ø­Ø¯Ø¯ ØµÙØ§Ø­ÙØ© repo)</small>
-                    </div>
-                </div>
-
-                <div style="margin-bottom:10px;">
-                    <label class="font-semibold">ð ÙÙØ¯ JavaScript ÙÙØªØ­Ø¯ÙØ«:</label>
-                    <textarea id="updateCode" class="w-full border-2 p-3 rounded-xl font-mono text-sm" rows="12" placeholder="Ø§ÙØµÙ ÙÙØ¯ Ø§ÙØªØ­Ø¯ÙØ« ÙÙØ§..."></textarea>
-                </div>
-
-                <button id="pushToGitHubBtn" class="btn-primary w-full">ð Ø±ÙØ¹ Ø¥ÙÙ GitHub</button>
-                <button id="saveSettingsBtn" class="btn-secondary w-full mt-2">ð¾ Ø­ÙØ¸ Ø§ÙØ¥Ø¹Ø¯Ø§Ø¯Ø§Øª</button>
-                <div id="pushStatus" class="mt-3 text-center"></div>
-                <div class="footer-bar">${APP_CONFIG.footerText}</div>
-            </div>`;
-
-            // Ø£Ø­Ø¯Ø§Ø« Ø§ÙØ£Ø²Ø±Ø§Ø±
-            document.getElementById('saveSettingsBtn').onclick = function() {
-                var newSettings = {
-                    token: document.getElementById('githubToken').value.trim(),
-                    repoOwner: document.getElementById('repoOwner').value.trim(),
-                    repoName: document.getElementById('repoName').value.trim(),
-                    filePath: document.getElementById('filePath').value.trim() || 'updates.js'
-                };
-                localStorage.setItem('drmedia_github_push', JSON.stringify(newSettings));
-                Utils.showMsg('â ØªÙ Ø­ÙØ¸ Ø§ÙØ¥Ø¹Ø¯Ø§Ø¯Ø§Øª');
-            };
-
-            document.getElementById('pushToGitHubBtn').onclick = async function() {
-                var newCode = document.getElementById('updateCode').value.trim();
-                if (!newCode) { Utils.showError('â ï¸ Ø§ÙØ±Ø¬Ø§Ø¡ ÙØµÙ ÙÙØ¯ Ø§ÙØªØ­Ø¯ÙØ«'); return; }
-                var settings = JSON.parse(localStorage.getItem('drmedia_github_push') || '{}');
-                if (!settings.token || !settings.repoOwner || !settings.repoName) {
-                    Utils.showError('â ï¸ Ø§ÙØ±Ø¬Ø§Ø¡ ÙÙØ¡ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§ÙØ§ØªØµØ§Ù Ø¨Ù GitHub Ø£ÙÙØ§Ù');
-                    return;
-                }
-
-                var statusDiv = document.getElementById('pushStatus');
-                statusDiv.innerHTML = '<span style="color:blue;">ð Ø¬Ø§Ø±Ù Ø¬ÙØ¨ Ø§ÙÙÙÙ Ø§ÙØ­Ø§ÙÙ...</span>';
-
-                var apiUrl = `https://api.github.com/repos/${settings.repoOwner}/${settings.repoName}/contents/${settings.filePath}`;
-                try {
-                    // Ø¬ÙØ¨ Ø§ÙÙÙÙ Ø§ÙØ­Ø§ÙÙ
-                    var getRes = await fetch(apiUrl, { headers: { 'Authorization': `token ${settings.token}` } });
-                    var sha = null;
-                    var oldContent = '';
-                    if (getRes.ok) {
-                        var fileData = await getRes.json();
-                        sha = fileData.sha;
-                        // ÙÙ Ø§ÙØªØ±ÙÙØ² ÙÙ base64
-                        oldContent = atob(fileData.content);
-                    }
-
-                    // Ø¯ÙØ¬ Ø§ÙÙÙØ¯ Ø§ÙØ¬Ø¯ÙØ¯
-                    var updatedContent = oldContent + '\n\n' + newCode;
-                    // ØªØ±ÙÙØ² base64 Ø¢ÙÙ ÙØ¹ UTF-8
-                    var contentEncoded = toBase64(updatedContent);
-
-                    var body = {
-                        message: 'ØªØ­Ø¯ÙØ« ÙÙ ØªØ¨ÙÙØ¨ ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù (ÙØ¯Ø¹Ù Ø§ÙØ¹Ø±Ø¨ÙØ©)',
-                        content: contentEncoded,
-                        branch: 'main'
-                    };
-                    if (sha) body.sha = sha;
-
-                    statusDiv.innerHTML = '<span style="color:blue;">ð Ø¬Ø§Ø±Ù Ø±ÙØ¹ Ø§ÙØªØ­Ø¯ÙØ«...</span>';
-
-                    var putRes = await fetch(apiUrl, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `token ${settings.token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(body)
-                    });
-
-                    if (putRes.ok) {
-                        statusDiv.innerHTML = '<span style="color:green;">â ØªÙ Ø±ÙØ¹ Ø§ÙØªØ­Ø¯ÙØ« Ø¨ÙØ¬Ø§Ø­ Ø¥ÙÙ GitHub! Ø³ÙØªÙ ØªØ·Ø¨ÙÙÙ Ø®ÙØ§Ù 30 Ø«Ø§ÙÙØ©.</span>';
-                    } else {
-                        var err = await putRes.json();
-                        throw new Error(err.message || 'ÙØ´Ù Ø§ÙØ±ÙØ¹');
-                    }
-                } catch(e) {
-                    statusDiv.innerHTML = `<span style="color:red;">â Ø®Ø·Ø£: ${e.message}</span>`;
-                }
-            };
-        };
-
-        console.log('â ØªØ¨ÙÙØ¨ ØªØ­Ø¯ÙØ« Ø§ÙÙØ¸Ø§Ù (Ø¯Ø¹Ù Ø§ÙØ¹Ø±Ø¨ÙØ©) Ø¬Ø§ÙØ²');
-    }
-
-    window.addEventListener('DOMContentLoaded', function() { waitForApp(initSystemUpdater); });
-    if (document.readyState !== 'loading') waitForApp(initSystemUpdater);
-})();
-
-
-// ====== تحديث: مؤشر الاتصال في الشريط العلوي (بدون شريط سفلي) ======
-(function() {
-    console.log('🟢 تحميل: مؤشر اتصال علوي');
-
-    function waitForApp(cb) {
-        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
-        else setTimeout(() => waitForApp(cb), 50);
-    }
-
-    function updateIndicator(el) {
-        var online = navigator.onLine;
-        el.innerHTML = (online ? '🟢' : '🟠') + ' ' + (online ? 'متصل' : 'غير متصل');
-        el.style.color = online ? '#16a34a' : '#f59e0b';
-    }
-
-    function injectIndicator() {
-        // إخفاء الشريط السفلي القديم
-        var oldBar = document.getElementById('offlineStatusBar');
-        if (oldBar) oldBar.style.display = 'none';
-
-        var topbar = document.querySelector('.topbar');
-        if (!topbar || document.getElementById('connectionIndicator')) return;
-
-        var span = document.createElement('span');
-        span.id = 'connectionIndicator';
-        span.style.cssText = 'margin-right:15px; font-weight:bold; font-size:14px;';
-        updateIndicator(span);
-
-        // إدراج قبل زر الخروج
-        var logoutBtn = topbar.querySelector('button');
-        if (logoutBtn) {
-            logoutBtn.parentNode.insertBefore(span, logoutBtn);
-        } else {
-            topbar.appendChild(span);
-        }
-
-        // تحديث عند تغير الاتصال
-        window.addEventListener('online', function() { updateIndicator(span); });
-        window.addEventListener('offline', function() { updateIndicator(span); });
-    }
-
-    // تنفيذ فوري ومتكرر لضمان الظهور بعد كل رسم
-    function init() {
-        injectIndicator();
-        // نراقب التغييرات في الـ topbar
-        var observer = new MutationObserver(function() {
-            if (!document.getElementById('connectionIndicator')) injectIndicator();
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
-
-    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
-    if (document.readyState !== 'loading') waitForApp(init);
 })();
