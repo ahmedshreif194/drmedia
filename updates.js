@@ -534,3 +534,74 @@
         document.head.appendChild(style);
     }
 })();
+// ====== تحديث: حضور سابق متعدد الموظفين + زر "حضور وانصراف" ======
+(function() {
+    console.log('🟢 تحميل: حضور سابق متعدد');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    function init() {
+        // 1. استبدال نافذة الحضور السابق
+        AppRenderer.showPastAttendanceModal = function() {
+            var empOpts = state.employees.map(e => 
+                `<option value="${e.id}">${e.name} (${e.role})</option>`
+            ).join('');
+            
+            Utils.openModal(`
+                <h3 class="text-xl font-bold mb-4">📅 تسجيل حضور / انصراف (متعدد)</h3>
+                <p class="text-sm mb-2">اختر الموظفين (يمكنك تحديد أكثر من واحد):</p>
+                <select id="pastEmpSelect" multiple class="w-full border-2 p-2 my-2 rounded-xl h-40">
+                    ${empOpts}
+                </select>
+                <p class="text-sm mt-2 mb-1">التاريخ:</p>
+                <input type="date" id="pastDate" class="w-full border-2 p-2 my-2 rounded-xl" 
+                       value="${Utils.getTodayDateStr()}">
+                <div class="flex gap-2 mt-4">
+                    <button onclick="AppRenderer.recordPastAttendanceMulti()" class="btn-primary flex-1">
+                        ✅ حضور وانصراف
+                    </button>
+                    <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
+                </div>
+            `);
+        };
+
+        // 2. الدالة الجديدة لمعالجة الطلب
+        AppRenderer.recordPastAttendanceMulti = function() {
+            var empSelect = document.getElementById('pastEmpSelect');
+            var dateInput = document.getElementById('pastDate');
+            if (!empSelect || !dateInput) return;
+
+            var selectedOptions = Array.from(empSelect.selectedOptions);
+            if (selectedOptions.length === 0) {
+                Utils.showError('⚠️ اختر موظفًا واحدًا على الأقل');
+                return;
+            }
+            var date = dateInput.value;
+            if (!date) {
+                Utils.showError('⚠️ اختر تاريخًا');
+                return;
+            }
+
+            // تسجيل حضور ثم انصراف لكل موظف مختار
+            selectedOptions.forEach(function(option) {
+                var empId = option.value;
+                AttendanceManager.recordAttendanceForDate(empId, date, 'checkIn');
+                AttendanceManager.recordAttendanceForDate(empId, date, 'checkOut');
+            });
+
+            Utils.closeModal();
+            AppRenderer.renderAttendance(); // تحديث صفحة الحضور
+            Utils.showMsg(`✅ تم تسجيل حضور وانصراف لـ ${selectedOptions.length} موظف`);
+        };
+
+        console.log('✅ تحديث الحضور السابق جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(init);
+    });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
