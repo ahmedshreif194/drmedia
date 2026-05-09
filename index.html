@@ -1628,14 +1628,13 @@
         });
     });
 })();
-
 // ========================================================
-// نظام التحديث التلقائي من GitHub (ثابت – يعمل على كل الأجهزة)
+// نظام التحديث التلقائي من GitHub (يعمل على كل الأجهزة تلقائياً)
 // ========================================================
 (function() {
     'use strict';
 
-    // ---------- الرابط الافتراضي للتحديثات (غيّره إلى رابطك الفعلي) ----------
+    // ---------- الرابط الافتراضي (غيّره إلى رابط ملف updates.js الخاص بك) ----------
     const DEFAULT_UPDATE_URL = 'https://raw.githubusercontent.com/ahmedshreif194/drmedia/main/updates.js';
 
     async function fetchAndApplyUpdates(url) {
@@ -1645,14 +1644,16 @@
             if (!response.ok) throw new Error('HTTP ' + response.status);
             const code = await response.text();
             if (!code.trim()) throw new Error('الملف فارغ');
+
+            // تنفيذ الكود بطريقة آمنة
             const script = document.createElement('script');
             script.textContent = code;
             document.body.appendChild(script);
             console.log('✅ تم تطبيق التحديثات بنجاح');
+            if (typeof Utils !== 'undefined') Utils.showMsg('✅ تم تحميل التحديثات', 'success');
             return true;
         } catch (err) {
-            console.error('❌ فشل جلب التحديثات:', err.message);
-            if (typeof Utils !== 'undefined') Utils.showError('فشل تحميل التحديثات: ' + err.message);
+            console.warn('⚠️ فشل جلب التحديثات:', err.message);
             return false;
         }
     }
@@ -1665,11 +1666,27 @@
         }
     }
 
+    // تهيئة رابط التحديثات: نأخذ من localStorage، وإذا لم يوجد نستخدم الافتراضي
+    function getUpdateConfig() {
+        const saved = localStorage.getItem('drmedia_github_updates');
+        if (saved) {
+            try {
+                const config = JSON.parse(saved);
+                if (config.autoUpdate && config.repoURL) return config;
+            } catch(e) {}
+        }
+        // إعدادات افتراضية لأول مرة
+        const defaultConfig = { repoURL: DEFAULT_UPDATE_URL, autoUpdate: true };
+        localStorage.setItem('drmedia_github_updates', JSON.stringify(defaultConfig));
+        return defaultConfig;
+    }
+
+    // حقن إعدادات GitHub في صفحة الإعدادات
     function injectGitHubSettings() {
         const observer = new MutationObserver(() => {
             const waTemplate = document.getElementById('waMsgTemplate');
             if (waTemplate && !document.getElementById('githubUpdateSection')) {
-                const githubSettings = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{"autoUpdate":false,"repoURL":""}');
+                const githubSettings = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{"autoUpdate":true,"repoURL":"' + DEFAULT_UPDATE_URL + '"}');
                 const html = `
                 <div id="githubUpdateSection" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
                     <h3 class="font-semibold mb-2">🔄 التحديثات من GitHub</h3>
@@ -1679,7 +1696,6 @@
                     <label class="text-sm">رابط ملف التحديثات (Raw URL)</label>
                     <input id="githubRepoURL" value="${githubSettings.repoURL}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="https://raw.githubusercontent.com/...">
                     <button onclick="window._saveGitHubSettings()" class="btn-primary w-full">💾 حفظ الإعدادات</button>
-                    <small class="text-gray-500">مثال: https://raw.githubusercontent.com/username/repo/main/updates.js</small>
                 </div>`;
                 waTemplate.insertAdjacentHTML('afterend', html);
                 observer.disconnect();
@@ -1696,36 +1712,25 @@
     window._saveGitHubSettings = function() {
         const url = document.getElementById('githubRepoURL').value.trim();
         const enabled = document.getElementById('autoGitHubUpdate').checked;
-        const settings = { repoURL: url, autoUpdate: enabled };
-        localStorage.setItem('drmedia_github_updates', JSON.stringify(settings));
+        localStorage.setItem('drmedia_github_updates', JSON.stringify({ repoURL: url, autoUpdate: enabled }));
         Utils.showMsg('✅ تم حفظ إعدادات GitHub');
         if (enabled && url) {
             fetchAndApplyUpdates(url);
         }
     };
 
+    // بدء التشغيل الفعلي
     window.addEventListener('DOMContentLoaded', function() {
         waitForApp(function() {
             injectGitHubSettings();
 
-            // ---------- تحسين الموبايل: استخدام رابط افتراضي إذا لم تُحفظ إعدادات ----------
-            const githubConfig = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
-            let urlToUse = githubConfig.repoURL;
-            let autoUpdate = githubConfig.autoUpdate;
-
-            // إذا كان الرابط فارغًا، نستخدم الرابط الافتراضي (يعمل على الأجهزة الجديدة)
-            if (!urlToUse) {
-                urlToUse = DEFAULT_UPDATE_URL;
-                autoUpdate = true; // نفعّل تلقائيًا لأول مرة
-                // نخزّنها تلقائيًا حتى تظهر في الإعدادات لاحقًا
-                localStorage.setItem('drmedia_github_updates', JSON.stringify({ repoURL: urlToUse, autoUpdate: true }));
+            const config = getUpdateConfig();
+            if (config.autoUpdate && config.repoURL) {
+                // تطبيق التحديثات بعد 2.5 ثانية لضمان جهوزية الواجهة
+                setTimeout(() => fetchAndApplyUpdates(config.repoURL), 2500);
             }
 
-            if (autoUpdate && urlToUse) {
-                setTimeout(() => fetchAndApplyUpdates(urlToUse), 1500);
-            }
-
-            console.log('✅ نظام التحديث من GitHub جاهز (يدعم الموبايل تلقائياً)');
+            console.log('✅ نظام التحديث (النسخة المحمولة) جاهز');
         });
     });
 })();
