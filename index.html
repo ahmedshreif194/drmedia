@@ -1715,6 +1715,92 @@
     });
 
 })();
+        // ========================================================
+// نظام التحديث التلقائي من GitHub (نسخة تشخيصية محسنة)
+// ========================================================
+(function() {
+    'use strict';
+
+    async function fetchAndApplyUpdates(url) {
+        console.log('🔄 محاولة جلب التحديثات من:', url);
+        try {
+            const response = await fetch(url, { cache: 'no-store' });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const code = await response.text();
+            if (!code.trim()) throw new Error('الملف فارغ');
+            const script = document.createElement('script');
+            script.textContent = code;
+            document.body.appendChild(script);
+            console.log('✅ تم تطبيق التحديثات بنجاح');
+            return true;
+        } catch (err) {
+            console.error('❌ فشل جلب التحديثات:', err.message);
+            if (typeof Utils !== 'undefined') Utils.showError('فشل تحميل التحديثات: ' + err.message);
+            return false;
+        }
+    }
+
+    function waitForApp(callback) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForApp(callback), 50);
+        }
+    }
+
+    function injectGitHubSettings() {
+        const observer = new MutationObserver(() => {
+            const waTemplate = document.getElementById('waMsgTemplate');
+            if (waTemplate && !document.getElementById('githubUpdateSection')) {
+                const githubSettings = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{"autoUpdate":false,"repoURL":""}');
+                const html = `
+                <div id="githubUpdateSection" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <h3 class="font-semibold mb-2">🔄 التحديثات من GitHub</h3>
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="autoGitHubUpdate" ${githubSettings.autoUpdate ? 'checked' : ''} onchange="window._toggleGitHubUpdate()"> <label>تفعيل التحميل التلقائي</label>
+                    </div>
+                    <label class="text-sm">رابط ملف التحديثات (Raw URL)</label>
+                    <input id="githubRepoURL" value="${githubSettings.repoURL}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="https://raw.githubusercontent.com/...">
+                    <button onclick="window._saveGitHubSettings()" class="btn-primary w-full">💾 حفظ الإعدادات</button>
+                    <small class="text-gray-500">مثال: https://raw.githubusercontent.com/username/repo/main/updates.js</small>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    window._toggleGitHubUpdate = function() {
+        const current = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
+        current.autoUpdate = document.getElementById('autoGitHubUpdate').checked;
+        localStorage.setItem('drmedia_github_updates', JSON.stringify(current));
+    };
+    window._saveGitHubSettings = function() {
+        const url = document.getElementById('githubRepoURL').value.trim();
+        const enabled = document.getElementById('autoGitHubUpdate').checked;
+        const settings = { repoURL: url, autoUpdate: enabled };
+        localStorage.setItem('drmedia_github_updates', JSON.stringify(settings));
+        Utils.showMsg('✅ تم حفظ إعدادات GitHub');
+        if (enabled && url) {
+            fetchAndApplyUpdates(url);
+        }
+    };
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForApp(function() {
+            injectGitHubSettings();
+
+            const githubConfig = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}');
+            if (githubConfig.autoUpdate && githubConfig.repoURL) {
+                setTimeout(() => fetchAndApplyUpdates(githubConfig.repoURL), 1500);
+            }
+
+            console.log('✅ نظام التحديث من GitHub جاهز (نسخة مراقبة)');
+        });
+    });
+
+})();
     </script>
 </body>
 </html>
