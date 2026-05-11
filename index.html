@@ -1734,6 +1734,124 @@
         });
     });
 })();
+        // ========================================================
+// 1. إصلاح التزامن – اعتماد Firebase كمصدر رئيسي للبيانات
+// 2. إزالة تكرار إعدادات GitHub في صفحة الإعدادات
+// ========================================================
+(function() {
+    'use strict';
+
+    // ---------- انتظار تحميل الكائنات الأساسية ----------
+    function waitForDataManager(callback) {
+        if (typeof DataManager !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForDataManager(callback), 50);
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForDataManager(function() {
+
+            // ========================================================
+            // أولاً: تعديل الحفظ ليكون Firebase هو الأساس
+            // ========================================================
+            const origSaveAll = DataManager.saveAllData;
+            DataManager.saveAllData = async function() {
+                // تجهيز كائن البيانات
+                const fd = {
+                    bookings: state.bookings, employees: state.employees, halls: state.halls,
+                    clients: state.clients, equipmentInventory: state.equipmentInventory,
+                    attendanceRecords: state.attendanceRecords, employeeLoans: state.employeeLoans,
+                    notifications: state.notifications, trashBin: state.trashBin, activityLog: state.activityLog,
+                    companyName: state.companyName, companyLogo: state.companyLogoBase64 || state.companyLogo,
+                    USERS: state.USERS, rotationCounters: state.rotationCounters,
+                    whatsappEnabled: state.whatsapp.enabled, whatsappBusinessNumber: state.whatsapp.businessNumber,
+                    whatsappMessageTemplate: state.whatsapp.messageTemplate,
+                    appTheme: state.appTheme, appLanguage: state.appLanguage,
+                    flashDrives: state.flashDrives, holidays: state.holidays,
+                    systemOfflineMode: state.systemOfflineMode
+                };
+
+                // 1. حفظ محلي بصمت (للاحتياط فقط)
+                try { localStorage.setItem('drmedia_data', JSON.stringify(fd)); } catch(e) {}
+
+                // 2. المزامنة الفورية مع Firebase (هي الأساس الآن)
+                if (state.useFirebase && state.db && state.online && !state.systemOfflineMode) {
+                    try {
+                        await state.db.ref('/').set(fd);
+                        state.lastSync = new Date();
+                    } catch(e) {
+                        state.online = false;
+                        console.warn('تعذرت المزامنة مع Firebase، تم الحفظ محلياً');
+                    }
+                }
+
+                Utils.applyTheme(state.appTheme);
+            };
+
+            // ========================================================
+            // ثانياً: تعديل التحميل ليكون Firebase هو الأساس أيضاً
+            // ========================================================
+            const origLoadAll = DataManager.loadAllData;
+            DataManager.loadAllData = async function() {
+                let loaded = false;
+
+                // 1. محاولة التحميل من Firebase أولاً
+                if (state.useFirebase && state.db && !state.systemOfflineMode) {
+                    try {
+                        const snapshot = await state.db.ref('/').get();
+                        if (snapshot.exists()) {
+                            this._loadDataObject(snapshot.val());
+                            state.online = true;
+                            state.lastSync = new Date();
+                            loaded = true;
+                        }
+                    } catch(e) {
+                        state.online = false;
+                    }
+                }
+
+                // 2. إذا فشل Firebase (أو كان الوضع محلي)، نلجأ لـ localStorage
+                if (!loaded) {
+                    try {
+                        const raw = localStorage.getItem('drmedia_data');
+                        if (raw) this._loadDataObject(JSON.parse(raw));
+                        else this._initializeDefaultData();
+                    } catch(e) {
+                        this._initializeDefaultData();
+                    }
+                }
+
+                this._ensureMinimumData();
+                this.updateEmployeeOrders();
+                await this.saveAllData();
+                Utils.applyTheme(state.appTheme);
+            };
+
+            // ========================================================
+            // ثالثاً: إصلاح تكرار إعدادات GitHub في صفحة الإعدادات
+            // ========================================================
+            const observer = new MutationObserver(function(mutations) {
+                const waTemplate = document.getElementById('waMsgTemplate');
+                if (!waTemplate) return;
+
+                // البحث عن جميع أقسام GitHub المحقونة
+                const existingSections = document.querySelectorAll('#githubUpdateSection');
+                if (existingSections.length > 1) {
+                    // إبقاء الأول فقط وحذف الباقي
+                    for (let i = 1; i < existingSections.length; i++) {
+                        existingSections[i].remove();
+                    }
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            console.log('✅ تم: 1) تحويل الحفظ إلى Firebase 2) إصلاح تكرار إعدادات GitHub');
+
+        });
+    });
+})();
     </script>
 </body>
 </html>
