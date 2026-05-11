@@ -804,16 +804,16 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
-// ====== تحديث: تعديل عدد الأوردرات في المرتبات + تسوية تلقائية ======
+// ====== تحديث: تعديل عدد الأوردرات في المرتبات + تسوية تلقائية (مصحح) ======
 (function() {
-    console.log('🟢 تحميل: تعديل المرتبات والأوردرات');
+    console.log('🟢 تحميل: تعديل المرتبات (قابل للنقر)');
 
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
         else setTimeout(() => waitForApp(cb), 50);
     }
 
-    // دالة تسوية الأوردرات (إعادة توزيع عادل لجميع الحجوزات المعلقة)
+    // تسوية الأوردرات
     async function equalizeOrders() {
         var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
         if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
@@ -846,48 +846,61 @@
         Utils.showMsg('✅ تمت تسوية الأوردرات بالتساوي');
     }
 
-    // جعل خلية "الأوردرات" قابلة للتحرير
-    function makeOrdersEditable() {
-        var rows = document.querySelectorAll('#content-area table tbody tr');
-        rows.forEach(function(row) {
-            var cells = row.querySelectorAll('td');
-            if (cells.length < 2) return;
-            var ordersCell = cells[1]; // العمود الثاني (الأوردرات)
-            if (!ordersCell || ordersCell.querySelector('.order-edit-input')) return;
+    // تفويض النقر على الجدول لجعل خلية الأوردرات قابلة للتحرير
+    function enableOrderEditing() {
+        var table = document.querySelector('#content-area table');
+        if (!table || table.dataset.orderEditEnabled) return;
+        table.dataset.orderEditEnabled = 'true';
 
-            var empName = cells[0]?.textContent.trim();
-            var emp = state.employees.find(e => e.name === empName);
-            if (!emp) return;
+        table.addEventListener('click', function(e) {
+            var target = e.target;
+            // نبحث عن الخلية التي تحتوي على الرقم (td بدون أزرار أو مدخلات أخرى)
+            if (target.tagName === 'TD' && target.cellIndex === 1 && !target.querySelector('input')) {
+                var row = target.closest('tr');
+                var nameCell = row?.cells[0];
+                if (!nameCell) return;
+                var empName = nameCell.textContent.trim();
+                var emp = state.employees.find(e => e.name === empName);
+                if (!emp) return;
 
-            ordersCell.style.cursor = 'pointer';
-            ordersCell.title = 'انقر لتعديل عدد الأوردرات';
-
-            ordersCell.addEventListener('click', function() {
-                if (ordersCell.querySelector('input')) return;
+                // إنشاء حقل الإدخال
                 var input = document.createElement('input');
                 input.type = 'number';
                 input.className = 'order-edit-input border-2 p-1 rounded text-sm';
                 input.style.width = '60px';
                 input.value = emp.totalOrders || 0;
-                ordersCell.innerHTML = '';
-                ordersCell.appendChild(input);
+                target.innerHTML = '';
+                target.appendChild(input);
                 input.focus();
-                input.addEventListener('blur', function() {
+
+                // عند الخروج من الحقل
+                function saveEdit() {
                     var newVal = parseInt(input.value) || 0;
-                    emp.totalOrders = newVal;
-                    DataManager.updateEmployeeOrders();
-                    DataManager.saveAllData();
-                    ordersCell.innerHTML = newVal;
-                    AppRenderer.renderPayroll(); // تحديث الجدول لرؤية المرتب الجديد
-                });
+                    if (newVal !== emp.totalOrders) {
+                        emp.totalOrders = newVal;
+                        DataManager.updateEmployeeOrders();
+                        DataManager.saveAllData();
+                        // تحديث المرتب في الصف
+                        var salaryCell = row.cells[3]; // خلية المستحق
+                        if (salaryCell) {
+                            salaryCell.textContent = Utils.formatCurrency(newVal * (emp.salaryPerOrder || 0));
+                        }
+                    }
+                    target.textContent = newVal;
+                }
+
+                input.addEventListener('blur', saveEdit);
                 input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') input.blur();
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        input.blur();
+                    }
                 });
-            });
+            }
         });
     }
 
-    // إضافة زر "تسوية الأوردرات" في صفحة المرتبات
+    // إضافة زر التسوية
     function addEqualizeButton() {
         var container = document.querySelector('#content-area .flex.flex-wrap.gap-2.mb-4');
         if (!container || document.getElementById('equalizePayrollBtn')) return;
@@ -901,21 +914,21 @@
         container.appendChild(btn);
     }
 
-    // ربط التحسينات برسم صفحة المرتبات
+    // ربط التحسينات برسم المرتبات
     function init() {
         if (typeof AppRenderer !== 'undefined') {
             var origRenderPayroll = AppRenderer.renderPayroll;
             AppRenderer.renderPayroll = function() {
                 origRenderPayroll.apply(this, arguments);
                 setTimeout(function() {
-                    makeOrdersEditable();
+                    enableOrderEditing();
                     addEqualizeButton();
                 }, 200);
             };
         }
-        // تشغيل أولي
+        // تنفيذ أولي
         if (document.querySelector('#content-area table tbody')) {
-            makeOrdersEditable();
+            enableOrderEditing();
             addEqualizeButton();
         }
     }
