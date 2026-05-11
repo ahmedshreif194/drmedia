@@ -756,22 +756,14 @@
             }
         }
     }, 300);
-})();// ====== تحديث: تعديل الأوردرات في صفحة الموظفين + تسوية تلقائية (يعمل) ======
+})();
+// ====== تحديث: تعديل الأوردرات في صفحة الموظفين + تسوية تلقائية (النسخة النهائية) ======
 (function() {
-    console.log('🟢 تحميل: تعديل الأوردرات في الموظفين مع التسوية التلقائية');
+    console.log('🟢 تحميل: تعديل الأوردرات مع التسوية التلقائية (النسخة النهائية)');
 
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
         else setTimeout(() => waitForApp(cb), 50);
-    }
-
-    let reloadTimeout = null;
-    function reloadPageAfterDelay() {
-        if (reloadTimeout) clearTimeout(reloadTimeout);
-        reloadTimeout = setTimeout(() => {
-            console.log('🔄 إعادة تحميل الصفحة لتحديث البيانات...');
-            location.reload();
-        }, 3000);
     }
 
     // دالة التسوية (إعادة توزيع الحجوزات المعلقة بالتساوي)
@@ -839,9 +831,10 @@
 
         DataManager.updateEmployeeOrders();
         await DataManager.saveAllData();
+        console.log('✅ التسوية اكتملت');
     }
 
-    // جعل خلية "الأوردرات" في جدول الموظفين قابلة للتعديل
+    // جعل خلية "الأوردرات" قابلة للتعديل
     function enableEmployeeOrderEditing() {
         var table = document.querySelector('#content-area table');
         if (!table || table.dataset.empOrderEditEnabled) return;
@@ -863,7 +856,8 @@
 
         table.addEventListener('click', function(e) {
             var target = e.target;
-            if (target.tagName === 'TD' && target.cellIndex === orderColumnIndex && !target.querySelector('input')) {
+            // نتأكد أننا في الخلية الصحيحة وأنها تحتوي على رقم (نصيًا) وليس input
+            if (target.tagName === 'TD' && target.cellIndex === orderColumnIndex && !target.querySelector('input') && /^\d+$/.test(target.textContent.trim())) {
                 var row = target.closest('tr');
                 var nameCell = row?.cells[0];
                 if (!nameCell) return;
@@ -876,18 +870,18 @@
                 input.className = 'order-edit-input border-2 p-1 rounded text-sm';
                 input.style.width = '60px';
                 input.value = emp.totalOrders || 0;
-                target.innerHTML = '';
+                target.textContent = '';
                 target.appendChild(input);
                 input.focus();
 
                 async function saveEdit() {
                     var newVal = parseInt(input.value) || 0;
                     if (newVal !== emp.totalOrders) {
+                        console.log(`تغيير ${empName}: من ${emp.totalOrders} إلى ${newVal}`);
                         emp.totalOrders = newVal;
                         await equalizeOrders();           // التسوية التلقائية
                         AppRenderer.renderEmployees();    // إعادة رسم صفحة الموظفين
-                        Utils.showMsg(`✅ تم تعديل أوردرات ${emp.name} وإعادة التسوية`);
-                        reloadPageAfterDelay();
+                        Utils.showMsg(`✅ تم تعديل أوردرات ${empName} وإعادة التسوية`);
                     } else {
                         target.textContent = newVal;
                     }
