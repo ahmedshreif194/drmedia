@@ -756,14 +756,22 @@
             }
         }
     }, 300);
-})();
-// ====== تحديث: تعديل عدد الأوردرات في صفحة الموظفين + تسوية تلقائية ======
+})();// ====== تحديث: تعديل الأوردرات في صفحة الموظفين + تسوية تلقائية (يعمل) ======
 (function() {
-    console.log('🟢 تحميل: تعديل الأوردرات في الموظفين مع التسوية');
+    console.log('🟢 تحميل: تعديل الأوردرات في الموظفين مع التسوية التلقائية');
 
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
         else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    let reloadTimeout = null;
+    function reloadPageAfterDelay() {
+        if (reloadTimeout) clearTimeout(reloadTimeout);
+        reloadTimeout = setTimeout(() => {
+            console.log('🔄 إعادة تحميل الصفحة لتحديث البيانات...');
+            location.reload();
+        }, 3000);
     }
 
     // دالة التسوية (إعادة توزيع الحجوزات المعلقة بالتساوي)
@@ -777,7 +785,6 @@
         // مسح التوزيعات السابقة
         pending.forEach(b => b.assignedEmployees = []);
 
-        // الموظفون النشطون مرتبين حسب الأوردرات الحالية (الأقل أولاً)
         var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active)
                     .sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
         var phs  = state.employees.filter(e => e.role === 'مصور' && e.active)
@@ -840,10 +847,23 @@
         if (!table || table.dataset.empOrderEditEnabled) return;
         table.dataset.empOrderEditEnabled = 'true';
 
+        // البحث عن فهرس العمود "الأوردرات" من العنوان
+        var headerCells = table.querySelectorAll('thead th');
+        var orderColumnIndex = -1;
+        headerCells.forEach(function(th, i) {
+            if (th.textContent.includes('الأوردرات')) {
+                orderColumnIndex = i;
+            }
+        });
+        if (orderColumnIndex === -1) {
+            console.warn('لم يتم العثور على عمود "الأوردرات"');
+            return;
+        }
+        console.log('فهرس عمود الأوردرات:', orderColumnIndex);
+
         table.addEventListener('click', function(e) {
             var target = e.target;
-            // خلية الأوردرات هي الرابعة (index 3) في جدول الموظفين
-            if (target.tagName === 'TD' && target.cellIndex === 4 && !target.querySelector('input')) {
+            if (target.tagName === 'TD' && target.cellIndex === orderColumnIndex && !target.querySelector('input')) {
                 var row = target.closest('tr');
                 var nameCell = row?.cells[0];
                 if (!nameCell) return;
@@ -867,6 +887,7 @@
                         await equalizeOrders();           // التسوية التلقائية
                         AppRenderer.renderEmployees();    // إعادة رسم صفحة الموظفين
                         Utils.showMsg(`✅ تم تعديل أوردرات ${emp.name} وإعادة التسوية`);
+                        reloadPageAfterDelay();
                     } else {
                         target.textContent = newVal;
                     }
