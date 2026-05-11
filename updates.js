@@ -757,96 +757,112 @@
         }
     }, 300);
 })();
-// ====== تحديث: زر مسح التخزين المحلي في الإعدادات ======
+// ====== تحديث: تعديل عدد الأوردرات مع التسوية التلقائية ======
 (function() {
-    console.log('🟢 تحميل: زر مسح localStorage');
+    console.log('🟢 تحميل: تعديل المرتبات مع التسوية التلقائية');
 
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
         else setTimeout(() => waitForApp(cb), 50);
     }
 
-    function injectClearButton() {
-        // ننتظر حتى يظهر حقل waMsgTemplate لضمان وجود صفحة الإعدادات
-        var checkInterval = setInterval(function() {
-            var waTemplate = document.getElementById('waMsgTemplate');
-            if (waTemplate && !document.getElementById('clearStorageBtn')) {
-                clearInterval(checkInterval);
-
-                var btn = document.createElement('button');
-                btn.id = 'clearStorageBtn';
-                btn.className = 'btn-danger w-full';
-                btn.style.marginTop = '20px';
-                btn.textContent = '🗑️ مسح جميع البيانات المحلية';
-                btn.onclick = function() {
-                    if (confirm('هل أنت متأكد؟ سيتم مسح جميع بيانات التطبيق المحفوظة محلياً وإعادة تحميل الصفحة.')) {
-                        localStorage.clear();
-                        sessionStorage.clear();
-                        alert('تم مسح البيانات المحلية. سيتم إعادة تحميل الصفحة.');
-                        location.reload();
-                    }
-                };
-
-                // إدراج الزر بعد حقل waMsgTemplate (في نهاية صفحة الإعدادات)
-                waTemplate.insertAdjacentHTML('afterend', `<div id="clearStorageBtnContainer"></div>`);
-                document.getElementById('clearStorageBtnContainer').appendChild(btn);
-            }
-        }, 300);
-
-        setTimeout(function() { clearInterval(checkInterval); }, 10000);
-    }
-
-    function init() {
-        injectClearButton();
-        console.log('✅ زر مسح التخزين المحلي جاهز');
-    }
-
-    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
-    if (document.readyState !== 'loading') waitForApp(init);
-})();
-// ====== تحديث: تعديل عدد الأوردرات في المرتبات + تسوية تلقائية (مصحح) ======
-(function() {
-    console.log('🟢 تحميل: تعديل المرتبات (قابل للنقر)');
-
-    function waitForApp(cb) {
-        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
-        else setTimeout(() => waitForApp(cb), 50);
-    }
-
-    // تسوية الأوردرات
+    // دالة التسوية (توزيع الحجوزات المعلقة بالتساوي)
     async function equalizeOrders() {
         var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-        if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
+        if (!pending.length) {
+            console.log('لا توجد حجوزات معلقة للتسوية');
+            return;
+        }
+
+        // مسح التوزيعات السابقة
         pending.forEach(b => b.assignedEmployees = []);
-        var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
-        var phs  = state.employees.filter(e => e.role === 'مصور' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
-        var crs  = state.employees.filter(e => e.role === 'كرين' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+
+        // الموظفون النشطون مرتبين حسب الأوردرات الحالية (الأقل أولاً)
+        var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active)
+                    .sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+        var phs  = state.employees.filter(e => e.role === 'مصور' && e.active)
+                    .sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+        var crs  = state.employees.filter(e => e.role === 'كرين' && e.active)
+                    .sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+
         var dirIdx = 0, phIdx = 0, crIdx = 0;
+
+        // تجميع الحجوزات حسب التاريخ لتجنب تعارض الموظفين في نفس اليوم
         var byDate = {};
-        pending.forEach(b => { if(!byDate[b.date]) byDate[b.date]=[]; byDate[b.date].push(b); });
+        pending.forEach(b => {
+            if (!byDate[b.date]) byDate[b.date] = [];
+            byDate[b.date].push(b);
+        });
+
+        // معالجة كل يوم على حدة
         Object.keys(byDate).sort().forEach(function(date) {
-            var busy = new Set();
+            var busy = new Set(); // موظفون مشغولون في هذا اليوم
             byDate[date].forEach(function(b) {
-                var hallType = (state.halls.find(h=>h.id===b.hallId)||{}).type || 'closed';
+                var hallType = (state.halls.find(h => h.id === b.hallId) || {}).type || 'closed';
                 var assigned = [];
+
                 if (hallType === 'cafe') {
-                    for(var i=0; i<phs.length; i++) { var idx=(phIdx+i)%phs.length; if(!busy.has(phs[idx].id)) { assigned.push(phs[idx].id); busy.add(phs[idx].id); phIdx=(idx+1)%phs.length; break; } }
-                    if(!assigned.length && phs.length) assigned.push(phs[phIdx%phs.length].id);
+                    // اختيار أول مصور متاح
+                    for (var i = 0; i < phs.length; i++) {
+                        var idx = (phIdx + i) % phs.length;
+                        var emp = phs[idx];
+                        if (!busy.has(emp.id)) {
+                            assigned.push(emp.id);
+                            busy.add(emp.id);
+                            phIdx = (idx + 1) % phs.length;
+                            break;
+                        }
+                    }
+                    // لو لم نجد، نأخذ أول مصور
+                    if (!assigned.length && phs.length) assigned.push(phs[phIdx % phs.length].id);
                 } else {
-                    for(var i=0; i<dirs.length; i++) { var idx=(dirIdx+i)%dirs.length; if(!busy.has(dirs[idx].id)) { assigned.push(dirs[idx].id); busy.add(dirs[idx].id); dirIdx=(idx+1)%dirs.length; break; } }
-                    for(var i=0; i<2; i++) { for(var j=0; j<phs.length; j++) { var idx=(phIdx+j)%phs.length; if(!busy.has(phs[idx].id) && !assigned.includes(phs[idx].id)) { assigned.push(phs[idx].id); busy.add(phs[idx].id); phIdx=(idx+1)%phs.length; break; } } }
-                    for(var i=0; i<crs.length; i++) { var idx=(crIdx+i)%crs.length; if(!busy.has(crs[idx].id)) { assigned.push(crs[idx].id); busy.add(crs[idx].id); crIdx=(idx+1)%crs.length; break; } }
+                    // مخرج
+                    for (var i = 0; i < dirs.length; i++) {
+                        var idx = (dirIdx + i) % dirs.length;
+                        var emp = dirs[idx];
+                        if (!busy.has(emp.id)) {
+                            assigned.push(emp.id);
+                            busy.add(emp.id);
+                            dirIdx = (idx + 1) % dirs.length;
+                            break;
+                        }
+                    }
+                    // مصورين (حتى 2)
+                    for (var i = 0; i < 2; i++) {
+                        for (var j = 0; j < phs.length; j++) {
+                            var idx = (phIdx + j) % phs.length;
+                            var emp = phs[idx];
+                            if (!busy.has(emp.id) && !assigned.includes(emp.id)) {
+                                assigned.push(emp.id);
+                                busy.add(emp.id);
+                                phIdx = (idx + 1) % phs.length;
+                                break;
+                            }
+                        }
+                    }
+                    // كرين
+                    for (var i = 0; i < crs.length; i++) {
+                        var idx = (crIdx + i) % crs.length;
+                        var emp = crs[idx];
+                        if (!busy.has(emp.id)) {
+                            assigned.push(emp.id);
+                            busy.add(emp.id);
+                            crIdx = (idx + 1) % crs.length;
+                            break;
+                        }
+                    }
                 }
+
                 b.assignedEmployees = assigned;
             });
         });
+
         DataManager.updateEmployeeOrders();
         await DataManager.saveAllData();
-        AppRenderer.renderPayroll();
-        Utils.showMsg('✅ تمت تسوية الأوردرات بالتساوي');
+        // لا نعيد رسم المرتبات هنا لأننا سنستدعيها من الخارج
     }
 
-    // تفويض النقر على الجدول لجعل خلية الأوردرات قابلة للتحرير
+    // جعل خلية الأوردرات قابلة للتعديل مع التسوية التلقائية بعد كل تغيير
     function enableOrderEditing() {
         var table = document.querySelector('#content-area table');
         if (!table || table.dataset.orderEditEnabled) return;
@@ -854,13 +870,13 @@
 
         table.addEventListener('click', function(e) {
             var target = e.target;
-            // نبحث عن الخلية التي تحتوي على الرقم (td بدون أزرار أو مدخلات أخرى)
+            // نبحث عن الخلية التي تحتوي على الرقم (td الثاني)
             if (target.tagName === 'TD' && target.cellIndex === 1 && !target.querySelector('input')) {
                 var row = target.closest('tr');
                 var nameCell = row?.cells[0];
                 if (!nameCell) return;
                 var empName = nameCell.textContent.trim();
-                var emp = state.employees.find(e => e.name === empName);
+                var emp = state.employees.find(em => em.name === empName);
                 if (!emp) return;
 
                 // إنشاء حقل الإدخال
@@ -874,19 +890,20 @@
                 input.focus();
 
                 // عند الخروج من الحقل
-                function saveEdit() {
+                async function saveEdit() {
                     var newVal = parseInt(input.value) || 0;
                     if (newVal !== emp.totalOrders) {
+                        // تحديث قيمة totalOrders للموظف
                         emp.totalOrders = newVal;
-                        DataManager.updateEmployeeOrders();
-                        DataManager.saveAllData();
-                        // تحديث المرتب في الصف
-                        var salaryCell = row.cells[3]; // خلية المستحق
-                        if (salaryCell) {
-                            salaryCell.textContent = Utils.formatCurrency(newVal * (emp.salaryPerOrder || 0));
-                        }
+                        // إعادة توزيع الحجوزات المعلقة تلقائياً
+                        await equalizeOrders();
+                        // بعد التسوية، نعيد رسم المرتبات لتظهر الأعداد الجديدة
+                        AppRenderer.renderPayroll();
+                        Utils.showMsg(`✅ تم تعديل أوردرات ${emp.name} وإعادة التسوية`);
+                    } else {
+                        // إذا لم يتغير الرقم، نعيد النص فقط
+                        target.textContent = newVal;
                     }
-                    target.textContent = newVal;
                 }
 
                 input.addEventListener('blur', saveEdit);
@@ -900,36 +917,18 @@
         });
     }
 
-    // إضافة زر التسوية
-    function addEqualizeButton() {
-        var container = document.querySelector('#content-area .flex.flex-wrap.gap-2.mb-4');
-        if (!container || document.getElementById('equalizePayrollBtn')) return;
-        var btn = document.createElement('button');
-        btn.id = 'equalizePayrollBtn';
-        btn.className = 'btn-secondary text-sm';
-        btn.style.backgroundColor = '#8b5cf6';
-        btn.style.color = 'white';
-        btn.textContent = '📊 تسوية الأوردرات المتبقية';
-        btn.onclick = equalizeOrders;
-        container.appendChild(btn);
-    }
-
     // ربط التحسينات برسم المرتبات
     function init() {
         if (typeof AppRenderer !== 'undefined') {
             var origRenderPayroll = AppRenderer.renderPayroll;
             AppRenderer.renderPayroll = function() {
                 origRenderPayroll.apply(this, arguments);
-                setTimeout(function() {
-                    enableOrderEditing();
-                    addEqualizeButton();
-                }, 200);
+                setTimeout(enableOrderEditing, 200);
             };
         }
-        // تنفيذ أولي
+        // تنفيذ فوري إن كان الجدول موجوداً
         if (document.querySelector('#content-area table tbody')) {
             enableOrderEditing();
-            addEqualizeButton();
         }
     }
 
