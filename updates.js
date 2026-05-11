@@ -753,3 +753,50 @@
         }
     }, 300);
 })();
+// ====== تحديث: زر مسح التخزين المحلي في الإعدادات ======
+(function() {
+    console.log('🟢 تحميل: زر مسح localStorage');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    function injectClearButton() {
+        // ننتظر حتى يظهر حقل waMsgTemplate لضمان وجود صفحة الإعدادات
+        var checkInterval = setInterval(function() {
+            var waTemplate = document.getElementById('waMsgTemplate');
+            if (waTemplate && !document.getElementById('clearStorageBtn')) {
+                clearInterval(checkInterval);
+
+                var btn = document.createElement('button');
+                btn.id = 'clearStorageBtn';
+                btn.className = 'btn-danger w-full';
+                btn.style.marginTop = '20px';
+                btn.textContent = '🗑️ مسح جميع البيانات المحلية';
+                btn.onclick = function() {
+                    if (confirm('هل أنت متأكد؟ سيتم مسح جميع بيانات التطبيق المحفوظة محلياً وإعادة تحميل الصفحة.')) {
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        alert('تم مسح البيانات المحلية. سيتم إعادة تحميل الصفحة.');
+                        location.reload();
+                    }
+                };
+
+                // إدراج الزر بعد حقل waMsgTemplate (في نهاية صفحة الإعدادات)
+                waTemplate.insertAdjacentHTML('afterend', `<div id="clearStorageBtnContainer"></div>`);
+                document.getElementById('clearStorageBtnContainer').appendChild(btn);
+            }
+        }, 300);
+
+        setTimeout(function() { clearInterval(checkInterval); }, 10000);
+    }
+
+    function init() {
+        injectClearButton();
+        console.log('✅ زر مسح التخزين المحلي جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
