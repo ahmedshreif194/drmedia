@@ -804,3 +804,122 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: تعديل عدد الأوردرات في المرتبات + تسوية تلقائية ======
+(function() {
+    console.log('🟢 تحميل: تعديل المرتبات والأوردرات');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // دالة تسوية الأوردرات (إعادة توزيع عادل لجميع الحجوزات المعلقة)
+    async function equalizeOrders() {
+        var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
+        pending.forEach(b => b.assignedEmployees = []);
+        var dirs = state.employees.filter(e => e.role === 'مخرج' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+        var phs  = state.employees.filter(e => e.role === 'مصور' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+        var crs  = state.employees.filter(e => e.role === 'كرين' && e.active).sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0));
+        var dirIdx = 0, phIdx = 0, crIdx = 0;
+        var byDate = {};
+        pending.forEach(b => { if(!byDate[b.date]) byDate[b.date]=[]; byDate[b.date].push(b); });
+        Object.keys(byDate).sort().forEach(function(date) {
+            var busy = new Set();
+            byDate[date].forEach(function(b) {
+                var hallType = (state.halls.find(h=>h.id===b.hallId)||{}).type || 'closed';
+                var assigned = [];
+                if (hallType === 'cafe') {
+                    for(var i=0; i<phs.length; i++) { var idx=(phIdx+i)%phs.length; if(!busy.has(phs[idx].id)) { assigned.push(phs[idx].id); busy.add(phs[idx].id); phIdx=(idx+1)%phs.length; break; } }
+                    if(!assigned.length && phs.length) assigned.push(phs[phIdx%phs.length].id);
+                } else {
+                    for(var i=0; i<dirs.length; i++) { var idx=(dirIdx+i)%dirs.length; if(!busy.has(dirs[idx].id)) { assigned.push(dirs[idx].id); busy.add(dirs[idx].id); dirIdx=(idx+1)%dirs.length; break; } }
+                    for(var i=0; i<2; i++) { for(var j=0; j<phs.length; j++) { var idx=(phIdx+j)%phs.length; if(!busy.has(phs[idx].id) && !assigned.includes(phs[idx].id)) { assigned.push(phs[idx].id); busy.add(phs[idx].id); phIdx=(idx+1)%phs.length; break; } } }
+                    for(var i=0; i<crs.length; i++) { var idx=(crIdx+i)%crs.length; if(!busy.has(crs[idx].id)) { assigned.push(crs[idx].id); busy.add(crs[idx].id); crIdx=(idx+1)%crs.length; break; } }
+                }
+                b.assignedEmployees = assigned;
+            });
+        });
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        AppRenderer.renderPayroll();
+        Utils.showMsg('✅ تمت تسوية الأوردرات بالتساوي');
+    }
+
+    // جعل خلية "الأوردرات" قابلة للتحرير
+    function makeOrdersEditable() {
+        var rows = document.querySelectorAll('#content-area table tbody tr');
+        rows.forEach(function(row) {
+            var cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+            var ordersCell = cells[1]; // العمود الثاني (الأوردرات)
+            if (!ordersCell || ordersCell.querySelector('.order-edit-input')) return;
+
+            var empName = cells[0]?.textContent.trim();
+            var emp = state.employees.find(e => e.name === empName);
+            if (!emp) return;
+
+            ordersCell.style.cursor = 'pointer';
+            ordersCell.title = 'انقر لتعديل عدد الأوردرات';
+
+            ordersCell.addEventListener('click', function() {
+                if (ordersCell.querySelector('input')) return;
+                var input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'order-edit-input border-2 p-1 rounded text-sm';
+                input.style.width = '60px';
+                input.value = emp.totalOrders || 0;
+                ordersCell.innerHTML = '';
+                ordersCell.appendChild(input);
+                input.focus();
+                input.addEventListener('blur', function() {
+                    var newVal = parseInt(input.value) || 0;
+                    emp.totalOrders = newVal;
+                    DataManager.updateEmployeeOrders();
+                    DataManager.saveAllData();
+                    ordersCell.innerHTML = newVal;
+                    AppRenderer.renderPayroll(); // تحديث الجدول لرؤية المرتب الجديد
+                });
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') input.blur();
+                });
+            });
+        });
+    }
+
+    // إضافة زر "تسوية الأوردرات" في صفحة المرتبات
+    function addEqualizeButton() {
+        var container = document.querySelector('#content-area .flex.flex-wrap.gap-2.mb-4');
+        if (!container || document.getElementById('equalizePayrollBtn')) return;
+        var btn = document.createElement('button');
+        btn.id = 'equalizePayrollBtn';
+        btn.className = 'btn-secondary text-sm';
+        btn.style.backgroundColor = '#8b5cf6';
+        btn.style.color = 'white';
+        btn.textContent = '📊 تسوية الأوردرات المتبقية';
+        btn.onclick = equalizeOrders;
+        container.appendChild(btn);
+    }
+
+    // ربط التحسينات برسم صفحة المرتبات
+    function init() {
+        if (typeof AppRenderer !== 'undefined') {
+            var origRenderPayroll = AppRenderer.renderPayroll;
+            AppRenderer.renderPayroll = function() {
+                origRenderPayroll.apply(this, arguments);
+                setTimeout(function() {
+                    makeOrdersEditable();
+                    addEqualizeButton();
+                }, 200);
+            };
+        }
+        // تشغيل أولي
+        if (document.querySelector('#content-area table tbody')) {
+            makeOrdersEditable();
+            addEqualizeButton();
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
