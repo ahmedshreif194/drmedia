@@ -757,16 +757,16 @@
         }
     }, 300);
 })();
-// ====== تحديث: تعديل عدد الأوردرات مع التسوية التلقائية ======
+// ====== تحديث: تعديل عدد الأوردرات في صفحة الموظفين + تسوية تلقائية ======
 (function() {
-    console.log('🟢 تحميل: تعديل المرتبات مع التسوية التلقائية');
+    console.log('🟢 تحميل: تعديل الأوردرات في الموظفين مع التسوية');
 
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
         else setTimeout(() => waitForApp(cb), 50);
     }
 
-    // دالة التسوية (توزيع الحجوزات المعلقة بالتساوي)
+    // دالة التسوية (إعادة توزيع الحجوزات المعلقة بالتساوي)
     async function equalizeOrders() {
         var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
         if (!pending.length) {
@@ -787,69 +787,42 @@
 
         var dirIdx = 0, phIdx = 0, crIdx = 0;
 
-        // تجميع الحجوزات حسب التاريخ لتجنب تعارض الموظفين في نفس اليوم
         var byDate = {};
         pending.forEach(b => {
             if (!byDate[b.date]) byDate[b.date] = [];
             byDate[b.date].push(b);
         });
 
-        // معالجة كل يوم على حدة
         Object.keys(byDate).sort().forEach(function(date) {
-            var busy = new Set(); // موظفون مشغولون في هذا اليوم
+            var busy = new Set();
             byDate[date].forEach(function(b) {
                 var hallType = (state.halls.find(h => h.id === b.hallId) || {}).type || 'closed';
                 var assigned = [];
 
                 if (hallType === 'cafe') {
-                    // اختيار أول مصور متاح
                     for (var i = 0; i < phs.length; i++) {
                         var idx = (phIdx + i) % phs.length;
                         var emp = phs[idx];
-                        if (!busy.has(emp.id)) {
-                            assigned.push(emp.id);
-                            busy.add(emp.id);
-                            phIdx = (idx + 1) % phs.length;
-                            break;
-                        }
+                        if (!busy.has(emp.id)) { assigned.push(emp.id); busy.add(emp.id); phIdx = (idx+1)%phs.length; break; }
                     }
-                    // لو لم نجد، نأخذ أول مصور
                     if (!assigned.length && phs.length) assigned.push(phs[phIdx % phs.length].id);
                 } else {
-                    // مخرج
                     for (var i = 0; i < dirs.length; i++) {
                         var idx = (dirIdx + i) % dirs.length;
                         var emp = dirs[idx];
-                        if (!busy.has(emp.id)) {
-                            assigned.push(emp.id);
-                            busy.add(emp.id);
-                            dirIdx = (idx + 1) % dirs.length;
-                            break;
-                        }
+                        if (!busy.has(emp.id)) { assigned.push(emp.id); busy.add(emp.id); dirIdx = (idx+1)%dirs.length; break; }
                     }
-                    // مصورين (حتى 2)
                     for (var i = 0; i < 2; i++) {
                         for (var j = 0; j < phs.length; j++) {
                             var idx = (phIdx + j) % phs.length;
                             var emp = phs[idx];
-                            if (!busy.has(emp.id) && !assigned.includes(emp.id)) {
-                                assigned.push(emp.id);
-                                busy.add(emp.id);
-                                phIdx = (idx + 1) % phs.length;
-                                break;
-                            }
+                            if (!busy.has(emp.id) && !assigned.includes(emp.id)) { assigned.push(emp.id); busy.add(emp.id); phIdx = (idx+1)%phs.length; break; }
                         }
                     }
-                    // كرين
                     for (var i = 0; i < crs.length; i++) {
                         var idx = (crIdx + i) % crs.length;
                         var emp = crs[idx];
-                        if (!busy.has(emp.id)) {
-                            assigned.push(emp.id);
-                            busy.add(emp.id);
-                            crIdx = (idx + 1) % crs.length;
-                            break;
-                        }
+                        if (!busy.has(emp.id)) { assigned.push(emp.id); busy.add(emp.id); crIdx = (idx+1)%crs.length; break; }
                     }
                 }
 
@@ -859,19 +832,18 @@
 
         DataManager.updateEmployeeOrders();
         await DataManager.saveAllData();
-        // لا نعيد رسم المرتبات هنا لأننا سنستدعيها من الخارج
     }
 
-    // جعل خلية الأوردرات قابلة للتعديل مع التسوية التلقائية بعد كل تغيير
-    function enableOrderEditing() {
+    // جعل خلية "الأوردرات" في جدول الموظفين قابلة للتعديل
+    function enableEmployeeOrderEditing() {
         var table = document.querySelector('#content-area table');
-        if (!table || table.dataset.orderEditEnabled) return;
-        table.dataset.orderEditEnabled = 'true';
+        if (!table || table.dataset.empOrderEditEnabled) return;
+        table.dataset.empOrderEditEnabled = 'true';
 
         table.addEventListener('click', function(e) {
             var target = e.target;
-            // نبحث عن الخلية التي تحتوي على الرقم (td الثاني)
-            if (target.tagName === 'TD' && target.cellIndex === 1 && !target.querySelector('input')) {
+            // خلية الأوردرات هي الرابعة (index 3) في جدول الموظفين
+            if (target.tagName === 'TD' && target.cellIndex === 4 && !target.querySelector('input')) {
                 var row = target.closest('tr');
                 var nameCell = row?.cells[0];
                 if (!nameCell) return;
@@ -879,7 +851,6 @@
                 var emp = state.employees.find(em => em.name === empName);
                 if (!emp) return;
 
-                // إنشاء حقل الإدخال
                 var input = document.createElement('input');
                 input.type = 'number';
                 input.className = 'order-edit-input border-2 p-1 rounded text-sm';
@@ -889,19 +860,14 @@
                 target.appendChild(input);
                 input.focus();
 
-                // عند الخروج من الحقل
                 async function saveEdit() {
                     var newVal = parseInt(input.value) || 0;
                     if (newVal !== emp.totalOrders) {
-                        // تحديث قيمة totalOrders للموظف
                         emp.totalOrders = newVal;
-                        // إعادة توزيع الحجوزات المعلقة تلقائياً
-                        await equalizeOrders();
-                        // بعد التسوية، نعيد رسم المرتبات لتظهر الأعداد الجديدة
-                        AppRenderer.renderPayroll();
+                        await equalizeOrders();           // التسوية التلقائية
+                        AppRenderer.renderEmployees();    // إعادة رسم صفحة الموظفين
                         Utils.showMsg(`✅ تم تعديل أوردرات ${emp.name} وإعادة التسوية`);
                     } else {
-                        // إذا لم يتغير الرقم، نعيد النص فقط
                         target.textContent = newVal;
                     }
                 }
@@ -917,18 +883,18 @@
         });
     }
 
-    // ربط التحسينات برسم المرتبات
+    // ربط التحسينات برسم الموظفين
     function init() {
         if (typeof AppRenderer !== 'undefined') {
-            var origRenderPayroll = AppRenderer.renderPayroll;
-            AppRenderer.renderPayroll = function() {
-                origRenderPayroll.apply(this, arguments);
-                setTimeout(enableOrderEditing, 200);
+            var origRenderEmployees = AppRenderer.renderEmployees;
+            AppRenderer.renderEmployees = function() {
+                origRenderEmployees.apply(this, arguments);
+                setTimeout(enableEmployeeOrderEditing, 200);
             };
         }
-        // تنفيذ فوري إن كان الجدول موجوداً
+        // تنفيذ فوري
         if (document.querySelector('#content-area table tbody')) {
-            enableOrderEditing();
+            enableEmployeeOrderEditing();
         }
     }
 
