@@ -736,7 +736,7 @@
     if (document.readyState !== 'loading') waitForApp(injectButtons);
 })();
 
-// ====== تحديث: اختبار التحديث ======
+// ====== تحديث: اختبار التحديث (مُصحح) ======
 (function() {
     console.log('🟢 تم تحميل ميزة اختبار التحديث');
     var checkInterval = setInterval(function() {
@@ -749,7 +749,11 @@
             btn.style.cssText = 'margin:0 10px; padding:6px 14px; background:#f59e0b; color:white; border:none; border-radius:20px; cursor:pointer; font-weight:bold;';
             btn.onclick = function() { Utils.showMsg('✅ التحديثات تعمل بنجاح!', 'success'); };
             var logoutBtn = topbar.querySelector('button');
-            if (logoutBtn) { logoutBtn.parentNode.insertBefore(span, btn); } else { topbar.appendChild(btn); }
+            if (logoutBtn) {
+                logoutBtn.parentNode.insertBefore(btn, logoutBtn);  // تم التصحيح: btn وليس span
+            } else {
+                topbar.appendChild(btn);
+            }
         }
     }, 300);
 })();
