@@ -2073,3 +2073,167 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
+// ====== تحديث: إرسال SMS عبر Textbee Cloud (مُصحَّح) ======
+(function() {
+    console.log('🟢 تحميل: إرسال SMS عبر Textbee Cloud');
+
+    // ---------- إعدادات Textbee ----------
+    if (!window.TextbeeCloudConfig) {
+        window.TextbeeCloudConfig = JSON.parse(localStorage.getItem('drmedia_textbee_cloud') || '{"apiKey":"","deviceId":""}');
+    }
+
+    // ---------- دالة إرسال SMS ----------
+    window.sendSMS = async function(to, message) {
+        var config = window.TextbeeCloudConfig;
+        
+        if (!config.apiKey || !config.deviceId) {
+            Utils.showError('يرجى إعداد Textbee Cloud (API Key و Device ID) في صفحة الإعدادات');
+            return false;
+        }
+
+        try {
+            // تنظيف رقم الهاتف (يجب أن يكون بصيغة دولية)
+            var phone = to.replace(/[^0-9+]/g, '');
+            if (!phone.startsWith('+')) {
+                if (phone.startsWith('0')) phone = '2' + phone.substring(1);
+                phone = '+' + phone;
+            }
+
+            const url = `https://api.textbee.dev/api/v1/gateway/devices/${config.deviceId}/send-sms`;
+            
+            console.log('إرسال SMS إلى:', url);
+            console.log('البيانات:', { recipients: [phone], message: message });
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': config.apiKey
+                },
+                body: JSON.stringify({
+                    recipients: [phone],
+                    message: message
+                })
+            });
+
+            const result = await response.json();
+            console.log('الرد من Textbee:', result);
+
+            if (response.ok && result.success !== false) {
+                Utils.showMsg('✅ تم إرسال الرسالة بنجاح');
+                return true;
+            } else {
+                Utils.showError('❌ فشل الإرسال: ' + (result.message || result.error || 'خطأ غير معروف'));
+                return false;
+            }
+        } catch(e) {
+            console.error('خطأ في إرسال SMS:', e);
+            Utils.showError('فشل الاتصال بـ Textbee');
+            return false;
+        }
+    };
+
+    // ---------- إضافة قسم الإعدادات في صفحة الإعدادات ----------
+    function injectSettings() {
+        var check = setInterval(function() {
+            var waTemplate = document.getElementById('waMsgTemplate');
+            if (waTemplate && !document.getElementById('textbeeCloudContainer')) {
+                clearInterval(check);
+                var config = window.TextbeeCloudConfig;
+                var html = `
+                <div id="textbeeCloudContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <h3 class="font-semibold mb-2">☁️ إعدادات Textbee Cloud</h3>
+                    <p class="text-sm text-gray-500 mb-2">
+                        احصل على API Key و Device ID من <a href="https://textbee.dev" target="_blank" class="text-blue-600 underline">textbee.dev</a>
+                    </p>
+                    <label class="text-xs">API Key</label>
+                    <input id="textbeeApiKey" value="${config.apiKey}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="TB_API_...">
+                    <label class="text-xs">Device ID</label>
+                    <input id="textbeeDeviceId" value="${config.deviceId}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="dev_...">
+                    <div class="flex gap-2">
+                        <button onclick="window._saveTextbeeSettings()" class="btn-primary flex-1">💾 حفظ الإعدادات</button>
+                        <button onclick="window._testTextbeeSMS()" class="btn-secondary">🧪 اختبار SMS</button>
+                    </div>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+            }
+        }, 300);
+        setTimeout(function() { clearInterval(check); }, 10000);
+    }
+
+    // ---------- دوال الحفظ والاختبار ----------
+    window._saveTextbeeSettings = function() {
+        window.TextbeeCloudConfig.apiKey = document.getElementById('textbeeApiKey').value.trim();
+        window.TextbeeCloudConfig.deviceId = document.getElementById('textbeeDeviceId').value.trim();
+        localStorage.setItem('drmedia_textbee_cloud', JSON.stringify(window.TextbeeCloudConfig));
+        Utils.showMsg('✅ تم حفظ إعدادات Textbee');
+    };
+
+    window._testTextbeeSMS = function() {
+        var phone = prompt('أدخل رقم الهاتف للاختبار (دولي):', '+201012345678');
+        if (!phone) return;
+        var msg = prompt('أدخل رسالة الاختبار:', 'مرحباً من Dr Media Pro');
+        if (!msg) return;
+        window.sendSMS(phone, msg);
+    };
+
+    // ---------- أزرار SMS وواتساب في صفحة الموظفين ----------
+    function enhanceEmployeePage() {
+        var origEmp = AppRenderer.renderEmpDash;
+        AppRenderer.renderEmpDash = function() {
+            origEmp.apply(this, arguments);
+            setTimeout(function() {
+                var emp = state.employees.find(e => e.id === (state.currentUser?.employeeId));
+                if (!emp) return;
+                var header = document.querySelector('#app header');
+                if (!header || header.querySelector('.msg-actions')) return;
+
+                var actionsDiv = document.createElement('div');
+                actionsDiv.className = 'msg-actions';
+                actionsDiv.style.cssText = 'display:flex; gap:6px; margin-right:auto;';
+
+                var waBtn = document.createElement('button');
+                waBtn.textContent = '💬 واتساب';
+                waBtn.className = 'btn-outline text-xs';
+                waBtn.onclick = function() {
+                    var msg = prompt('أدخل الرسالة:');
+                    if (msg && emp.phone) {
+                        var cleaned = emp.phone.replace(/[^0-9+]/g,'');
+                        if (cleaned.startsWith('0')) cleaned = '20' + cleaned.substring(1);
+                        if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
+                        window.open('https://wa.me/' + cleaned + '?text=' + encodeURIComponent(msg), '_blank');
+                    }
+                };
+
+                var smsBtn = document.createElement('button');
+                smsBtn.textContent = '📱 SMS';
+                smsBtn.className = 'btn-outline text-xs';
+                smsBtn.onclick = function() {
+                    var msg = prompt('أدخل الرسالة:');
+                    if (msg) window.sendSMS(emp.phone, msg);
+                };
+
+                actionsDiv.appendChild(waBtn);
+                actionsDiv.appendChild(smsBtn);
+                header.appendChild(actionsDiv);
+            }, 500);
+        };
+    }
+
+    // ---------- تشغيل الكل ----------
+    function init() {
+        injectSettings();
+        enhanceEmployeePage();
+        console.log('✅ تكامل Textbee Cloud جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
