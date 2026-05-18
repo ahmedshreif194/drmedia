@@ -2058,3 +2058,96 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
+// ====== تحديث: إصلاح إرسال رسائل الواتساب ======
+(function() {
+    console.log('🟢 تحميل: إصلاح إرسال الواتساب');
+
+    // دالة إرسال واتساب موثوقة
+    window.sendWhatsAppReliable = function(phone, message) {
+        if (!phone) {
+            Utils.showError('رقم الهاتف غير موجود');
+            return;
+        }
+        // تنظيف الرقم
+        var cleaned = phone.replace(/[^0-9+]/g, '');
+        if (cleaned.startsWith('0')) {
+            cleaned = '20' + cleaned.substring(1); // تحويل 01xxxxxxx إلى 20xxxxxxx
+        }
+        if (!cleaned.startsWith('+')) {
+            cleaned = '+' + cleaned;
+        }
+        var url = 'https://wa.me/' + cleaned + '?text=' + encodeURIComponent(message);
+        console.log('فتح واتساب:', url);
+        window.open(url, '_blank');
+    };
+
+    // إصلاح الأزرار الموجودة في واجهة الموظف
+    function fixEmployeeButtons() {
+        var origEmp = AppRenderer.renderEmpDash;
+        AppRenderer.renderEmpDash = function() {
+            origEmp.apply(this, arguments);
+            setTimeout(function() {
+                var header = document.querySelector('#app header');
+                if (!header) return;
+                // إعادة بناء الأزرار إذا لم تكن موجودة
+                if (!header.querySelector('.msg-actions')) {
+                    var emp = state.employees.find(e => e.id === (state.currentUser?.employeeId));
+                    if (!emp) return;
+                    var actionsDiv = document.createElement('div');
+                    actionsDiv.className = 'msg-actions';
+                    actionsDiv.style.cssText = 'display:flex; gap:6px; margin-right:auto;';
+
+                    var waBtn = document.createElement('button');
+                    waBtn.textContent = '💬 واتساب';
+                    waBtn.className = 'btn-outline text-xs';
+                    waBtn.onclick = function() {
+                        var msg = prompt('أدخل الرسالة:');
+                        if (msg) window.sendWhatsAppReliable(emp.phone, msg);
+                    };
+
+                    var smsBtn = document.createElement('button');
+                    smsBtn.textContent = '📱 SMS';
+                    smsBtn.className = 'btn-outline text-xs';
+                    smsBtn.onclick = function() {
+                        var msg = prompt('أدخل الرسالة:');
+                        if (msg && typeof window.sendSMS === 'function') {
+                            window.sendSMS(emp.phone, msg);
+                        } else {
+                            Utils.showError('خدمة SMS غير مهيأة');
+                        }
+                    };
+
+                    actionsDiv.appendChild(waBtn);
+                    actionsDiv.appendChild(smsBtn);
+                    header.appendChild(actionsDiv);
+                }
+            }, 500);
+        };
+    }
+
+    // إصلاح دالة الواتساب في NotificationManager إذا كانت موجودة
+    function fixNotificationWhatsApp() {
+        if (typeof NotificationManager !== 'undefined' && NotificationManager.sendWhatsApp) {
+            var origSendWA = NotificationManager.sendWhatsApp;
+            NotificationManager.sendWhatsApp = function(phone, msg) {
+                window.sendWhatsAppReliable(phone, msg);
+            };
+        }
+    }
+
+    function init() {
+        fixEmployeeButtons();
+        fixNotificationWhatsApp();
+        console.log('✅ إصلاح الواتساب جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
