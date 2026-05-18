@@ -1400,3 +1400,200 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: شكل الواجهة الجديد (شبيه بالتصميم المطلوب) ======
+(function() {
+    console.log('🟢 تحميل: شكل الواجهة الجديد');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    function injectNewStyle() {
+        if (document.getElementById('modern-style-drmedia')) return;
+
+        var style = document.createElement('style');
+        style.id = 'modern-style-drmedia';
+        style.textContent = `
+            /* ====== الأساسيات ====== */
+            :root {
+                --sidebar-bg: #1e293b;
+                --sidebar-text: #cbd5e1;
+                --sidebar-active-bg: #16a34a;
+                --sidebar-active-text: #ffffff;
+                --topbar-bg: #ffffff;
+                --topbar-border: #e2e8f0;
+                --card-bg: #ffffff;
+                --card-border: #e2e8f0;
+                --card-shadow: 0 4px 12px rgba(0,0,0,0.03);
+                --btn-radius: 10px;
+                --font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+            }
+
+            body {
+                font-family: var(--font-family);
+                background: #f8fafc;
+            }
+
+            /* ====== الشريط الجانبي ====== */
+            .sidebar {
+                background: var(--sidebar-bg) !important;
+                border-left: none !important;
+                box-shadow: 2px 0 15px rgba(0,0,0,0.05);
+            }
+            .sidebar .footer-bar {
+                color: #94a3b8 !important;
+                border-top: 1px solid #334155 !important;
+            }
+            .sidebar-item {
+                color: var(--sidebar-text) !important;
+                border-right: none !important;
+                margin: 4px 10px !important;
+                border-radius: 12px !important;
+                transition: all 0.2s !important;
+            }
+            .sidebar-item:hover {
+                background: #334155 !important;
+                color: white !important;
+            }
+            .sidebar-item.active {
+                background: var(--sidebar-active-bg) !important;
+                color: var(--sidebar-active-text) !important;
+                font-weight: 600 !important;
+                box-shadow: 0 4px 12px rgba(22,163,74,0.3);
+            }
+
+            /* ====== الشريط العلوي ====== */
+            .topbar {
+                background: var(--topbar-bg) !important;
+                border-bottom: 1px solid var(--topbar-border) !important;
+                box-shadow: none !important;
+            }
+
+            /* ====== البطاقات الإحصائية ====== */
+            .stat-card {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: 16px !important;
+                padding: 20px 15px !important;
+                box-shadow: var(--card-shadow) !important;
+                transition: transform 0.2s;
+            }
+            .stat-card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+            }
+            .stat-value {
+                font-size: 1.8rem !important;
+                margin-bottom: 4px;
+            }
+            .stat-label {
+                font-size: 0.8rem !important;
+                color: #64748b !important;
+            }
+
+            /* ====== البطاقات العامة ====== */
+            .bg-card {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: 18px !important;
+                padding: 22px !important;
+                box-shadow: var(--card-shadow) !important;
+            }
+
+            /* ====== الأزرار ====== */
+            .btn, button {
+                border-radius: var(--btn-radius) !important;
+                font-weight: 500 !important;
+                transition: all 0.2s !important;
+            }
+            .btn-primary {
+                background: #16a34a !important;
+                box-shadow: 0 4px 10px rgba(22,163,74,0.2);
+            }
+            .btn-primary:hover {
+                background: #15803d !important;
+            }
+            .btn-outline {
+                border: 1px solid #d1d5db !important;
+                background: white !important;
+            }
+            .btn-outline:hover {
+                background: #f9fafb !important;
+                border-color: #9ca3af !important;
+            }
+
+            /* ====== الجداول ====== */
+            table {
+                border-collapse: separate;
+                border-spacing: 0;
+                border-radius: 14px;
+                overflow: hidden;
+                border: 1px solid #e2e8f0;
+            }
+            th {
+                background: #f8fafc !important;
+                font-weight: 600 !important;
+                color: #334155 !important;
+                border-bottom: 1px solid #e2e8f0 !important;
+                padding: 14px 12px !important;
+            }
+            td {
+                padding: 12px !important;
+                border-bottom: 1px solid #f1f5f9 !important;
+            }
+            tbody tr:hover td {
+                background: #f0fdf4 !important;
+            }
+
+            /* ====== الشارات ====== */
+            .status-badge, .badge-active, .badge-inactive {
+                border-radius: 20px !important;
+                padding: 5px 14px !important;
+                font-size: 0.7rem !important;
+            }
+
+            /* ====== النوافذ المنبثقة ====== */
+            .modal-content {
+                border-radius: 20px !important;
+                padding: 28px !important;
+                box-shadow: 0 25px 60px rgba(0,0,0,0.15);
+            }
+
+            /* ====== التواريخ والأوقات ====== */
+            #liveDateTime, #liveDateTimeEmp {
+                color: #16a34a !important;
+                font-weight: 600 !important;
+                background: #f0fdf4;
+                padding: 4px 12px !important;
+                border-radius: 20px;
+                font-size: 0.85rem !important;
+            }
+
+            /* ====== الوضع الداكن (اختياري) ====== */
+            body.dark {
+                --sidebar-bg: #0f172a;
+                --topbar-bg: #1e293b;
+                --card-bg: #1e293b;
+                --card-border: #334155;
+                background: #0f172a;
+            }
+            body.dark .stat-card, body.dark .bg-card {
+                background: var(--card-bg);
+                border-color: var(--card-border);
+            }
+            body.dark th { background: #1e293b !important; color: #e2e8f0 !important; }
+            body.dark td { border-bottom-color: #334155 !important; }
+            body.dark tbody tr:hover td { background: #2d3a4a !important; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function init() {
+        injectNewStyle();
+        console.log('✅ شكل الواجهة الجديد جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
