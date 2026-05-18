@@ -1744,3 +1744,239 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
+// ====== تحديث: الإرسال التلقائي للرسائل + تبويب الرسائل ======
+(function() {
+    console.log('🟢 تحميل: نظام الرسائل المتكامل');
+
+    // ---------- تهيئة سجل الرسائل ----------
+    if (!state.messageLog) state.messageLog = [];
+
+    function logMessage(type, recipient, message, status) {
+        state.messageLog.unshift({
+            id: Utils.generateId('msg_'),
+            type: type,           // 'sms' أو 'whatsapp'
+            recipient: recipient,
+            message: message,
+            status: status,       // 'sent' أو 'failed'
+            time: new Date().toLocaleString('ar-EG')
+        });
+        if (state.messageLog.length > 200) state.messageLog.length = 200;
+        DataManager.saveAllData();
+    }
+
+    // ---------- إعدادات الإرسال التلقائي ----------
+    if (!state.autoMessageSettings) {
+        state.autoMessageSettings = JSON.parse(localStorage.getItem('drmedia_auto_msg') || '{"distribute":true,"reminder":true,"attendance":false}');
+    }
+
+    function saveAutoMessageSettings() {
+        localStorage.setItem('drmedia_auto_msg', JSON.stringify(state.autoMessageSettings));
+    }
+
+    // ---------- دوال الإرسال (تستخدم الموجودات window) ----------
+    async function autoSendSMS(phone, message) {
+        if (typeof window.sendSMS === 'function') {
+            var success = await window.sendSMS(phone, message);
+            logMessage('sms', phone, message, success ? 'sent' : 'failed');
+        } else {
+            console.warn('دالة sendSMS غير موجودة');
+        }
+    }
+
+    function autoSendWhatsApp(phone, message) {
+        if (typeof window.sendWhatsAppAuto === 'function') {
+            window.sendWhatsAppAuto(phone, message);
+            logMessage('whatsapp', phone, message, 'sent');
+        } else if (typeof NotificationManager !== 'undefined' && NotificationManager.sendWhatsApp) {
+            NotificationManager.sendWhatsApp(phone, message);
+            logMessage('whatsapp', phone, message, 'sent');
+        } else {
+            console.warn('دالة واتساب غير موجودة');
+        }
+    }
+
+    // ---------- 1. ربط التوزيع (إرسال رسائل للموظفين المعينين) ----------
+    function hookDistribution() {
+        if (typeof DistributionManager === 'undefined') return;
+        var origSmart = DistributionManager.smartDistribute;
+        DistributionManager.smartDistribute = async function() {
+            await origSmart.apply(this, arguments);
+            if (!state.autoMessageSettings.distribute) return;
+            var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+            for (var b of pending) {
+                for (var eid of (b.assignedEmployees || [])) {
+                    var emp = state.employees.find(e => e.id === eid);
+                    if (!emp || !emp.phone) continue;
+                    var msg = `تم تعيينك في أوردر: ${b.clientName} – ${b.hallName} – ${b.date}`;
+                    autoSendWhatsApp(emp.phone, msg);
+                    autoSendSMS(emp.phone, msg);
+                }
+            }
+        };
+
+        var origRotate = DistributionManager.rotateDistribution;
+        DistributionManager.rotateDistribution = async function() {
+            await origRotate.apply(this, arguments);
+            if (!state.autoMessageSettings.distribute) return;
+            var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+            for (var b of pending) {
+                for (var eid of (b.assignedEmployees || [])) {
+                    var emp = state.employees.find(e => e.id === eid);
+                    if (!emp || !emp.phone) continue;
+                    var msg = `تم تعيينك في أوردر: ${b.clientName} – ${b.hallName} – ${b.date}`;
+                    autoSendWhatsApp(emp.phone, msg);
+                    autoSendSMS(emp.phone, msg);
+                }
+            }
+        };
+    }
+
+    // ---------- 2. ربط الحضور (إرسال عند تسجيل الغياب) ----------
+    function hookAttendance() {
+        if (typeof AttendanceManager === 'undefined') return;
+        var origCheckIn = AttendanceManager.checkIn;
+        AttendanceManager.checkIn = async function(empId) {
+            await origCheckIn.apply(this, arguments);
+            if (!state.autoMessageSettings.attendance) return;
+            var emp = state.employees.find(e => e.id === empId);
+            if (emp && emp.phone) {
+                autoSendSMS(emp.phone, `تم تسجيل حضورك اليوم ${new Date().toLocaleDateString('ar-EG')}`);
+            }
+        };
+    }
+
+    // ---------- 3. تذكير يومي (يُستدعى من checkReminders) ----------
+    var origReminders = window.checkReminders;
+    window.checkReminders = function() {
+        if (origReminders) origReminders();
+        if (!state.autoMessageSettings.reminder) return;
+        var today = Utils.getTodayDateStr();
+        state.bookings.forEach(function(b) {
+            if (b.status !== 'pending' || b.deleted) return;
+            if (b.date === today) {
+                (b.assignedEmployees || []).forEach(function(eid) {
+                    var emp = state.employees.find(e => e.id === eid);
+                    if (emp && emp.phone) {
+                        var msg = `تذكير: لديك أوردر اليوم ${b.clientName} في ${b.hallName}`;
+                        autoSendWhatsApp(emp.phone, msg);
+                        autoSendSMS(emp.phone, msg);
+                    }
+                });
+            }
+        });
+    };
+
+    // ---------- 4. إنشاء تبويب الرسائل ----------
+    function createMessageTab() {
+        if (!AppRenderer.pages.includes('messages')) {
+            AppRenderer.pages.push('messages');
+        }
+        AppRenderer.renderMessages = function() {
+            var c = document.getElementById('content-area');
+            if (!c) return;
+            document.getElementById('pageTitle').textContent = '📨 إدارة الرسائل';
+
+            var settings = state.autoMessageSettings;
+            c.innerHTML = `
+            <div class="bg-card">
+                <h2 class="text-xl font-bold mb-4">📨 إدارة الرسائل والإرسال التلقائي</h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="border p-4 rounded-xl">
+                        <h3 class="font-semibold mb-2">⚙️ الإرسال التلقائي</h3>
+                        <label class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoDistribute" ${settings.distribute ? 'checked' : ''} onchange="window._toggleAutoMsg('distribute')"> عند التوزيع
+                        </label>
+                        <label class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoReminder" ${settings.reminder ? 'checked' : ''} onchange="window._toggleAutoMsg('reminder')"> تذكير يوم الأوردر
+                        </label>
+                        <label class="flex items-center gap-2 mb-2">
+                            <input type="checkbox" id="autoAttendance" ${settings.attendance ? 'checked' : ''} onchange="window._toggleAutoMsg('attendance')"> عند تسجيل الحضور
+                        </label>
+                    </div>
+                    <div class="border p-4 rounded-xl">
+                        <h3 class="font-semibold mb-2">📤 إرسال يدوي</h3>
+                        <select id="msgEmpSelect" class="w-full border-2 p-2 rounded-xl mb-2">
+                            ${state.employees.map(e => `<option value="${e.id}">${e.name} (${e.phone||'لا يوجد رقم'})</option>`).join('')}
+                        </select>
+                        <textarea id="msgText" class="w-full border-2 p-2 rounded-xl mb-2" rows="2" placeholder="نص الرسالة..."></textarea>
+                        <div class="flex gap-2">
+                            <button onclick="window._sendManualSMS()" class="btn-secondary flex-1">📱 SMS</button>
+                            <button onclick="window._sendManualWA()" class="btn-primary flex-1">💬 واتساب</button>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 class="font-semibold mb-2">📋 سجل الرسائل (آخر 50)</h3>
+                <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                    <table>
+                        <thead><tr><th>الوقت</th><th>النوع</th><th>المستلم</th><th>الرسالة</th><th>الحالة</th></tr></thead>
+                        <tbody>
+                            ${state.messageLog.slice(0,50).map(m => `
+                                <tr>
+                                    <td class="text-sm">${m.time}</td>
+                                    <td>${m.type === 'sms' ? '📱' : '💬'}</td>
+                                    <td>${m.recipient}</td>
+                                    <td class="text-sm">${m.message}</td>
+                                    <td>${m.status === 'sent' ? '✅' : '❌'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="footer-bar">${APP_CONFIG.footerText}</div>
+            </div>`;
+
+            // دوال التحكم في الإعدادات
+            window._toggleAutoMsg = function(key) {
+                state.autoMessageSettings[key] = !state.autoMessageSettings[key];
+                saveAutoMessageSettings();
+            };
+            window._sendManualSMS = function() {
+                var empId = document.getElementById('msgEmpSelect').value;
+                var text = document.getElementById('msgText').value.trim();
+                if (!text) return Utils.showError('اكتب رسالة');
+                var emp = state.employees.find(e => e.id === empId);
+                if (!emp || !emp.phone) return Utils.showError('الموظف ليس له رقم هاتف');
+                autoSendSMS(emp.phone, text);
+            };
+            window._sendManualWA = function() {
+                var empId = document.getElementById('msgEmpSelect').value;
+                var text = document.getElementById('msgText').value.trim();
+                if (!text) return Utils.showError('اكتب رسالة');
+                var emp = state.employees.find(e => e.id === empId);
+                if (!emp || !emp.phone) return Utils.showError('الموظف ليس له رقم هاتف');
+                autoSendWhatsApp(emp.phone, text);
+            };
+        };
+
+        // إضافة التبويب للقائمة الجانبية
+        var sidebar = document.querySelector('.sidebar .py-2');
+        if (sidebar && !document.querySelector('[data-page="messages"]')) {
+            var item = document.createElement('div');
+            item.className = 'sidebar-item';
+            item.setAttribute('data-page', 'messages');
+            item.onclick = function() { AppRenderer.navigateTo('messages'); };
+            item.innerHTML = '<span>📨 الرسائل</span>';
+            sidebar.appendChild(item);
+        }
+    }
+
+    // ---------- تشغيل جميع التحسينات ----------
+    function init() {
+        hookDistribution();
+        hookAttendance();
+        createMessageTab();
+        console.log('✅ نظام الرسائل المتكامل جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
