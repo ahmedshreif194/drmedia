@@ -1627,3 +1627,151 @@
 
     console.log('✅ التنسيقات الحديثة والأيقونات المحسنة جاهزة');
 })();
+// ====== تحديث: إرسال رسائل نصية (SMS) عبر Twilio + تحسين واتساب ======
+(function() {
+    console.log('🟢 تحميل: نظام الرسائل (SMS + واتساب)');
+
+    // ---------- إعدادات Twilio الافتراضية ----------
+    window.TwilioConfig = JSON.parse(localStorage.getItem('drmedia_twilio') || '{"accountSid":"","authToken":"","fromNumber":""}');
+
+    // ---------- دالة إرسال SMS عبر Twilio ----------
+    window.sendSMS = async function(to, message) {
+        if (!TwilioConfig.accountSid || !TwilioConfig.authToken || !TwilioConfig.fromNumber) {
+            Utils.showError('يجب إعداد Twilio أولاً من صفحة الإعدادات');
+            return false;
+        }
+        try {
+            const url = `https://api.twilio.com/2010-04-01/Accounts/${TwilioConfig.accountSid}/Messages.json`;
+            const body = new URLSearchParams();
+            body.append('To', to);
+            body.append('From', TwilioConfig.fromNumber);
+            body.append('Body', message);
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Basic ' + btoa(`${TwilioConfig.accountSid}:${TwilioConfig.authToken}`),
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: body
+            });
+            if (response.ok) {
+                Utils.showMsg('✅ تم إرسال الرسالة النصية بنجاح');
+                return true;
+            } else {
+                const err = await response.json();
+                throw new Error(err.message || 'فشل');
+            }
+        } catch(e) {
+            Utils.showError('فشل إرسال SMS: ' + e.message);
+            return false;
+        }
+    };
+
+    // ---------- تحسين إرسال واتساب (تلقائي مع إعدادات) ----------
+    window.sendWhatsAppAuto = function(phone, message) {
+        var waSettings = JSON.parse(localStorage.getItem('drmedia_whatsapp') || '{"autoOpen":true}');
+        if (waSettings.autoOpen !== false) {
+            // الطريقة التقليدية بفتح الرابط
+            var cleaned = phone.replace(/[^0-9+]/g,'');
+            if (cleaned.startsWith('0')) cleaned = '2' + cleaned;
+            if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
+            window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+    };
+
+    // ---------- إضافة إعدادات Twilio وواتساب في صفحة الإعدادات ----------
+    function injectSettings() {
+        var check = setInterval(function() {
+            var waTemplate = document.getElementById('waMsgTemplate');
+            if (waTemplate && !document.getElementById('smsSettingsContainer')) {
+                clearInterval(check);
+                var html = `
+                <div id="smsSettingsContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <h3 class="font-semibold mb-2">📱 إعدادات الرسائل النصية (SMS) – Twilio</h3>
+                    <label class="text-xs">Account SID</label>
+                    <input id="twilioSid" value="${TwilioConfig.accountSid}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="ACxxxx...">
+                    <label class="text-xs">Auth Token</label>
+                    <input id="twilioToken" type="password" value="${TwilioConfig.authToken}" class="w-full border-2 p-2 rounded-xl mb-2">
+                    <label class="text-xs">رقم المرسل (Twilio)</label>
+                    <input id="twilioNumber" value="${TwilioConfig.fromNumber}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="+201xxxxxxxxx">
+                    <button onclick="window._saveTwilioSettings()" class="btn-primary w-full">💾 حفظ إعدادات Twilio</button>
+
+                    <h3 class="font-semibold mt-4 mb-2">💬 إعدادات واتساب</h3>
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="waAutoOpen" ${JSON.parse(localStorage.getItem('drmedia_whatsapp')||'{"autoOpen":true}').autoOpen ? 'checked' : ''} onchange="window._saveWaSettings()"> <label>فتح نافذة الواتساب تلقائياً</label>
+                    </div>
+                </div>`;
+                waTemplate.insertAdjacentHTML('afterend', html);
+            }
+        }, 300);
+        setTimeout(function() { clearInterval(check); }, 10000);
+    }
+
+    window._saveTwilioSettings = function() {
+        TwilioConfig.accountSid = document.getElementById('twilioSid').value.trim();
+        TwilioConfig.authToken = document.getElementById('twilioToken').value.trim();
+        TwilioConfig.fromNumber = document.getElementById('twilioNumber').value.trim();
+        localStorage.setItem('drmedia_twilio', JSON.stringify(TwilioConfig));
+        Utils.showMsg('✅ تم حفظ إعدادات Twilio');
+    };
+    window._saveWaSettings = function() {
+        var auto = document.getElementById('waAutoOpen').checked;
+        localStorage.setItem('drmedia_whatsapp', JSON.stringify({ autoOpen: auto }));
+    };
+
+    // ---------- إضافة زر "إرسال SMS" و "واتساب" في صفحة الموظفين ----------
+    function enhanceEmployeePage() {
+        var origEmp = AppRenderer.renderEmpDash;
+        AppRenderer.renderEmpDash = function() {
+            origEmp.apply(this, arguments);
+            setTimeout(function() {
+                var emp = state.employees.find(e => e.id === (state.currentUser?.employeeId));
+                if (!emp) return;
+                var header = document.querySelector('#app header');
+                if (!header || header.querySelector('.msg-actions')) return;
+
+                var actionsDiv = document.createElement('div');
+                actionsDiv.className = 'msg-actions';
+                actionsDiv.style.cssText = 'display:flex; gap:6px; margin-right:auto;';
+
+                var waBtn = document.createElement('button');
+                waBtn.textContent = '💬 واتساب';
+                waBtn.className = 'btn-outline text-xs';
+                waBtn.onclick = function() {
+                    var msg = prompt('أدخل الرسالة:');
+                    if (msg) window.sendWhatsAppAuto(emp.phone, msg);
+                };
+
+                var smsBtn = document.createElement('button');
+                smsBtn.textContent = '📱 SMS';
+                smsBtn.className = 'btn-outline text-xs';
+                smsBtn.onclick = function() {
+                    var msg = prompt('أدخل الرسالة:');
+                    if (msg) window.sendSMS(emp.phone, msg);
+                };
+
+                actionsDiv.appendChild(waBtn);
+                actionsDiv.appendChild(smsBtn);
+                header.appendChild(actionsDiv);
+            }, 400);
+        };
+    }
+
+    // ---------- تشغيل الكل ----------
+    function init() {
+        injectSettings();
+        enhanceEmployeePage();
+        console.log('✅ نظام الرسائل جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
