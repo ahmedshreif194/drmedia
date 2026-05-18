@@ -2078,69 +2078,6 @@
     })();
 
 })();
-// ====== تعديل: حفظ الإعدادات الشخصية في Firebase ======
-(function() {
-    'use strict';
-
-    function waitForApp(cb) {
-        if (typeof DataManager !== 'undefined' && typeof state !== 'undefined') cb();
-        else setTimeout(() => waitForApp(cb), 50);
-    }
-
-    window.addEventListener('DOMContentLoaded', function() {
-        waitForApp(function() {
-            // 1. إضافة حقل الإعدادات إلى state إذا لم يكن موجوداً
-            if (!state.appSettings) {
-                state.appSettings = {
-                    drmedia_github_updates: {},
-                    drmedia_textbee_cloud: {},
-                    drmedia_auto_msg: {},
-                    drmedia_style: 'default',
-                    drmedia_theme: 'light'
-                };
-            }
-
-            // 2. مزامنة localStorage -> state قبل كل حفظ
-            function collectSettingsFromLocal() {
-                try { state.appSettings.drmedia_github_updates = JSON.parse(localStorage.getItem('drmedia_github_updates') || '{}'); } catch(e) {}
-                try { state.appSettings.drmedia_textbee_cloud = JSON.parse(localStorage.getItem('drmedia_textbee_cloud') || '{}'); } catch(e) {}
-                try { state.appSettings.drmedia_auto_msg = JSON.parse(localStorage.getItem('drmedia_auto_msg') || '{}'); } catch(e) {}
-                state.appSettings.drmedia_style = localStorage.getItem('drmedia_style') || 'default';
-                state.appSettings.drmedia_theme = localStorage.getItem('drmedia_theme') || 'light';
-            }
-
-            // 3. مزامنة state -> localStorage بعد التحميل
-            function applySettingsToLocal() {
-                var s = state.appSettings;
-                if (s.drmedia_github_updates) localStorage.setItem('drmedia_github_updates', JSON.stringify(s.drmedia_github_updates));
-                if (s.drmedia_textbee_cloud) localStorage.setItem('drmedia_textbee_cloud', JSON.stringify(s.drmedia_textbee_cloud));
-                if (s.drmedia_auto_msg) localStorage.setItem('drmedia_auto_msg', JSON.stringify(s.drmedia_auto_msg));
-                if (s.drmedia_style) localStorage.setItem('drmedia_style', s.drmedia_style);
-                if (s.drmedia_theme) localStorage.setItem('drmedia_theme', s.drmedia_theme);
-            }
-
-            // 4. تعديل دالة الحفظ
-            var origSaveAll = DataManager.saveAllData;
-            DataManager.saveAllData = async function() {
-                collectSettingsFromLocal();                  // نجمع الإعدادات قبل الحفظ
-                await origSaveAll.apply(this, arguments);   // حفظ كل شيء (state + appSettings) إلى Firebase
-            };
-
-            // 5. تعديل دالة التحميل
-            var origLoadAll = DataManager.loadAllData;
-            DataManager.loadAllData = async function() {
-                await origLoadAll.apply(this, arguments);
-                // بعد تحميل البيانات من Firebase، نطبق الإعدادات على localStorage
-                applySettingsToLocal();
-            };
-
-            // 6. تطبيق فوري إذا كانت البيانات محملة مسبقاً
-            applySettingsToLocal();
-
-            console.log('✅ الإعدادات الشخصية أصبحت محفوظة في Firebase');
-        });
-    });
-})();
     </script>
 </body>
 </html>
