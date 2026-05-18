@@ -1852,6 +1852,102 @@
         });
     });
 })();
+// ========================================================
+// نظام الحفظ على Firebase كمصدر أساسي (مع نسخة محلية للتسريع)
+// ========================================================
+(function() {
+    'use strict';
+
+    function waitForDataManager(callback) {
+        if (typeof DataManager !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForDataManager(callback), 50);
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForDataManager(function() {
+
+            // ====== 1. تحميل البيانات: Firebase أولاً، ثم محلي ======
+            const origLoadAll = DataManager.loadAllData;
+            DataManager.loadAllData = async function() {
+                let loaded = false;
+
+                // (أ) محاولة التحميل من Firebase
+                if (state.useFirebase && state.db && navigator.onLine && !state.systemOfflineMode) {
+                    try {
+                        const snapshot = await state.db.ref('/').get();
+                        if (snapshot.exists()) {
+                            this._loadDataObject(snapshot.val());
+                            state.online = true;
+                            state.lastSync = new Date();
+                            loaded = true;
+                        }
+                    } catch(e) {
+                        state.online = false;
+                    }
+                }
+
+                // (ب) إذا فشل Firebase، نستخدم localStorage كخطة طوارئ
+                if (!loaded) {
+                    try {
+                        const raw = localStorage.getItem('drmedia_data');
+                        if (raw) this._loadDataObject(JSON.parse(raw));
+                        else this._initializeDefaultData();
+                    } catch(e) {
+                        this._initializeDefaultData();
+                    }
+                }
+
+                this._ensureMinimumData();
+                this.updateEmployeeOrders();
+                await this.saveAllData(); // يزامن كل شيء بعد التحميل
+                Utils.applyTheme(state.appTheme);
+            };
+
+            // ====== 2. حفظ البيانات: Firebase فوراً، ثم تحديث المحلي ======
+            const origSaveAll = DataManager.saveAllData;
+            DataManager.saveAllData = async function() {
+                const fd = {
+                    bookings: state.bookings, employees: state.employees, halls: state.halls,
+                    clients: state.clients, equipmentInventory: state.equipmentInventory,
+                    attendanceRecords: state.attendanceRecords, employeeLoans: state.employeeLoans,
+                    notifications: state.notifications, trashBin: state.trashBin, activityLog: state.activityLog,
+                    companyName: state.companyName, companyLogo: state.companyLogoBase64 || state.companyLogo,
+                    USERS: state.USERS, rotationCounters: state.rotationCounters,
+                    whatsappEnabled: state.whatsapp.enabled, whatsappBusinessNumber: state.whatsapp.businessNumber,
+                    whatsappMessageTemplate: state.whatsapp.messageTemplate,
+                    appTheme: state.appTheme, appLanguage: state.appLanguage,
+                    flashDrives: state.flashDrives, holidays: state.holidays,
+                    systemOfflineMode: state.systemOfflineMode
+                };
+
+                // (أ) حفظ إلى Firebase أولاً
+                if (state.useFirebase && state.db && state.online && !state.systemOfflineMode) {
+                    try {
+                        await state.db.ref('/').set(fd);
+                        state.lastSync = new Date();
+                        console.log('✅ تم الحفظ على Firebase');
+                    } catch(e) {
+                        state.online = false;
+                        console.warn('⚠️ فشل الحفظ على Firebase، سيتم الحفظ محلياً');
+                    }
+                }
+
+                // (ب) تحديث النسخة المحلية دائماً
+                try {
+                    localStorage.setItem('drmedia_data', JSON.stringify(fd));
+                } catch(e) {}
+
+                Utils.applyTheme(state.appTheme);
+            };
+
+            console.log('✅ تم ضبط الحفظ على Firebase كمصدر أساسي');
+
+        });
+    });
+})();
     </script>
 </body>
 </html>
