@@ -916,3 +916,221 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: تجميع الحجوزات بالشهر + استيراد لشهر محدد ======
+(function() {
+    console.log('🟢 تحميل: تجميع الحجوزات بالشهر واستيراد شهري');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ---------- 1. فلتر الشهر ----------
+    if (!state.filters) state.filters = {};
+    // سنة/شهر افتراضي: الشهر الحالي
+    if (!state.filters.bookingYear) state.filters.bookingYear = new Date().getFullYear();
+    if (!state.filters.bookingMonth) state.filters.bookingMonth = new Date().getMonth() + 1; // 1-12
+
+    // ---------- 2. حقن شريط اختيار الشهر في صفحة الحجوزات ----------
+    function injectMonthFilter() {
+        var container = document.querySelector('#content-area .bg-card .flex.justify-between.flex-wrap');
+        if (!container || document.getElementById('monthFilterBar')) return;
+
+        var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                         'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+        var currentYear = state.filters.bookingYear;
+        var currentMonth = state.filters.bookingMonth;
+
+        var bar = document.createElement('div');
+        bar.id = 'monthFilterBar';
+        bar.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;';
+
+        var prevBtn = document.createElement('button');
+        prevBtn.className = 'btn-outline text-sm';
+        prevBtn.textContent = '◀';
+        prevBtn.onclick = function() {
+            if (state.filters.bookingMonth === 1) {
+                state.filters.bookingMonth = 12;
+                state.filters.bookingYear--;
+            } else {
+                state.filters.bookingMonth--;
+            }
+            AppRenderer.renderBookings();
+        };
+
+        var nextBtn = document.createElement('button');
+        nextBtn.className = 'btn-outline text-sm';
+        nextBtn.textContent = '▶';
+        nextBtn.onclick = function() {
+            if (state.filters.bookingMonth === 12) {
+                state.filters.bookingMonth = 1;
+                state.filters.bookingYear++;
+            } else {
+                state.filters.bookingMonth++;
+            }
+            AppRenderer.renderBookings();
+        };
+
+        var label = document.createElement('span');
+        label.style.cssText = 'font-weight:bold; min-width:120px; text-align:center;';
+        label.textContent = monthNames[currentMonth-1] + ' ' + currentYear;
+
+        var todayBtn = document.createElement('button');
+        todayBtn.className = 'btn-outline text-sm';
+        todayBtn.textContent = '📍 الشهر الحالي';
+        todayBtn.onclick = function() {
+            var now = new Date();
+            state.filters.bookingYear = now.getFullYear();
+            state.filters.bookingMonth = now.getMonth() + 1;
+            AppRenderer.renderBookings();
+        };
+
+        bar.appendChild(prevBtn);
+        bar.appendChild(label);
+        bar.appendChild(nextBtn);
+        bar.appendChild(todayBtn);
+
+        // إدراج الشريط بعد سطر "الإيرادات"
+        var revLine = document.querySelector('#content-area .text-sm.mb-2');
+        if (revLine) {
+            revLine.insertAdjacentElement('afterend', bar);
+        } else {
+            container.insertAdjacentElement('afterend', bar);
+        }
+    }
+
+    // ---------- 3. تعديل renderBookings ليطبق فلتر الشهر ----------
+    function patchRenderBookings() {
+        var origRender = AppRenderer.renderBookings;
+        AppRenderer.renderBookings = function() {
+            // حفظ الفلاتر الأصلية مؤقتاً
+            var origFrom = state.filters.bookingDateFrom;
+            var origTo = state.filters.bookingDateTo;
+            var origStatus = state.filters.bookingStatus;
+            var origHall = state.filters.bookingHall;
+
+            // تطبيق فلتر الشهر
+            var y = state.filters.bookingYear;
+            var m = state.filters.bookingMonth;
+            var lastDay = new Date(y, m, 0).getDate();
+            state.filters.bookingDateFrom = `${y}-${String(m).padStart(2,'0')}-01`;
+            state.filters.bookingDateTo = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+            origRender.apply(this, arguments);
+
+            // استعادة القيم السابقة (كي لا تؤثر على التوزيع أو غيره)
+            state.filters.bookingDateFrom = origFrom;
+            state.filters.bookingDateTo = origTo;
+            state.filters.bookingStatus = origStatus;
+            state.filters.bookingHall = origHall;
+
+            // حقن شريط الشهر بعد الرسم
+            setTimeout(injectMonthFilter, 100);
+        };
+    }
+
+    // ---------- 4. استيراد حجوزات إلى شهر محدد ----------
+    function patchImport() {
+        var origImport = BookingManager.importFromFile;
+        BookingManager.importFromFile = function() {
+            origImport.apply(this, arguments);
+
+            // إضافة حقل "استيراد إلى شهر" بعد النافذة الأصلية تُفتح
+            setTimeout(function() {
+                var modalContent = document.getElementById('modalContent');
+                if (!modalContent || modalContent.querySelector('#importTargetMonth')) return;
+
+                var selectHTML = `
+                <div id="importTargetMonth" style="margin-top:12px;">
+                    <label class="text-sm font-semibold">🗓️ استيراد إلى شهر:</label>
+                    <select id="importMonthSelect" class="w-full border-2 p-2 rounded-xl mt-1">
+                        <option value="">الحفاظ على التواريخ الأصلية</option>
+                        ${(() => {
+                            var months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                                         'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+                            var now = new Date();
+                            var opts = '';
+                            for (var y = now.getFullYear(); y <= now.getFullYear()+1; y++) {
+                                for (var m = 1; m <= 12; m++) {
+                                    var val = y + '-' + String(m).padStart(2,'0');
+                                    var text = months[m-1] + ' ' + y;
+                                    opts += `<option value="${val}">${text}</option>`;
+                                }
+                            }
+                            return opts;
+                        })()}
+                    </select>
+                </div>`;
+
+                // إدراج قبل أزرار الاستيراد
+                var btnContainer = modalContent.querySelector('.flex.gap-2');
+                if (btnContainer) {
+                    btnContainer.insertAdjacentHTML('beforebegin', selectHTML);
+                }
+
+                // تعديل دالة processImport لتأخذ الشهر بعين الاعتبار
+                var origProcess = BookingManager.processImport;
+                BookingManager.processImport = async function() {
+                    var targetMonth = document.getElementById('importMonthSelect')?.value || '';
+                    var rows = window._importedRows || [];
+                    if (!rows.length) { Utils.showError('لا بيانات'); return; }
+
+                    var sel = document.getElementById('importHallTypeSelect');
+                    var selectedHallType = sel ? sel.value : '';
+                    var added = 0;
+
+                    for (var row of rows) {
+                        var name = row['اسم العميل'] || row['client name'] || row['العميل'] || '';
+                        if (!name || name.trim() === '' || name.trim() === '-') continue;
+                        var date = Utils.parseDateString(row['التاريخ'] || row['date']);
+                        var hallName = row['القاعة'] || row['hall'] || 'القاعة المفتوحة';
+                        var hall = state.halls.find(h => h.name === hallName);
+                        if (hall && selectedHallType) hall.type = selectedHallType;
+                        if (!hall) { hall = { id: Utils.generateId('h_'), name: hallName, type: selectedHallType || row['نوع القاعة'] || 'open', basePrice:0, active:true }; state.halls.push(hall); }
+
+                        // إذا اختار المستخدم شهراً محدداً، نعدل التاريخ
+                        var finalDate = date;
+                        if (targetMonth) {
+                            var parts = targetMonth.split('-');
+                            var y = parseInt(parts[0]), m = parseInt(parts[1]);
+                            var day = new Date(date).getDate(); // نحتفظ باليوم الأصلي إن وجد
+                            var maxDay = new Date(y, m, 0).getDate();
+                            if (day > maxDay) day = maxDay;
+                            finalDate = `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                        }
+
+                        state.bookings.push({
+                            id: Utils.generateId('b_'), clientName: name, clientId: null,
+                            phone: row['الهاتف'] || row['phone'] || '',
+                            hallId: hall.id, hallName: hall.name,
+                            date: finalDate,
+                            price: parseInt(row['السعر'] || row['price'] || 0) || 0,
+                            status: 'pending', paymentStatus: 'pending',
+                            assignedEmployees: [], notes: '',
+                            packageType: row['نوع الباكدج'] || row['package'] || '',
+                            totalPersons: parseInt(row['اجمالي عدد الافراد'] || row['total persons'] || 0) || 0
+                        });
+                        added++;
+                    }
+
+                    await DataManager.saveAllData();
+                    AppRenderer.renderBookings();
+                    Utils.closeModal();
+                    Utils.showMsg(`✅ تم استيراد ${added} حجز`);
+                    window._importedRows = [];
+                };
+            }, 300);
+        };
+    }
+
+    // ---------- 5. بدء التعديلات ----------
+    function init() {
+        patchRenderBookings();
+        patchImport();
+        console.log('✅ تجميع الحجوزات بالشهر واستيراد شهري جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
