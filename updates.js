@@ -1627,40 +1627,39 @@
 
     console.log('✅ التنسيقات الحديثة والأيقونات المحسنة جاهزة');
 })();
-// ====== تحديث: استبدال Twilio بـ Textbee (مجاني) ======
+// ====== تحديث: تكامل Textbee Cloud API (بدلاً من المحلي) ======
 (function() {
-    console.log('🟢 تحميل: تكامل Textbee');
+    console.log('🟢 تحميل: تكامل Textbee Cloud API');
 
-    // ---------- إعدادات Textbee ----------
-    window.TextbeeConfig = JSON.parse(localStorage.getItem('drmedia_textbee') || '{"apiUrl":"http://192.168.1.5:8080"}');
+    // ---------- إعدادات Textbee السحابية ----------
+    window.TextbeeCloudConfig = JSON.parse(localStorage.getItem('drmedia_textbee_cloud') || '{"apiKey":"","deviceId":"","baseUrl":"https://api.textbee.dev/api/v1"}');
 
-    // ---------- دالة إرسال SMS عبر Textbee ----------
+    // ---------- دالة إرسال SMS عبر Textbee Cloud ----------
     window.sendSMS = async function(to, message) {
-        if (!TextbeeConfig.apiUrl) {
-            Utils.showError('يرجى إعداد عنوان Textbee في صفحة الإعدادات');
+        var config = window.TextbeeCloudConfig;
+        if (!config.apiKey || !config.deviceId) {
+            Utils.showError('يرجى إعداد Textbee Cloud (API Key & Device ID) في صفحة الإعدادات');
             return false;
         }
         try {
-            // وفقاً لتوثيق Textbee (POST multipart/form-data)
-            const formData = new FormData();
-            formData.append('phone', to);
-            formData.append('text', message);
-
-            const response = await fetch(TextbeeConfig.apiUrl + '/api/sms', {
+            const url = `${config.baseUrl}/gateway/devices/${config.deviceId}/send-sms`;
+            const response = await fetch(url, {
                 method: 'POST',
-                body: formData
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': config.apiKey
+                },
+                body: JSON.stringify({
+                    recipients: [to],
+                    message: message
+                })
             });
-
+            const result = await response.json();
             if (response.ok) {
-                const result = await response.json();
-                if (result.success || result.status === 'sent') {
-                    Utils.showMsg('✅ تم إرسال الرسالة عبر Textbee');
-                    return true;
-                } else {
-                    throw new Error(result.error || 'فشل الإرسال');
-                }
+                Utils.showMsg('✅ تم إرسال الرسالة عبر Textbee Cloud');
+                return true;
             } else {
-                throw new Error('HTTP ' + response.status);
+                throw new Error(result.message || 'فشل الإرسال');
             }
         } catch(e) {
             Utils.showError('فشل إرسال SMS: ' + e.message);
@@ -1668,19 +1667,21 @@
         }
     };
 
-    // ---------- إضافة إعدادات Textbee في صفحة الإعدادات ----------
+    // ---------- إضافة إعدادات Textbee Cloud في صفحة الإعدادات ----------
     function injectSettings() {
         var check = setInterval(function() {
             var waTemplate = document.getElementById('waMsgTemplate');
-            if (waTemplate && !document.getElementById('textbeeSettingsContainer')) {
+            if (waTemplate && !document.getElementById('textbeeCloudContainer')) {
                 clearInterval(check);
                 var html = `
-                <div id="textbeeSettingsContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
-                    <h3 class="font-semibold mb-2">📱 إعدادات Textbee (بوابة SMS مجانية)</h3>
-                    <label class="text-xs">عنوان API (مثل http://192.168.1.5:8080)</label>
-                    <input id="textbeeApiUrl" value="${TextbeeConfig.apiUrl}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="http://192.168.x.x:8080">
-                    <small class="text-gray-500">نزّل تطبيق Textbee على هاتف أندرويد وانسخ العنوان من التطبيق.</small>
-                    <button onclick="window._saveTextbeeSettings()" class="btn-primary w-full mt-2">💾 حفظ إعدادات Textbee</button>
+                <div id="textbeeCloudContainer" style="margin-top:20px; border-top:2px solid #eee; padding-top:15px;">
+                    <h3 class="font-semibold mb-2">☁️ إعدادات Textbee Cloud API</h3>
+                    <p class="text-sm text-gray-500 mb-2">احصل على API Key و Device ID من <a href="https://textbee.dev" target="_blank" class="text-blue-600 underline">textbee.dev</a></p>
+                    <label class="text-xs">API Key</label>
+                    <input id="textbeeApiKey" value="${config.apiKey}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="TB_API_...">
+                    <label class="text-xs">Device ID</label>
+                    <input id="textbeeDeviceId" value="${config.deviceId}" class="w-full border-2 p-2 rounded-xl mb-2" placeholder="dev_...">
+                    <button onclick="window._saveTextbeeCloudSettings()" class="btn-primary w-full">💾 حفظ إعدادات Textbee Cloud</button>
                 </div>`;
                 waTemplate.insertAdjacentHTML('afterend', html);
             }
@@ -1688,13 +1689,14 @@
         setTimeout(function() { clearInterval(check); }, 10000);
     }
 
-    window._saveTextbeeSettings = function() {
-        TextbeeConfig.apiUrl = document.getElementById('textbeeApiUrl').value.trim();
-        localStorage.setItem('drmedia_textbee', JSON.stringify(TextbeeConfig));
-        Utils.showMsg('✅ تم حفظ إعدادات Textbee');
+    window._saveTextbeeCloudSettings = function() {
+        window.TextbeeCloudConfig.apiKey = document.getElementById('textbeeApiKey').value.trim();
+        window.TextbeeCloudConfig.deviceId = document.getElementById('textbeeDeviceId').value.trim();
+        localStorage.setItem('drmedia_textbee_cloud', JSON.stringify(window.TextbeeCloudConfig));
+        Utils.showMsg('✅ تم حفظ إعدادات Textbee Cloud');
     };
 
-    // ---------- زر إرسال SMS في صفحة الموظفين (يستخدم الدالة الجديدة) ----------
+    // ---------- زر إرسال SMS في صفحة الموظفين ----------
     function enhanceEmployeePage() {
         var origEmp = AppRenderer.renderEmpDash;
         AppRenderer.renderEmpDash = function() {
@@ -1740,7 +1742,7 @@
     function init() {
         injectSettings();
         enhanceEmployeePage();
-        console.log('✅ تكامل Textbee جاهز');
+        console.log('✅ تكامل Textbee Cloud جاهز');
     }
 
     window.addEventListener('DOMContentLoaded', function() {
