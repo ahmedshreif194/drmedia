@@ -2237,3 +2237,66 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
+// ====== تحديث: إضافة زر حفظ لإعدادات الإرسال التلقائي في تبويب الرسائل ======
+(function() {
+    console.log('🟢 تحميل: إضافة زر حفظ لإعدادات الرسائل');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    function patchMessagesTab() {
+        // نعدل دالة renderMessages لإضافة زر الحفظ
+        var origRender = AppRenderer.renderMessages;
+        AppRenderer.renderMessages = function() {
+            origRender.apply(this, arguments);
+            
+            // بعد رسم التبويب، نضيف زر الحفظ
+            setTimeout(function() {
+                var container = document.querySelector('#content-area .bg-card .grid');
+                if (!container || document.getElementById('saveAutoMsgBtn')) return;
+
+                var settingsDiv = container.querySelector('.border.p-4.rounded-xl');
+                if (!settingsDiv) return;
+
+                var saveBtn = document.createElement('button');
+                saveBtn.id = 'saveAutoMsgBtn';
+                saveBtn.className = 'btn-primary w-full mt-3';
+                saveBtn.textContent = '💾 حفظ الإعدادات';
+                saveBtn.onclick = function() {
+                    // نجمع القيم الحالية من الـ checkboxes
+                    state.autoMessageSettings.distribute = document.getElementById('autoDistribute')?.checked || false;
+                    state.autoMessageSettings.reminder = document.getElementById('autoReminder')?.checked || false;
+                    state.autoMessageSettings.attendance = document.getElementById('autoAttendance')?.checked || false;
+
+                    // نحفظ في localStorage
+                    localStorage.setItem('drmedia_auto_msg', JSON.stringify(state.autoMessageSettings));
+                    
+                    Utils.showMsg('✅ تم حفظ إعدادات الإرسال التلقائي');
+                };
+
+                settingsDiv.appendChild(saveBtn);
+            }, 200);
+        };
+    }
+
+    function init() {
+        // نتأكد من وجود state.autoMessageSettings
+        if (!state.autoMessageSettings) {
+            state.autoMessageSettings = JSON.parse(localStorage.getItem('drmedia_auto_msg') || '{"distribute":true,"reminder":true,"attendance":false}');
+        }
+        patchMessagesTab();
+        console.log('✅ زر حفظ إعدادات الرسائل جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
