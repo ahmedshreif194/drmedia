@@ -1134,3 +1134,128 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: إضافة فلتر الشهر والسنة إلى صفحة الفلاشات ======
+(function() {
+    console.log('🟢 تحميل: فلتر الشهر والسنة للفلاشات');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ---------- 1. قيم افتراضية للفلاشات ----------
+    if (!state.filters) state.filters = {};
+    if (!state.filters.flashYear) state.filters.flashYear = new Date().getFullYear();
+    if (!state.filters.flashMonth) state.filters.flashMonth = new Date().getMonth() + 1; // 1-12
+
+    // ---------- 2. حقن شريط اختيار الشهر في صفحة الفلاشات ----------
+    function injectFlashMonthFilter() {
+        if (document.getElementById('flashMonthBar')) return;
+        var container = document.querySelector('#content-area .bg-card .flex.flex-wrap');
+        if (!container) return;
+
+        var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                         'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+        var currentYear = state.filters.flashYear;
+        var currentMonth = state.filters.flashMonth;
+
+        var bar = document.createElement('div');
+        bar.id = 'flashMonthBar';
+        bar.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;';
+
+        var prevBtn = document.createElement('button');
+        prevBtn.className = 'btn-outline text-sm';
+        prevBtn.textContent = '◀';
+        prevBtn.onclick = function() {
+            if (state.filters.flashMonth === 1) {
+                state.filters.flashMonth = 12;
+                state.filters.flashYear--;
+            } else {
+                state.filters.flashMonth--;
+            }
+            AppRenderer.renderFlash();
+        };
+
+        var nextBtn = document.createElement('button');
+        nextBtn.className = 'btn-outline text-sm';
+        nextBtn.textContent = '▶';
+        nextBtn.onclick = function() {
+            if (state.filters.flashMonth === 12) {
+                state.filters.flashMonth = 1;
+                state.filters.flashYear++;
+            } else {
+                state.filters.flashMonth++;
+            }
+            AppRenderer.renderFlash();
+        };
+
+        var label = document.createElement('span');
+        label.style.cssText = 'font-weight:bold; min-width:120px; text-align:center;';
+        label.textContent = monthNames[currentMonth-1] + ' ' + currentYear;
+
+        var todayBtn = document.createElement('button');
+        todayBtn.className = 'btn-outline text-sm';
+        todayBtn.textContent = '📍 الشهر الحالي';
+        todayBtn.onclick = function() {
+            var now = new Date();
+            state.filters.flashYear = now.getFullYear();
+            state.filters.flashMonth = now.getMonth() + 1;
+            AppRenderer.renderFlash();
+        };
+
+        bar.appendChild(prevBtn);
+        bar.appendChild(label);
+        bar.appendChild(nextBtn);
+        bar.appendChild(todayBtn);
+
+        // إدراج الشريط بعد العنوان
+        var title = container.querySelector('h2');
+        if (title) {
+            title.insertAdjacentElement('afterend', bar);
+        } else {
+            container.insertAdjacentElement('afterbegin', bar);
+        }
+    }
+
+    // ---------- 3. تعديل renderFlash ليطبق الفلتر ----------
+    function patchRenderFlash() {
+        var origRender = AppRenderer.renderFlash;
+        AppRenderer.renderFlash = function() {
+            // حفظ البيانات الأصلية
+            var originalFlashDrives = state.flashDrives;
+
+            // فلترة الفلاشات حسب الشهر المختار
+            var y = state.filters.flashYear;
+            var m = state.filters.flashMonth;
+            var filtered = originalFlashDrives.filter(function(f) {
+                // الفلاشة مرتبطة بحجز، نأخذ تاريخ الحجز
+                var booking = state.bookings.find(b => b.id === f.bookingId);
+                if (!booking) return false;
+                var d = new Date(booking.date);
+                return d.getFullYear() === y && (d.getMonth() + 1) === m;
+            });
+
+            // استبدال مؤقت للفلاشات المعروضة
+            state.flashDrives = filtered;
+
+            // رسم الواجهة
+            origRender.apply(this, arguments);
+
+            // استعادة القائمة الأصلية
+            state.flashDrives = originalFlashDrives;
+
+            // حقن الشريط
+            setTimeout(injectFlashMonthFilter, 100);
+        };
+    }
+
+    // ---------- 4. بدء التعديلات ----------
+    function init() {
+        patchRenderFlash();
+        console.log('✅ فلتر الشهر للفلاشات جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
