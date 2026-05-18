@@ -1744,47 +1744,24 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
-// ====== تحديث: الإرسال التلقائي للرسائل + تبويب الرسائل (مع تحسين حالة الإرسال) ======
+// ====== تحديث: الإرسال التلقائي للرسائل + تبويب الرسائل ======
 (function() {
     console.log('🟢 تحميل: نظام الرسائل المتكامل');
 
     // ---------- تهيئة سجل الرسائل ----------
     if (!state.messageLog) state.messageLog = [];
 
-    /**
-     * تسجيل رسالة في السجل مع حالة تفصيلية
-     * @param {string} type - 'sms' أو 'whatsapp'
-     * @param {string} recipient - رقم المستلم
-     * @param {string} message - نص الرسالة
-     * @param {string} status - 'pending' | 'sent' | 'failed' | 'queued'
-     * @param {string} [statusText] - نص توضيحي (مثلاً سبب الفشل)
-     */
-    function logMessage(type, recipient, message, status, statusText) {
+    function logMessage(type, recipient, message, status) {
         state.messageLog.unshift({
             id: Utils.generateId('msg_'),
-            type: type,
+            type: type,           // 'sms' أو 'whatsapp'
             recipient: recipient,
             message: message,
-            status: status || 'pending',
-            statusText: statusText || '',
+            status: status,       // 'sent' أو 'failed'
             time: new Date().toLocaleString('ar-EG')
         });
         if (state.messageLog.length > 200) state.messageLog.length = 200;
         DataManager.saveAllData();
-    }
-
-    // تحديث حالة رسالة موجودة (مثلاً من pending -> sent)
-    function updateMessageStatus(id, newStatus, statusText) {
-        var msg = state.messageLog.find(m => m.id === id);
-        if (msg) {
-            msg.status = newStatus;
-            msg.statusText = statusText || '';
-            DataManager.saveAllData();
-            // تحديث واجهة التبويب لو مفتوح
-            if (typeof AppRenderer !== 'undefined' && AppRenderer.renderMessages && document.getElementById('msgLogTable')) {
-                AppRenderer.renderMessages();
-            }
-        }
     }
 
     // ---------- إعدادات الإرسال التلقائي ----------
@@ -1796,38 +1773,25 @@
         localStorage.setItem('drmedia_auto_msg', JSON.stringify(state.autoMessageSettings));
     }
 
-    // ---------- دوال الإرسال (تستخدم الموجودات window) مع حالة تفصيلية ----------
+    // ---------- دوال الإرسال (تستخدم الموجودات window) ----------
     async function autoSendSMS(phone, message) {
-        if (typeof window.sendSMS !== 'function') {
-            console.warn('دالة sendSMS غير موجودة');
-            return;
-        }
-        var msgId = Utils.generateId('msg_');
-        logMessage('sms', phone, message, 'pending', 'جاري الإرسال...');
-        try {
+        if (typeof window.sendSMS === 'function') {
             var success = await window.sendSMS(phone, message);
-            updateMessageStatus(msgId, success ? 'sent' : 'failed', success ? 'تم الإرسال' : 'فشل الإرسال');
-        } catch (e) {
-            updateMessageStatus(msgId, 'failed', 'خطأ: ' + e.message);
+            logMessage('sms', phone, message, success ? 'sent' : 'failed');
+        } else {
+            console.warn('دالة sendSMS غير موجودة');
         }
     }
 
-    async function autoSendWhatsApp(phone, message) {
-        var msgId = Utils.generateId('msg_');
-        logMessage('whatsapp', phone, message, 'pending', 'جاري الإرسال...');
-        try {
-            if (typeof window.sendWhatsAppAuto === 'function') {
-                await window.sendWhatsAppAuto(phone, message);
-                updateMessageStatus(msgId, 'sent', 'تم الإرسال');
-            } else if (typeof NotificationManager !== 'undefined' && NotificationManager.sendWhatsApp) {
-                await NotificationManager.sendWhatsApp(phone, message);
-                updateMessageStatus(msgId, 'sent', 'تم الإرسال');
-            } else {
-                console.warn('دالة واتساب غير موجودة');
-                updateMessageStatus(msgId, 'failed', 'دالة الإرسال غير متوفرة');
-            }
-        } catch (e) {
-            updateMessageStatus(msgId, 'failed', 'خطأ: ' + e.message);
+    function autoSendWhatsApp(phone, message) {
+        if (typeof window.sendWhatsAppAuto === 'function') {
+            window.sendWhatsAppAuto(phone, message);
+            logMessage('whatsapp', phone, message, 'sent');
+        } else if (typeof NotificationManager !== 'undefined' && NotificationManager.sendWhatsApp) {
+            NotificationManager.sendWhatsApp(phone, message);
+            logMessage('whatsapp', phone, message, 'sent');
+        } else {
+            console.warn('دالة واتساب غير موجودة');
         }
     }
 
@@ -1902,7 +1866,7 @@
         });
     };
 
-    // ---------- 4. إنشاء تبويب الرسائل (مع حالة الإرسال المحسنة) ----------
+    // ---------- 4. إنشاء تبويب الرسائل ----------
     function createMessageTab() {
         if (!AppRenderer.pages.includes('messages')) {
             AppRenderer.pages.push('messages');
@@ -1937,16 +1901,15 @@
                         </select>
                         <textarea id="msgText" class="w-full border-2 p-2 rounded-xl mb-2" rows="2" placeholder="نص الرسالة..."></textarea>
                         <div class="flex gap-2">
-                            <button id="btnSMS" class="btn-secondary flex-1">📱 SMS</button>
-                            <button id="btnWA" class="btn-primary flex-1">💬 واتساب</button>
+                            <button onclick="window._sendManualSMS()" class="btn-secondary flex-1">📱 SMS</button>
+                            <button onclick="window._sendManualWA()" class="btn-primary flex-1">💬 واتساب</button>
                         </div>
-                        <div id="manualSendStatus" class="text-sm mt-2 font-medium"></div>
                     </div>
                 </div>
 
                 <h3 class="font-semibold mb-2">📋 سجل الرسائل (آخر 50)</h3>
                 <div class="overflow-x-auto max-h-96 overflow-y-auto">
-                    <table id="msgLogTable">
+                    <table>
                         <thead><tr><th>الوقت</th><th>النوع</th><th>المستلم</th><th>الرسالة</th><th>الحالة</th></tr></thead>
                         <tbody>
                             ${state.messageLog.slice(0,50).map(m => `
@@ -1955,7 +1918,7 @@
                                     <td>${m.type === 'sms' ? '📱' : '💬'}</td>
                                     <td>${m.recipient}</td>
                                     <td class="text-sm">${m.message}</td>
-                                    <td>${getStatusBadge(m.status, m.statusText)}</td>
+                                    <td>${m.status === 'sent' ? '✅' : '❌'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -1969,64 +1932,23 @@
                 state.autoMessageSettings[key] = !state.autoMessageSettings[key];
                 saveAutoMessageSettings();
             };
-
-            // إعداد زر الإرسال اليدوي مع تغذية راجعة
-            var btnSMS = document.getElementById('btnSMS');
-            var btnWA = document.getElementById('btnWA');
-            var statusDiv = document.getElementById('manualSendStatus');
-
-            function showFeedback(type, text, isSuccess) {
-                if (!statusDiv) return;
-                statusDiv.innerHTML = text;
-                statusDiv.className = 'text-sm mt-2 font-medium ' + (isSuccess ? 'text-green-600' : 'text-red-600');
-                setTimeout(function() {
-                    statusDiv.innerHTML = '';
-                }, 4000);
-            }
-
-            btnSMS.onclick = async function() {
+            window._sendManualSMS = function() {
                 var empId = document.getElementById('msgEmpSelect').value;
                 var text = document.getElementById('msgText').value.trim();
                 if (!text) return Utils.showError('اكتب رسالة');
                 var emp = state.employees.find(e => e.id === empId);
                 if (!emp || !emp.phone) return Utils.showError('الموظف ليس له رقم هاتف');
-                showFeedback('sms', '⏳ جاري إرسال SMS...', true);
-                try {
-                    await autoSendSMS(emp.phone, text);
-                    showFeedback('sms', '✅ تم إرسال SMS بنجاح', true);
-                } catch(e) {
-                    showFeedback('sms', '❌ فشل إرسال SMS', false);
-                }
+                autoSendSMS(emp.phone, text);
             };
-
-            btnWA.onclick = async function() {
+            window._sendManualWA = function() {
                 var empId = document.getElementById('msgEmpSelect').value;
                 var text = document.getElementById('msgText').value.trim();
                 if (!text) return Utils.showError('اكتب رسالة');
                 var emp = state.employees.find(e => e.id === empId);
                 if (!emp || !emp.phone) return Utils.showError('الموظف ليس له رقم هاتف');
-                showFeedback('whatsapp', '⏳ جاري إرسال واتساب...', true);
-                try {
-                    await autoSendWhatsApp(emp.phone, text);
-                    showFeedback('whatsapp', '✅ تم إرسال واتساب بنجاح', true);
-                } catch(e) {
-                    showFeedback('whatsapp', '❌ فشل إرسال واتساب', false);
-                }
+                autoSendWhatsApp(emp.phone, text);
             };
         };
-
-        // دالة مساعدة لعرض شارة الحالة
-        function getStatusBadge(status, text) {
-            var icon, colorClass;
-            switch(status) {
-                case 'pending': icon = '⏳'; colorClass = 'bg-yellow-100 text-yellow-800'; break;
-                case 'sent': icon = '✅'; colorClass = 'bg-green-100 text-green-800'; break;
-                case 'failed': icon = '❌'; colorClass = 'bg-red-100 text-red-800'; break;
-                case 'queued': icon = '🔄'; colorClass = 'bg-blue-100 text-blue-800'; break;
-                default: icon = '❓'; colorClass = 'bg-gray-100 text-gray-800';
-            }
-            return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${colorClass}" title="${text || ''}">${icon} ${status === 'pending' ? 'قيد الانتظار' : status === 'sent' ? 'تم' : status === 'failed' ? 'فشل' : 'بالدور'}</span>`;
-        }
 
         // إضافة التبويب للقائمة الجانبية
         var sidebar = document.querySelector('.sidebar .py-2');
@@ -2045,7 +1967,7 @@
         hookDistribution();
         hookAttendance();
         createMessageTab();
-        console.log('✅ نظام الرسائل المتكامل مع حالة إرسال محسنة جاهز');
+        console.log('✅ نظام الرسائل المتكامل جاهز');
     }
 
     window.addEventListener('DOMContentLoaded', function() {
