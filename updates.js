@@ -1266,3 +1266,137 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: إضافة فلتر الشهر والسنة لصفحة التوزيع ======
+(function() {
+    console.log('🟢 تحميل: فلتر الشهر والسنة للتوزيع');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ---------- 1. قيم افتراضية للتوزيع ----------
+    if (!state.filters) state.filters = {};
+    if (!state.filters.distYear) state.filters.distYear = new Date().getFullYear();
+    if (!state.filters.distMonth) state.filters.distMonth = new Date().getMonth() + 1; // 1-12
+
+    var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                     'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+    // ---------- 2. حقن شريط اختيار الشهر في صفحة التوزيع ----------
+    function injectDistMonthBar() {
+        if (document.getElementById('distMonthBar')) return;
+        var container = document.querySelector('#content-area .bg-card .flex.flex-wrap');
+        if (!container) return;
+
+        var currentYear = state.filters.distYear;
+        var currentMonth = state.filters.distMonth;
+
+        var bar = document.createElement('div');
+        bar.id = 'distMonthBar';
+        bar.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;';
+
+        var prevBtn = document.createElement('button');
+        prevBtn.className = 'btn-outline text-sm';
+        prevBtn.textContent = '◀';
+        prevBtn.onclick = function() {
+            if (state.filters.distMonth === 1) {
+                state.filters.distMonth = 12;
+                state.filters.distYear--;
+            } else {
+                state.filters.distMonth--;
+            }
+            AppRenderer.renderDistribution();
+        };
+
+        var nextBtn = document.createElement('button');
+        nextBtn.className = 'btn-outline text-sm';
+        nextBtn.textContent = '▶';
+        nextBtn.onclick = function() {
+            if (state.filters.distMonth === 12) {
+                state.filters.distMonth = 1;
+                state.filters.distYear++;
+            } else {
+                state.filters.distMonth++;
+            }
+            AppRenderer.renderDistribution();
+        };
+
+        var label = document.createElement('span');
+        label.style.cssText = 'font-weight:bold; min-width:120px; text-align:center;';
+        label.textContent = monthNames[currentMonth-1] + ' ' + currentYear;
+
+        var todayBtn = document.createElement('button');
+        todayBtn.className = 'btn-outline text-sm';
+        todayBtn.textContent = '📍 الشهر الحالي';
+        todayBtn.onclick = function() {
+            var now = new Date();
+            state.filters.distYear = now.getFullYear();
+            state.filters.distMonth = now.getMonth() + 1;
+            AppRenderer.renderDistribution();
+        };
+
+        bar.appendChild(prevBtn);
+        bar.appendChild(label);
+        bar.appendChild(nextBtn);
+        bar.appendChild(todayBtn);
+
+        // إدراج الشريط بعد العنوان أو بداية البطاقة
+        var title = container.querySelector('h2');
+        if (title) {
+            title.insertAdjacentElement('afterend', bar);
+        } else {
+            container.insertAdjacentElement('afterbegin', bar);
+        }
+    }
+
+    // ---------- 3. تعديل renderDistribution ليطبق الفلتر ----------
+    function patchRenderDistribution() {
+        var origRender = AppRenderer.renderDistribution;
+        AppRenderer.renderDistribution = function() {
+            // فلترة الحجوزات المعلقة حسب الشهر المختار
+            var y = state.filters.distYear;
+            var m = state.filters.distMonth;
+            var allPending = state.bookings.filter(function(b) {
+                return b.status === 'pending' && !b.deleted;
+            });
+            var filtered = allPending.filter(function(b) {
+                var d = new Date(b.date);
+                return d.getFullYear() === y && (d.getMonth() + 1) === m;
+            });
+
+            // حفظ المرجع الأصلي
+            var originalBookings = state.bookings;
+            // استبدال مؤقت بقائمة الحجوزات المعلقة المفلترة فقط (للتوزيع)
+            // لكننا لا نريد تغيير state.bookings بالكامل، لذلك نمرر filtered كمتغير محلي عبر تعديل بسيط:
+            // سنستخدم طريقة آمنة: نعدل الدالة مؤقتًا
+            var origFilter = state.bookings.filter;
+            state.bookings.filter = function(fn) {
+                // إذا كانت الدالة fn تطابق فلترة status==='pending'، نرجع filtered
+                // للحفاظ على الأمان، نفحص إذا كانت fn تشبه فلترة renderDistribution
+                var testObj = {status:'pending', deleted:false};
+                if (fn(testObj) === true) {
+                    return filtered;
+                }
+                return origFilter.call(this, fn);
+            };
+
+            origRender.apply(this, arguments);
+
+            // إعادة المرجع الأصلي
+            state.bookings.filter = origFilter;
+
+            // حقن الشريط
+            setTimeout(injectDistMonthBar, 100);
+        };
+    }
+
+    // ---------- 4. بدء التعديلات ----------
+    function init() {
+        patchRenderDistribution();
+        console.log('✅ فلتر الشهر للتوزيع جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
