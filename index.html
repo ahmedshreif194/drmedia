@@ -1948,6 +1948,136 @@
         });
     });
 })();
+// ========================================================
+// إلغاء وقت انتظار فتح النظام – تحميل فوري + مزامنة خلفية
+// ========================================================
+(function() {
+    'use strict';
+
+    // انتظر حتى تصبح الكائنات الأساسية جاهزة
+    function waitForDataManager(callback) {
+        if (typeof DataManager !== 'undefined' && typeof state !== 'undefined') {
+            callback();
+        } else {
+            setTimeout(() => waitForDataManager(callback), 50);
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        waitForDataManager(function() {
+
+            // ====== 1. تعديل loadAllData ليكون فوريًا ======
+            const origLoadAll = DataManager.loadAllData;
+            DataManager.loadAllData = async function() {
+                let loaded = false;
+
+                // (أ) تحميل فوري من localStorage (لا ينتظر Firebase)
+                try {
+                    const raw = localStorage.getItem('drmedia_data');
+                    if (raw) {
+                        this._loadDataObject(JSON.parse(raw));
+                        loaded = true;
+                    }
+                } catch(e) {}
+
+                if (!loaded) {
+                    this._initializeDefaultData();
+                }
+
+                this._ensureMinimumData();
+                this.updateEmployeeOrders();
+                Utils.applyTheme(state.appTheme);
+
+                // (ب) محاولة مزامنة Firebase في الخلفية (لا تمنع العرض)
+                if (state.useFirebase && state.db && navigator.onLine && !state.systemOfflineMode) {
+                    setTimeout(async () => {
+                        try {
+                            const snapshot = await state.db.ref('/').get();
+                            if (snapshot.exists()) {
+                                this._loadDataObject(snapshot.val());
+                                state.online = true;
+                                state.lastSync = new Date();
+                                this._ensureMinimumData();
+                                this.updateEmployeeOrders();
+                                await this.saveAllData();
+                                Utils.applyTheme(state.appTheme);
+                                // تحديث الواجهة بلطف إذا كانت مفتوحة
+                                if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) {
+                                    AppRenderer.renderBookings();
+                                }
+                                console.log('✅ مزامنة Firebase اكتملت');
+                            }
+                        } catch(e) {
+                            state.online = false;
+                        }
+                    }, 100);
+                }
+
+                // حفظ البيانات التي تم تحميلها محلياً
+                await this.saveAllData();
+            };
+
+            // ====== 2. تعديل saveAllData ليكون سريعاً (localStorage فوري، ثم Firebase) ======
+            const origSaveAll = DataManager.saveAllData;
+            DataManager.saveAllData = async function() {
+                const fd = {
+                    bookings: state.bookings, employees: state.employees, halls: state.halls,
+                    clients: state.clients, equipmentInventory: state.equipmentInventory,
+                    attendanceRecords: state.attendanceRecords, employeeLoans: state.employeeLoans,
+                    notifications: state.notifications, trashBin: state.trashBin, activityLog: state.activityLog,
+                    companyName: state.companyName, companyLogo: state.companyLogoBase64 || state.companyLogo,
+                    USERS: state.USERS, rotationCounters: state.rotationCounters,
+                    whatsappEnabled: state.whatsapp.enabled, whatsappBusinessNumber: state.whatsapp.businessNumber,
+                    whatsappMessageTemplate: state.whatsapp.messageTemplate,
+                    appTheme: state.appTheme, appLanguage: state.appLanguage,
+                    flashDrives: state.flashDrives, holidays: state.holidays,
+                    systemOfflineMode: state.systemOfflineMode
+                };
+
+                // حفظ محلي فوري
+                try { localStorage.setItem('drmedia_data', JSON.stringify(fd)); } catch(e) {}
+
+                // مزامنة Firebase بصمت
+                if (state.useFirebase && state.db && state.online && !state.systemOfflineMode) {
+                    try {
+                        await state.db.ref('/').set(fd);
+                        state.lastSync = new Date();
+                    } catch(e) { state.online = false; }
+                }
+                Utils.applyTheme(state.appTheme);
+            };
+
+            console.log('✅ تم إلغاء وقت الانتظار – النظام سيُفتح فوراً');
+
+        });
+    });
+
+    // ====== 3. شاشة تحميل اختيارية (تظهر فقط إذا تأخر التحميل) ======
+    (function() {
+        var loadingShown = false;
+        var timeout = setTimeout(function() {
+            loadingShown = true;
+            var div = document.createElement('div');
+            div.id = 'fastLoading';
+            div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:20px 40px;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,0.2);z-index:99999;font-family:Tahoma;text-align:center;';
+            div.innerHTML = '<div style="font-size:24px;margin-bottom:10px;">⏳</div><div>جارٍ تحميل البيانات...</div>';
+            document.body.appendChild(div);
+        }, 800); // يظهر بعد 0.8 ثانية إذا لم تظهر الواجهة
+
+        // إخفاء شاشة التحميل عند ظهور المحتوى
+        var observer = new MutationObserver(function() {
+            var app = document.getElementById('app');
+            if (app && app.innerHTML.trim() !== '') {
+                clearTimeout(timeout);
+                var loadingDiv = document.getElementById('fastLoading');
+                if (loadingDiv) loadingDiv.remove();
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    })();
+
+})();
     </script>
 </body>
 </html>
