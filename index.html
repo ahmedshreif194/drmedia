@@ -2076,8 +2076,9 @@
         });
         observer.observe(document.body, { childList: true, subtree: true });
     })();
+
 })();
-// ====== تعديل: حفظ الإعدادات الشخصية في Firebase ======
+// ====== تعديل: حفظ الإعدادات الشخصية في Firebase (مُصحَّح) ======
 (function() {
     'use strict';
 
@@ -2111,6 +2112,7 @@
             // 3. مزامنة state -> localStorage بعد التحميل
             function applySettingsToLocal() {
                 var s = state.appSettings;
+                if (!s) return;
                 if (s.drmedia_github_updates) localStorage.setItem('drmedia_github_updates', JSON.stringify(s.drmedia_github_updates));
                 if (s.drmedia_textbee_cloud) localStorage.setItem('drmedia_textbee_cloud', JSON.stringify(s.drmedia_textbee_cloud));
                 if (s.drmedia_auto_msg) localStorage.setItem('drmedia_auto_msg', JSON.stringify(s.drmedia_auto_msg));
@@ -2118,25 +2120,83 @@
                 if (s.drmedia_theme) localStorage.setItem('drmedia_theme', s.drmedia_theme);
             }
 
-            // 4. تعديل دالة الحفظ
+            // 4. تعديل دالة الحفظ – الطريقة الصحيحة هي تعديل fd داخل الدالة الأصلية
             var origSaveAll = DataManager.saveAllData;
             DataManager.saveAllData = async function() {
-                collectSettingsFromLocal();                  // نجمع الإعدادات قبل الحفظ
-                await origSaveAll.apply(this, arguments);   // حفظ كل شيء (state + appSettings) إلى Firebase
+                // نجمع الإعدادات قبل بناء fd
+                collectSettingsFromLocal();
+
+                // نستدعي الحفظ الأصلي (الذي يبني fd من state)
+                // لكن يجب أن نضمن أن fd يحتوي على appSettings
+                // بما أن origSaveAll يبني fd داخل الدالة، لا يمكننا تعديله مباشرة
+                // لذلك سنعيد كتابة الحفظ بشكل آمن:
+
+                // بناء كائن البيانات كاملاً
+                var fd = {
+                    bookings: state.bookings,
+                    employees: state.employees,
+                    halls: state.halls,
+                    clients: state.clients,
+                    equipmentInventory: state.equipmentInventory,
+                    attendanceRecords: state.attendanceRecords,
+                    employeeLoans: state.employeeLoans,
+                    notifications: state.notifications,
+                    trashBin: state.trashBin,
+                    activityLog: state.activityLog,
+                    flashDrives: state.flashDrives,
+                    holidays: state.holidays,
+                    substitutions: state.substitutions,
+                    payrollPayments: state.payrollPayments,
+                    rotationCounters: state.rotationCounters,
+                    USERS: state.USERS,
+                    companyName: state.companyName,
+                    companyLogo: state.companyLogoBase64 || state.companyLogo,
+                    whatsappEnabled: state.whatsapp.enabled,
+                    whatsappBusinessNumber: state.whatsapp.businessNumber,
+                    whatsappMessageTemplate: state.whatsapp.messageTemplate,
+                    appTheme: state.appTheme,
+                    appLanguage: state.appLanguage,
+                    systemOfflineMode: state.systemOfflineMode,
+                    appSettings: state.appSettings,   // ← هنا نضيف الإعدادات
+                    messageLog: state.messageLog || []
+                };
+
+                // حفظ محلي
+                try { localStorage.setItem('drmedia_data', JSON.stringify(fd)); } catch(e) {}
+
+                // حفظ على Firebase
+                if (state.useFirebase && state.db && state.online && !state.systemOfflineMode) {
+                    try {
+                        await state.db.ref('/').set(fd);
+                        state.lastSync = new Date();
+                    } catch(e) { state.online = false; }
+                }
+
+                Utils.applyTheme(state.appTheme);
             };
 
-            // 5. تعديل دالة التحميل
+            // 5. تعديل دالة التحميل لإضافة appSettings عند القراءة
             var origLoadAll = DataManager.loadAllData;
             DataManager.loadAllData = async function() {
                 await origLoadAll.apply(this, arguments);
-                // بعد تحميل البيانات من Firebase، نطبق الإعدادات على localStorage
+                // تأكد من وجود appSettings بعد التحميل
+                if (!state.appSettings) {
+                    state.appSettings = {
+                        drmedia_github_updates: {},
+                        drmedia_textbee_cloud: {},
+                        drmedia_auto_msg: {},
+                        drmedia_style: 'default',
+                        drmedia_theme: 'light'
+                    };
+                }
+                // طبق الإعدادات على localStorage
                 applySettingsToLocal();
             };
 
-            // 6. تطبيق فوري إذا كانت البيانات محملة مسبقاً
+            // 6. تطبيق فوري
             applySettingsToLocal();
 
-            console.log('✅ الإعدادات الشخصية أصبحت محفوظة في Firebase');
+            console.log('✅ الإعدادات الشخصية أصبحت محفوظة في Firebase (مصحح)');
         });
     });
 })();
