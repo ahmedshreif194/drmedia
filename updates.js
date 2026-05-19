@@ -2679,3 +2679,206 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ====== تحديث: أرشفة وتصفير تلقائي آخر كل فترة ======
+(function() {
+    console.log('🟢 تحميل: الأرشفة التلقائية للفترات');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ---------- هيكل الأرشيف ----------
+    if (!state.payrollArchive) state.payrollArchive = [];
+
+    // ---------- دالة الأرشفة والتصفير ----------
+    function archiveAndResetPeriod(period) {
+        var now = new Date();
+        var year = now.getFullYear();
+        var month = now.getMonth();
+        var labels = ['1-10', '11-20', '21-نهاية'];
+        var periodLabel = labels[['early','mid','late'].indexOf(period)];
+        var range = Utils.getPeriodRange(period, year, month);
+
+        // التحقق من أن الفترة لم تُؤرشَف مسبقاً
+        var alreadyArchived = state.payrollArchive.some(function(a) {
+            return a.period === period && a.year === year && a.month === month + 1;
+        });
+        if (alreadyArchived) {
+            console.log('الفترة ' + periodLabel + ' مؤرشفة مسبقاً');
+            return false;
+        }
+
+        // لقطة للبيانات
+        var snapshot = {
+            id: Utils.generateId('arch_'),
+            period: period,
+            periodLabel: periodLabel,
+            year: year,
+            month: month + 1,
+            dateRange: `${range.start} → ${range.end}`,
+            archivedAt: new Date().toISOString(),
+            employees: state.employees.map(function(emp) {
+                var assigned = state.bookings.filter(function(b) {
+                    return b.date >= range.start && b.date <= range.end &&
+                           !b.deleted && b.status !== 'cancelled' &&
+                           (b.assignedEmployees || []).indexOf(emp.id) !== -1;
+                });
+                var attended = assigned.filter(function(b) {
+                    return state.attendanceRecords.some(function(a) {
+                        return a.empId === emp.id && a.date === b.date && a.checkIn;
+                    });
+                });
+                var salary = attended.length * (emp.salaryPerOrder || 0);
+                var loans = (state.employeeLoans[emp.id] || [])
+                    .filter(function(l) { return !l.settled && l.date >= range.start && l.date <= range.end; })
+                    .reduce(function(s, l) { return s + l.amount; }, 0);
+                return {
+                    empId: emp.id,
+                    name: emp.name,
+                    role: emp.role,
+                    salaryPerOrder: emp.salaryPerOrder,
+                    totalAssigned: assigned.length,
+                    totalAttended: attended.length,
+                    salary: salary,
+                    loans: loans,
+                    net: Math.max(0, salary - loans)
+                };
+            })
+        };
+
+        // إضافة إلى الأرشيف
+        state.payrollArchive.unshift(snapshot);
+        if (state.payrollArchive.length > 100) state.payrollArchive.length = 100;
+
+        // تصفير totalOrders للموظفين
+        state.employees.forEach(function(e) {
+            e.totalOrders = 0;
+        });
+
+        DataManager.saveAllData();
+        console.log('✅ تمت أرشفة وتصفير فترة ' + periodLabel);
+        return true;
+    }
+
+    // ---------- دالة تحديد الفترة الحالية ----------
+    function getCurrentPeriod() {
+        var day = new Date().getDate();
+        if (day <= 10) return 'early';
+        if (day <= 20) return 'mid';
+        return 'late';
+    }
+
+    // ---------- التحقق الدوري (كل دقيقة) ----------
+    function scheduleArchiveCheck() {
+        var lastArchivedPeriod = null;
+
+        setInterval(function() {
+            var now = new Date();
+            var hours = now.getHours();
+            var minutes = now.getMinutes();
+            var day = now.getDate();
+
+            // نتحقق عند منتصف الليل (00:00 - 00:01)
+            if (hours === 0 && minutes <= 1) {
+                // تحديد الفترة التي انتهت
+                var endedPeriod = null;
+                if (day === 11) endedPeriod = 'early';
+                else if (day === 21) endedPeriod = 'mid';
+                else if (day === 1) endedPeriod = 'late';
+
+                if (endedPeriod && endedPeriod !== lastArchivedPeriod) {
+                    lastArchivedPeriod = endedPeriod;
+                    archiveAndResetPeriod(endedPeriod);
+                }
+            }
+        }, 60000); // كل دقيقة
+    }
+
+    // ---------- أزرار يدوية في صفحة المرتبات (للطوارئ) ----------
+    function injectManualButtons() {
+        var observer = new MutationObserver(function() {
+            var container = document.querySelector('#content-area .flex.flex-wrap.gap-2.mb-4');
+            if (!container || document.getElementById('archiveEarlyBtn')) return;
+
+            var periods = [
+                { id: 'archiveEarlyBtn', period: 'early', label: '📦 أرشفة 1-10' },
+                { id: 'archiveMidBtn', period: 'mid', label: '📦 أرشفة 11-20' },
+                { id: 'archiveLateBtn', period: 'late', label: '📦 أرشفة 21-نهاية' }
+            ];
+
+            periods.forEach(function(p) {
+                var btn = document.createElement('button');
+                btn.id = p.id;
+                btn.className = 'btn-outline text-sm';
+                btn.textContent = p.label;
+                btn.onclick = function() {
+                    if (confirm(`هل أنت متأكد من أرشفة وتصفير فترة ${p.label}؟`)) {
+                        var done = archiveAndResetPeriod(p.period);
+                        if (done) {
+                            AppRenderer.renderPayroll();
+                            Utils.showMsg(`✅ تمت أرشفة وتصفير فترة ${p.label}`);
+                        } else {
+                            Utils.showWarning('هذه الفترة مؤرشفة مسبقاً');
+                        }
+                    }
+                };
+                container.appendChild(btn);
+            });
+            observer.disconnect();
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    // ---------- تبويب الأرشيف ----------
+    function createArchiveTab() {
+        if (!AppRenderer.pages.includes('payrollArchive')) {
+            AppRenderer.pages.push('payrollArchive');
+        }
+        AppRenderer.renderPayrollArchive = function() {
+            var c = document.getElementById('content-area');
+            if (!c) return;
+            document.getElementById('pageTitle').textContent = '📦 أرشيف المرتبات';
+            var archive = state.payrollArchive || [];
+            var monthNames = ['','يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+            c.innerHTML = `
+            <div class="bg-card">
+                <h2 class="text-xl font-bold mb-4">📦 أرشيف المرتبات (${archive.length} أرشيف)</h2>
+                ${archive.length === 0 ? '<p class="text-gray-400 text-center py-8">لا توجد أي أرشفة حتى الآن</p>' : archive.map(function(snap) {
+                    return `
+                    <div class="border rounded-xl p-4 mb-4 bg-white dark:bg-gray-800">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="font-bold">فترة ${snap.periodLabel} - ${monthNames[snap.month]} ${snap.year}</h3>
+                            <span class="text-sm text-gray-400">${snap.dateRange}</span>
+                        </div>
+                        <table class="text-sm"><thead><tr><th>الموظف</th><th>أوردرات</th><th>المستحق</th><th>السلف</th><th>الصافي</th></tr></thead><tbody>
+                            ${snap.employees.map(function(e) { return `<tr><td>${e.name}</td><td>${e.totalAttended}</td><td>${Utils.formatCurrency(e.salary)}</td><td class="text-red-600">${Utils.formatCurrency(e.loans)}</td><td><strong>${Utils.formatCurrency(e.net)}</strong></td></tr>`; }).join('')}
+                        </tbody></table>
+                        <small class="text-gray-400">تمت الأرشفة: ${new Date(snap.archivedAt).toLocaleString('ar-EG')}</small>
+                    </div>`;
+                }).join('')}
+                <div class="footer-bar">${APP_CONFIG.footerText}</div>
+            </div>`;
+        };
+        var sidebar = document.querySelector('.sidebar .py-2');
+        if (sidebar && !document.querySelector('[data-page="payrollArchive"]')) {
+            var item = document.createElement('div');
+            item.className = 'sidebar-item';
+            item.setAttribute('data-page', 'payrollArchive');
+            item.onclick = function() { AppRenderer.navigateTo('payrollArchive'); };
+            item.innerHTML = '<span>📦 أرشيف المرتبات</span>';
+            sidebar.appendChild(item);
+        }
+    }
+
+    // ---------- تشغيل ----------
+    function init() {
+        scheduleArchiveCheck();
+        injectManualButtons();
+        createArchiveTab();
+        console.log('✅ الأرشفة التلقائية للفترات جاهزة');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
