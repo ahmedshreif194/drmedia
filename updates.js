@@ -2679,7 +2679,7 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
-// ====== تحديث: أرشفة وتصفير تلقائي آخر كل فترة ======
+// ====== تحديث: أرشفة وتصفير تلقائي + حفظ + فلاتر في الأرشيف ======
 (function() {
     console.log('🟢 تحميل: الأرشفة التلقائية للفترات');
 
@@ -2691,6 +2691,20 @@
     // ---------- هيكل الأرشيف ----------
     if (!state.payrollArchive) state.payrollArchive = [];
 
+    // ---------- دالة حفظ البيانات (تضمن الحفظ الفعلي) ----------
+    function saveState() {
+        // محاولة استخدام DataManager إذا كانت معرّفة
+        if (typeof DataManager !== 'undefined' && DataManager.saveAllData) {
+            DataManager.saveAllData();
+        }
+        // حفظ احتياطي مباشر في localStorage
+        try {
+            localStorage.setItem('payrollAppState', JSON.stringify(state));
+        } catch (e) {
+            console.warn('تعذر الحفظ في localStorage:', e);
+        }
+    }
+
     // ---------- دالة الأرشفة والتصفير ----------
     function archiveAndResetPeriod(period) {
         var now = new Date();
@@ -2700,7 +2714,6 @@
         var periodLabel = labels[['early','mid','late'].indexOf(period)];
         var range = Utils.getPeriodRange(period, year, month);
 
-        // التحقق من أن الفترة لم تُؤرشَف مسبقاً
         var alreadyArchived = state.payrollArchive.some(function(a) {
             return a.period === period && a.year === year && a.month === month + 1;
         });
@@ -2751,12 +2764,19 @@
         state.payrollArchive.unshift(snapshot);
         if (state.payrollArchive.length > 100) state.payrollArchive.length = 100;
 
-        // تصفير totalOrders للموظفين
+        // تصفير totalOrders للموظفين (التصفير)
         state.employees.forEach(function(e) {
             e.totalOrders = 0;
         });
 
-        DataManager.saveAllData();
+        // حفظ البيانات
+        saveState();
+
+        // تحديث واجهة المستخدم إذا كانت مفتوحة على صفحة المرتبات
+        if (typeof AppRenderer !== 'undefined' && AppRenderer.currentPage === 'payroll') {
+            AppRenderer.renderPayroll();
+        }
+
         console.log('✅ تمت أرشفة وتصفير فترة ' + periodLabel);
         return true;
     }
@@ -2769,6 +2789,18 @@
         return 'late';
     }
 
+    // ---------- فحص عند بدء التشغيل: أرشفة أي فترة فائتة (إذا مر وقتها ولم تؤرشف) ----------
+    function checkMissedArchives() {
+        var now = new Date();
+        var day = now.getDate();
+        // إذا كان اليوم 11 وما بعده، معنى ذلك أن فترة 1-10 قد انتهت
+        if (day >= 11) archiveAndResetPeriod('early');
+        // إذا كان اليوم 21 وما بعده، فترة 11-20 قد انتهت
+        if (day >= 21) archiveAndResetPeriod('mid');
+        // إذا كان اليوم 1، فترة الشهر السابق (21-نهاية) قد انتهت
+        if (day === 1) archiveAndResetPeriod('late');
+    }
+
     // ---------- التحقق الدوري (كل دقيقة) ----------
     function scheduleArchiveCheck() {
         var lastArchivedPeriod = null;
@@ -2779,9 +2811,7 @@
             var minutes = now.getMinutes();
             var day = now.getDate();
 
-            // نتحقق عند منتصف الليل (00:00 - 00:01)
             if (hours === 0 && minutes <= 1) {
-                // تحديد الفترة التي انتهت
                 var endedPeriod = null;
                 if (day === 11) endedPeriod = 'early';
                 else if (day === 21) endedPeriod = 'mid';
@@ -2792,10 +2822,10 @@
                     archiveAndResetPeriod(endedPeriod);
                 }
             }
-        }, 60000); // كل دقيقة
+        }, 60000);
     }
 
-    // ---------- أزرار يدوية في صفحة المرتبات (للطوارئ) ----------
+    // ---------- أزرار يدوية ----------
     function injectManualButtons() {
         var observer = new MutationObserver(function() {
             var container = document.querySelector('#content-area .flex.flex-wrap.gap-2.mb-4');
@@ -2816,7 +2846,7 @@
                     if (confirm(`هل أنت متأكد من أرشفة وتصفير فترة ${p.label}؟`)) {
                         var done = archiveAndResetPeriod(p.period);
                         if (done) {
-                            AppRenderer.renderPayroll();
+                            // التحديث يتم داخل الدالة
                             Utils.showMsg(`✅ تمت أرشفة وتصفير فترة ${p.label}`);
                         } else {
                             Utils.showWarning('هذه الفترة مؤرشفة مسبقاً');
@@ -2830,36 +2860,112 @@
         observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
     }
 
-    // ---------- تبويب الأرشيف ----------
+    // ---------- تبويب الأرشيف مع الفلاتر ----------
     function createArchiveTab() {
         if (!AppRenderer.pages.includes('payrollArchive')) {
             AppRenderer.pages.push('payrollArchive');
         }
+
         AppRenderer.renderPayrollArchive = function() {
             var c = document.getElementById('content-area');
             if (!c) return;
             document.getElementById('pageTitle').textContent = '📦 أرشيف المرتبات';
+
             var archive = state.payrollArchive || [];
             var monthNames = ['','يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-            c.innerHTML = `
-            <div class="bg-card">
-                <h2 class="text-xl font-bold mb-4">📦 أرشيف المرتبات (${archive.length} أرشيف)</h2>
-                ${archive.length === 0 ? '<p class="text-gray-400 text-center py-8">لا توجد أي أرشفة حتى الآن</p>' : archive.map(function(snap) {
+
+            // استخراج السنوات والشهور الفريدة من الأرشيف للفلاتر
+            var years = [...new Set(archive.map(a => a.year))].sort((a,b) => b-a);
+            var months = [...new Set(archive.map(a => a.month))].sort((a,b) => a-b);
+            var periodTypes = ['early','mid','late'];
+
+            // بناء HTML الفلاتر
+            var filterHTML = `
+                <div class="flex flex-wrap gap-3 mb-4 items-center">
+                    <label class="text-sm">السنة:</label>
+                    <select id="archiveYearFilter" class="border rounded px-2 py-1 text-sm">
+                        <option value="">الكل</option>
+                        ${years.map(y => `<option value="${y}">${y}</option>`).join('')}
+                    </select>
+                    <label class="text-sm">الشهر:</label>
+                    <select id="archiveMonthFilter" class="border rounded px-2 py-1 text-sm">
+                        <option value="">الكل</option>
+                        ${months.map(m => `<option value="${m}">${monthNames[m]}</option>`).join('')}
+                    </select>
+                    <label class="text-sm">الفترة:</label>
+                    <select id="archivePeriodFilter" class="border rounded px-2 py-1 text-sm">
+                        <option value="">الكل</option>
+                        <option value="early">1-10</option>
+                        <option value="mid">11-20</option>
+                        <option value="late">21-نهاية</option>
+                    </select>
+                    <button id="archiveFilterBtn" class="btn-outline text-sm">🔍 تصفية</button>
+                    <button id="archiveClearBtn" class="btn-outline text-sm">🗑️ مسح الفلاتر</button>
+                </div>
+            `;
+
+            // دالة عرض الأرشيف (تُستدعى عند التصفية)
+            function renderFilteredArchive() {
+                var yearVal = document.getElementById('archiveYearFilter')?.value || '';
+                var monthVal = document.getElementById('archiveMonthFilter')?.value || '';
+                var periodVal = document.getElementById('archivePeriodFilter')?.value || '';
+
+                var filtered = archive.filter(function(item) {
+                    return (!yearVal || item.year == yearVal) &&
+                           (!monthVal || item.month == monthVal) &&
+                           (!periodVal || item.period === periodVal);
+                });
+
+                var archiveList = document.getElementById('archiveList');
+                if (!archiveList) return;
+
+                if (filtered.length === 0) {
+                    archiveList.innerHTML = '<p class="text-gray-400 text-center py-8">لا توجد نتائج مطابقة</p>';
+                    return;
+                }
+
+                archiveList.innerHTML = filtered.map(function(snap) {
                     return `
                     <div class="border rounded-xl p-4 mb-4 bg-white dark:bg-gray-800">
                         <div class="flex justify-between items-center mb-2">
                             <h3 class="font-bold">فترة ${snap.periodLabel} - ${monthNames[snap.month]} ${snap.year}</h3>
                             <span class="text-sm text-gray-400">${snap.dateRange}</span>
                         </div>
-                        <table class="text-sm"><thead><tr><th>الموظف</th><th>أوردرات</th><th>المستحق</th><th>السلف</th><th>الصافي</th></tr></thead><tbody>
+                        <table class="text-sm w-full"><thead><tr><th>الموظف</th><th>أوردرات</th><th>المستحق</th><th>السلف</th><th>الصافي</th></tr></thead><tbody>
                             ${snap.employees.map(function(e) { return `<tr><td>${e.name}</td><td>${e.totalAttended}</td><td>${Utils.formatCurrency(e.salary)}</td><td class="text-red-600">${Utils.formatCurrency(e.loans)}</td><td><strong>${Utils.formatCurrency(e.net)}</strong></td></tr>`; }).join('')}
                         </tbody></table>
                         <small class="text-gray-400">تمت الأرشفة: ${new Date(snap.archivedAt).toLocaleString('ar-EG')}</small>
                     </div>`;
-                }).join('')}
+                }).join('');
+            }
+
+            // المحتوى الكامل
+            c.innerHTML = `
+            <div class="bg-card">
+                <h2 class="text-xl font-bold mb-4">📦 أرشيف المرتبات (${archive.length} أرشيف)</h2>
+                ${filterHTML}
+                <div id="archiveList">
+                    ${archive.length === 0 ? '<p class="text-gray-400 text-center py-8">لا توجد أي أرشفة حتى الآن</p>' : ''}
+                </div>
                 <div class="footer-bar">${APP_CONFIG.footerText}</div>
             </div>`;
+
+            // تعبئة الأرشيف أول مرة
+            if (archive.length > 0) {
+                renderFilteredArchive();
+            }
+
+            // أحداث الفلاتر
+            document.getElementById('archiveFilterBtn')?.addEventListener('click', renderFilteredArchive);
+            document.getElementById('archiveClearBtn')?.addEventListener('click', function() {
+                document.getElementById('archiveYearFilter').value = '';
+                document.getElementById('archiveMonthFilter').value = '';
+                document.getElementById('archivePeriodFilter').value = '';
+                renderFilteredArchive();
+            });
         };
+
+        // إضافة التبويب للقائمة الجانبية
         var sidebar = document.querySelector('.sidebar .py-2');
         if (sidebar && !document.querySelector('[data-page="payrollArchive"]')) {
             var item = document.createElement('div');
@@ -2873,9 +2979,10 @@
 
     // ---------- تشغيل ----------
     function init() {
-        scheduleArchiveCheck();
-        injectManualButtons();
-        createArchiveTab();
+        checkMissedArchives();        // أرشفة الفترات الماضية إن لم تؤرشف
+        scheduleArchiveCheck();       // المجدول كل دقيقة
+        injectManualButtons();        // أزرار الطوارئ
+        createArchiveTab();           // تبويب الأرشيف بالفلاتر
         console.log('✅ الأرشفة التلقائية للفترات جاهزة');
     }
 
