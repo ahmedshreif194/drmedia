@@ -2300,9 +2300,9 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
-// ====== تحديث: طباعة توزيع الموظفين حسب أيام محددة ======
+// ====== تحديث: طباعة التوزيع (بدون اسم العميل + صفحة واحدة + تحديد نطاق تاريخ) ======
 (function() {
-    console.log('🟢 تحميل: طباعة توزيع الموظفين');
+    console.log('🟢 تحميل: طباعة التوزيع المُحسَّنة');
 
     function waitForApp(cb) {
         if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
@@ -2332,7 +2332,7 @@
     function openPrintModal() {
         var today = new Date();
         var year = today.getFullYear();
-        var month = today.getMonth(); // 0-11
+        var month = today.getMonth();
         var daysInMonth = new Date(year, month + 1, 0).getDate();
         var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
                          'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2351,14 +2351,32 @@
         Utils.openModal(`
             <h3 class="text-xl font-bold mb-4">🖨️ طباعة توزيع الموظفين</h3>
             <p class="text-sm mb-2">${monthNames[month]} ${year}</p>
+
+            <!-- أزرار التحديد السريع -->
             <div class="mb-3">
                 <button onclick="document.querySelectorAll('.print-day-check').forEach(cb=>cb.checked=true)" class="btn-outline text-xs">✅ تحديد الكل</button>
                 <button onclick="document.querySelectorAll('.print-day-check').forEach(cb=>cb.checked=false)" class="btn-outline text-xs ml-2">❌ إلغاء الكل</button>
                 <button onclick="document.querySelectorAll('.print-day-check').forEach(cb=>{var d=cb.value;cb.checked=state.bookings.some(b=>b.date===d&&b.status!=='cancelled'&&!b.deleted)})" class="btn-outline text-xs ml-2">📅 الأيام المشغولة فقط</button>
             </div>
+
+            <!-- تحديد نطاق تاريخ -->
+            <div class="flex gap-2 items-end mb-3 p-3 border rounded-xl bg-gray-50 dark:bg-gray-800">
+                <div>
+                    <label class="text-xs">من</label>
+                    <input type="date" id="rangeFrom" class="border-2 p-2 rounded-xl text-sm" value="${year}-${String(month+1).padStart(2,'0')}-01">
+                </div>
+                <div>
+                    <label class="text-xs">إلى</label>
+                    <input type="date" id="rangeTo" class="border-2 p-2 rounded-xl text-sm" value="${year}-${String(month+1).padStart(2,'0')}-${String(daysInMonth).padStart(2,'0')}">
+                </div>
+                <button onclick="window._selectRange()" class="btn-secondary text-sm">📌 تحديد النطاق (المشغول فقط)</button>
+            </div>
+
+            <!-- قائمة الأيام -->
             <div style="max-height:200px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:8px;">
                 ${dayChecks}
             </div>
+
             <div class="flex gap-2 mt-4">
                 <button onclick="window._printDistribution()" class="btn-primary flex-1">🖨️ طباعة المحدد</button>
                 <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
@@ -2366,7 +2384,24 @@
         `);
     }
 
-    // ========== 3. دالة الطباعة ==========
+    // ========== 3. دالة تحديد النطاق ==========
+    window._selectRange = function() {
+        var from = document.getElementById('rangeFrom').value;
+        var to = document.getElementById('rangeTo').value;
+        if (!from || !to) return Utils.showError('اختر تاريخ البداية والنهاية');
+
+        document.querySelectorAll('.print-day-check').forEach(function(cb) {
+            var d = cb.value;
+            if (d >= from && d <= to) {
+                // تحديد فقط إذا كان اليوم مشغولاً
+                cb.checked = state.bookings.some(b => b.date === d && b.status !== 'cancelled' && !b.deleted);
+            } else {
+                cb.checked = false;
+            }
+        });
+    };
+
+    // ========== 4. دالة الطباعة (بدون اسم العميل + صفحة واحدة) ==========
     window._printDistribution = function() {
         var selectedDays = [];
         document.querySelectorAll('.print-day-check:checked').forEach(function(cb) {
@@ -2379,7 +2414,6 @@
             return;
         }
 
-        // تجهيز البيانات
         var printWindow = window.open('', '_blank');
         var html = `
         <!DOCTYPE html>
@@ -2389,19 +2423,17 @@
             <title>توزيع الموظفين</title>
             <style>
                 body { font-family: Tahoma, sans-serif; margin: 20px; direction: rtl; }
-                table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                th, td { border: 1px solid #333; padding: 6px; text-align: center; font-size: 14px; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 16px; page-break-inside: avoid; }
+                th, td { border: 1px solid #333; padding: 6px; text-align: center; font-size: 13px; }
                 th { background: #16a34a; color: white; }
-                h2 { color: #16a34a; }
+                h2, h3 { color: #16a34a; }
                 @media print { body { margin: 0; } }
             </style>
         </head>
         <body>
             <h2>📋 توزيع الموظفين - ${state.companyName}</h2>
-            <p>الأيام المحددة: ${selectedDays.join(' ، ')}</p>
         `;
 
-        // لكل يوم، نعرض جدولاً
         selectedDays.forEach(function(dateStr) {
             var dayBookings = state.bookings.filter(b => b.date === dateStr && b.status !== 'cancelled' && !b.deleted);
             if (dayBookings.length === 0) return;
@@ -2411,7 +2443,6 @@
             html += `<table>
                 <thead>
                     <tr>
-                        <th>العميل</th>
                         <th>القاعة</th>
                         <th>النوع</th>
                         <th>الموظفون</th>
@@ -2429,14 +2460,13 @@
 
                 html += `
                     <tr>
-                        <td>${b.clientName}</td>
                         <td>${b.hallName}</td>
                         <td>${hallType}</td>
                         <td>${employees}</td>
                     </tr>`;
             });
 
-            html += `</tbody></table><br>`;
+            html += `</tbody></table>`;
         });
 
         html += `
@@ -2449,10 +2479,10 @@
         Utils.closeModal();
     };
 
-    // ========== 4. بدء التشغيل ==========
+    // ========== 5. بدء التشغيل ==========
     function init() {
         injectPrintButton();
-        console.log('✅ طباعة التوزيع جاهزة');
+        console.log('✅ طباعة التوزيع المُحسَّنة جاهزة');
     }
 
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
