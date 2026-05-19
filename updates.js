@@ -2488,3 +2488,194 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+
+// ====== تحديث: زر إرسال رسائل تذكير للحجوزات القادمة (يدوي) ======
+(function() {
+    console.log('🟢 تحميل: إرسال تذكيرات الحجوزات');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ========== 1. إضافة زر "تذكير الحجوزات" في تبويب الرسائل ==========
+    function injectReminderButton() {
+        var observer = new MutationObserver(function() {
+            // نبحث عن قسم الإرسال اليدوي في تبويب الرسائل
+            var manualSection = document.querySelector('#content-area .bg-card .grid .border.p-4.rounded-xl:last-child');
+            if (manualSection && !document.getElementById('sendRemindersBtn')) {
+                var btn = document.createElement('button');
+                btn.id = 'sendRemindersBtn';
+                btn.className = 'btn-secondary w-full mt-3';
+                btn.style.backgroundColor = '#f59e0b';
+                btn.style.color = 'white';
+                btn.textContent = '📢 إرسال تذكيرات لجميع الحجوزات القادمة';
+                btn.onclick = openReminderModal;
+                manualSection.appendChild(btn);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    // ========== 2. نافذة اختيار الأيام ==========
+    function openReminderModal() {
+        var today = new Date();
+        var year = today.getFullYear();
+        var month = today.getMonth();
+        var daysInMonth = new Date(year, month + 1, 0).getDate();
+        var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                         'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+        var dayChecks = '';
+        for (var d = 1; d <= daysInMonth; d++) {
+            var dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            var hasBookings = state.bookings.some(b => b.date === dateStr && b.status !== 'cancelled' && !b.deleted);
+            var style = hasBookings ? 'font-weight:bold; color:#16a34a;' : 'color:#999;';
+            dayChecks += `
+                <label style="display:inline-block; width:60px; margin:4px; ${style}">
+                    <input type="checkbox" class="remind-day-check" value="${dateStr}" ${hasBookings ? 'checked' : ''}> ${d}
+                </label>`;
+        }
+
+        Utils.openModal(`
+            <h3 class="text-xl font-bold mb-4">📢 إرسال تذكيرات الحجوزات القادمة</h3>
+            <p class="text-sm mb-2">${monthNames[month]} ${year}</p>
+            <p class="text-xs text-gray-500 mb-3">سيتم إرسال رسالة (واتساب + SMS إذا كان مفعلاً) لكل موظف معين في الأيام المحددة.</p>
+
+            <div class="mb-3">
+                <button onclick="document.querySelectorAll('.remind-day-check').forEach(cb=>cb.checked=true)" class="btn-outline text-xs">✅ تحديد الكل</button>
+                <button onclick="document.querySelectorAll('.remind-day-check').forEach(cb=>cb.checked=false)" class="btn-outline text-xs ml-2">❌ إلغاء الكل</button>
+                <button onclick="document.querySelectorAll('.remind-day-check').forEach(cb=>{var d=cb.value;cb.checked=state.bookings.some(b=>b.date===d&&b.status!=='cancelled'&&!b.deleted)})" class="btn-outline text-xs ml-2">📅 الأيام المشغولة فقط</button>
+            </div>
+
+            <div class="flex gap-2 items-end mb-3 p-3 border rounded-xl bg-gray-50 dark:bg-gray-800">
+                <div>
+                    <label class="text-xs">من</label>
+                    <input type="date" id="remindRangeFrom" class="border-2 p-2 rounded-xl text-sm" value="${year}-${String(month+1).padStart(2,'0')}-01">
+                </div>
+                <div>
+                    <label class="text-xs">إلى</label>
+                    <input type="date" id="remindRangeTo" class="border-2 p-2 rounded-xl text-sm" value="${year}-${String(month+1).padStart(2,'0')}-${String(daysInMonth).padStart(2,'0')}">
+                </div>
+                <button onclick="window._selectRemindRange()" class="btn-secondary text-sm">📌 تحديد النطاق (المشغول فقط)</button>
+            </div>
+
+            <div style="max-height:200px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:8px;">
+                ${dayChecks}
+            </div>
+
+            <div class="flex gap-2 mt-4">
+                <button onclick="window._sendReminders()" class="btn-primary flex-1">📤 إرسال التذكيرات</button>
+                <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
+            </div>
+        `);
+    }
+
+    // ========== 3. دالة تحديد النطاق ==========
+    window._selectRemindRange = function() {
+        var from = document.getElementById('remindRangeFrom').value;
+        var to = document.getElementById('remindRangeTo').value;
+        if (!from || !to) return Utils.showError('اختر تاريخ البداية والنهاية');
+        document.querySelectorAll('.remind-day-check').forEach(function(cb) {
+            var d = cb.value;
+            if (d >= from && d <= to) {
+                cb.checked = state.bookings.some(b => b.date === d && b.status !== 'cancelled' && !b.deleted);
+            } else {
+                cb.checked = false;
+            }
+        });
+    };
+
+    // ========== 4. دالة إرسال التذكيرات ==========
+    window._sendReminders = async function() {
+        var selectedDays = [];
+        document.querySelectorAll('.remind-day-check:checked').forEach(function(cb) {
+            selectedDays.push(cb.value);
+        });
+
+        if (selectedDays.length === 0) {
+            Utils.showError('لم يتم تحديد أي يوم');
+            Utils.closeModal();
+            return;
+        }
+
+        var totalSent = 0;
+        var failedList = [];
+
+        for (var i = 0; i < selectedDays.length; i++) {
+            var dateStr = selectedDays[i];
+            var dayBookings = state.bookings.filter(b => b.date === dateStr && b.status !== 'cancelled' && !b.deleted);
+
+            for (var j = 0; j < dayBookings.length; j++) {
+                var b = dayBookings[j];
+                var employees = b.assignedEmployees || [];
+
+                for (var k = 0; k < employees.length; k++) {
+                    var emp = state.employees.find(e => e.id === employees[k]);
+                    if (!emp || !emp.phone) continue;
+
+                    var msg = `تذكير: لديك أوردر يوم ${dateStr} (${Utils.getWeekDayArabic(dateStr)}) - ${b.hallName}`;
+
+                    // إرسال واتساب
+                    if (typeof window.sendWhatsAppReliable === 'function') {
+                        window.sendWhatsAppReliable(emp.phone, msg);
+                    } else if (typeof window.sendWhatsAppAuto === 'function') {
+                        window.sendWhatsAppAuto(emp.phone, msg);
+                    } else {
+                        // فتح رابط واتساب مباشرة
+                        var cleaned = emp.phone.replace(/[^0-9+]/g,'');
+                        if (cleaned.startsWith('0')) cleaned = '20' + cleaned.substring(1);
+                        if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
+                        window.open('https://wa.me/' + cleaned + '?text=' + encodeURIComponent(msg), '_blank');
+                    }
+
+                    // إرسال SMS
+                    if (typeof window.sendSMS === 'function') {
+                        var smsSuccess = await window.sendSMS(emp.phone, msg);
+                        if (smsSuccess) {
+                            totalSent++;
+                        } else {
+                            failedList.push(emp.name + ' (' + dateStr + ')');
+                        }
+                    } else {
+                        totalSent++; // نحسبه إذا لم تكن خدمة SMS موجودة
+                    }
+
+                    // تأخير بسيط بين الرسائل لتجنب الحظر
+                    await new Promise(function(resolve) { setTimeout(resolve, 300); });
+                }
+            }
+        }
+
+        Utils.closeModal();
+
+        if (failedList.length > 0) {
+            Utils.showWarning(`تمت محاولة إرسال التذكيرات. نجح: ${totalSent}، فشل: ${failedList.length} (${failedList.slice(0,3).join(', ')}...)`);
+        } else {
+            Utils.showMsg(`✅ تم إرسال ${totalSent} تذكير بنجاح`);
+        }
+
+        // تسجيل في سجل الرسائل إذا كان موجوداً
+        if (state.messageLog) {
+            state.messageLog.unshift({
+                id: Utils.generateId('msg_'),
+                type: 'bulk_reminder',
+                recipient: 'متعدد',
+                message: `تذكيرات لـ ${selectedDays.length} أيام`,
+                status: 'sent',
+                time: new Date().toLocaleString('ar-EG')
+            });
+            DataManager.saveAllData();
+        }
+    };
+
+    // ========== 5. بدء التشغيل ==========
+    function init() {
+        injectReminderButton();
+        console.log('✅ زر تذكير الحجوزات جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
