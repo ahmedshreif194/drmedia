@@ -2300,3 +2300,161 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
+// ====== تحديث: طباعة توزيع الموظفين حسب أيام محددة ======
+(function() {
+    console.log('🟢 تحميل: طباعة توزيع الموظفين');
+
+    function waitForApp(cb) {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    // ========== 1. إضافة زر "طباعة التوزيع" في صفحة التوزيع ==========
+    function injectPrintButton() {
+        var observer = new MutationObserver(function() {
+            var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+            if (container && !document.getElementById('printDistBtn')) {
+                var btn = document.createElement('button');
+                btn.id = 'printDistBtn';
+                btn.className = 'btn-primary';
+                btn.style.backgroundColor = '#059669';
+                btn.style.color = 'white';
+                btn.textContent = '🖨️ طباعة التوزيع';
+                btn.onclick = openPrintModal;
+                container.appendChild(btn);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    // ========== 2. نافذة اختيار الأيام ==========
+    function openPrintModal() {
+        var today = new Date();
+        var year = today.getFullYear();
+        var month = today.getMonth(); // 0-11
+        var daysInMonth = new Date(year, month + 1, 0).getDate();
+        var monthNames = ['يناير','فبراير','مارس','أبريل','مايو','يونيو',
+                         'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+        var dayChecks = '';
+        for (var d = 1; d <= daysInMonth; d++) {
+            var dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            var hasBookings = state.bookings.some(b => b.date === dateStr && b.status !== 'cancelled' && !b.deleted);
+            var style = hasBookings ? 'font-weight:bold; color:#16a34a;' : 'color:#999;';
+            dayChecks += `
+                <label style="display:inline-block; width:60px; margin:4px; ${style}">
+                    <input type="checkbox" class="print-day-check" value="${dateStr}" ${hasBookings ? 'checked' : ''}> ${d}
+                </label>`;
+        }
+
+        Utils.openModal(`
+            <h3 class="text-xl font-bold mb-4">🖨️ طباعة توزيع الموظفين</h3>
+            <p class="text-sm mb-2">${monthNames[month]} ${year}</p>
+            <div class="mb-3">
+                <button onclick="document.querySelectorAll('.print-day-check').forEach(cb=>cb.checked=true)" class="btn-outline text-xs">✅ تحديد الكل</button>
+                <button onclick="document.querySelectorAll('.print-day-check').forEach(cb=>cb.checked=false)" class="btn-outline text-xs ml-2">❌ إلغاء الكل</button>
+                <button onclick="document.querySelectorAll('.print-day-check').forEach(cb=>{var d=cb.value;cb.checked=state.bookings.some(b=>b.date===d&&b.status!=='cancelled'&&!b.deleted)})" class="btn-outline text-xs ml-2">📅 الأيام المشغولة فقط</button>
+            </div>
+            <div style="max-height:200px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:8px;">
+                ${dayChecks}
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button onclick="window._printDistribution()" class="btn-primary flex-1">🖨️ طباعة المحدد</button>
+                <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
+            </div>
+        `);
+    }
+
+    // ========== 3. دالة الطباعة ==========
+    window._printDistribution = function() {
+        var selectedDays = [];
+        document.querySelectorAll('.print-day-check:checked').forEach(function(cb) {
+            selectedDays.push(cb.value);
+        });
+
+        if (selectedDays.length === 0) {
+            Utils.showError('لم يتم تحديد أي يوم');
+            Utils.closeModal();
+            return;
+        }
+
+        // تجهيز البيانات
+        var printWindow = window.open('', '_blank');
+        var html = `
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>توزيع الموظفين</title>
+            <style>
+                body { font-family: Tahoma, sans-serif; margin: 20px; direction: rtl; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                th, td { border: 1px solid #333; padding: 6px; text-align: center; font-size: 14px; }
+                th { background: #16a34a; color: white; }
+                h2 { color: #16a34a; }
+                @media print { body { margin: 0; } }
+            </style>
+        </head>
+        <body>
+            <h2>📋 توزيع الموظفين - ${state.companyName}</h2>
+            <p>الأيام المحددة: ${selectedDays.join(' ، ')}</p>
+        `;
+
+        // لكل يوم، نعرض جدولاً
+        selectedDays.forEach(function(dateStr) {
+            var dayBookings = state.bookings.filter(b => b.date === dateStr && b.status !== 'cancelled' && !b.deleted);
+            if (dayBookings.length === 0) return;
+
+            var weekDay = Utils.getWeekDayArabic(dateStr);
+            html += `<h3>${dateStr} (${weekDay})</h3>`;
+            html += `<table>
+                <thead>
+                    <tr>
+                        <th>العميل</th>
+                        <th>القاعة</th>
+                        <th>النوع</th>
+                        <th>الموظفون</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            dayBookings.forEach(function(b) {
+                var hall = state.halls.find(h => h.id === b.hallId);
+                var hallType = hall ? (hall.type === 'cafe' ? 'كافيه' : hall.type === 'open' ? 'أوبن' : 'مغلقة') : '—';
+                var employees = (b.assignedEmployees || []).map(function(id) {
+                    var emp = state.employees.find(e => e.id === id);
+                    return emp ? emp.name + ' (' + emp.role + ')' : '';
+                }).filter(Boolean).join('، ') || 'غير معين';
+
+                html += `
+                    <tr>
+                        <td>${b.clientName}</td>
+                        <td>${b.hallName}</td>
+                        <td>${hallType}</td>
+                        <td>${employees}</td>
+                    </tr>`;
+            });
+
+            html += `</tbody></table><br>`;
+        });
+
+        html += `
+            <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>`;
+
+        printWindow.document.write(html);
+        printWindow.document.close();
+        Utils.closeModal();
+    };
+
+    // ========== 4. بدء التشغيل ==========
+    function init() {
+        injectPrintButton();
+        console.log('✅ طباعة التوزيع جاهزة');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
+    if (document.readyState !== 'loading') waitForApp(init);
+})();
