@@ -3146,3 +3146,228 @@ window.saveBulkBookings = function() {
     selectedDatesForBulk.clear();
     showMsg(`✅ تم إضافة ${addedCount} حجز بنجاح في التواريخ المحددة`);
 };
+// ====== تحديث: زر حجز مجمع مع تقويم شهري ======
+(function() {
+    console.log('🟢 تحميل: نظام الحجز المجمع الشهري');
+
+    // ---------- إنشاء التقويم ----------
+    function createCalendar(year, month, selectedDays) {
+        var firstDay = new Date(year, month, 1).getDay(); // 0 = أحد
+        var daysInMonth = new Date(year, month + 1, 0).getDate();
+        var today = new Date();
+        var html = '<table class="w-full text-center border-collapse"><thead><tr>';
+        var dayNames = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+        dayNames.forEach(d => html += `<th class="p-1 text-xs bg-gray-100">${d}</th>`);
+        html += '</tr></thead><tbody><tr>';
+
+        // خلايا فارغة قبل أول يوم
+        for (var i = 0; i < firstDay; i++) {
+            html += '<td class="p-1"></td>';
+        }
+
+        for (var day = 1; day <= daysInMonth; day++) {
+            var dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            var isSelected = selectedDays.includes(dateStr);
+            var isToday = (today.getFullYear() === year && today.getMonth() === month && today.getDate() === day);
+            var bgClass = isSelected ? 'bg-blue-500 text-white' : (isToday ? 'bg-yellow-100' : 'hover:bg-gray-100');
+            html += `<td class="p-1">
+                <div class="cursor-pointer rounded-full w-8 h-8 flex items-center justify-center mx-auto text-sm ${bgClass}"
+                     data-date="${dateStr}">${day}</div>
+            </td>`;
+            // سطر جديد بعد السبت
+            if ((firstDay + day) % 7 === 0) html += '</tr><tr>';
+        }
+        // إغلاق الصف الأخير
+        html += '</tr></tbody></table>';
+        return html;
+    }
+
+    // ---------- إدراج الزر والمودال ----------
+    function addBulkBookingButton() {
+        // زر "حجز مجمّع" في صفحة الحجوزات
+        var bookingsHeader = document.querySelector('#content-area .bg-card h2');
+        if (!bookingsHeader || document.getElementById('bulkBookingBtn')) return;
+
+        var btn = document.createElement('button');
+        btn.id = 'bulkBookingBtn';
+        btn.className = 'btn-primary ml-4 text-sm';
+        btn.textContent = '📅 حجز مجمّع';
+        btn.onclick = openBulkModal;
+        bookingsHeader.parentNode.insertBefore(btn, bookingsHeader.nextSibling);
+    }
+
+    // ---------- فتح المودال ----------
+    function openBulkModal() {
+        // إزالة أي مودال قديم
+        var oldModal = document.getElementById('bulkBookingModal');
+        if (oldModal) oldModal.remove();
+
+        var now = new Date();
+        var currentYear = now.getFullYear();
+        var currentMonth = now.getMonth(); // 0-11
+
+        var selectedDays = [];
+        var halls = state.halls || [];
+
+        var modalHTML = `
+        <div id="bulkBookingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
+                <h3 class="text-lg font-bold mb-4">📅 حجز مجمّع - اختر الأيام</h3>
+                <div class="flex justify-between items-center mb-2">
+                    <button id="prevMonth" class="px-2 py-1 bg-gray-200 rounded">◀</button>
+                    <span id="monthYearLabel" class="font-semibold"></span>
+                    <button id="nextMonth" class="px-2 py-1 bg-gray-200 rounded">▶</button>
+                </div>
+                <div id="calendarContainer" class="mb-3"></div>
+                <div class="flex gap-2 mb-3">
+                    <button id="selectAllBtn" class="text-xs bg-gray-200 px-2 py-1 rounded">تحديد الكل</button>
+                    <button id="deselectAllBtn" class="text-xs bg-gray-200 px-2 py-1 rounded">إلغاء الكل</button>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-1">نوع القاعة</label>
+                    <select id="hallTypeSelect" class="w-full border-2 p-2 rounded-xl">
+                        ${halls.map(h => `<option value="${h.name || h.type || ''}">${h.name || h.type || ''}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button id="cancelBulk" class="btn-secondary px-4 py-2 rounded-xl">إلغاء</button>
+                    <button id="saveBulk" class="btn-primary px-4 py-2 rounded-xl">✅ حفظ الحجوزات</button>
+                </div>
+            </div>
+        </div>`;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        // المتغيرات
+        var year = currentYear, month = currentMonth;
+        var calendarDiv = document.getElementById('calendarContainer');
+        var monthYearLabel = document.getElementById('monthYearLabel');
+        var prevBtn = document.getElementById('prevMonth');
+        var nextBtn = document.getElementById('nextMonth');
+        var selectAll = document.getElementById('selectAllBtn');
+        var deselectAll = document.getElementById('deselectAllBtn');
+        var hallSelect = document.getElementById('hallTypeSelect');
+        var saveBtn = document.getElementById('saveBulk');
+        var cancelBtn = document.getElementById('cancelBulk');
+
+        function render() {
+            monthYearLabel.textContent = `${year}-${String(month+1).padStart(2,'0')}`;
+            calendarDiv.innerHTML = createCalendar(year, month, selectedDays);
+            // ربط الأحداث بالأيام
+            calendarDiv.querySelectorAll('[data-date]').forEach(function(dayDiv) {
+                dayDiv.onclick = function() {
+                    var date = this.getAttribute('data-date');
+                    var index = selectedDays.indexOf(date);
+                    if (index > -1) {
+                        selectedDays.splice(index, 1);
+                    } else {
+                        selectedDays.push(date);
+                    }
+                    render();
+                };
+            });
+        }
+
+        prevBtn.onclick = function() {
+            if (month === 0) { year--; month = 11; }
+            else month--;
+            render();
+        };
+        nextBtn.onclick = function() {
+            if (month === 11) { year++; month = 0; }
+            else month++;
+            render();
+        };
+
+        selectAll.onclick = function() {
+            var daysInMonth = new Date(year, month + 1, 0).getDate();
+            for (var d = 1; d <= daysInMonth; d++) {
+                var dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                if (!selectedDays.includes(dateStr)) selectedDays.push(dateStr);
+            }
+            render();
+        };
+        deselectAll.onclick = function() {
+            var daysInMonth = new Date(year, month + 1, 0).getDate();
+            for (var d = 1; d <= daysInMonth; d++) {
+                var dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                var idx = selectedDays.indexOf(dateStr);
+                if (idx > -1) selectedDays.splice(idx, 1);
+            }
+            render();
+        };
+
+        cancelBtn.onclick = function() { document.getElementById('bulkBookingModal').remove(); };
+
+        saveBtn.onclick = function() {
+            var hallType = hallSelect.value;
+            if (!hallType) {
+                Utils.showError('الرجاء اختيار نوع القاعة');
+                return;
+            }
+            if (selectedDays.length === 0) {
+                Utils.showError('الرجاء تحديد يوم واحد على الأقل');
+                return;
+            }
+            // إنشاء حجوزات لكل يوم
+            selectedDays.forEach(function(dateStr) {
+                var booking = {
+                    id: Utils.generateId('book_'),
+                    clientName: 'حجز مجمّع', // يمكن تعديله لاحقاً
+                    hallName: hallType,
+                    date: dateStr,
+                    time: '00:00', // افتراضي
+                    status: 'pending',
+                    assignedEmployees: [],
+                    deleted: false
+                };
+                state.bookings.push(booking);
+            });
+
+            // حفظ البيانات
+            if (typeof DataManager !== 'undefined' && DataManager.saveAllData) {
+                DataManager.saveAllData();
+            }
+            Utils.showSuccess(`تم إضافة ${selectedDays.length} حجز بنجاح`);
+            document.getElementById('bulkBookingModal').remove();
+            // تحديث واجهة الحجوزات إذا كانت موجودة
+            if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) {
+                AppRenderer.renderBookings();
+            }
+        };
+
+        render(); // العرض الأولي
+    }
+
+    // ---------- مراقب تغيير الصفحة لإضافة الزر ----------
+    function watchPageChanges() {
+        var observer = new MutationObserver(function(mutations) {
+            if (document.getElementById('pageTitle') && document.getElementById('pageTitle').textContent.includes('الحجوزات')) {
+                addBulkBookingButton();
+            }
+        });
+        observer.observe(document.getElementById('content-area'), { childList: true, subtree: true });
+        // أول مرة
+        if (document.getElementById('pageTitle') && document.getElementById('pageTitle').textContent.includes('الحجوزات')) {
+            addBulkBookingButton();
+        }
+    }
+
+    // ---------- التهيئة عند تحميل DOM ----------
+    function init() {
+        if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+            watchPageChanges();
+            console.log('✅ نظام الحجز المجمع جاهز');
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
