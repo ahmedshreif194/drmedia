@@ -3184,3 +3184,175 @@
 
     console.log('✅ نظام الحجز المجمع جاهز (إصدار محسّن)');
 })();
+// ====== تحديث: المزامنة التلقائية الفورية مع Firebase ======
+(function() {
+    console.log('🔄 تحميل: نظام المزامنة التلقائية مع Firebase');
+
+    if (typeof firebase === 'undefined') {
+        console.warn('⚠️ Firebase غير موجود، تعطيل المزامنة التلقائية');
+        return;
+    }
+
+    // ---------- الإعدادات ----------
+    var SYNC_DEBOUNCE_MS = 500; // تأخير بسيط لتجميع التغييرات المتتالية
+    var syncTimeout = null;
+    var isSyncing = false;
+
+    // مسار البيانات في Firebase (يُفترض أنه نفسه المستخدم في DataManager)
+    function getFirebaseRef() {
+        var branchId = (typeof state !== 'undefined' && state.branchId) ? state.branchId : 'default';
+        return firebase.database().ref('drmedia/' + branchId);
+    }
+
+    // ---------- دالة المزامنة الفعلية ----------
+    function syncToFirebase() {
+        if (isSyncing) return;
+        if (typeof state === 'undefined') return;
+        if (typeof firebase === 'undefined') return;
+
+        isSyncing = true;
+        // تحضير بيانات آمنة للحفظ (استبعاد الدوال والكائنات غير القابلة للتسلسل)
+        var dataToSave = {
+            bookings: state.bookings || [],
+            employees: state.employees || [],
+            halls: state.halls || [],
+            messageLog: state.messageLog || [],
+            autoMessageSettings: state.autoMessageSettings || { distribute: true, reminder: true, attendance: false },
+            branchId: state.branchId || 'default'
+        };
+
+        getFirebaseRef().set(dataToSave)
+            .then(function() {
+                console.log('✅ تمت مزامنة البيانات مع Firebase');
+                isSyncing = false;
+            })
+            .catch(function(error) {
+                console.error('❌ فشلت المزامنة مع Firebase:', error.message);
+                isSyncing = false;
+                // إعادة المحاولة بعد فترة قصيرة
+                setTimeout(function() {
+                    scheduleSync();
+                }, 2000);
+            });
+    }
+
+    // ---------- جدولة المزامنة (debounce) ----------
+    function scheduleSync() {
+        if (syncTimeout) clearTimeout(syncTimeout);
+        syncTimeout = setTimeout(function() {
+            syncToFirebase();
+        }, SYNC_DEBOUNCE_MS);
+    }
+
+    // ---------- مراقبة تغييرات state باستخدام Proxy ----------
+    function watchState() {
+        if (typeof state === 'undefined') return;
+
+        // إنشاء proxy عميق يراقب التغييرات
+        function createDeepProxy(obj, path) {
+            if (obj === null || typeof obj !== 'object' || obj instanceof Date) return obj;
+
+            return new Proxy(obj, {
+                set: function(target, property, value) {
+                    var old = target[property];
+                    target[property] = value;
+                    if (old !== value) {
+                        scheduleSync();
+                    }
+                    return true;
+                },
+                deleteProperty: function(target, property) {
+                    if (property in target) {
+                        delete target[property];
+                        scheduleSync();
+                    }
+                    return true;
+                },
+                get: function(target, property) {
+                    var value = target[property];
+                    // إرجاع proxy للمصفوفات والكائنات لمراقبتها داخليًا
+                    if (Array.isArray(value)) {
+                        // مصفوفة: نستخدم proxy لمراقبة push, splice إلخ
+                        return new Proxy(value, {
+                            set: function(arrTarget, arrProp, arrValue) {
+                                var old = arrTarget[arrProp];
+                                arrTarget[arrProp] = arrValue;
+                                if (old !== arrValue) scheduleSync();
+                                return true;
+                            },
+                            get: function(arrTarget, arrProp) {
+                                var val = arrTarget[arrProp];
+                                if (typeof val === 'function') {
+                                    return function() {
+                                        var result = Array.prototype[arrProp].apply(arrTarget, arguments);
+                                        // العمليات التي تغير المصفوفة: push, pop, shift, unshift, splice, sort, reverse
+                                        var mutatingMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
+                                        if (mutatingMethods.includes(arrProp)) {
+                                            scheduleSync();
+                                        }
+                                        return result;
+                                    };
+                                }
+                                return val;
+                            }
+                        });
+                    } else if (typeof value === 'object' && value !== null) {
+                        return createDeepProxy(value, path + '.' + property);
+                    }
+                    return value;
+                }
+            });
+        }
+
+        // استبدال state بـ proxy (مع الاحتفاظ بالمرجع)
+        var rawState = state;
+        state = createDeepProxy(rawState, 'state');
+        console.log('👁️ مراقبة state نشطة');
+    }
+
+    // ---------- دمج المزامنة مع DataManager إذا وُجد ----------
+    function integrateWithDataManager() {
+        if (typeof DataManager === 'undefined') return;
+
+        // حفظ مرجع الدالة الأصلية
+        var originalSaveAll = DataManager.saveAllData;
+
+        // إعادة تعريف saveAllData ليشمل المزامنة مع Firebase
+        DataManager.saveAllData = function() {
+            // استدعاء الأصلي إذا كان موجودًا (لحفظ محلي إضافي)
+            if (typeof originalSaveAll === 'function') {
+                try {
+                    originalSaveAll.apply(this, arguments);
+                } catch (e) {
+                    console.warn('DataManager.saveAllData الأصلية فشلت:', e);
+                }
+            }
+            // مزامنة فورية مع Firebase
+            syncToFirebase();
+        };
+
+        console.log('🔗 تم دمج المزامنة مع DataManager');
+    }
+
+    // ---------- بدء التشغيل ----------
+    function init() {
+        // الانتظار حتى تكون state و firebase جاهزين
+        if (typeof state !== 'undefined' && typeof firebase !== 'undefined') {
+            watchState();
+            integrateWithDataManager();
+            // أول مزامنة فورية (ضمان وجود البيانات)
+            syncToFirebase();
+            console.log('✅ المزامنة التلقائية مع Firebase جاهزة');
+        } else {
+            console.warn('state أو firebase غير متاحة بعد، إعادة المحاولة...');
+            setTimeout(init, 100);
+        }
+    }
+
+    // تشغيل بعد تحميل DOM أو متى أصبحت المكونات متاحة
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
