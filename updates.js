@@ -3356,3 +3356,143 @@
         init();
     }
 })();
+// ====== تحديث: مزامنة فائقة السرعة + تحميل فوري مع تخزين محلي ======
+(function() {
+    console.log('⚡ تحميل: نظام المزامنة الفورية + الكاش المحلي');
+
+    if (typeof firebase === 'undefined') {
+        console.warn('⚠️ Firebase غير موجود');
+        return;
+    }
+
+    // ---------- 1. تفعيل التخزين المؤقت (لتحميل فائق السرعة) ----------
+    firebase.database().setPersistenceEnabled(true)
+        .then(function() {
+            console.log('💾 التخزين المؤقت المحلي مفعّل – التحميل صار فوري');
+            // بعد تفعيل التخزين، نبدأ المزامنة التلقائية
+            initSync();
+        })
+        .catch(function(err) {
+            if (err.code === 'failed-precondition') {
+                console.warn('⚠️ لا يمكن تفعيل التخزين المؤقت (ربما مفتوح في نافذة أخرى بالفعل)');
+            } else {
+                console.error('❌ فشل تفعيل التخزين المؤقت', err);
+            }
+            // حتى لو فشل، نبدأ المزامنة بدون كاش
+            initSync();
+        });
+
+    // ---------- 2. إعداد المزامنة الفورية ----------
+    var isSyncing = false;
+
+    function getFirebaseRef() {
+        var branchId = (typeof state !== 'undefined' && state.branchId) ? state.branchId : 'default';
+        return firebase.database().ref('drmedia/' + branchId);
+    }
+
+    function syncToFirebase() {
+        if (isSyncing) return;
+        if (typeof state === 'undefined') return;
+
+        isSyncing = true;
+        var dataToSave = {
+            bookings: state.bookings || [],
+            employees: state.employees || [],
+            halls: state.halls || [],
+            messageLog: state.messageLog || [],
+            autoMessageSettings: state.autoMessageSettings || { distribute: true, reminder: true, attendance: false },
+            branchId: state.branchId || 'default'
+        };
+
+        getFirebaseRef().set(dataToSave)
+            .then(function() {
+                console.log('💾 حفظ فوري');
+                isSyncing = false;
+            })
+            .catch(function(error) {
+                console.error('❌ فشل الحفظ', error.message);
+                isSyncing = false;
+            });
+    }
+
+    // ---------- 3. مراقبة التغييرات (Proxy) + مزامنة لحظية ----------
+    function watchState() {
+        if (typeof state === 'undefined') return;
+
+        // Deep Proxy لمراقبة أي تغيير
+        function deepProxy(obj) {
+            if (obj === null || typeof obj !== 'object' || obj instanceof Date) return obj;
+
+            return new Proxy(obj, {
+                set(target, prop, value) {
+                    target[prop] = value;
+                    syncToFirebase(); // مباشر بدون تأخير
+                    return true;
+                },
+                deleteProperty(target, prop) {
+                    if (prop in target) {
+                        delete target[prop];
+                        syncToFirebase();
+                    }
+                    return true;
+                },
+                get(target, prop) {
+                    var val = target[prop];
+                    if (Array.isArray(val)) {
+                        // proxy خاص للمصفوفات عشان push, splice إلخ
+                        return new Proxy(val, {
+                            set(arrTarget, arrProp, arrValue) {
+                                arrTarget[arrProp] = arrValue;
+                                syncToFirebase();
+                                return true;
+                            },
+                            get(arrTarget, arrProp) {
+                                var arrVal = arrTarget[arrProp];
+                                if (typeof arrVal === 'function') {
+                                    return function() {
+                                        var result = Array.prototype[arrProp].apply(arrTarget, arguments);
+                                        var mutating = ['push','pop','shift','unshift','splice','sort','reverse'];
+                                        if (mutating.includes(arrProp)) syncToFirebase();
+                                        return result;
+                                    };
+                                }
+                                return arrVal;
+                            }
+                        });
+                    } else if (typeof val === 'object' && val !== null) {
+                        return deepProxy(val);
+                    }
+                    return val;
+                }
+            });
+        }
+
+        var rawState = state;
+        state = deepProxy(rawState);
+        console.log('👁️ المراقبة الفورية نشطة');
+    }
+
+    // ---------- 4. دمج مع DataManager ----------
+    function integrateDataManager() {
+        if (typeof DataManager === 'undefined') return;
+        var origSave = DataManager.saveAllData;
+        DataManager.saveAllData = function() {
+            if (origSave) origSave.apply(this, arguments);
+            syncToFirebase();
+        };
+        console.log('🔗 DataManager مدمج مع المزامنة');
+    }
+
+    // ---------- 5. بدء التشغيل ----------
+    function initSync() {
+        if (typeof state === 'undefined') {
+            setTimeout(initSync, 100);
+            return;
+        }
+        watchState();
+        integrateDataManager();
+        // أول مزامنة لضمان تحميل بيانات الكاش
+        // (لاحظ: مع التخزين المؤقت، ما يحتاج نستنى Firebase)
+        console.log('✅ النظام جاهز: حفظ فوري + تحميل سريع');
+    }
+})();
