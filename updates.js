@@ -2989,3 +2989,160 @@
     window.addEventListener('DOMContentLoaded', function() { waitForApp(init); });
     if (document.readyState !== 'loading') waitForApp(init);
 })();
+// ===================== تحديث إضافة الحجوزات المجمعة =====================
+// أضف هذا الكود في ملفك الرئيسي داخل <script>
+
+// متغير لتخزين التواريخ المحددة من التقويم
+let selectedDatesForBulk = new Set();
+
+// دالة عرض نافذة الحجز المجمع
+window.showBulkBookingModal = function() {
+    // إنشاء التقويم
+    const currentDate = new Date();
+    let currentYear = currentDate.getFullYear();
+    let currentMonth = currentDate.getMonth();
+    
+    function renderBulkCalendar(year, month) {
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysCount = new Date(year, month + 1, 0).getDate();
+        const monthNames = ['يناير', 'فبراير', 'مارس', 'إبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+        
+        // الحصول على التواريخ المحجوزة حالياً
+        const bookedDates = new Set(bookings.map(b => b.date));
+        
+        let calendarHtml = `
+            <div class="flex justify-between items-center mb-3">
+                <button onclick="changeBulkMonth(-1)" class="bg-gray-300 px-3 py-1 rounded-xl"><i class="fas fa-chevron-right"></i></button>
+                <h3 class="text-lg font-bold">${monthNames[month]} ${year}</h3>
+                <button onclick="changeBulkMonth(1)" class="bg-gray-300 px-3 py-1 rounded-xl"><i class="fas fa-chevron-left"></i></button>
+            </div>
+            <div class="calendar-grid">
+        `;
+        
+        // أيام الأسبوع
+        ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].forEach(day => {
+            calendarHtml += `<div class="text-center font-bold text-gray-500 py-2">${day}</div>`;
+        });
+        
+        // أيام فارغة قبل أول يوم
+        for (let i = 0; i < firstDay; i++) {
+            calendarHtml += `<div></div>`;
+        }
+        
+        // أيام الشهر
+        for (let d = 1; d <= daysCount; d++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const isBooked = bookedDates.has(dateStr);
+            const isSelected = selectedDatesForBulk.has(dateStr);
+            const selectedClass = isSelected ? 'bg-emerald-600 text-white' : (isBooked ? 'bg-gray-300 text-gray-500 line-through cursor-not-allowed' : 'bg-white hover:bg-emerald-100 cursor-pointer');
+            const onclickAttr = !isBooked ? `onclick="toggleBulkDateSelection('${dateStr}')"` : '';
+            
+            calendarHtml += `
+                <div class="border rounded-xl p-3 text-center transition ${selectedClass}" ${onclickAttr}>
+                    ${d}
+                    ${isSelected ? '<i class="fas fa-check-circle text-xs block"></i>' : ''}
+                </div>
+            `;
+        }
+        calendarHtml += `</div>`;
+        return calendarHtml;
+    }
+    
+    function refreshBulkCalendar() {
+        const calendarContainer = document.getElementById('bulkCalendarContainer');
+        if (calendarContainer) {
+            calendarContainer.innerHTML = renderBulkCalendar(currentYear, currentMonth);
+        }
+        document.getElementById('selectedCountDisplay').innerText = selectedDatesForBulk.size;
+    }
+    
+    window.changeBulkMonth = function(delta) {
+        currentMonth += delta;
+        if (currentMonth < 0) {
+            currentMonth = 11;
+            currentYear--;
+        } else if (currentMonth > 11) {
+            currentMonth = 0;
+            currentYear++;
+        }
+        refreshBulkCalendar();
+    };
+    
+    window.toggleBulkDateSelection = function(dateStr) {
+        if (selectedDatesForBulk.has(dateStr)) {
+            selectedDatesForBulk.delete(dateStr);
+        } else {
+            selectedDatesForBulk.add(dateStr);
+        }
+        refreshBulkCalendar();
+    };
+    
+    const hallOptions = halls.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+    
+    const modalHtml = `
+        <h3 class="text-xl font-bold mb-3 text-center">📅 حجز مجمع - اختر التواريخ</h3>
+        <div id="bulkCalendarContainer" class="mb-3">${renderBulkCalendar(currentYear, currentMonth)}</div>
+        <div class="flex justify-between items-center mb-3 bg-gray-100 p-2 rounded-xl">
+            <span class="font-bold">التواريخ المحددة:</span>
+            <span id="selectedCountDisplay" class="bg-emerald-600 text-white px-3 py-1 rounded-full">0</span>
+        </div>
+        <div class="mb-3">
+            <label class="block text-sm font-bold mb-1">اختر القاعة:</label>
+            <select id="bulkHallId" class="w-full border rounded-xl p-2">${hallOptions}</select>
+        </div>
+        <div class="mb-3">
+            <label class="block text-sm font-bold mb-1">اسم العميل (اختياري):</label>
+            <input type="text" id="bulkClientName" placeholder="سيضاف لكل حجز" class="w-full border rounded-xl p-2">
+        </div>
+        <div class="mb-3">
+            <label class="block text-sm font-bold mb-1">السعر الأساسي:</label>
+            <input type="number" id="bulkPrice" value="2500" class="w-full border rounded-xl p-2">
+        </div>
+        <div class="flex gap-2 mt-3">
+            <button onclick="saveBulkBookings()" class="bg-emerald-700 text-white flex-1 py-2 rounded-xl">💾 حفظ الحجوزات</button>
+            <button onclick="selectedDatesForBulk.clear(); refreshBulkCalendar();" class="bg-gray-500 text-white flex-1 py-2 rounded-xl">🗑️ إلغاء التحديد</button>
+        </div>
+    `;
+    
+    document.getElementById('modalContent').innerHTML = modalHtml;
+    document.getElementById('modal').classList.remove('hidden');
+};
+
+// حفظ الحجوزات المجمعة
+window.saveBulkBookings = function() {
+    if (selectedDatesForBulk.size === 0) {
+        alert("⚠️ لم تختر أي تاريخ. اختر تاريخاً من التقويم أولاً.");
+        return;
+    }
+    
+    const hallId = document.getElementById('bulkHallId').value;
+    const hall = halls.find(h => h.id === hallId);
+    const clientNameBase = document.getElementById('bulkClientName').value || "حجز مجمع";
+    const price = parseInt(document.getElementById('bulkPrice').value) || 2500;
+    
+    let addedCount = 0;
+    const datesList = Array.from(selectedDatesForBulk);
+    
+    for (let date of datesList) {
+        const newBooking = {
+            id: Date.now().toString() + Math.random().toString(36),
+            clientName: `${clientNameBase} (${date})`,
+            phone: "",
+            hallId: hallId,
+            hallName: hall ? hall.name : "قاعة",
+            date: date,
+            price: price,
+            assignedEmployees: []
+        };
+        bookings.push(newBooking);
+        addedCount++;
+    }
+    
+    saveAllData();
+    autoDistribute();
+    renderBookingsContent();
+    renderDistributionContent();
+    closeModal();
+    selectedDatesForBulk.clear();
+    showMsg(`✅ تم إضافة ${addedCount} حجز بنجاح في التواريخ المحددة`);
+};
