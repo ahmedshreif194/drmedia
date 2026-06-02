@@ -2211,6 +2211,45 @@
         });
     });
 })();
+// أضف هذا الكود في نهاية الملف (قبل </script>)
+setTimeout(() => {
+    const addButton = () => {
+        const tabsContainer = document.getElementById('tabsContainer');
+        if (!tabsContainer) return;
+        
+        // انتظر حتى يتم تحميل تبويب الحجوزات
+        const checkBookingsTab = setInterval(() => {
+            const bookingsTab = document.getElementById('bookingsTab');
+            if (bookingsTab && bookingsTab.innerHTML.includes('حجز جديد')) {
+                clearInterval(checkBookingsTab);
+                
+                // البحث عن أزرار الحجوزات
+                const buttonsDiv = bookingsTab.querySelector('.flex.gap-2');
+                if (buttonsDiv && !buttonsDiv.querySelector('.bulk-btn')) {
+                    const bulkBtn = document.createElement('button');
+                    bulkBtn.className = 'bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-xl transition bulk-btn';
+                    bulkBtn.innerHTML = '<i class="fas fa-calendar-plus ml-1"></i> حجز مجمع';
+                    bulkBtn.onclick = () => showBulkBookingModal();
+                    
+                    // إضافة الزر
+                    const addBtn = buttonsDiv.querySelector('button:first-child');
+                    if (addBtn && addBtn.nextSibling) {
+                        buttonsDiv.insertBefore(bulkBtn, addBtn.nextSibling);
+                    } else {
+                        buttonsDiv.appendChild(bulkBtn);
+                    }
+                }
+            }
+        }, 500);
+    };
+    
+    // تأكد من تحميل الصفحة أولاً
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addButton);
+    } else {
+        addButton();
+    }
+}, 1000);
     </script>
 </body>
 </html>
