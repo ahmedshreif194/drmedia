@@ -3496,42 +3496,45 @@
         console.log('✅ النظام جاهز: حفظ فوري + تحميل سريع');
     }
 })();
-// ====== إصلاح: تعطيل أزرار التوزيع القديمة وتوحيد التوزيع ======
+// ====== تعطيل أي أزرار توزيع قديمة وحماية الكافيه ======
 (function() {
-    console.log('🟢 إصلاح: تعطيل التوزيعات المتضاربة');
-
-    // تعطيل الأزرار الإضافية القديمة (العادل، غير المعينين، الاستكمال)
-    // عن طريق إزالتها إن وجدت، أو منع إضافتها
-    var observer = new MutationObserver(function() {
-        var btns = document.querySelectorAll(
-            '#fairDistributeBtn, #distributeUnassignedBtn, #equalizeDistBtn'
-        );
-        btns.forEach(function(btn) {
-            btn.style.display = 'none'; // إخفاء تام
+    // مراقبة وإخفاء أزرار التوزيع القديمة
+    setInterval(function() {
+        var oldBtns = document.querySelectorAll('#fairDistributeBtn, #distributeUnassignedBtn, #equalizeDistBtn');
+        oldBtns.forEach(function(btn) {
+            btn.style.display = 'none';
             btn.disabled = true;
         });
-    });
-    observer.observe(document.getElementById('app') || document.body, {
-        childList: true,
-        subtree: true
-    });
-
-    // تأكد إن نظام التوزيع الجديد هو الوحيد المستخدم
-    if (typeof DistributionManager !== 'undefined') {
-        // لو فيه دالة توزيع قديمة، نعطلها
-        if (DistributionManager._oldSmartDistribute) {
-            DistributionManager.smartDistribute = DistributionManager._oldSmartDistribute;
-        }
-        // ربط الأزرار الأصلية (لو موجودة) بالدوال الجديدة
-        // غالباً الأزرار الأصلية اسمها 'distributeAllBtn' إلخ
-    }
-
-    console.log('✅ تم تعطيل التوزيعات المتضاربة');
-})();
-// تعطيل أزرار التوزيع القديمة (إن وجدت)
-(function() {
-    setInterval(() => {
-        const oldBtns = document.querySelectorAll('#fairDistributeBtn, #distributeUnassignedBtn, #equalizeDistBtn');
-        oldBtns.forEach(b => { b.style.display = 'none'; b.disabled = true; });
     }, 500);
+
+    // تجاوز أي استدعاء قديم لـ smartDistribute (تأمين)
+    if (typeof DistributionManager !== 'undefined') {
+        var origSmart = DistributionManager.smartDistribute;
+        DistributionManager.smartDistribute = async function() {
+            // نستدعي الأصلية التي قمنا بتعديلها في main
+            await origSmart.apply(this, arguments);
+            // بعد التوزيع، فحص سريع للكافيه
+            var cafeBookings = state.bookings.filter(function(b) {
+                var hall = state.halls.find(h => h.id === b.hallId);
+                return hall && hall.type === 'cafe' && !b.deleted;
+            });
+            cafeBookings.forEach(function(b) {
+                var photos = (b.assignedEmployees || []).filter(function(eid) {
+                    var emp = state.employees.find(e => e.id === eid);
+                    return emp && emp.role === 'مصور';
+                });
+                if (photos.length > 1) {
+                    console.error('❌ خطأ: الكافيه لديه ' + photos.length + ' مصورين. جارٍ الإصلاح...');
+                    // إبقاء المصور الأول فقط
+                    var kept = photos[0];
+                    b.assignedEmployees = b.assignedEmployees.filter(function(eid) {
+                        var emp = state.employees.find(e => e.id === eid);
+                        return !(emp && emp.role === 'مصور') || eid === kept;
+                    });
+                    DataManager.saveAllData();
+                }
+            });
+        };
+    }
+    console.log('🛡️ تم تفعيل حماية الكافيه (مصور واحد)');
 })();
