@@ -1685,3 +1685,217 @@
         console.log('✅ زر توزيع غير المعينين جاهز');
     });
 })();
+// ====== تحديث: التحكم في إرسال رسائل التوزيع + نطاق التاريخ ======
+(function() {
+    console.log('🟢 تحميل: نظام التحكم في إرسال رسائل التوزيع ونطاق التاريخ');
+
+    // إعدادات افتراضية
+    if (!state.distSettings) {
+        state.distSettings = JSON.parse(localStorage.getItem('drmedia_dist_settings') || '{"messageMode":"auto","dateRangeEnabled":false,"dateFrom":"","dateTo":""}');
+    }
+
+    function saveDistSettings() {
+        localStorage.setItem('drmedia_dist_settings', JSON.stringify(state.distSettings));
+    }
+
+    // دالة مساعدة: فلترة الحجوزات حسب النطاق إن وجد
+    function getFilteredPending() {
+        var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (state.distSettings.dateRangeEnabled && state.distSettings.dateFrom && state.distSettings.dateTo) {
+            pending = pending.filter(b => b.date >= state.distSettings.dateFrom && b.date <= state.distSettings.dateTo);
+        }
+        return pending;
+    }
+
+    // دالة إرسال رسائل التأكيد اليدوية
+    function showManualMessagePrompt(bookings) {
+        // تجميع كل الموظفين المعينين والرسائل المخصصة
+        var messages = [];
+        bookings.forEach(function(b) {
+            (b.assignedEmployees || []).forEach(function(eid) {
+                var emp = state.employees.find(e => e.id === eid);
+                if (!emp || !emp.phone) return;
+                var hallType = (state.halls.find(h => h.id === b.hallId) || {}).type || '';
+                var msg = `تم تعيينك في أوردر: ${b.clientName} – ${b.hallName} – ${b.date}`;
+                messages.push({ emp: emp, booking: b, defaultMsg: msg, sendSMS: true, sendWA: true, customMsg: msg });
+            });
+        });
+
+        if (messages.length === 0) {
+            Utils.showMsg('ℹ️ لا توجد أرقام هواتف لإرسال رسائل');
+            return;
+        }
+
+        // إزالة التكرار لنفس الموظف (قد يكون لديه أكثر من حجز في اليوم، ندمج)
+        var unique = {};
+        messages.forEach(function(m) {
+            if (!unique[m.emp.id]) {
+                unique[m.emp.id] = { emp: m.emp, bookings: [m.booking], defaultMsg: m.defaultMsg, sendSMS: true, sendWA: true, customMsg: m.defaultMsg };
+            } else {
+                unique[m.emp.id].bookings.push(m.booking);
+                // دمج الأوردرات في رسالة واحدة
+                unique[m.emp.id].defaultMsg = unique[m.emp.id].bookings.map(function(b) {
+                    return `أوردر: ${b.clientName} – ${b.hallName} – ${b.date}`;
+                }).join('\n');
+                unique[m.emp.id].customMsg = unique[m.emp.id].defaultMsg;
+            }
+        });
+
+        var employeeList = Object.values(unique);
+        var html = `<h3 class="text-xl font-bold mb-4">📤 تأكيد إرسال رسائل التوزيع</h3>
+        <p class="text-sm text-gray-500 mb-2">يمكنك تعديل النص أو تعطيل الإرسال لكل موظف</p>
+        <div class="max-h-96 overflow-y-auto">`;
+
+        employeeList.forEach(function(item, index) {
+            html += `
+            <div class="border rounded-xl p-3 mb-3 bg-gray-50 dark:bg-gray-800">
+                <div class="flex items-center gap-2 mb-2">
+                    <strong>${item.emp.name}</strong> <small>(${item.emp.phone})</small>
+                </div>
+                <textarea id="msg_${index}" class="w-full border p-2 rounded-lg text-sm" rows="2">${item.customMsg}</textarea>
+                <div class="flex gap-4 mt-2 text-sm">
+                    <label><input type="checkbox" class="sendWA_${index}" checked> 💬 واتساب</label>
+                    <label><input type="checkbox" class="sendSMS_${index}" checked> 📱 SMS</label>
+                </div>
+            </div>`;
+        });
+
+        html += `</div>
+        <div class="flex gap-2 mt-4">
+            <button onclick="window._confirmManualSend()" class="btn-primary flex-1">✅ إرسال المحدد</button>
+            <button onclick="Utils.closeModal()" class="btn-outline flex-1">تخطي الإرسال</button>
+        </div>`;
+
+        Utils.openModal(html);
+
+        // تخزين البيانات مؤقتاً لاستخدامها عند التأكيد
+        window._manualSendData = { employeeList: employeeList };
+    }
+
+    window._confirmManualSend = async function() {
+        var data = window._manualSendData;
+        if (!data) return;
+        var totalSent = 0;
+        for (var i = 0; i < data.employeeList.length; i++) {
+            var item = data.employeeList[i];
+            var sendWA = document.querySelector('.sendWA_' + i)?.checked;
+            var sendSMS = document.querySelector('.sendSMS_' + i)?.checked;
+            var customMsg = document.getElementById('msg_' + i)?.value || item.defaultMsg;
+            if (sendWA) {
+                if (typeof window.sendWhatsAppReliable === 'function') {
+                    window.sendWhatsAppReliable(item.emp.phone, customMsg);
+                } else if (typeof window.sendWhatsAppAuto === 'function') {
+                    window.sendWhatsAppAuto(item.emp.phone, customMsg);
+                } else {
+                    var cleaned = item.emp.phone.replace(/[^0-9+]/g,'');
+                    if (cleaned.startsWith('0')) cleaned = '20' + cleaned.substring(1);
+                    if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
+                    window.open('https://wa.me/' + cleaned + '?text=' + encodeURIComponent(customMsg), '_blank');
+                }
+                totalSent++;
+            }
+            if (sendSMS && typeof window.sendSMS === 'function') {
+                await window.sendSMS(item.emp.phone, customMsg);
+            }
+            // تأخير بسيط
+            await new Promise(function(resolve) { setTimeout(resolve, 200); });
+        }
+        Utils.closeModal();
+        Utils.showMsg('✅ تم إرسال ' + totalSent + ' رسالة');
+    };
+
+    // استبدال دوال التوزيع لتراعي النطاق ووضع الرسائل
+    function patchDistributeFunctions() {
+        if (typeof DistributionManager === 'undefined') return;
+
+        // تجاوز distributeRemainingFairly
+        var origRemaining = DistributionManager.distributeRemainingFairly;
+        DistributionManager.distributeRemainingFairly = async function() {
+            await origRemaining.apply(this, arguments);
+            if (state.distSettings.messageMode === 'manual') {
+                var pending = getFilteredPending();
+                showManualMessagePrompt(pending.filter(b => (b.assignedEmployees || []).length > 0));
+            }
+        };
+
+        // تجاوز distributeUnassigned
+        var origUnassigned = DistributionManager.distributeUnassigned;
+        DistributionManager.distributeUnassigned = async function() {
+            await origUnassigned.apply(this, arguments);
+            if (state.distSettings.messageMode === 'manual') {
+                var pending = getFilteredPending();
+                showManualMessagePrompt(pending.filter(b => (b.assignedEmployees || []).length > 0));
+            }
+        };
+    }
+
+    // إضافة إعدادات التحكم في تبويب الرسائل
+    function injectSettingsInMessagesTab() {
+        var observer = new MutationObserver(function() {
+            var container = document.querySelector('#content-area .bg-card .grid');
+            if (container && !document.getElementById('distControlSection')) {
+                observer.disconnect();
+                var section = document.createElement('div');
+                section.id = 'distControlSection';
+                section.className = 'border p-4 rounded-xl mt-4';
+                section.innerHTML = `
+                    <h3 class="font-semibold mb-2">⚙️ إعدادات التوزيع والرسائل</h3>
+                    <label class="flex items-center gap-2 mb-2">
+                        <select id="distMessageMode" class="border p-1 rounded text-sm">
+                            <option value="auto" ${state.distSettings.messageMode === 'auto' ? 'selected' : ''}>📨 إرسال تلقائي</option>
+                            <option value="manual" ${state.distSettings.messageMode === 'manual' ? 'selected' : ''}>✋ يسأل قبل الإرسال</option>
+                        </select>
+                    </label>
+                    <label class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="distDateRangeEnabled" ${state.distSettings.dateRangeEnabled ? 'checked' : ''} onchange="window._toggleDistDateRange()"> تحديد نطاق تاريخ للتوزيع
+                    </label>
+                    <div id="distDateRangeFields" style="display:${state.distSettings.dateRangeEnabled ? 'block' : 'none'};" class="flex gap-2 items-center mb-2">
+                        <input type="date" id="distDateFrom" class="border p-2 rounded-xl text-sm flex-1" value="${state.distSettings.dateFrom || ''}">
+                        <span>إلى</span>
+                        <input type="date" id="distDateTo" class="border p-2 rounded-xl text-sm flex-1" value="${state.distSettings.dateTo || ''}">
+                    </div>
+                    <button onclick="window._saveDistSettings()" class="btn-primary text-sm w-full">💾 حفظ الإعدادات</button>
+                `;
+                container.parentNode.insertBefore(section, container.nextSibling);
+            }
+        });
+        observer.observe(document.getElementById('content-area'), { childList: true, subtree: true });
+    }
+
+    window._toggleDistDateRange = function() {
+        var enabled = document.getElementById('distDateRangeEnabled').checked;
+        document.getElementById('distDateRangeFields').style.display = enabled ? 'block' : 'none';
+    };
+
+    window._saveDistSettings = function() {
+        state.distSettings.messageMode = document.getElementById('distMessageMode').value;
+        state.distSettings.dateRangeEnabled = document.getElementById('distDateRangeEnabled').checked;
+        state.distSettings.dateFrom = document.getElementById('distDateFrom').value;
+        state.distSettings.dateTo = document.getElementById('distDateTo').value;
+        saveDistSettings();
+        Utils.showMsg('✅ تم حفظ إعدادات التوزيع والرسائل');
+    };
+
+    // بدء التعديلات بعد الجاهزية
+    function init() {
+        patchDistributeFunctions();
+        // ننتظر حتى يتم رسم تبويب الرسائل لإضافة الإعدادات
+        var checkTab = setInterval(function() {
+            if (document.querySelector('#content-area .bg-card .grid')) {
+                injectSettingsInMessagesTab();
+                clearInterval(checkTab);
+            }
+        }, 500);
+        console.log('✅ نظام التحكم في رسائل التوزيع ونطاق التاريخ جاهز');
+    }
+
+    window.addEventListener('DOMContentLoaded', function() {
+        var wait = setInterval(function() {
+            if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') {
+                clearInterval(wait);
+                init();
+            }
+        }, 50);
+    });
+    if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
+})();
