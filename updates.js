@@ -3494,3 +3494,39 @@
 
     console.log('✅ زر استكمال التوزيع بالتساوي جاهز');
 })();
+// ====== تحديث: توزيع الكل باستخدام distributeSingle الموثوق ======
+(function() {
+    if (typeof DistributionManager === 'undefined') return;
+    // نحفظ المرجع الأصلي لـ distributeSingle
+    var origDistributeSingle = DistributionManager.distributeSingle;
+    // نعيد تعريف smartDistribute
+    DistributionManager.smartDistribute = async function() {
+        var pending = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted;
+        });
+        if (!pending.length) {
+            Utils.showWarning('لا توجد حجوزات معلقة');
+            return;
+        }
+        // نمسح التوزيعات القديمة
+        pending.forEach(function(b) { b.assignedEmployees = []; });
+        await DataManager.saveAllData();
+
+        // نوزع كل حجز باستخدام distributeSingle الأصلي
+        for (var i = 0; i < pending.length; i++) {
+            await origDistributeSingle.call(DistributionManager, pending[i].id);
+        }
+        // التحديث النهائي
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg('✅ تم توزيع ' + pending.length + ' حجز');
+    };
+
+    // نضمن أيضاً rotateDistribution
+    DistributionManager.rotateDistribution = async function() {
+        await DistributionManager.smartDistribute();
+    };
+    console.log('✅ توزيع الكل الموثوق جاهز');
+})();
