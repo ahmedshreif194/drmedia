@@ -1927,3 +1927,181 @@
     });
     if (typeof AppRenderer !== 'undefined' && typeof state !== 'undefined') init();
 })();
+// ====== تحديث: زر التوزيع العادل الكامل (Round‑Robin) ======
+(function() {
+    console.log('🟢 تحميل: زر التوزيع العادل الكامل');
+
+    if (typeof DistributionManager === 'undefined') {
+        console.warn('DistributionManager غير موجود');
+        return;
+    }
+
+    // دالة التوزيع العادل الكامل (Round‑Robin لكل دور)
+    DistributionManager.forceFullFairDistribution = async function() {
+        var pending = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted;
+        });
+
+        if (!pending.length) {
+            Utils.showWarning('لا توجد حجوزات معلقة');
+            return;
+        }
+
+        // 1. مسح جميع التوزيعات السابقة
+        pending.forEach(function(b) { b.assignedEmployees = []; });
+
+        // 2. تجميع الموظفين النشطين حسب الدور
+        var roles = {};
+        state.employees.filter(function(e) { return e.active; }).forEach(function(e) {
+            var role = (e.role || '').trim();
+            if (!roles[role]) roles[role] = [];
+            roles[role].push(e);
+        });
+
+        // 3. تحضير قائمة "الفتحات" المطلوبة لكل يوم
+        var slotsByDate = {};
+        pending.forEach(function(b) {
+            var hall = state.halls.find(function(h) { return h.id === b.hallId; });
+            var isCafe = hall && hall.type === 'cafe';
+            var neededRoles = isCafe ? [{ role: 'مصور', count: 1 }] : [
+                { role: 'مخرج', count: 1 },
+                { role: 'مصور', count: 2 },
+                { role: 'كرين', count: 1 }
+            ];
+            if (!slotsByDate[b.date]) slotsByDate[b.date] = [];
+            neededRoles.forEach(function(req) {
+                for (var i = 0; i < req.count; i++) {
+                    slotsByDate[b.date].push({ booking: b, role: req.role });
+                }
+            });
+        });
+
+        // 4. لكل دور، نوزع الفتحات بالترتيب الدائري عبر كل الأيام
+        var busyPerDay = {}; // { date: Set(empId) }
+        var allDates = Object.keys(slotsByDate).sort();
+
+        // دالة لتوزيع فتحات دور معين
+        function assignRole(role) {
+            var employees = roles[role];
+            if (!employees || employees.length === 0) return;
+
+            // جمع كل فتحات هذا الدور عبر كل الأيام (مرتبة حسب التاريخ)
+            var allSlots = [];
+            allDates.forEach(function(date) {
+                slotsByDate[date].forEach(function(slot) {
+                    if (slot.role === role) allSlots.push({ date: date, booking: slot.booking });
+                });
+            });
+
+            // ترتيب الفتحات حسب التاريخ
+            allSlots.sort(function(a, b) { return a.date.localeCompare(b.date); });
+
+            // مؤشر دائري
+            var idx = 0;
+            // حساب عدد الأوردرات الحالية لكل موظف (قبل التوزيع)
+            var orderCounts = {};
+            employees.forEach(function(e) { orderCounts[e.id] = 0; });
+
+            for (var s = 0; s < allSlots.length; s++) {
+                var slot = allSlots[s];
+                var date = slot.date;
+                if (!busyPerDay[date]) busyPerDay[date] = new Set();
+
+                // البحث عن موظف متاح بدءاً من المؤشر الحالي
+                var assigned = false;
+                for (var attempt = 0; attempt < employees.length; attempt++) {
+                    var candidate = employees[(idx + attempt) % employees.length];
+                    if (!busyPerDay[date].has(candidate.id) && !slot.booking.assignedEmployees.includes(candidate.id)) {
+                        slot.booking.assignedEmployees.push(candidate.id);
+                        busyPerDay[date].add(candidate.id);
+                        orderCounts[candidate.id]++;
+                        idx = (idx + attempt + 1) % employees.length; // تحريك المؤشر بعد من تم اختياره
+                        assigned = true;
+                        break;
+                    }
+                }
+                // إذا لم نجد أحداً (نادر جداً)، نبحث عن أي موظف غير مشغول
+                if (!assigned) {
+                    for (var a = 0; a < employees.length; a++) {
+                        var emp = employees[a];
+                        if (!busyPerDay[date].has(emp.id) && !slot.booking.assignedEmployees.includes(emp.id)) {
+                            slot.booking.assignedEmployees.push(emp.id);
+                            busyPerDay[date].add(emp.id);
+                            orderCounts[emp.id]++;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // تنفيذ التوزيع لكل دور (الترتيب: مخرج، كرين، مصور لتقليل التعارض)
+        assignRole('مخرج');
+        assignRole('كرين');
+        assignRole('مصور');
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        // إظهار إحصائية سريعة
+        var stats = {};
+        state.employees.forEach(function(e) {
+            var count = state.bookings.filter(function(b) {
+                return !b.deleted && b.status !== 'cancelled' &&
+                       (b.assignedEmployees || []).indexOf(e.id) !== -1;
+            }).length;
+            stats[e.name] = count;
+        });
+
+        var report = Object.entries(stats).map(function(entry) {
+            return entry[0] + ': ' + entry[1];
+        }).join('، ');
+
+        Utils.openModal(`
+            <h3 class="font-bold mb-2">✅ توزيع عادل كامل</h3>
+            <p class="text-sm text-gray-500 mb-2">تم توزيع ${pending.length} حجز</p>
+            <p class="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">${report}</p>
+            <button onclick="Utils.closeModal()" class="btn-primary mt-3 w-full">حسناً</button>
+        `);
+
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+    };
+
+    // إضافة الزر للواجهة
+    function injectButton() {
+        var observer = new MutationObserver(function() {
+            var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+            if (container && !document.getElementById('fullFairDistBtn')) {
+                var btn = document.createElement('button');
+                btn.id = 'fullFairDistBtn';
+                btn.className = 'btn-primary';
+                btn.style.cssText = 'background:#0d9488; color:white;';
+                btn.textContent = '⚖️ توزيع عادل كامل';
+                btn.onclick = function() {
+                    if (confirm('سيتم مسح جميع التوزيعات الحالية وإعادة توزيع كل الحجوزات المعلقة بعدالة تامة. هل تريد المتابعة؟')) {
+                        DistributionManager.forceFullFairDistribution();
+                    }
+                };
+                container.appendChild(btn);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    if (typeof AppRenderer !== 'undefined') {
+        injectButton();
+    } else {
+        window.addEventListener('DOMContentLoaded', function() {
+            var wait = setInterval(function() {
+                if (typeof AppRenderer !== 'undefined') {
+                    clearInterval(wait);
+                    injectButton();
+                }
+            }, 50);
+        });
+    }
+
+    console.log('✅ زر التوزيع العادل الكامل جاهز');
+})();
