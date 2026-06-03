@@ -3329,3 +3329,168 @@
     }
     console.log('🛡️ تم تفعيل حماية الكافيه (مصور واحد)');
 })();
+// ====== تحديث: استكمال التوزيع بالتساوي (يحافظ على اليدوي) ======
+(function() {
+    console.log('🟢 تحميل: زر استكمال التوزيع بالتساوي');
+
+    if (typeof DistributionManager === 'undefined') {
+        console.warn('DistributionManager غير موجود');
+        return;
+    }
+
+    // دالة استكمال التوزيع بالتساوي
+    DistributionManager.distributeRemainingFairly = async function() {
+        var pending = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted;
+        });
+
+        // نأخذ فقط الحجوزات التي لم تُوزع بعد (أو توزيعها فارغ)
+        var unassigned = pending.filter(function(b) {
+            return !b.assignedEmployees || b.assignedEmployees.length === 0;
+        });
+
+        if (!unassigned.length) {
+            Utils.showMsg('✅ جميع الحجوزات موزعة بالفعل');
+            return;
+        }
+
+        // تجميع الموظفين حسب الدور (نشطين فقط)
+        var byRole = {};
+        state.employees.filter(function(e) { return e.active; }).forEach(function(e) {
+            var role = (e.role || '').trim();
+            if (!byRole[role]) byRole[role] = [];
+            byRole[role].push(e);
+        });
+
+        // دالة للحصول على إجمالي الأوردرات الحالي للموظف (بما في ذلك التوزيعات اليدوية)
+        function getCurrentOrderCount(empId) {
+            return state.bookings.filter(function(b) {
+                return !b.deleted && b.status !== 'cancelled' &&
+                       (b.assignedEmployees || []).indexOf(empId) !== -1;
+            }).length;
+        }
+
+        // نرتب الحجوزات غير المعينة حسب التاريخ
+        unassigned.sort(function(a, b) { return a.date.localeCompare(b.date); });
+
+        // لكل حجز، نختار موظفين حسب الأدوار المطلوبة مع مراعاة العدالة والانشغال
+        for (var i = 0; i < unassigned.length; i++) {
+            var booking = unassigned[i];
+            var hall = state.halls.find(function(h) { return h.id === booking.hallId; });
+            var isCafe = hall && hall.type === 'cafe';
+            var requirements = isCafe ?
+                [{ role: 'مصور', count: 1 }] :
+                [
+                    { role: 'مخرج', count: 1 },
+                    { role: 'مصور', count: 2 },
+                    { role: 'كرين', count: 1 }
+                ];
+
+            var busyToday = new Set();
+            state.bookings.forEach(function(b) {
+                if (b.date === booking.date && !b.deleted && b.id !== booking.id) {
+                    (b.assignedEmployees || []).forEach(function(eid) { busyToday.add(eid); });
+                }
+            });
+
+            booking.assignedEmployees = booking.assignedEmployees || [];
+
+            for (var r = 0; r < requirements.length; r++) {
+                var req = requirements[r];
+                var role = req.role;
+                var needed = req.count;
+
+                // المرشحون حسب الدور، غير مشغولين اليوم، وغير معينين في نفس الحجز
+                var candidates = (byRole[role] || []).filter(function(emp) {
+                    if (busyToday.has(emp.id)) return false;
+                    if (booking.assignedEmployees.indexOf(emp.id) !== -1) return false;
+                    return true;
+                });
+
+                // ترتيب المرشحين: الأقل أوردرات أولاً (للعدالة)
+                candidates.sort(function(a, b) {
+                    return getCurrentOrderCount(a.id) - getCurrentOrderCount(b.id);
+                });
+
+                // نعين العدد المطلوب
+                for (var j = 0; j < needed && j < candidates.length; j++) {
+                    booking.assignedEmployees.push(candidates[j].id);
+                    busyToday.add(candidates[j].id);
+                }
+
+                // تحذير لو العدد ناقص
+                if (candidates.length < needed) {
+                    console.warn('⚠️ عدد غير كاف من ' + role + ' للحجز ' + booking.clientName + ' بتاريخ ' + booking.date);
+                }
+            }
+
+            // ضمان إضافي: الكافيه لا يأخذ أكثر من مصور
+            if (isCafe) {
+                var photographers = booking.assignedEmployees.filter(function(eid) {
+                    var emp = state.employees.find(function(e) { return e.id === eid; });
+                    return emp && emp.role === 'مصور';
+                });
+                if (photographers.length > 1) {
+                    // نبقي المصور الأقل أوردرات
+                    photographers.sort(function(a, b) {
+                        return getCurrentOrderCount(a) - getCurrentOrderCount(b);
+                    });
+                    booking.assignedEmployees = booking.assignedEmployees.filter(function(eid) {
+                        var emp = state.employees.find(function(e) { return e.id === eid; });
+                        return !(emp && emp.role === 'مصور') || eid === photographers[0];
+                    });
+                }
+            }
+        }
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        // عرض النتيجة
+        var stillUnassigned = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted &&
+                   (!b.assignedEmployees || b.assignedEmployees.length === 0);
+        }).length;
+
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg('✅ تم استكمال التوزيع بالتساوي. متبقي: ' + stillUnassigned + ' حجز غير موزع');
+        DataManager.addActivity('استكمال توزيع متساوي', 'تم توزيع ' + (unassigned.length - stillUnassigned) + ' حجز');
+    };
+
+    // إضافة الزر في صفحة التوزيع (أو الحجوزات)
+    function injectFairButton() {
+        // نتحقق كل فترة حتى تظهر واجهة التوزيع أو الحجوزات
+        var checkExist = setInterval(function() {
+            var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+            if (container && !document.getElementById('fairCompleteBtn')) {
+                clearInterval(checkExist);
+                var btn = document.createElement('button');
+                btn.id = 'fairCompleteBtn';
+                btn.className = 'btn-secondary';
+                btn.style.cssText = 'background:#8b5cf6; color:white;';
+                btn.textContent = '⚖️ استكمال توزيع متساوي';
+                btn.onclick = function() {
+                    DistributionManager.distributeRemainingFairly();
+                };
+                container.appendChild(btn);
+            }
+        }, 500);
+    }
+
+    // بدء الحقن
+    if (typeof AppRenderer !== 'undefined') {
+        injectFairButton();
+    } else {
+        window.addEventListener('DOMContentLoaded', function() {
+            var wait = setInterval(function() {
+                if (typeof AppRenderer !== 'undefined') {
+                    clearInterval(wait);
+                    injectFairButton();
+                }
+            }, 50);
+        });
+    }
+
+    console.log('✅ زر استكمال التوزيع بالتساوي جاهز');
+})();
