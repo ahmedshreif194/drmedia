@@ -1538,3 +1538,150 @@
         console.log('✅ زر استكمال التوزيع جاهز');
     });
 })();
+// ====== تحديث: زر توزيع غير المعينين ======
+(function() {
+    console.log('🟢 تحميل: زر توزيع غير المعينين');
+
+    function waitForApp(cb) {
+        if (typeof DistributionManager !== 'undefined' && typeof AppRenderer !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
+    }
+
+    DistributionManager.distributeUnassigned = async function() {
+        var unassigned = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted &&
+                   (!b.assignedEmployees || b.assignedEmployees.length === 0);
+        });
+
+        if (!unassigned.length) {
+            Utils.showMsg('✅ جميع الحجوزات موزعة بالفعل');
+            return;
+        }
+
+        var byRole = {};
+        state.employees.filter(function(e) { return e.active; }).forEach(function(e) {
+            var role = (e.role || '').trim();
+            if (!byRole[role]) byRole[role] = [];
+            byRole[role].push(e);
+        });
+
+        function getCurrentOrderCount(empId) {
+            return state.bookings.filter(function(b) {
+                return !b.deleted && b.status !== 'cancelled' &&
+                       (b.assignedEmployees || []).indexOf(empId) !== -1;
+            }).length;
+        }
+
+        unassigned.sort(function(a, b) { return a.date.localeCompare(b.date); });
+
+        // تجميع حسب اليوم لمنع التعارض
+        var byDate = {};
+        unassigned.forEach(function(b) {
+            if (!byDate[b.date]) byDate[b.date] = [];
+            byDate[b.date].push(b);
+        });
+
+        var dates = Object.keys(byDate).sort();
+        for (var d = 0; d < dates.length; d++) {
+            var date = dates[d];
+            var dayBookings = byDate[date];
+
+            var busyToday = new Set();
+            // جمع المشغولين فعلياً في هذا اليوم من التوزيعات السابقة
+            state.bookings.forEach(function(b) {
+                if (b.date === date && !b.deleted) {
+                    (b.assignedEmployees || []).forEach(function(eid) { busyToday.add(eid); });
+                }
+            });
+
+            for (var i = 0; i < dayBookings.length; i++) {
+                var booking = dayBookings[i];
+                var hall = state.halls.find(function(h) { return h.id === booking.hallId; });
+                var isCafe = hall && hall.type === 'cafe';
+                var requirements = isCafe ?
+                    [{ role: 'مصور', count: 1 }] :
+                    [
+                        { role: 'مخرج', count: 1 },
+                        { role: 'مصور', count: 2 },
+                        { role: 'كرين', count: 1 }
+                    ];
+
+                booking.assignedEmployees = booking.assignedEmployees || [];
+
+                for (var r = 0; r < requirements.length; r++) {
+                    var req = requirements[r];
+                    var role = req.role;
+                    var needed = req.count;
+
+                    var candidates = (byRole[role] || []).filter(function(emp) {
+                        if (busyToday.has(emp.id)) return false;
+                        if (booking.assignedEmployees.indexOf(emp.id) !== -1) return false;
+                        return true;
+                    });
+
+                    candidates.sort(function(a, b) {
+                        return getCurrentOrderCount(a.id) - getCurrentOrderCount(b.id);
+                    });
+
+                    for (var j = 0; j < needed && j < candidates.length; j++) {
+                        booking.assignedEmployees.push(candidates[j].id);
+                        busyToday.add(candidates[j].id);
+                    }
+                }
+
+                // حماية إضافية للكافيه
+                if (isCafe) {
+                    var photographers = booking.assignedEmployees.filter(function(eid) {
+                        var emp = state.employees.find(function(e) { return e.id === eid; });
+                        return emp && emp.role === 'مصور';
+                    });
+                    if (photographers.length > 1) {
+                        photographers.sort(function(a, b) {
+                            return getCurrentOrderCount(a) - getCurrentOrderCount(b);
+                        });
+                        booking.assignedEmployees = booking.assignedEmployees.filter(function(eid) {
+                            var emp = state.employees.find(function(e) { return e.id === eid; });
+                            return !(emp && emp.role === 'مصور') || eid === photographers[0];
+                        });
+                    }
+                }
+            }
+        }
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        var stillUnassigned = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted &&
+                   (!b.assignedEmployees || b.assignedEmployees.length === 0);
+        }).length;
+
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg('✅ تم توزيع غير المعينين. متبقي: ' + stillUnassigned + ' حجز');
+    };
+
+    function injectButton() {
+        var observer = new MutationObserver(function() {
+            var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+            if (container && !document.getElementById('distributeUnassignedBtn')) {
+                var btn = document.createElement('button');
+                btn.id = 'distributeUnassignedBtn';
+                btn.className = 'btn-secondary';
+                btn.style.cssText = 'background:#f97316; color:white;';
+                btn.textContent = '⚡ توزيع غير المعينين';
+                btn.onclick = function() {
+                    DistributionManager.distributeUnassigned();
+                };
+                container.appendChild(btn);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+    }
+
+    waitForApp(function() {
+        injectButton();
+        console.log('✅ زر توزيع غير المعينين جاهز');
+    });
+})();
