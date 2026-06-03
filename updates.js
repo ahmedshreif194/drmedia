@@ -3528,3 +3528,10 @@
 
     console.log('✅ تم تعطيل التوزيعات المتضاربة');
 })();
+// تعطيل أزرار التوزيع القديمة (إن وجدت)
+(function() {
+    setInterval(() => {
+        const oldBtns = document.querySelectorAll('#fairDistributeBtn, #distributeUnassignedBtn, #equalizeDistBtn');
+        oldBtns.forEach(b => { b.style.display = 'none'; b.disabled = true; });
+    }, 500);
+})();
