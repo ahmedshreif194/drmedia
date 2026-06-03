@@ -1388,20 +1388,21 @@
         init();
     }
 })();
-
-// ====== تحديث: استكمال التوزيع بالتساوي (يحافظ على اليدوي) ======
+// ====== تحديث: استكمال التوزيع بالتساوي (يحافظ على اليدوي) – مُصحَّح ======
 (function() {
-    console.log('🟢 تحميل: زر استكمال التوزيع بالتساوي');
+    console.log('🟢 تحميل: زر استكمال التوزيع بالتساوي (مُصحَّح)');
 
-    function waitForApp(cb) {
-        if (typeof DistributionManager !== 'undefined' && typeof AppRenderer !== 'undefined') cb();
-        else setTimeout(() => waitForApp(cb), 50);
+    if (typeof DistributionManager === 'undefined') {
+        console.warn('DistributionManager غير موجود');
+        return;
     }
 
     DistributionManager.distributeRemainingFairly = async function() {
         var pending = state.bookings.filter(function(b) {
             return b.status === 'pending' && !b.deleted;
         });
+
+        // الحجوزات اللي لسه متوزعتش (فاضية)
         var unassigned = pending.filter(function(b) {
             return !b.assignedEmployees || b.assignedEmployees.length === 0;
         });
@@ -1411,6 +1412,7 @@
             return;
         }
 
+        // تجميع الموظفين حسب الدور (نشطين فقط)
         var byRole = {};
         state.employees.filter(function(e) { return e.active; }).forEach(function(e) {
             var role = (e.role || '').trim();
@@ -1418,6 +1420,7 @@
             byRole[role].push(e);
         });
 
+        // دالة مساعدة: عدد الأوردرات الحالي للموظف (بما في ذلك التوزيعات اليدوية)
         function getCurrentOrderCount(empId) {
             return state.bookings.filter(function(b) {
                 return !b.deleted && b.status !== 'cancelled' &&
@@ -1425,63 +1428,91 @@
             }).length;
         }
 
+        // ترتيب الحجوزات غير المعينة حسب التاريخ
         unassigned.sort(function(a, b) { return a.date.localeCompare(b.date); });
 
-        for (var i = 0; i < unassigned.length; i++) {
-            var booking = unassigned[i];
-            var hall = state.halls.find(function(h) { return h.id === booking.hallId; });
-            var isCafe = hall && hall.type === 'cafe';
-            var requirements = isCafe ?
-                [{ role: 'مصور', count: 1 }] :
-                [
-                    { role: 'مخرج', count: 1 },
-                    { role: 'مصور', count: 2 },
-                    { role: 'كرين', count: 1 }
-                ];
+        // تجميع الحجوزات حسب اليوم عشان نمنع تعيين موظف في حجزين في نفس اليوم
+        var byDate = {};
+        unassigned.forEach(function(b) {
+            if (!byDate[b.date]) byDate[b.date] = [];
+            byDate[b.date].push(b);
+        });
 
+        // نعالج كل يوم على حدة
+        var dates = Object.keys(byDate).sort();
+        for (var d = 0; d < dates.length; d++) {
+            var date = dates[d];
+            var dayBookings = byDate[date];
+
+            // الموظفين المشغولين في هذا اليوم من التوزيعات السابقة (القديمة)
             var busyToday = new Set();
             state.bookings.forEach(function(b) {
-                if (b.date === booking.date && !b.deleted && b.id !== booking.id) {
+                if (b.date === date && !b.deleted && b.id !== bookingInLoop?.id) {
                     (b.assignedEmployees || []).forEach(function(eid) { busyToday.add(eid); });
                 }
             });
 
-            booking.assignedEmployees = booking.assignedEmployees || [];
+            // نوزع كل حجز في هذا اليوم
+            for (var i = 0; i < dayBookings.length; i++) {
+                var booking = dayBookings[i];
+                var hall = state.halls.find(function(h) { return h.id === booking.hallId; });
+                var isCafe = hall && hall.type === 'cafe';
+                var requirements = isCafe ?
+                    [{ role: 'مصور', count: 1 }] :
+                    [
+                        { role: 'مخرج', count: 1 },
+                        { role: 'مصور', count: 2 },
+                        { role: 'كرين', count: 1 }
+                    ];
 
-            for (var r = 0; r < requirements.length; r++) {
-                var req = requirements[r];
-                var role = req.role;
-                var needed = req.count;
+                booking.assignedEmployees = booking.assignedEmployees || [];
 
-                var candidates = (byRole[role] || []).filter(function(emp) {
-                    if (busyToday.has(emp.id)) return false;
-                    if (booking.assignedEmployees.indexOf(emp.id) !== -1) return false;
-                    return true;
-                });
+                for (var r = 0; r < requirements.length; r++) {
+                    var req = requirements[r];
+                    var role = req.role;
+                    var needed = req.count;
 
-                candidates.sort(function(a, b) {
-                    return getCurrentOrderCount(a.id) - getCurrentOrderCount(b.id);
-                });
+                    // المرشحون حسب الدور، غير مشغولين اليوم (بما في ذلك اللي تم تعيينهم في هذه الجولة) وغير معينين في نفس الحجز
+                    var candidates = (byRole[role] || []).filter(function(emp) {
+                        if (busyToday.has(emp.id)) return false;
+                        if (booking.assignedEmployees.indexOf(emp.id) !== -1) return false;
+                        return true;
+                    });
 
-                for (var j = 0; j < needed && j < candidates.length; j++) {
-                    booking.assignedEmployees.push(candidates[j].id);
-                    busyToday.add(candidates[j].id);
+                    // ترتيب المرشحين: الأقل أوردرات أولاً (عدالة)
+                    candidates.sort(function(a, b) {
+                        return getCurrentOrderCount(a.id) - getCurrentOrderCount(b.id);
+                    });
+
+                    // نعين العدد المطلوب
+                    for (var j = 0; j < needed && j < candidates.length; j++) {
+                        var chosen = candidates[j];
+                        booking.assignedEmployees.push(chosen.id);
+                        busyToday.add(chosen.id); // نمنعه من أي حجز تاني في نفس اليوم
+                    }
+
+                    // تحذير لو العدد ناقص
+                    if (candidates.length < needed) {
+                        console.warn('⚠️ عدد غير كاف من ' + role + ' للحجز ' + booking.clientName + ' بتاريخ ' + date);
+                    }
                 }
-            }
 
-            if (isCafe) {
-                var photographers = booking.assignedEmployees.filter(function(eid) {
-                    var emp = state.employees.find(function(e) { return e.id === eid; });
-                    return emp && emp.role === 'مصور';
-                });
-                if (photographers.length > 1) {
-                    photographers.sort(function(a, b) {
-                        return getCurrentOrderCount(a) - getCurrentOrderCount(b);
-                    });
-                    booking.assignedEmployees = booking.assignedEmployees.filter(function(eid) {
+                // حماية إضافية للكافيه: لو حصل خطأ واتضاف أكتر من مصور
+                if (isCafe) {
+                    var photographers = booking.assignedEmployees.filter(function(eid) {
                         var emp = state.employees.find(function(e) { return e.id === eid; });
-                        return !(emp && emp.role === 'مصور') || eid === photographers[0];
+                        return emp && emp.role === 'مصور';
                     });
+                    if (photographers.length > 1) {
+                        photographers.sort(function(a, b) {
+                            return getCurrentOrderCount(a) - getCurrentOrderCount(b);
+                        });
+                        booking.assignedEmployees = booking.assignedEmployees.filter(function(eid) {
+                            var emp = state.employees.find(function(e) { return e.id === eid; });
+                            return !(emp && emp.role === 'مصور') || eid === photographers[0];
+                        });
+                        // نرجع الموظفين اللي تمت إزالتهم إلى busyToday؟ هم ممنوعين بالفعل، لكن لا يهم.
+                    }
                 }
             }
         }
@@ -1497,8 +1528,10 @@
         AppRenderer.renderBookings();
         AppRenderer.renderDistribution();
         Utils.showMsg('✅ تم استكمال التوزيع بالتساوي. متبقي: ' + stillUnassigned + ' حجز غير موزع');
+        DataManager.addActivity('استكمال توزيع متساوي', 'تم توزيع ' + (unassigned.length - stillUnassigned) + ' حجز');
     };
 
+    // زر الاستكمال في الواجهة
     function injectFairButton() {
         var checkExist = setInterval(function() {
             var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
@@ -1509,16 +1542,26 @@
                 btn.className = 'btn-secondary';
                 btn.style.cssText = 'background:#8b5cf6; color:white;';
                 btn.textContent = '⚖️ استكمال توزيع متساوي';
-                btn.onclick = function() { DistributionManager.distributeRemainingFairly(); };
+                btn.onclick = function() {
+                    DistributionManager.distributeRemainingFairly();
+                };
                 container.appendChild(btn);
             }
         }, 500);
     }
 
-    window.addEventListener('DOMContentLoaded', function() { waitForApp(injectFairButton); });
-    if (document.readyState !== 'loading') waitForApp(injectFairButton);
+    if (typeof AppRenderer !== 'undefined') {
+        injectFairButton();
+    } else {
+        window.addEventListener('DOMContentLoaded', function() {
+            var wait = setInterval(function() {
+                if (typeof AppRenderer !== 'undefined') {
+                    clearInterval(wait);
+                    injectFairButton();
+                }
+            }, 50);
+        });
+    }
 
-    console.log('✅ زر استكمال التوزيع بالتساوي جاهز');
+    console.log('✅ زر استكمال التوزيع بالتساوي (مُصحَّح) جاهز');
 })();
-
-console.log('✅ تم تحميل جميع التحديثات بنجاح');
