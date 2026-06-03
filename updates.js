@@ -3496,3 +3496,197 @@
         console.log('✅ النظام جاهز: حفظ فوري + تحميل سريع');
     }
 })();
+// ====== تحديث: نظام التوزيع الذكي حسب الأدوار والقاعات ======
+(function() {
+    console.log('🟢 تحميل: نظام التوزيع الذكي للأدوار');
+
+    if (typeof DistributionManager === 'undefined') {
+        console.warn('DistributionManager غير موجود، إنشاء واحد جديد');
+        window.DistributionManager = {};
+    }
+
+    // إعدادات التوزيع: كل قاعة والأدوار المطلوبة
+    var ROLE_REQUIREMENTS = {
+        'default': [  // القاعتين الأساسيتين
+            { role: 'مخرج', count: 1 },
+            { role: 'مصور', count: 2 },
+            { role: 'كرين', count: 1 }
+        ],
+        'كافيه': [   // الكافيه
+            { role: 'مصور', count: 1 }
+        ]
+    };
+
+    function getRoleRequirements(hallName) {
+        // تطبيع الاسم
+        var name = (hallName || '').trim();
+        if (name === 'كافيه' || name === 'الكافيه') {
+            return ROLE_REQUIREMENTS['كافيه'];
+        }
+        return ROLE_REQUIREMENTS['default'];
+    }
+
+    // ---------- دالة التوزيع الأساسية ----------
+    function smartDistribute(booking) {
+        if (!booking || booking.deleted || booking.status !== 'pending') return;
+
+        // الأوردرات اللي اتوزعت قبل كده ما نلمسهاش
+        if (booking.assignedEmployees && booking.assignedEmployees.length > 0) return;
+
+        booking.assignedEmployees = [];
+        booking.assignedRoles = {}; // لحفظ الدور اللي اتعين به الموظف
+
+        var requirements = getRoleRequirements(booking.hallName);
+
+        // الموظفين المرتبطين أصلاً بالقاعة (إن وُجد حقل hallId أو hallRestriction)
+        // وإلا كل الموظفين اللي دورهم مناسب متاحين
+        var allEmployees = state.employees.filter(function(emp) {
+            return emp && !emp.deleted && emp.phone;
+        });
+
+        // تجميع الموظفين حسب الدور
+        var byRole = {};
+        allEmployees.forEach(function(emp) {
+            var role = (emp.role || '').trim();
+            if (!byRole[role]) byRole[role] = [];
+            byRole[role].push(emp);
+        });
+
+        // جلب الأوردرات في نفس اليوم لاستبعاد المشغولين
+        var sameDayBookings = state.bookings.filter(function(b) {
+            return b.date === booking.date && !b.deleted && b.id !== booking.id;
+        });
+        var busyEmployeeIds = [];
+        sameDayBookings.forEach(function(b) {
+            (b.assignedEmployees || []).forEach(function(eid) {
+                if (!busyEmployeeIds.includes(eid)) busyEmployeeIds.push(eid);
+            });
+        });
+
+        // التوزيع الفعلي
+        for (var r = 0; r < requirements.length; r++) {
+            var req = requirements[r];
+            var role = req.role;
+            var needed = req.count;
+
+            var candidates = (byRole[role] || []).filter(function(emp) {
+                // متاح (مش مشغول في نفس اليوم)
+                if (busyEmployeeIds.includes(emp.id)) return false;
+                // لم يُعيَّن بالفعل في هذا الأوردر
+                if (booking.assignedEmployees.includes(emp.id)) return false;
+                return true;
+            });
+
+            // ترتيب المرشحين: الأقل عدد أوردرات في نفس اليوم (عدالة)
+            candidates.sort(function(a, b) {
+                var aCount = sameDayBookings.filter(function(bk) {
+                    return (bk.assignedEmployees || []).includes(a.id);
+                }).length;
+                var bCount = sameDayBookings.filter(function(bk) {
+                    return (bk.assignedEmployees || []).includes(b.id);
+                }).length;
+                return aCount - bCount;
+            });
+
+            // تعيين العدد المطلوب
+            for (var i = 0; i < needed && i < candidates.length; i++) {
+                var chosen = candidates[i];
+                booking.assignedEmployees.push(chosen.id);
+                booking.assignedRoles[chosen.id] = role;
+                // نضيفه للقائمة المؤقتة عشان ما يتعينش تاني
+                busyEmployeeIds.push(chosen.id);
+            }
+
+            // لو العدد مش كافي، نحذر
+            if (candidates.length < needed) {
+                console.warn('⚠️ عدد غير كافي من ' + role + ' لأوردر ' + booking.clientName + ' (' + booking.hallName + ')');
+            }
+        }
+
+        console.log('✅ توزيع أوردر ' + booking.clientName + ' -> ' + booking.assignedEmployees.length + ' موظفين');
+    }
+
+    // ---------- توزيع كل الأوردرات المعلقة ----------
+    function distributeAllPending() {
+        var pending = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted;
+        });
+        pending.forEach(function(b) {
+            smartDistribute(b);
+        });
+        if (typeof DataManager !== 'undefined' && DataManager.saveAllData) {
+            DataManager.saveAllData();
+        }
+        console.log('✅ تم توزيع ' + pending.length + ' أوردر');
+        return pending.length;
+    }
+
+    // ---------- ربط بالـ DistributionManager ----------
+    DistributionManager.smartDistribute = function(booking) {
+        smartDistribute(booking);
+        if (typeof DataManager !== 'undefined' && DataManager.saveAllData) {
+            DataManager.saveAllData();
+        }
+    };
+
+    DistributionManager.rotateDistribution = function() {
+        // إعادة تعيين الكل ثم توزيع
+        var pending = state.bookings.filter(function(b) {
+            return b.status === 'pending' && !b.deleted;
+        });
+        pending.forEach(function(b) {
+            b.assignedEmployees = [];
+            b.assignedRoles = {};
+        });
+        distributeAllPending();
+    };
+
+    DistributionManager.distributeAll = distributeAllPending;
+
+    // ---------- إضافة أزرار التوزيع في واجهة الحجوزات ----------
+    function addDistributeButtons() {
+        if (!document.getElementById('pageTitle') || !document.getElementById('pageTitle').textContent.includes('الحجوزات')) return;
+        if (document.getElementById('distributeAllBtn')) return;
+
+        var header = document.querySelector('#content-area .bg-card h2') || document.querySelector('#content-area .bg-card > h3');
+        if (!header) return;
+
+        var btnContainer = document.createElement('div');
+        btnContainer.className = 'flex gap-2 mt-2';
+
+        var btnAll = document.createElement('button');
+        btnAll.id = 'distributeAllBtn';
+        btnAll.className = 'btn-primary text-sm px-4 py-2 rounded-xl';
+        btnAll.textContent = '📋 توزيع الكل';
+        btnAll.onclick = function() {
+            var count = DistributionManager.distributeAll();
+            if (typeof Utils !== 'undefined') Utils.showSuccess('تم توزيع ' + count + ' أوردر');
+            if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) AppRenderer.renderBookings();
+        };
+
+        var btnRotate = document.createElement('button');
+        btnRotate.id = 'rotateDistributeBtn';
+        btnRotate.className = 'btn-secondary text-sm px-4 py-2 rounded-xl';
+        btnRotate.textContent = '🔄 إعادة توزيع';
+        btnRotate.onclick = function() {
+            DistributionManager.rotateDistribution();
+            if (typeof Utils !== 'undefined') Utils.showSuccess('تمت إعادة التوزيع');
+            if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) AppRenderer.renderBookings();
+        };
+
+        btnContainer.appendChild(btnAll);
+        btnContainer.appendChild(btnRotate);
+        header.parentNode.insertBefore(btnContainer, header.nextSibling);
+    }
+
+    // ---------- ربط بواجهة الحجوزات ----------
+    if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) {
+        var origRender = AppRenderer.renderBookings;
+        AppRenderer.renderBookings = function() {
+            origRender.apply(this, arguments);
+            addDistributeButtons();
+        };
+    }
+
+    console.log('✅ نظام التوزيع الذكي حسب الأدوار جاهز');
+})();
