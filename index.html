@@ -433,247 +433,202 @@
     // التوزيع الذكي والتدوير وإعادة التوزيع واستبدال الغائب
     // ========================================================
     const DistributionManager = {
-        _splitByPeriod(bookings) {
-            const grouped = {};
-            for (const b of bookings) {
-                const d = new Date(b.date);
-                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                if (!grouped[key]) {
-                    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-                    grouped[key] = { periods: [[], [], []], limits: [10, 20, lastDay] };
-                }
-                const day = d.getDate();
-                const limits = grouped[key].limits;
-                for (let i = 0; i < 3; i++) {
-                    if (day <= limits[i]) { grouped[key].periods[i].push(b); break; }
-                }
-            }
-            return Object.values(grouped);
-        },
-
-        _buildSlots(bookings, role) {
-            const slots = [];
-            for (const b of bookings) {
-                const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
-                if (role === 'مخرج' && hallType !== 'cafe') { slots.push({ booking: b }); }
-                else if (role === 'مصور') {
-                    if (hallType === 'cafe') { slots.push({ booking: b }); }
-                    else { slots.push({ booking: b }, { booking: b }); }
-                } else if (role === 'كرين' && hallType !== 'cafe') { slots.push({ booking: b }); }
-            }
-            return slots;
-        },
-
-        _distributeMonth(monthBookings, dirs, phs, crs) {
-            const periods = this._splitByPeriod(monthBookings);
-            for (const group of periods) {
-                const periodBookings = group.periods;
-                monthBookings.forEach(b => b.assignedEmployees = []);
-
-                const buildSlotsWithPeriod = (bookings, role, periodIdx) => {
-                    const slots = [];
-                    for (const b of bookings) {
-                        const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
-                        if (role === 'مخرج' && hallType !== 'cafe') slots.push({ booking: b, period: periodIdx });
-                        else if (role === 'مصور') {
-                            if (hallType === 'cafe') slots.push({ booking: b, period: periodIdx });
-                            else { slots.push({ booking: b, period: periodIdx }, { booking: b, period: periodIdx }); }
-                        } else if (role === 'كرين' && hallType !== 'cafe') slots.push({ booking: b, period: periodIdx });
-                    }
-                    return slots;
-                };
-
-                const allDirSlots = []; const allPhSlots = []; const allCrSlots = [];
-                for (let p = 0; p < 3; p++) {
-                    allDirSlots.push(...buildSlotsWithPeriod(periodBookings[p], 'مخرج', p));
-                    allPhSlots.push(...buildSlotsWithPeriod(periodBookings[p], 'مصور', p));
-                    allCrSlots.push(...buildSlotsWithPeriod(periodBookings[p], 'كرين', p));
-                }
-
-                const distributeRole = (allSlots, employees) => {
-                    if (!employees.length || !allSlots.length) return;
-                    const slotsByPeriod = [[], [], []];
-                    allSlots.forEach(slot => slotsByPeriod[slot.period].push(slot));
-                    const T = [0,0,0]; for (let p=0; p<3; p++) T[p] = slotsByPeriod[p].length;
-
-                    const n = employees.length;
-                    const totalT = T[0] + T[1] + T[2];
-                    const baseTotal = Math.floor(totalT / n);
-                    let remTotal = totalT % n;
-                    const sortedEmps = [...employees].sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
-                    const Xi = new Map();
-                    sortedEmps.forEach(emp => Xi.set(emp.id, baseTotal + (remTotal-- > 0 ? 1 : 0)));
-
-                    const periodPlan = new Map();
-                    for (const emp of employees) {
-                        const xi = Xi.get(emp.id);
-                        const base = Math.floor(xi / 3);
-                        const rem = xi % 3;
-                        const targets = [base, base, base];
-                        for (let i = 0; i < rem; i++) targets[i]++;
-                        periodPlan.set(emp.id, targets);
-                    }
-
-                    const busy = new Map();
-                    for (let p = 0; p < 3; p++) {
-                        const slots = slotsByPeriod[p];
-                        if (!slots.length) continue;
-                        slots.sort((a,b) => a.booking.date.localeCompare(b.booking.date));
-                        for (const slot of slots) {
-                            const date = slot.booking.date;
-                            if (!busy.has(date)) busy.set(date, new Set());
-                            const busySet = busy.get(date);
-                            const alreadyAssigned = new Set(slot.booking.assignedEmployees || []);
-                            const candidates = employees.filter(emp => {
-                                const t = periodPlan.get(emp.id);
-                                return t && t[p] > 0 && !busySet.has(emp.id) && !alreadyAssigned.has(emp.id);
-                            });
-                            if (!candidates.length) continue;
-                            candidates.sort((a,b) => (periodPlan.get(b.id)[p] || 0) - (periodPlan.get(a.id)[p] || 0));
-                            const chosen = candidates[0];
-                            if (!slot.booking.assignedEmployees) slot.booking.assignedEmployees = [];
-                            slot.booking.assignedEmployees.push(chosen.id);
-                            busySet.add(chosen.id);
-                            periodPlan.get(chosen.id)[p]--;
-                        }
-                    }
-                };
-
-                distributeRole(allDirSlots, dirs);
-                distributeRole(allPhSlots, phs);
-                distributeRole(allCrSlots, crs);
-            }
-        },
-
-        async smartDistribute() {
-            const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-            if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
-            pending.forEach(b => b.assignedEmployees = []);
-
-            const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
-            const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
-            const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
-
-            const grouped = {};
-            for (const b of pending) {
-                const d = new Date(b.date);
-                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                if (!grouped[key]) grouped[key] = [];
-                grouped[key].push(b);
-            }
-
-            for (const monthBookings of Object.values(grouped)) {
-                this._distributeMonth(monthBookings, dirs, phs, crs);
-            }
-
-            DataManager.updateEmployeeOrders();
-            await DataManager.saveAllData();
-
-            for (const b of pending)
-                for (const eid of (b.assignedEmployees || [])) {
-                    const emp = state.employees.find(e => e.id === eid);
-                    if (emp) NotificationManager.notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
-                }
-
-            DataManager.addActivity('توزيع ذكي', `تم توزيع ${pending.length} حجز بعدالة`);
-            AppRenderer.renderBookings(); AppRenderer.renderDistribution();
-            Utils.showMsg(`✅ توزيع ${pending.length} حجز بالتساوي على الفترات`);
-        },
-
-        async rotateDistribution() {
-            await this.smartDistribute();
-        },
-
-        async resetAndDistribute() {
-            const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
-            if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
-            pending.forEach(b => b.assignedEmployees = []);
-            await DataManager.saveAllData();
-            Utils.showMsg('🗑️ تم مسح التوزيعات السابقة. جارٍ إعادة التوزيع...');
-            await this.smartDistribute();
-        },
-
-        async distributeSingle(bookingId) {
-            const b = state.bookings.find(bk => bk.id === bookingId);
-            if (!b) return;
-            const dirs = state.employees.filter(e => e.role === 'مخرج' && e.active);
-            const phs  = state.employees.filter(e => e.role === 'مصور' && e.active);
-            const crs  = state.employees.filter(e => e.role === 'كرين' && e.active);
-            const hallType = state.halls.find(h => h.id === b.hallId)?.type || 'closed';
-            const assigned = [];
-
-            const pick = (emps) => { const sorted = [...emps].sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0)); return sorted[0] || null; };
-
-            if (hallType === 'cafe') { const emp = pick(phs); if (emp) assigned.push(emp.id); }
-            else {
-                const dir = pick(dirs); if (dir) assigned.push(dir.id);
-                const phList = [...phs].sort((a,b)=>(a.totalOrders||0)-(b.totalOrders||0)).slice(0,2);
-                phList.forEach(p => assigned.push(p.id));
-                const cr = pick(crs); if (cr) assigned.push(cr.id);
-            }
-
-            b.assignedEmployees = assigned;
-            DataManager.updateEmployeeOrders();
-            await DataManager.saveAllData();
-            AppRenderer.renderBookings();
-            Utils.showMsg('✅ تم توزيع الحجز');
-        },
-
-        substitutePrompt(bookingId, absentEmpId) {
-            const b = state.bookings.find(b => b.id === bookingId);
-            if (!b) return;
-            const absentEmp = state.employees.find(e => e.id === absentEmpId);
-            const candidates = state.employees.filter(e => e.active && e.id !== absentEmpId && !(b.assignedEmployees||[]).includes(e.id));
-            if (!candidates.length) { Utils.showError('لا يوجد موظفين متاحين للاستبدال'); return; }
-            const opts = candidates.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
-            Utils.openModal(`<h3 class="text-xl font-bold mb-4">🔄 استبدال ${absentEmp?.name || 'الغائب'}</h3>
-                <p class="mb-2 text-sm text-gray-500">اختر الموظف البديل:</p>
-                <select id="substituteSelect" class="w-full border-2 p-2 rounded-xl mb-4">${opts}</select>
-                <div class="flex gap-2"><button onclick="DistributionManager.executeSubstitution('${bookingId}', '${absentEmpId}')" class="btn-primary flex-1">💾 حفظ الاستبدال</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
-        },
-
-        async executeSubstitution(bookingId, absentEmpId) {
-            const sel = document.getElementById('substituteSelect');
-            if (!sel) return;
-            const substituteId = sel.value;
-            if (!substituteId) return Utils.showError('اختر موظفاً');
-            const b = state.bookings.find(b => b.id === bookingId);
-            if (!b) return;
-            b.assignedEmployees = (b.assignedEmployees || []).filter(id => id !== absentEmpId);
-            if (!b.assignedEmployees.includes(substituteId)) b.assignedEmployees.push(substituteId);
-            const today = Utils.getTodayDateStr();
-            const exist = state.attendanceRecords.find(a => a.empId === substituteId && a.date === today);
-            if (!exist || !exist.checkIn) {
-                const time = Utils.getCurrentTime();
-                if (exist) { exist.checkIn = time; exist.status = 'present'; }
-                else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: substituteId, date: today, checkIn: time, checkOut: null, status: 'present' });
-            }
-            DataManager.updateEmployeeOrders();
-            await DataManager.saveAllData();
-            Utils.closeModal();
-            AppRenderer.renderBookings();
-            Utils.showMsg('✅ تم الاستبدال بنجاح');
-        },
-
-        manualAssign(bookingId) {
-            const b = state.bookings.find(b => b.id === bookingId);
-            if (!b) return;
-            const opts = state.employees.filter(e => e.active).map(e => `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`).join('');
-            Utils.openModal(`<h3>تعيين يدوي</h3><select id="manualSelect" multiple class="w-full border-2 p-3 rounded-xl h-48">${opts}</select><button onclick="DistributionManager.saveManualAssign('${bookingId}')" class="btn-primary mt-2 w-full">حفظ</button>`);
-        },
-        async saveManualAssign(bookingId) {
-            const sel = document.getElementById('manualSelect');
-            if (!sel) return;
-            const b = state.bookings.find(b => b.id === bookingId);
-            if (!b) return;
-            b.assignedEmployees = Array.from(sel.selectedOptions).map(o => o.value);
-            DataManager.updateEmployeeOrders();
-            await DataManager.saveAllData();
-            AppRenderer.renderBookings(); AppRenderer.renderDistribution();
-            Utils.closeModal();
-            Utils.showMsg('✅ تم التعيين');
+    // متطلبات الأدوار لكل نوع قاعة
+    getRoleRequirements(hallId) {
+        const hall = state.halls.find(h => h.id === hallId);
+        if (hall && hall.type === 'cafe') {
+            return [{ role: 'مصور', count: 1 }];
         }
-    };
+        // القاعات المغلقة والمفتوحة
+        return [
+            { role: 'مخرج', count: 1 },
+            { role: 'مصور', count: 2 },
+            { role: 'كرين', count: 1 }
+        ];
+    },
+
+    // التوزيع الذكي الرئيسي (يُستدعى من الزر "توزيع الكل")
+    async smartDistribute() {
+        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) {
+            Utils.showWarning('لا توجد حجوزات معلقة');
+            return;
+        }
+        // مسح التوزيعات السابقة
+        pending.forEach(b => b.assignedEmployees = []);
+
+        // تجميع الموظفين حسب الدور
+        const byRole = {};
+        state.employees.filter(e => e.active).forEach(e => {
+            const role = (e.role || '').trim();
+            if (!byRole[role]) byRole[role] = [];
+            byRole[role].push(e);
+        });
+
+        // معالجة كل حجز
+        for (const booking of pending) {
+            const requirements = this.getRoleRequirements(booking.hallId);
+            const busyToday = new Set();
+
+            // جمع الموظفين المشغولين في نفس اليوم
+            state.bookings.forEach(b => {
+                if (b.date === booking.date && !b.deleted && b.id !== booking.id) {
+                    (b.assignedEmployees || []).forEach(eid => busyToday.add(eid));
+                }
+            });
+
+            for (const req of requirements) {
+                const role = req.role;
+                const needed = req.count;
+                const candidates = (byRole[role] || []).filter(emp => {
+                    if (busyToday.has(emp.id)) return false; // مشغول في نفس اليوم
+                    if ((booking.assignedEmployees || []).includes(emp.id)) return false; // معين بالفعل
+                    return true;
+                });
+
+                // ترتيب المرشحين: الأقل أوردرات أولاً (عدالة)
+                candidates.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+
+                // تعيين العدد المطلوب
+                for (let i = 0; i < needed && i < candidates.length; i++) {
+                    const chosen = candidates[i];
+                    if (!booking.assignedEmployees) booking.assignedEmployees = [];
+                    booking.assignedEmployees.push(chosen.id);
+                    busyToday.add(chosen.id); // لا يمكن تعيينه مرة أخرى في هذا اليوم
+                }
+            }
+        }
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        // إرسال إشعارات للموظفين
+        for (const b of pending) {
+            for (const eid of (b.assignedEmployees || [])) {
+                const emp = state.employees.find(e => e.id === eid);
+                if (emp) {
+                    NotificationManager.notifyEmployee(emp, 'تم توزيع أوردر', `لديك أوردر لـ ${b.clientName} يوم ${b.date} بقاعة ${b.hallName}`, true);
+                }
+            }
+        }
+
+        DataManager.addActivity('توزيع ذكي', `تم توزيع ${pending.length} حجز`);
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.showMsg(`✅ توزيع ${pending.length} حجز`);
+    },
+
+    // إعادة التوزيع (يمسح القديم ويوزع من جديد)
+    async rotateDistribution() {
+        await this.smartDistribute();
+    },
+
+    // مسح التوزيعات وإعادة التوزيع
+    async resetAndDistribute() {
+        const pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        pending.forEach(b => b.assignedEmployees = []);
+        await DataManager.saveAllData();
+        Utils.showMsg('🗑️ تم مسح التوزيعات السابقة. جارٍ إعادة التوزيع...');
+        await this.smartDistribute();
+    },
+
+    // توزيع حجز واحد (يُستدعى من زر ⚙️)
+    async distributeSingle(bookingId) {
+        const b = state.bookings.find(bk => bk.id === bookingId);
+        if (!b) return;
+        const requirements = this.getRoleRequirements(b.hallId);
+        const byRole = {};
+        state.employees.filter(e => e.active).forEach(e => {
+            const role = (e.role || '').trim();
+            if (!byRole[role]) byRole[role] = [];
+            byRole[role].push(e);
+        });
+
+        const busyToday = new Set();
+        state.bookings.forEach(bk => {
+            if (bk.date === b.date && !bk.deleted && bk.id !== b.id) {
+                (bk.assignedEmployees || []).forEach(eid => busyToday.add(eid));
+            }
+        });
+
+        b.assignedEmployees = [];
+        for (const req of requirements) {
+            const candidates = (byRole[req.role] || []).filter(emp => {
+                if (busyToday.has(emp.id)) return false;
+                if ((b.assignedEmployees || []).includes(emp.id)) return false;
+                return true;
+            });
+            candidates.sort((a, b) => (a.totalOrders || 0) - (b.totalOrders || 0));
+            for (let i = 0; i < req.count && i < candidates.length; i++) {
+                b.assignedEmployees.push(candidates[i].id);
+                busyToday.add(candidates[i].id);
+            }
+        }
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        AppRenderer.renderBookings();
+        Utils.showMsg('✅ تم توزيع الحجز');
+    },
+
+    // باقي الدوال (استبدال، تعيين يدوي) كما هي بدون تغيير
+    substitutePrompt(bookingId, absentEmpId) {
+        const b = state.bookings.find(b => b.id === bookingId);
+        if (!b) return;
+        const absentEmp = state.employees.find(e => e.id === absentEmpId);
+        const candidates = state.employees.filter(e => e.active && e.id !== absentEmpId && !(b.assignedEmployees||[]).includes(e.id));
+        if (!candidates.length) { Utils.showError('لا يوجد موظفين متاحين للاستبدال'); return; }
+        const opts = candidates.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
+        Utils.openModal(`<h3 class="text-xl font-bold mb-4">🔄 استبدال ${absentEmp?.name || 'الغائب'}</h3>
+            <p class="mb-2 text-sm text-gray-500">اختر الموظف البديل:</p>
+            <select id="substituteSelect" class="w-full border-2 p-2 rounded-xl mb-4">${opts}</select>
+            <div class="flex gap-2"><button onclick="DistributionManager.executeSubstitution('${bookingId}', '${absentEmpId}')" class="btn-primary flex-1">💾 حفظ الاستبدال</button><button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button></div>`);
+    },
+
+    async executeSubstitution(bookingId, absentEmpId) {
+        const sel = document.getElementById('substituteSelect');
+        if (!sel) return;
+        const substituteId = sel.value;
+        if (!substituteId) return Utils.showError('اختر موظفاً');
+        const b = state.bookings.find(b => b.id === bookingId);
+        if (!b) return;
+        b.assignedEmployees = (b.assignedEmployees || []).filter(id => id !== absentEmpId);
+        if (!b.assignedEmployees.includes(substituteId)) b.assignedEmployees.push(substituteId);
+        const today = Utils.getTodayDateStr();
+        const exist = state.attendanceRecords.find(a => a.empId === substituteId && a.date === today);
+        if (!exist || !exist.checkIn) {
+            const time = Utils.getCurrentTime();
+            if (exist) { exist.checkIn = time; exist.status = 'present'; }
+            else state.attendanceRecords.push({ id: Utils.generateId('att_'), empId: substituteId, date: today, checkIn: time, checkOut: null, status: 'present' });
+        }
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        Utils.closeModal();
+        AppRenderer.renderBookings();
+        Utils.showMsg('✅ تم الاستبدال بنجاح');
+    },
+
+    manualAssign(bookingId) {
+        const b = state.bookings.find(b => b.id === bookingId);
+        if (!b) return;
+        const opts = state.employees.filter(e => e.active).map(e => `<option value="${e.id}" ${(b.assignedEmployees||[]).includes(e.id)?'selected':''}>${e.name} (${e.role})</option>`).join('');
+        Utils.openModal(`<h3>تعيين يدوي</h3><select id="manualSelect" multiple class="w-full border-2 p-3 rounded-xl h-48">${opts}</select><button onclick="DistributionManager.saveManualAssign('${bookingId}')" class="btn-primary mt-2 w-full">حفظ</button>`);
+    },
+
+    async saveManualAssign(bookingId) {
+        const sel = document.getElementById('manualSelect');
+        if (!sel) return;
+        const b = state.bookings.find(b => b.id === bookingId);
+        if (!b) return;
+        b.assignedEmployees = Array.from(sel.selectedOptions).map(o => o.value);
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+        Utils.closeModal();
+        Utils.showMsg('✅ تم التعيين');
+    }
+};
 
     // ========================================================
     // مدير الحجوزات
