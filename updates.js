@@ -1388,21 +1388,21 @@
         init();
     }
 })();
-// ====== تحديث: استكمال التوزيع بالتساوي (يحافظ على اليدوي) – مُصحَّح ======
+// ====== تحديث: استكمال التوزيع بالتساوي (يحافظ على اليدوي) – نسخة نهائية ======
 (function() {
-    console.log('🟢 تحميل: زر استكمال التوزيع بالتساوي (مُصحَّح)');
+    console.log('🟢 تحميل: زر استكمال التوزيع بالتساوي (النسخة النهائية)');
 
-    if (typeof DistributionManager === 'undefined') {
-        console.warn('DistributionManager غير موجود');
-        return;
+    function waitForApp(cb) {
+        if (typeof DistributionManager !== 'undefined' && typeof AppRenderer !== 'undefined') cb();
+        else setTimeout(() => waitForApp(cb), 50);
     }
 
+    // الدالة الأساسية (مُصحَّحة)
     DistributionManager.distributeRemainingFairly = async function() {
         var pending = state.bookings.filter(function(b) {
             return b.status === 'pending' && !b.deleted;
         });
 
-        // الحجوزات اللي لسه متوزعتش (فاضية)
         var unassigned = pending.filter(function(b) {
             return !b.assignedEmployees || b.assignedEmployees.length === 0;
         });
@@ -1412,7 +1412,6 @@
             return;
         }
 
-        // تجميع الموظفين حسب الدور (نشطين فقط)
         var byRole = {};
         state.employees.filter(function(e) { return e.active; }).forEach(function(e) {
             var role = (e.role || '').trim();
@@ -1420,7 +1419,6 @@
             byRole[role].push(e);
         });
 
-        // دالة مساعدة: عدد الأوردرات الحالي للموظف (بما في ذلك التوزيعات اليدوية)
         function getCurrentOrderCount(empId) {
             return state.bookings.filter(function(b) {
                 return !b.deleted && b.status !== 'cancelled' &&
@@ -1428,31 +1426,26 @@
             }).length;
         }
 
-        // ترتيب الحجوزات غير المعينة حسب التاريخ
         unassigned.sort(function(a, b) { return a.date.localeCompare(b.date); });
 
-        // تجميع الحجوزات حسب اليوم عشان نمنع تعيين موظف في حجزين في نفس اليوم
         var byDate = {};
         unassigned.forEach(function(b) {
             if (!byDate[b.date]) byDate[b.date] = [];
             byDate[b.date].push(b);
         });
 
-        // نعالج كل يوم على حدة
         var dates = Object.keys(byDate).sort();
         for (var d = 0; d < dates.length; d++) {
             var date = dates[d];
             var dayBookings = byDate[date];
 
-            // الموظفين المشغولين في هذا اليوم من التوزيعات السابقة (القديمة)
             var busyToday = new Set();
             state.bookings.forEach(function(b) {
-                if (b.date === date && !b.deleted && b.id !== bookingInLoop?.id) {
+                if (b.date === date && !b.deleted) {
                     (b.assignedEmployees || []).forEach(function(eid) { busyToday.add(eid); });
                 }
             });
 
-            // نوزع كل حجز في هذا اليوم
             for (var i = 0; i < dayBookings.length; i++) {
                 var booking = dayBookings[i];
                 var hall = state.halls.find(function(h) { return h.id === booking.hallId; });
@@ -1472,32 +1465,22 @@
                     var role = req.role;
                     var needed = req.count;
 
-                    // المرشحون حسب الدور، غير مشغولين اليوم (بما في ذلك اللي تم تعيينهم في هذه الجولة) وغير معينين في نفس الحجز
                     var candidates = (byRole[role] || []).filter(function(emp) {
                         if (busyToday.has(emp.id)) return false;
                         if (booking.assignedEmployees.indexOf(emp.id) !== -1) return false;
                         return true;
                     });
 
-                    // ترتيب المرشحين: الأقل أوردرات أولاً (عدالة)
                     candidates.sort(function(a, b) {
                         return getCurrentOrderCount(a.id) - getCurrentOrderCount(b.id);
                     });
 
-                    // نعين العدد المطلوب
                     for (var j = 0; j < needed && j < candidates.length; j++) {
-                        var chosen = candidates[j];
-                        booking.assignedEmployees.push(chosen.id);
-                        busyToday.add(chosen.id); // نمنعه من أي حجز تاني في نفس اليوم
-                    }
-
-                    // تحذير لو العدد ناقص
-                    if (candidates.length < needed) {
-                        console.warn('⚠️ عدد غير كاف من ' + role + ' للحجز ' + booking.clientName + ' بتاريخ ' + date);
+                        booking.assignedEmployees.push(candidates[j].id);
+                        busyToday.add(candidates[j].id);
                     }
                 }
 
-                // حماية إضافية للكافيه: لو حصل خطأ واتضاف أكتر من مصور
                 if (isCafe) {
                     var photographers = booking.assignedEmployees.filter(function(eid) {
                         var emp = state.employees.find(function(e) { return e.id === eid; });
@@ -1511,7 +1494,6 @@
                             var emp = state.employees.find(function(e) { return e.id === eid; });
                             return !(emp && emp.role === 'مصور') || eid === photographers[0];
                         });
-                        // نرجع الموظفين اللي تمت إزالتهم إلى busyToday؟ هم ممنوعين بالفعل، لكن لا يهم.
                     }
                 }
             }
@@ -1528,15 +1510,13 @@
         AppRenderer.renderBookings();
         AppRenderer.renderDistribution();
         Utils.showMsg('✅ تم استكمال التوزيع بالتساوي. متبقي: ' + stillUnassigned + ' حجز غير موزع');
-        DataManager.addActivity('استكمال توزيع متساوي', 'تم توزيع ' + (unassigned.length - stillUnassigned) + ' حجز');
     };
 
-    // زر الاستكمال في الواجهة
-    function injectFairButton() {
-        var checkExist = setInterval(function() {
+    // حقن الزر باستخدام MutationObserver (أفضل للموبايل)
+    function injectButton() {
+        var observer = new MutationObserver(function() {
             var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
             if (container && !document.getElementById('fairCompleteBtn')) {
-                clearInterval(checkExist);
                 var btn = document.createElement('button');
                 btn.id = 'fairCompleteBtn';
                 btn.className = 'btn-secondary';
@@ -1546,22 +1526,15 @@
                     DistributionManager.distributeRemainingFairly();
                 };
                 container.appendChild(btn);
+                observer.disconnect();
             }
-        }, 500);
-    }
-
-    if (typeof AppRenderer !== 'undefined') {
-        injectFairButton();
-    } else {
-        window.addEventListener('DOMContentLoaded', function() {
-            var wait = setInterval(function() {
-                if (typeof AppRenderer !== 'undefined') {
-                    clearInterval(wait);
-                    injectFairButton();
-                }
-            }, 50);
         });
+        observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
     }
 
-    console.log('✅ زر استكمال التوزيع بالتساوي (مُصحَّح) جاهز');
+    // بدء التشغيل
+    waitForApp(function() {
+        injectButton();
+        console.log('✅ زر استكمال التوزيع جاهز');
+    });
 })();
