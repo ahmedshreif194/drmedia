@@ -2105,3 +2105,123 @@
 
     console.log('✅ زر التوزيع العادل الكامل جاهز');
 })();
+// ====== تحديث: زر نسخ ملخص النظام للمحادثات ======
+(function() {
+    console.log('🟢 تحميل: زر نسخ ملخص النظام');
+
+    function generateSummary() {
+        var summary = '📋 ملخص نظام Dr Media Pro\n';
+        summary += '━━━━━━━━━━━━━━━━━━━━\n';
+        summary += '🕒 التاريخ: ' + new Date().toLocaleString('ar-EG') + '\n';
+        summary += '👤 المستخدم: ' + (state.currentUser?.name || 'غير مسجل') + ' (' + (state.currentUser?.role || '') + ')\n\n';
+        
+        summary += '📊 إحصائيات سريعة:\n';
+        var totalBookings = state.bookings.filter(b => !b.deleted).length;
+        var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted).length;
+        var completed = state.bookings.filter(b => b.status === 'completed' && !b.deleted).length;
+        summary += '  - إجمالي الحجوزات: ' + totalBookings + '\n';
+        summary += '  - معلق: ' + pending + '\n';
+        summary += '  - مكتمل: ' + completed + '\n\n';
+
+        summary += '👥 الموظفون (' + state.employees.length + '):\n';
+        state.employees.forEach(function(e) {
+            var active = e.active ? '✅' : '❌';
+            summary += '  - ' + e.name + ' (' + e.role + ') ' + active + ' | أوردرات: ' + (e.totalOrders || 0) + ' | الراتب/أوردر: ' + (e.salaryPerOrder || 0) + '\n';
+        });
+
+        summary += '\n🏛️ القاعات (' + state.halls.length + '):\n';
+        state.halls.forEach(function(h) {
+            summary += '  - ' + h.name + ' (نوع: ' + (h.type === 'cafe' ? 'كافيه' : h.type === 'open' ? 'مفتوحة' : 'مغلقة') + ') | السعر: ' + (h.basePrice || 0) + '\n';
+        });
+
+        if (state.autoMessageSettings) {
+            summary += '\n⚙️ إعدادات الإرسال التلقائي:\n';
+            summary += '  - عند التوزيع: ' + (state.autoMessageSettings.distribute ? '✅' : '❌') + '\n';
+            summary += '  - تذكير يوم الأوردر: ' + (state.autoMessageSettings.reminder ? '✅' : '❌') + '\n';
+            summary += '  - عند تسجيل الحضور: ' + (state.autoMessageSettings.attendance ? '✅' : '❌') + '\n';
+        }
+
+        if (state.distSettings) {
+            summary += '\n📦 إعدادات التوزيع:\n';
+            summary += '  - وضع الرسائل: ' + (state.distSettings.messageMode === 'manual' ? 'يدوي (يسأل قبل الإرسال)' : 'تلقائي') + '\n';
+            summary += '  - نطاق تاريخ: ' + (state.distSettings.dateRangeEnabled ? state.distSettings.dateFrom + ' إلى ' + state.distSettings.dateTo : 'غير محدد') + '\n';
+        }
+
+        summary += '\n🔧 آخر تحديثات مفعلة:\n';
+        summary += '  - توزيع عادل كامل (Round-Robin)\n';
+        summary += '  - استكمال توزيع متساوي\n';
+        summary += '  - توزيع غير المعينين\n';
+        summary += '  - حماية الكافيه (مصور واحد)\n';
+        summary += '  - مزامنة Firebase آمنة\n';
+        summary += '  - نظام الرسائل مع التحكم\n';
+        summary += '  - الحجز المجمع الشهري\n';
+        summary += '  - الفلاتر الشهرية\n';
+
+        summary += '━━━━━━━━━━━━━━━━━━━━\n';
+        summary += '📌 يمكنك لصق هذا الملخص في بداية محادثتك مع الدعم الفني لمساعدتك بسرعة.';
+        return summary;
+    }
+
+    function copySummary() {
+        var text = generateSummary();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function() {
+                Utils.showMsg('✅ تم نسخ ملخص النظام إلى الحافظة');
+            }).catch(function() {
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            Utils.showMsg('✅ تم النسخ');
+        } catch(e) {
+            Utils.showError('تعذر النسخ، يرجى استخدام الزر مرة أخرى');
+        }
+        document.body.removeChild(textarea);
+    }
+
+    function injectCopyButton() {
+        // إضافة زر في الشريط العلوي
+        var topbar = document.querySelector('.topbar');
+        if (!topbar || document.getElementById('copySummaryBtn')) return;
+
+        var btn = document.createElement('button');
+        btn.id = 'copySummaryBtn';
+        btn.textContent = '📋 نسخ ملخص';
+        btn.className = 'btn-outline text-xs';
+        btn.style.cssText = 'margin:0 8px; padding:6px 12px; font-size:0.8rem;';
+        btn.onclick = copySummary;
+        
+        var logoutBtn = topbar.querySelector('button');
+        if (logoutBtn) {
+            logoutBtn.parentNode.insertBefore(btn, logoutBtn);
+        } else {
+            topbar.appendChild(btn);
+        }
+    }
+
+    // المحاولة بعد تحميل DOM
+    window.addEventListener('DOMContentLoaded', function() {
+        var check = setInterval(function() {
+            if (document.querySelector('.topbar')) {
+                injectCopyButton();
+                clearInterval(check);
+            }
+        }, 200);
+    });
+
+    if (document.querySelector('.topbar')) {
+        injectCopyButton();
+    }
+
+    console.log('✅ زر نسخ ملخص النظام جاهز');
+})();
