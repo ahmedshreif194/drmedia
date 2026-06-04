@@ -2363,3 +2363,184 @@
 
     console.log('✅ تم تسريع النظام: حفظ فوري، تحميل سريع، مزامنة خلفية');
 })();
+// ====== تحديث: زر طباعة الحجوزات (تاريخ، موظفين، نوع القاعة – 10 أيام/صفحة) ======
+(function() {
+    console.log('🟢 تحميل: زر طباعة الحجوزات المُبسَّط');
+
+    // فتح نافذة اختيار النطاق
+    function openPrintBookingsModal() {
+        var today = Utils.getTodayDateStr();
+        var nextMonth = new Date();
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        var nextMonthStr = nextMonth.toISOString().slice(0, 10);
+
+        Utils.openModal(`
+            <h3 class="text-xl font-bold mb-4">🖨️ طباعة توزيع الحجوزات</h3>
+            <p class="text-sm text-gray-500 mb-3">ستظهر التواريخ والموظفين ونوع القاعة فقط.</p>
+            <div class="flex gap-2 items-end mb-3">
+                <div class="flex-1">
+                    <label class="text-xs">📅 من</label>
+                    <input type="date" id="printBookingsFrom" class="w-full border-2 p-2 rounded-xl" value="${today}">
+                </div>
+                <div class="flex-1">
+                    <label class="text-xs">📅 إلى</label>
+                    <input type="date" id="printBookingsTo" class="w-full border-2 p-2 rounded-xl" value="${nextMonthStr}">
+                </div>
+            </div>
+            <p class="text-xs text-gray-500 mb-3">10 أيام في كل صفحة</p>
+            <div class="flex gap-2">
+                <button onclick="window._printBookingsSimple()" class="btn-primary flex-1">🖨️ طباعة</button>
+                <button onclick="Utils.closeModal()" class="btn-outline flex-1">إلغاء</button>
+            </div>
+        `);
+    }
+
+    // دالة الطباعة الجديدة
+    window._printBookingsSimple = function() {
+        var fromDate = document.getElementById('printBookingsFrom')?.value;
+        var toDate = document.getElementById('printBookingsTo')?.value;
+        if (!fromDate || !toDate) {
+            Utils.showError('يرجى اختيار تاريخ البداية والنهاية');
+            return;
+        }
+
+        var filtered = state.bookings.filter(function(b) {
+            return !b.deleted && b.status !== 'cancelled' && b.date >= fromDate && b.date <= toDate;
+        });
+
+        if (filtered.length === 0) {
+            Utils.showError('لا توجد حجوزات في هذا النطاق');
+            Utils.closeModal();
+            return;
+        }
+
+        filtered.sort(function(a, b) { return a.date.localeCompare(b.date); });
+
+        // تجميع حسب التاريخ
+        var groupedByDate = {};
+        filtered.forEach(function(b) {
+            if (!groupedByDate[b.date]) groupedByDate[b.date] = [];
+            groupedByDate[b.date].push(b);
+        });
+
+        var dates = Object.keys(groupedByDate).sort();
+
+        // بناء HTML
+        var printWindow = window.open('', '_blank');
+        var html = `
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>توزيع من ${fromDate} إلى ${toDate}</title>
+            <style>
+                body { font-family: Tahoma, sans-serif; margin: 20px; direction: rtl; }
+                h2 { color: #16a34a; text-align: center; margin-bottom: 10px; }
+                .page-container { page-break-after: always; }
+                .page-container:last-child { page-break-after: auto; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+                th, td { border: 1px solid #333; padding: 6px 8px; text-align: center; font-size: 13px; }
+                th { background: #16a34a; color: white; }
+                .day-header { background: #e2e8f0; font-weight: bold; text-align: right; padding: 6px; margin-top: 10px; }
+                @media print { body { margin: 0; } .no-print { display: none; } }
+            </style>
+        </head>
+        <body>
+            <h2>📋 توزيع الموظفين (من ${fromDate} إلى ${toDate})</h2>
+            <p style="text-align:center; color:#666;">${state.companyName}</p>
+        `;
+
+        var daysInPage = 0;
+        var pageDates = [];
+
+        for (var i = 0; i < dates.length; i++) {
+            var date = dates[i];
+            pageDates.push(date);
+            daysInPage++;
+
+            if (daysInPage === 10 || i === dates.length - 1) {
+                html += '<div class="page-container">';
+
+                for (var j = 0; j < pageDates.length; j++) {
+                    var d = pageDates[j];
+                    var dayBookings = groupedByDate[d];
+                    var weekDay = Utils.getWeekDayArabic(d);
+
+                    html += `<div class="day-header">📅 ${d} (${weekDay})</div>`;
+                    html += `<table>
+                        <thead><tr><th>القاعة</th><th>النوع</th><th>الموظفون</th></tr></thead>
+                        <tbody>`;
+
+                    dayBookings.forEach(function(b) {
+                        var hall = state.halls.find(function(h) { return h.id === b.hallId; });
+                        var hallName = b.hallName || (hall ? hall.name : '—');
+                        var hallType = hall ? (hall.type === 'cafe' ? 'كافيه' : hall.type === 'open' ? 'مفتوحة' : 'مغلقة') : '—';
+
+                        var employees = (b.assignedEmployees || []).map(function(eid) {
+                            var emp = state.employees.find(function(e) { return e.id === eid; });
+                            return emp ? emp.name : eid;
+                        }).join('، ') || '—';
+
+                        html += `<tr>
+                            <td>${hallName}</td>
+                            <td>${hallType}</td>
+                            <td>${employees}</td>
+                        </tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                }
+
+                html += '</div>'; // نهاية الصفحة
+                pageDates = [];
+                daysInPage = 0;
+            }
+        }
+
+        html += `
+        <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>`;
+
+        printWindow.document.write(html);
+        printWindow.document.close();
+        Utils.closeModal();
+    };
+
+    // حقن الزر في صفحة الحجوزات
+    function injectPrintButton() {
+        var container = document.querySelector('#content-area .flex.justify-between.flex-wrap') ||
+                        document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap');
+        if (!container || document.getElementById('printBookingsBtn')) return;
+
+        var btn = document.createElement('button');
+        btn.id = 'printBookingsBtn';
+        btn.className = 'btn-secondary';
+        btn.style.cssText = 'background:#059669; color:white;';
+        btn.textContent = '🖨️ طباعة التوزيع';
+        btn.onclick = openPrintBookingsModal;
+
+        container.appendChild(btn);
+    }
+
+    if (typeof AppRenderer !== 'undefined') {
+        var observer = new MutationObserver(function() {
+            if (document.getElementById('pageTitle') && document.getElementById('pageTitle').textContent.includes('الحجوزات')) {
+                injectPrintButton();
+            }
+        });
+        observer.observe(document.getElementById('content-area'), { childList: true, subtree: true });
+        injectPrintButton();
+    } else {
+        window.addEventListener('DOMContentLoaded', function() {
+            var wait = setInterval(function() {
+                if (typeof AppRenderer !== 'undefined') {
+                    clearInterval(wait);
+                    injectPrintButton();
+                }
+            }, 50);
+        });
+    }
+
+    console.log('✅ زر طباعة التوزيع (تاريخ + موظفين + نوع القاعة) جاهز');
+})();
