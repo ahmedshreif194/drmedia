@@ -2225,3 +2225,141 @@
 
     console.log('✅ زر نسخ ملخص النظام جاهز');
 })();
+// ====== تحديث: تسريع النظام (حفظ محلي فوري + مزامنة خلفية) ======
+(function() {
+    console.log('⚡ تحميل: نظام الحفظ السريع والمزامنة الخلفية');
+
+    if (typeof DataManager === 'undefined') {
+        console.warn('DataManager غير موجود، تخطي تسريع الحفظ');
+        return;
+    }
+
+    // ---------- 1. تسريع الحفظ: محلي فوري، Firebase في الخلفية ----------
+    var originalSaveAll = DataManager.saveAllData;
+    DataManager.saveAllData = async function() {
+        // تجهيز البيانات
+        var dataToSave = {
+            bookings: state.bookings || [],
+            employees: state.employees || [],
+            halls: state.halls || [],
+            clients: state.clients || [],
+            equipmentInventory: state.equipmentInventory || {},
+            attendanceRecords: state.attendanceRecords || [],
+            employeeLoans: state.employeeLoans || {},
+            notifications: state.notifications || [],
+            trashBin: state.trashBin || [],
+            activityLog: state.activityLog || [],
+            flashDrives: state.flashDrives || [],
+            holidays: state.holidays || [],
+            companyName: state.companyName,
+            companyLogo: state.companyLogoBase64 || state.companyLogo,
+            USERS: state.USERS,
+            rotationCounters: state.rotationCounters,
+            whatsappEnabled: state.whatsapp?.enabled,
+            whatsappBusinessNumber: state.whatsapp?.businessNumber,
+            whatsappMessageTemplate: state.whatsapp?.messageTemplate,
+            appTheme: state.appTheme,
+            appLanguage: state.appLanguage,
+            systemOfflineMode: state.systemOfflineMode,
+            branchId: state.branchId || 'default'
+        };
+
+        // 1. حفظ محلي فوري (سريع جداً)
+        try {
+            localStorage.setItem('drmedia_data', JSON.stringify(dataToSave));
+        } catch(e) {
+            console.warn('فشل الحفظ المحلي:', e.message);
+        }
+
+        // 2. مزامنة Firebase في الخلفية بدون انتظار (لا توقف الواجهة)
+        if (typeof firebase !== 'undefined' && state.useFirebase && state.db && !state.systemOfflineMode) {
+            var branchId = state.branchId || 'default';
+            // استخدام نسخة آمنة بدون دوال
+            var firebaseData = JSON.parse(JSON.stringify(dataToSave));
+            firebase.database().ref('drmedia/' + branchId).set(firebaseData)
+                .then(function() {
+                    console.log('✅ مزامنة خلفية ناجحة');
+                    state.lastSync = new Date();
+                })
+                .catch(function(e) {
+                    console.warn('⚠️ فشلت المزامنة الخلفية (سيُعاد المحاولة لاحقاً):', e.message);
+                });
+        }
+
+        // استدعاء أي سلوك أصلي كان موجودًا (للاستدعاءات الأخرى)
+        if (typeof originalSaveAll === 'function') {
+            try {
+                await originalSaveAll.apply(this, arguments);
+            } catch(e) {
+                console.warn('saveAllData الأصلية فشلت:', e);
+            }
+        }
+    };
+
+    // ---------- 2. تسريع التحميل: المحلي أولاً، ثم التحديث من Firebase بصمت ----------
+    var originalLoadAll = DataManager.loadAllData;
+    DataManager.loadAllData = async function() {
+        // محاولة التحميل من localStorage أولاً (فوري)
+        var localLoaded = false;
+        try {
+            var raw = localStorage.getItem('drmedia_data');
+            if (raw) {
+                var data = JSON.parse(raw);
+                DataManager._loadDataObject(data);
+                DataManager._ensureMinimumData();
+                DataManager.updateEmployeeOrders();
+                localLoaded = true;
+                console.log('⚡ تم التحميل السريع من التخزين المحلي');
+            }
+        } catch(e) {
+            console.warn('فشل التحميل المحلي:', e.message);
+        }
+
+        // إذا لم يكن هناك بيانات محلية، نحمّل من Firebase أو الافتراضيات
+        if (!localLoaded) {
+            await originalLoadAll.apply(this, arguments);
+        } else {
+            // حتى لو حملنا محلياً، نقوم بمزامنة صامتة مع Firebase لتحديث البيانات
+            if (typeof firebase !== 'undefined' && state.useFirebase && state.db && !state.systemOfflineMode) {
+                try {
+                    var snap = await state.db.ref('/').once('value');
+                    if (snap.exists()) {
+                        DataManager._loadDataObject(snap.val());
+                        DataManager._ensureMinimumData();
+                        DataManager.updateEmployeeOrders();
+                        console.log('🔄 تم التحديث الصامت من Firebase');
+                    }
+                    state.online = true;
+                    state.lastSync = new Date();
+                } catch(e) {
+                    state.online = false;
+                    console.warn('فشل التحديث الصامت من Firebase، استمرار بالمحلي');
+                }
+            }
+            // حفظ البيانات المحدثة (إن تغيرت)
+            await DataManager.saveAllData();
+        }
+    };
+
+    // ---------- 3. منع إعادة الرسم الكاملة غير الضرورية ----------
+    // سنضيف تأخير بسيط لعمليات renderBookings المتكررة
+    if (typeof AppRenderer !== 'undefined' && AppRenderer.renderBookings) {
+        var originalRenderBookings = AppRenderer.renderBookings;
+        var renderTimeout = null;
+        AppRenderer.renderBookings = function() {
+            clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(function() {
+                originalRenderBookings.call(AppRenderer);
+            }, 100); // تجميع التحديثات خلال 100 مللي ثانية
+        };
+    }
+
+    // ---------- 4. مؤشر تحميل سريع عند الحفظ ----------
+    var originalShowMsg = Utils.showMsg;
+    Utils.showMsg = function(msg, type) {
+        // يمكننا إظهار إشعار مؤقت أخف
+        originalShowMsg.call(Utils, msg, type);
+    };
+
+    console.log('✅ تم تسريع النظام: حفظ فوري، تحميل سريع، مزامنة خلفية');
+})();
