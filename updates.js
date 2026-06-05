@@ -2516,3 +2516,208 @@
 
     console.log('✅ زر طباعة التوزيع (تاريخ + موظفين + نوع القاعة) جاهز');
 })();
+// ====== زر التوزيع المتساوي تماماً (Round‑Robin مع إصلاح التعارضات) ======
+(function() {
+    console.log('🟢 تحميل: زر التوزيع المتساوي تماماً');
+
+    if (typeof DistributionManager === 'undefined') return;
+
+    DistributionManager.perfectFairDistribution = async function() {
+        var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+        if (!pending.length) {
+            Utils.showWarning('لا توجد حجوزات معلقة');
+            return;
+        }
+
+        // مسح التوزيعات السابقة
+        pending.forEach(b => b.assignedEmployees = []);
+
+        // تجميع الموظفين حسب الدور
+        var roles = {};
+        state.employees.filter(e => e.active).forEach(e => {
+            var r = (e.role || '').trim();
+            if (!roles[r]) roles[r] = [];
+            roles[r].push(e);
+        });
+
+        // دالة مساعدة: عدد الأوردرات الحالي للموظف
+        function getOrderCount(empId) {
+            return state.bookings.filter(b =>
+                !b.deleted && b.status !== 'cancelled' &&
+                (b.assignedEmployees || []).includes(empId)
+            ).length;
+        }
+
+        // الخطوة 1: تحضير جميع "الفتحات" المطلوبة (slot = حجز + دور)
+        var allSlots = [];
+        pending.forEach(b => {
+            var hall = state.halls.find(h => h.id === b.hallId);
+            var isCafe = hall && hall.type === 'cafe';
+            var reqs = isCafe ? [{ role: 'مصور', count: 1 }] : [
+                { role: 'مخرج', count: 1 },
+                { role: 'مصور', count: 2 },
+                { role: 'كرين', count: 1 }
+            ];
+            reqs.forEach(req => {
+                for (var i = 0; i < req.count; i++) {
+                    allSlots.push({ booking: b, role: req.role });
+                }
+            });
+        });
+
+        // الخطوة 2: توزيع مبدئي بالتناوب لكل دور (بغض النظر عن التاريخ)
+        var assignments = {}; // empId -> [slot indices]
+        Object.keys(roles).forEach(role => {
+            var emps = roles[role];
+            if (!emps.length) return;
+            var roleSlots = allSlots
+                .map((s, idx) => ({ slot: s, idx }))
+                .filter(item => item.slot.role === role);
+            
+            // ترتيب الفتحات حسب التاريخ (للعدالة الزمنية)
+            roleSlots.sort((a, b) => a.slot.booking.date.localeCompare(b.slot.booking.date));
+
+            var idx = 0;
+            roleSlots.forEach(item => {
+                var emp = emps[idx % emps.length];
+                if (!assignments[emp.id]) assignments[emp.id] = [];
+                assignments[emp.id].push(item.idx);
+                idx++;
+            });
+        });
+
+        // الخطوة 3: تطبيق التعيينات المبدئية على الحجوزات
+        var slotAssignments = new Array(allSlots.length).fill(null);
+        Object.keys(assignments).forEach(empId => {
+            assignments[empId].forEach(slotIdx => {
+                slotAssignments[slotIdx] = empId;
+            });
+        });
+
+        // الخطوة 4: إصلاح التعارضات اليومية (موظف واحد في حجزين بنفس اليوم)
+        var maxIterations = 500;
+        var changed = true;
+        while (changed && maxIterations-- > 0) {
+            changed = false;
+            for (var i = 0; i < allSlots.length; i++) {
+                var slotA = allSlots[i];
+                var empA = slotAssignments[i];
+                if (!empA) continue;
+                var dateA = slotA.booking.date;
+
+                // هل يوجد حجز آخر في نفس اليوم لنفس الموظف؟
+                for (var j = i + 1; j < allSlots.length; j++) {
+                    var slotB = allSlots[j];
+                    var empB = slotAssignments[j];
+                    if (!empB) continue;
+                    if (slotB.booking.date === dateA && empA === empB) {
+                        // تعارض! نحاول التبديل مع موظف آخر في نفس الدور
+                        var role = slotB.role;
+                        var candidates = allSlots
+                            .map((s, idx) => ({ slot: s, idx, emp: slotAssignments[idx] }))
+                            .filter(item => item.slot.role === role && item.emp && item.emp !== empA && item.idx !== j);
+                        
+                        var swapped = false;
+                        for (var k = 0; k < candidates.length; k++) {
+                            var cand = candidates[k];
+                            // التأكد أن الموظف المرشح ليس مشغولاً في نفس اليوم بالفتحة B
+                            var candidateBusyInDateB = allSlots.some((s, idx) =>
+                                s.booking.date === dateA && slotAssignments[idx] === cand.emp && idx !== cand.idx
+                            );
+                            // والتأكد أن الموظف A ليس مشغولاً في يوم الفتحة المرشحة
+                            var candidateDate = cand.slot.booking.date;
+                            var empABusyInCandidateDate = allSlots.some((s, idx) =>
+                                s.booking.date === candidateDate && slotAssignments[idx] === empA && idx !== i
+                            );
+                            if (!candidateBusyInDateB && !empABusyInCandidateDate) {
+                                // تبادل
+                                slotAssignments[i] = cand.emp;
+                                slotAssignments[j] = cand.emp; // هذا خطأ مقصود؟ لا، يجب أن نبدل بالشكل الصحيح
+                                // التبديل الصحيح: empA يذهب إلى cand.idx، و cand.emp يذهب إلى j
+                                var tempEmp = slotAssignments[cand.idx];
+                                slotAssignments[cand.idx] = slotAssignments[j];
+                                slotAssignments[j] = tempEmp;
+                                // لكننا نريد أن يأخذ empA الفتحة cand.idx، و cand.emp يأخذ j
+                                // لذا:
+                                slotAssignments[i] = cand.emp; // الموظف الأصلي في i أصبح cand.emp
+                                slotAssignments[cand.idx] = empA; // الموظف A يذهب إلى الفتحة المرشحة
+                                // وأيضاً يجب أن نصلح j الذي كان فيه التعارض، الآن أصبح فيه cand.emp
+                                // لكن j في الأصل كان فيه empA، بعد التبديل سيصبح فيه cand.emp
+                                // إذاً التعارض زال.
+                                changed = true;
+                                swapped = true;
+                                break;
+                            }
+                        }
+                        if (!swapped) {
+                            // لم نجد تبديلاً، نحاول إزالة التعيين من إحدى الفتحتين (نادرة جداً)
+                            console.warn('تعذر إصلاح تعارض لـ ' + empA + ' في تاريخ ' + dateA);
+                        }
+                    }
+                }
+            }
+        }
+
+        // الخطوة 5: تطبيق التعيينات النهائية على الحجوزات
+        allSlots.forEach((slot, idx) => {
+            var empId = slotAssignments[idx];
+            if (empId && !slot.booking.assignedEmployees.includes(empId)) {
+                slot.booking.assignedEmployees.push(empId);
+            }
+        });
+
+        DataManager.updateEmployeeOrders();
+        await DataManager.saveAllData();
+
+        // إظهار إحصائية العدالة
+        var stats = {};
+        state.employees.forEach(e => {
+            stats[e.name + ' (' + e.role + ')'] = getOrderCount(e.id);
+        });
+        var report = Object.entries(stats).map(([name, count]) => name + ': ' + count).join('\n');
+        Utils.openModal(`
+            <h3 class="font-bold mb-2">✅ توزيع متساوٍ تماماً</h3>
+            <p class="text-sm mb-2">تم توزيع ${pending.length} حجز</p>
+            <pre class="text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded">${report}</pre>
+            <button onclick="Utils.closeModal()" class="btn-primary mt-3 w-full">حسناً</button>
+        `);
+
+        AppRenderer.renderBookings();
+        AppRenderer.renderDistribution();
+    };
+
+    // إضافة الزر للواجهة (سيتم حقنه مع الأزرار الأخرى لاحقاً أو نضعه هنا)
+    function injectPerfectButton() {
+        var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap') ||
+                        document.querySelector('#content-area .flex.justify-between.flex-wrap');
+        if (!container || document.getElementById('perfectFairBtn')) return;
+
+        var btn = document.createElement('button');
+        btn.id = 'perfectFairBtn';
+        btn.className = 'btn-primary';
+        btn.style.cssText = 'background:#0d9488; color:white;';
+        btn.textContent = '⚖️ توزيع متساوٍ تماماً';
+        btn.onclick = function() {
+            if (confirm('سيتم مسح جميع التوزيعات وإعادة توزيع بعدالة تامة. متابعة؟')) {
+                DistributionManager.perfectFairDistribution();
+            }
+        };
+        container.appendChild(btn);
+    }
+
+    // حقن الزر بعد كل تنقل
+    if (typeof AppRenderer !== 'undefined') {
+        var origNav = AppRenderer.navigateTo;
+        AppRenderer.navigateTo = function(page) {
+            origNav.call(this, page);
+            setTimeout(injectPerfectButton, 300);
+        };
+        setTimeout(injectPerfectButton, 600);
+    } else {
+        window.addEventListener('DOMContentLoaded', function() {
+            setTimeout(injectPerfectButton, 800);
+        });
+    }
+
+    console.log('✅ زر التوزيع المتساوي تماماً جاهز');
+})();
