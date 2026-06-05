@@ -2721,3 +2721,189 @@
 
     console.log('✅ زر التوزيع المتساوي تماماً جاهز');
 })();
+// ====== [النهائي] حقن جميع أزرار التوزيع والطباعة والملخص ======
+(function() {
+    console.log('🟢 تشغيل الحاقن النهائي للأزرار');
+
+    // ---------- 1. تعريف الدوال الناقصة (إن لم تكن موجودة) ----------
+    if (typeof DistributionManager !== 'undefined') {
+        if (!DistributionManager.perfectFairDistribution) {
+            DistributionManager.perfectFairDistribution = async function() {
+                var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+                if (!pending.length) { Utils.showWarning('لا توجد حجوزات معلقة'); return; }
+                pending.forEach(b => b.assignedEmployees = []);
+                var roles = {};
+                state.employees.filter(e => e.active).forEach(e => {
+                    var r = (e.role || '').trim();
+                    if (!roles[r]) roles[r] = [];
+                    roles[r].push(e);
+                });
+                var allSlots = [];
+                pending.forEach(b => {
+                    var hall = state.halls.find(h => h.id === b.hallId);
+                    var isCafe = hall && hall.type === 'cafe';
+                    var reqs = isCafe ? [{ role: 'مصور', count: 1 }] : [
+                        { role: 'مخرج', count: 1 }, { role: 'مصور', count: 2 }, { role: 'كرين', count: 1 }
+                    ];
+                    reqs.forEach(req => { for (var i = 0; i < req.count; i++) allSlots.push({ booking: b, role: req.role }); });
+                });
+                var slotAssignments = new Array(allSlots.length).fill(null);
+                var empLists = {};
+                Object.keys(roles).forEach(role => {
+                    var emps = roles[role]; if (!emps.length) return;
+                    var slotIndices = allSlots.map((s,i) => s.role === role ? i : -1).filter(i => i !== -1);
+                    slotIndices.sort((a,b) => allSlots[a].booking.date.localeCompare(allSlots[b].booking.date));
+                    var idx = 0;
+                    slotIndices.forEach(si => { slotAssignments[si] = emps[idx % emps.length].id; idx++; });
+                });
+                allSlots.forEach((slot, i) => {
+                    var empId = slotAssignments[i];
+                    if (empId && !slot.booking.assignedEmployees.includes(empId)) slot.booking.assignedEmployees.push(empId);
+                });
+                DataManager.updateEmployeeOrders(); await DataManager.saveAllData();
+                Utils.showMsg('✅ توزيع متساوٍ تماماً');
+                AppRenderer.renderBookings(); AppRenderer.renderDistribution();
+            };
+        }
+
+        if (!DistributionManager.distributeRemainingFairly) {
+            DistributionManager.distributeRemainingFairly = async function() {
+                var unassigned = state.bookings.filter(b => b.status === 'pending' && !b.deleted && (!b.assignedEmployees || !b.assignedEmployees.length));
+                if (!unassigned.length) { Utils.showMsg('✅ جميع الحجوزات موزعة'); return; }
+                var roles = {};
+                state.employees.filter(e => e.active).forEach(e => {
+                    var r = (e.role||'').trim();
+                    if (!roles[r]) roles[r] = [];
+                    roles[r].push(e);
+                });
+                function getCount(eid) { return state.bookings.filter(b => !b.deleted && b.status!=='cancelled' && (b.assignedEmployees||[]).includes(eid)).length; }
+                unassigned.sort((a,b)=>a.date.localeCompare(b.date));
+                var byDate = {};
+                unassigned.forEach(b => { if (!byDate[b.date]) byDate[b.date]=[]; byDate[b.date].push(b); });
+                Object.keys(byDate).sort().forEach(date => {
+                    var busy = new Set();
+                    state.bookings.forEach(b => { if (b.date===date && !b.deleted) (b.assignedEmployees||[]).forEach(eid=>busy.add(eid)); });
+                    byDate[date].forEach(b => {
+                        var hall = state.halls.find(h=>h.id===b.hallId);
+                        var isCafe = hall && hall.type==='cafe';
+                        var reqs = isCafe ? [{role:'مصور',count:1}] : [{role:'مخرج',count:1},{role:'مصور',count:2},{role:'كرين',count:1}];
+                        b.assignedEmployees = b.assignedEmployees || [];
+                        reqs.forEach(req => {
+                            var candidates = (roles[req.role]||[]).filter(e => !busy.has(e.id) && !b.assignedEmployees.includes(e.id));
+                            candidates.sort((a,b)=>getCount(a.id)-getCount(b.id));
+                            for (var i=0; i<req.count && i<candidates.length; i++) {
+                                b.assignedEmployees.push(candidates[i].id); busy.add(candidates[i].id);
+                            }
+                        });
+                    });
+                });
+                DataManager.updateEmployeeOrders(); await DataManager.saveAllData();
+                Utils.showMsg('✅ استكمال التوزيع بالتساوي');
+                AppRenderer.renderBookings(); AppRenderer.renderDistribution();
+            };
+        }
+
+        if (!DistributionManager.distributeUnassigned) {
+            DistributionManager.distributeUnassigned = async function() {
+                var unassigned = state.bookings.filter(b => b.status === 'pending' && !b.deleted && (!b.assignedEmployees || !b.assignedEmployees.length));
+                if (!unassigned.length) { Utils.showMsg('✅ لا يوجد غير معينين'); return; }
+                await DistributionManager.distributeRemainingFairly(); // يستخدم نفس المنطق
+            };
+        }
+    }
+
+    // ---------- 2. دوال مساعدة للطباعة والملخص ----------
+    function copySystemSummary() {
+        var s = '📋 ملخص Dr Media Pro\n👤 ' + (state.currentUser?.name||'') + ' | ' + new Date().toLocaleString('ar-EG') + '\n';
+        s += '📅 حجوزات: ' + state.bookings.filter(b=>!b.deleted).length + ' (معلق: ' + state.bookings.filter(b=>b.status==='pending'&&!b.deleted).length + ')\n';
+        s += '👥 موظفين: ' + state.employees.length + ' | قاعات: ' + state.halls.length + '\n';
+        navigator.clipboard.writeText(s).then(() => Utils.showMsg('✅ تم نسخ الملخص'));
+    }
+
+    function openPrintModal() {
+        var today = Utils.getTodayDateStr();
+        var nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth()+1);
+        var nextMonthStr = nextMonth.toISOString().slice(0,10);
+        Utils.openModal(`
+            <h3>🖨️ طباعة توزيع الحجوزات</h3>
+            <input type="date" id="pFrom" class="w-full border-2 p-2 my-2 rounded-xl" value="${today}">
+            <input type="date" id="pTo" class="w-full border-2 p-2 my-2 rounded-xl" value="${nextMonthStr}">
+            <button onclick="window._printDistNow()" class="btn-primary w-full">🖨️ طباعة</button>
+        `);
+    }
+    window._printDistNow = function() {
+        var from = document.getElementById('pFrom')?.value, to = document.getElementById('pTo')?.value;
+        if (!from||!to) return Utils.showError('اختر التاريخ');
+        var filtered = state.bookings.filter(b => !b.deleted && b.status!=='cancelled' && b.date>=from && b.date<=to);
+        if (!filtered.length) { Utils.showError('لا توجد حجوزات'); return; }
+        var win = window.open('','_blank');
+        var html = '<html dir="rtl"><head><meta charset="UTF-8"><title>توزيع</title><style>table{border-collapse:collapse;width:100%} th,td{border:1px solid #333;padding:4px} th{background:#16a34a;color:#fff} @media print{body{margin:0}}</style></head><body><h2>توزيع من '+from+' إلى '+to+'</h2>';
+        var byDate = {};
+        filtered.forEach(b => { if(!byDate[b.date]) byDate[b.date]=[]; byDate[b.date].push(b); });
+        Object.keys(byDate).sort().forEach(d => {
+            html += '<h3>'+d+'</h3><table><tr><th>القاعة</th><th>النوع</th><th>الموظفون</th></tr>';
+            byDate[d].forEach(b => {
+                var hall = state.halls.find(h=>h.id===b.hallId);
+                var type = hall ? (hall.type==='cafe'?'كافيه':hall.type==='open'?'مفتوحة':'مغلقة') : '—';
+                var emps = (b.assignedEmployees||[]).map(eid=> (state.employees.find(e=>e.id===eid)||{}).name || eid).join('، ') || '—';
+                html += '<tr><td>'+b.hallName+'</td><td>'+type+'</td><td>'+emps+'</td></tr>';
+            });
+            html += '</table>';
+        });
+        html += '<script>window.onload=function(){window.print()}</script></body></html>';
+        win.document.write(html); win.document.close();
+        Utils.closeModal();
+    };
+
+    // ---------- 3. الحاقن الدائم ----------
+    function injectAllButtons() {
+        // زر نسخ الملخص في الشريط العلوي
+        if (!document.getElementById('copySummaryBtn')) {
+            var topbar = document.querySelector('.topbar');
+            if (topbar) {
+                var btn = document.createElement('button');
+                btn.id = 'copySummaryBtn'; btn.className = 'btn-outline text-xs';
+                btn.textContent = '📋 نسخ ملخص'; btn.style.cssText = 'margin:0 8px;';
+                btn.onclick = copySystemSummary;
+                var logoutBtn = topbar.querySelector('button');
+                if (logoutBtn) logoutBtn.parentNode.insertBefore(btn, logoutBtn);
+                else topbar.appendChild(btn);
+            }
+        }
+
+        // الأزرار في صفحة الحجوزات / التوزيع
+        var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap') ||
+                        document.querySelector('#content-area .flex.justify-between.flex-wrap') ||
+                        document.querySelector('#content-area .bg-card .flex.flex-wrap');
+        if (!container) return;
+
+        var pageTitle = document.getElementById('pageTitle')?.textContent || '';
+        if (!pageTitle.includes('الحجوزات') && !pageTitle.includes('التوزيع')) return;
+
+        var buttons = [
+            { id: 'perfectFairBtn', text: '⚖️ توزيع متساوٍ تماماً', style: 'background:#0d9488; color:white;', action: () => { if(confirm('مسح الكل وإعادة توزيع عادل؟')) DistributionManager.perfectFairDistribution(); } },
+            { id: 'fairCompleteBtn', text: '⚖️ استكمال توزيع متساوي', style: 'background:#8b5cf6; color:white;', action: () => DistributionManager.distributeRemainingFairly() },
+            { id: 'distributeUnassignedBtn', text: '⚡ توزيع غير المعينين', style: 'background:#f97316; color:white;', action: () => DistributionManager.distributeUnassigned() },
+            { id: 'printBookingsBtn', text: '🖨️ طباعة التوزيع', style: 'background:#059669; color:white;', action: openPrintModal }
+        ];
+
+        buttons.forEach(b => {
+            if (!document.getElementById(b.id)) {
+                var btn = document.createElement('button');
+                btn.id = b.id; btn.className = 'btn-secondary';
+                btn.style.cssText = b.style;
+                btn.textContent = b.text;
+                btn.onclick = b.action;
+                container.appendChild(btn);
+            }
+        });
+    }
+
+    // مراقبة الصفحة باستمرار وحقن الأزرار فور ظهورها
+    setInterval(injectAllButtons, 800);
+    window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(injectAllButtons, 500);
+    });
+
+    console.log('✅ الحاقن النهائي يعمل');
+})();
