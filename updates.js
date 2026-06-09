@@ -2909,3 +2909,152 @@ alert('✅ ملف التحديثات يعمل');
 
     console.log('✅ الحاقن النهائي يعمل');
 })();
+// ====== تعريف دالة التوزيع المتساوي تماماً + زرها (مضمون) ======
+(function() {
+    console.log('🟢 تعريف perfectFairDistribution');
+
+    if (typeof DistributionManager === 'undefined') return;
+
+    // تعريف الدالة إن كانت مفقودة
+    if (!DistributionManager.perfectFairDistribution) {
+        DistributionManager.perfectFairDistribution = async function() {
+            var pending = state.bookings.filter(b => b.status === 'pending' && !b.deleted);
+            if (!pending.length) {
+                Utils.showWarning('لا توجد حجوزات معلقة');
+                return;
+            }
+
+            // مسح الكل
+            pending.forEach(b => b.assignedEmployees = []);
+
+            // تجميع الموظفين حسب الدور
+            var byRole = {};
+            state.employees.filter(e => e.active).forEach(e => {
+                var r = (e.role || '').trim();
+                if (!byRole[r]) byRole[r] = [];
+                byRole[r].push(e);
+            });
+
+            // دالة مساعدة: عدد الأوردرات الحالي
+            function getCount(eid) {
+                return state.bookings.filter(b => !b.deleted && b.status !== 'cancelled' &&
+                    (b.assignedEmployees || []).includes(eid)).length;
+            }
+
+            // تجميع حسب اليوم لتجنب التعارض
+            var byDate = {};
+            pending.forEach(b => {
+                if (!byDate[b.date]) byDate[b.date] = [];
+                byDate[b.date].push(b);
+            });
+
+            var dates = Object.keys(byDate).sort();
+
+            // لكل يوم، نوزع الفتحات المطلوبة بالتناوب على الموظفين
+            for (var d = 0; d < dates.length; d++) {
+                var date = dates[d];
+                var dayBookings = byDate[date];
+                var busy = new Set(); // موظفين مشغولين في هذا اليوم
+
+                // نجمع الفتحات المطلوبة لهذا اليوم
+                var slots = []; // { booking, role, indexInBooking }
+                dayBookings.forEach(b => {
+                    var hall = state.halls.find(h => h.id === b.hallId);
+                    var isCafe = hall && hall.type === 'cafe';
+                    var reqs = isCafe ? [{role:'مصور',count:1}] : [{role:'مخرج',count:1},{role:'مصور',count:2},{role:'كرين',count:1}];
+                    reqs.forEach(req => {
+                        for (var i = 0; i < req.count; i++) {
+                            slots.push({ booking: b, role: req.role });
+                        }
+                    });
+                });
+
+                // لكل دور، نوزع بالتناوب
+                ['مخرج','كرين','مصور'].forEach(role => {
+                    var emps = byRole[role];
+                    if (!emps || !emps.length) return;
+                    var roleSlots = slots.filter(s => s.role === role);
+                    if (!roleSlots.length) return;
+
+                    // ترتيب الموظفين حسب عدد الأوردرات الحالية (للعدالة)
+                    var sortedEmps = [...emps].sort((a,b) => getCount(a.id) - getCount(b.id));
+                    var empIndex = 0;
+
+                    roleSlots.forEach(slot => {
+                        // ابحث عن موظف غير مشغول في هذا اليوم
+                        var assigned = false;
+                        for (var attempt = 0; attempt < sortedEmps.length; attempt++) {
+                            var emp = sortedEmps[(empIndex + attempt) % sortedEmps.length];
+                            if (!busy.has(emp.id) && !slot.booking.assignedEmployees.includes(emp.id)) {
+                                slot.booking.assignedEmployees.push(emp.id);
+                                busy.add(emp.id);
+                                empIndex = (empIndex + attempt + 1) % sortedEmps.length;
+                                assigned = true;
+                                break;
+                            }
+                        }
+                        // إذا تعذر، نعين أي موظف متاح (نادر)
+                        if (!assigned) {
+                            for (var a = 0; a < emps.length; a++) {
+                                var emp = emps[a];
+                                if (!busy.has(emp.id) && !slot.booking.assignedEmployees.includes(emp.id)) {
+                                    slot.booking.assignedEmployees.push(emp.id);
+                                    busy.add(emp.id);
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+
+            DataManager.updateEmployeeOrders();
+            await DataManager.saveAllData();
+
+            // عرض إحصائية
+            var stats = {};
+            state.employees.forEach(e => {
+                stats[e.name + ' (' + e.role + ')'] = getCount(e.id);
+            });
+            var report = Object.entries(stats).map(([name, count]) => name + ': ' + count).join('\n');
+            Utils.openModal(`
+                <h3>✅ توزيع متساوٍ تماماً</h3>
+                <pre class="text-sm bg-gray-100 p-2">${report}</pre>
+                <button onclick="Utils.closeModal()" class="btn-primary mt-2 w-full">حسناً</button>
+            `);
+
+            AppRenderer.renderBookings();
+            AppRenderer.renderDistribution();
+        };
+    }
+
+    // حقن الزر مع باقي الأزرار (إن لم يوجد)
+    function injectPerfectButton() {
+        var container = document.querySelector('#content-area .flex.gap-2.mb-4.flex-wrap') ||
+                        document.querySelector('#content-area .flex.justify-between.flex-wrap');
+        if (!container || document.getElementById('perfectFairBtn')) return;
+
+        var btn = document.createElement('button');
+        btn.id = 'perfectFairBtn';
+        btn.className = 'btn-primary';
+        btn.style.cssText = 'background:#0d9488; color:white;';
+        btn.textContent = '⚖️ توزيع متساوٍ تماماً';
+        btn.onclick = function() {
+            if (confirm('سيتم مسح جميع التوزيعات وإعادة توزيع بعدالة تامة. متابعة؟')) {
+                DistributionManager.perfectFairDistribution();
+            }
+        };
+        container.appendChild(btn);
+    }
+
+    // محاولة الحقن كل 800 مللي ثانية
+    setInterval(function() {
+        if (document.getElementById('pageTitle') && 
+            (document.getElementById('pageTitle').textContent.includes('الحجوزات') ||
+             document.getElementById('pageTitle').textContent.includes('التوزيع'))) {
+            injectPerfectButton();
+        }
+    }, 800);
+
+    console.log('✅ perfectFairDistribution جاهزة مع زرها');
+})();
