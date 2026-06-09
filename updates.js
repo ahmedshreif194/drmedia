@@ -1,3 +1,5 @@
+console.log('✅ تم تحميل updates.js بنجاح في ' + new Date().toLocaleTimeString());
+alert('✅ ملف التحديثات يعمل');
 // ====== تحديث: عرض التاريخ والوقت (المدير + الموظف) ======
 (function() {
     console.log('🟢 تحميل: التاريخ والوقت');
