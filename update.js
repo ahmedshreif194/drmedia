@@ -704,205 +704,173 @@
 })();
 
 /* =========================================================
-   SECTION 2 (v2): Realtime Live Sync — FIXED
-   Version: 3.1.1
-   Fix: Uses unique TAB_ID per browser tab instead of username
+   SECTION 2 (v5): Realtime Live Sync — BULLETPROOF
+   Version: 5.0.0
+   
+   - REPLACES saveData completely (no wrapping)
+   - Polls State.data hash every 2.5s (backup trigger)
+   - Listens to Firestore in real-time
+   - Shows live sync indicator in topbar
    ========================================================= */
 (function () {
   'use strict';
 
-  console.log('%c[Section 2 v2] Realtime Live Sync loading…', 'color:#7c3aed;font-weight:bold');
+  console.log('%c[Section 2 v5] ═══ Loading ═══', 'color:#7c3aed;font-weight:bold;font-size:14px');
 
-  /* ---------- kill old Section 2 listener ---------- */
-  if (window.DrMediaSync && typeof window.DrMediaSync.unsub === 'function') {
-    try {
-      window.DrMediaSync.unsub();
-      window.DrMediaSync.active = false;
-      console.log('[Section 2 v2] Killed old Section 2 listener');
-    } catch (e) {}
+  // Kill any old listeners from previous versions
+  if (window.DrMediaSync) {
+    if (window.DrMediaSync.unsub) { try { window.DrMediaSync.unsub(); } catch (e) {} }
+    if (window.DrMediaSync.pollTimer) clearInterval(window.DrMediaSync.pollTimer);
+    if (window.DrMediaSync.pushTimer) clearTimeout(window.DrMediaSync.pushTimer);
   }
 
-  /* ---------- unique tab identifier ---------- */
-  const TAB_ID = 'tab_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now();
-  console.log('[Section 2 v2] My TAB_ID:', TAB_ID);
+  const TAB_ID = 'T' + Math.random().toString(36).slice(2, 7).toUpperCase();
+  window.__DM_TAB_ID = TAB_ID;
+  console.log('%c[Section 2 v5] My TAB_ID: ' + TAB_ID, 'color:#06b6d4;font-weight:bold;font-size:13px');
 
-  /* ---------- wait helper ---------- */
-  function waitFor(cond, cb, maxTries) {
-    maxTries = maxTries || 100;
-    let tries = 0;
-    const t = setInterval(() => {
-      tries++;
-      if (cond()) { clearInterval(t); cb(); }
-      else if (tries >= maxTries) { clearInterval(t); console.warn('[Section 2 v2] timeout'); }
-    }, 100);
-  }
-
-  /* ---------- sync state ---------- */
   const Sync = {
     active: false,
     unsub: null,
-    lastSyncAt: null,
     updatesReceived: 0,
     writesSent: 0,
+    lastSyncAt: null,
+    lastPushAt: null,
+    lastError: null,
+    pushTimer: null,
+    pollTimer: null,
     applyingRemote: false,
-    pushTimer: null
+    lastHash: '',
+    tabId: TAB_ID
   };
   window.DrMediaSync = Sync;
 
-  /* ---------- i18n ---------- */
-  function patchI18n() {
-    if (typeof I18N === 'undefined') return;
-    Object.assign(I18N.ar, {
-      sync_updated: 'تم تحديث البيانات من السحابة'
-    });
-    Object.assign(I18N.en, {
-      sync_updated: 'Data updated from cloud'
-    });
-  }
-
-  /* ---------- topbar indicator ---------- */
-  function injectIndicator() {
-    if (document.getElementById('dm-sync-indicator')) return;
-    const topbar = document.getElementById('topbar');
-    if (!topbar) return;
-
-    const notifBtn = document.getElementById('notif-btn');
-    const wrap = document.createElement('div');
-    wrap.id = 'dm-sync-indicator';
-    wrap.style.cssText = `display:flex;align-items:center;gap:.35rem;padding:.35rem .65rem;border-radius:8px;background:rgba(16,185,129,.1);color:#10b981;font-size:.7rem;font-weight:600;margin-inline-end:.35rem;cursor:pointer;transition:all .2s`;
-    wrap.innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:dm-pulse 2s infinite"></span><span id="dm-sync-label">Live</span>`;
-    wrap.title = 'Realtime Live Sync — Click to toggle';
-
-    if (notifBtn && notifBtn.parentNode) notifBtn.parentNode.insertBefore(wrap, notifBtn);
-    else topbar.appendChild(wrap);
-
-    if (!document.getElementById('dm-pulse-style')) {
-      const s = document.createElement('style');
-      s.id = 'dm-pulse-style';
-      s.textContent = `@keyframes dm-pulse {0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.2);}}`;
-      document.head.appendChild(s);
-    }
-
-    wrap.addEventListener('click', () => {
-      if (Sync.active) { stopSync(); setIndicatorState('paused'); }
-      else { startSync(); setIndicatorState('active'); }
-    });
-  }
-
-  function setIndicatorState(state) {
-    const wrap = document.getElementById('dm-sync-indicator');
-    const label = document.getElementById('dm-sync-label');
-    if (!wrap || !label) return;
-    const dot = wrap.querySelector('span');
-    if (state === 'active') {
-      wrap.style.background = 'rgba(16,185,129,.1)';
-      wrap.style.color = '#10b981';
-      label.textContent = 'Live';
-      if (dot) dot.style.background = '#10b981';
-    } else {
-      wrap.style.background = 'rgba(100,116,139,.1)';
-      wrap.style.color = '#64748b';
-      label.textContent = 'Paused';
-      if (dot) dot.style.background = '#64748b';
-    }
-  }
-
-  function flashIndicator() {
-    const wrap = document.getElementById('dm-sync-indicator');
-    if (!wrap) return;
-    wrap.style.transform = 'scale(1.2)';
-    setTimeout(() => { wrap.style.transform = 'scale(1)'; }, 350);
-  }
-
-  /* ---------- OVERRIDE saveData completely ---------- */
-  function overrideSaveData() {
-    window.saveData = function () {
-      // 1. Persist locally
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
-      // 2. Don't echo remote data back
-      if (Sync.applyingRemote) return;
-      // 3. Debounced push
-      if (Sync.active && window.DrMediaFB && window.DrMediaFB.ready) {
-        clearTimeout(Sync.pushTimer);
-        Sync.pushTimer = setTimeout(pushNow, 700);
+  /* ==========================================================
+     UTILITIES
+     ========================================================== */
+  function waitFor(cond, cb, label) {
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > 300) {
+        clearInterval(t);
+        console.warn('[Section 2 v5] Timeout waiting for: ' + (label || 'condition'));
+        return;
       }
-    };
-    console.log('[Section 2 v2] saveData overridden');
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
   }
 
-  /* ---------- PUSH ---------- */
-  function pushNow() {
-    if (!window.DrMediaFB || !window.DrMediaFB.ready) return;
+  function computeHash() {
     try {
-      const { doc, setDoc, serverTimestamp } = window.DrMediaFB.modules.fsMod;
-      const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
-      setDoc(ref, {
-        payload: State.data,
-        version: Date.now(),
-        updatedBy: TAB_ID,
-        updatedByUser: State.user ? State.user.username : null,
-        updatedAt: serverTimestamp()
-      }).then(() => {
-        Sync.writesSent++;
-        Sync.lastSyncAt = new Date();
-        console.log('[Section 2 v2] → Pushed to cloud');
-        if (window.DrMediaCounters) window.DrMediaCounters.trackWrite('app_state', 1);
-      }).catch(err => {
-        console.warn('[Section 2 v2] Push failed:', err);
-      });
-    } catch (e) { console.error('[Section 2 v2] pushNow error:', e); }
+      const d = State.data;
+      if (!d) return '';
+      return [
+        (d.bookings || []).length,
+        (d.employees || []).length,
+        (d.clients || []).length,
+        (d.distributions || []).length,
+        (d.advances || []).length,
+        (d.deductions || []).length,
+        (d.bonuses || []).length,
+        (d.equipment || []).length,
+        (d.halls || []).length,
+        (d.users || []).length,
+        JSON.stringify(d.settings || {}).length,
+        // Also hash a few names to detect edits
+        (d.employees || []).map(e => e.name).join(',').length,
+        (d.bookings || []).map(b => b.clientName).join(',').length
+      ].join('|');
+    } catch (e) { return ''; }
   }
 
-  /* ---------- LISTENER ---------- */
-  function startSync() {
-    if (Sync.active) return;
+  /* ==========================================================
+     PUSH TO CLOUD
+     ========================================================== */
+  function pushToCloud(reason) {
     if (!window.DrMediaFB || !window.DrMediaFB.ready) {
-      console.warn('[Section 2 v2] Firebase not ready');
+      console.warn('[Section 2 v5] Firebase not ready');
       return;
     }
-    try {
-      const { doc, onSnapshot } = window.DrMediaFB.modules.fsMod;
-      const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+    if (!State.user) {
+      console.warn('[Section 2 v5] Not logged in — skipping push');
+      return;
+    }
 
-      Sync.unsub = onSnapshot(ref, (snap) => {
-        if (!snap.exists()) return;
+    console.log('%c[Section 2 v5] 📤 PUSH (' + reason + ')', 'color:#f59e0b;font-weight:bold');
+
+    const { doc, setDoc, serverTimestamp } = window.DrMediaFB.modules.fsMod;
+    const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+
+    const payload = {
+      payload: State.data,
+      updatedBy: TAB_ID,
+      updatedByUser: State.user.username,
+      updatedAt: serverTimestamp(),
+      version: Date.now()
+    };
+
+    setDoc(ref, payload)
+      .then(() => {
+        Sync.writesSent++;
+        Sync.lastPushAt = new Date();
+        Sync.lastError = null;
+        console.log('%c[Section 2 v5] ✅ WRITE OK (#' + Sync.writesSent + ')', 'color:#10b981;font-weight:bold');
+        updateIndicator('push');
+      })
+      .catch(err => {
+        Sync.lastError = err.code + ': ' + err.message;
+        console.error('[Section 2 v5] ❌ WRITE FAILED:', err);
+        updateIndicator('error');
+      });
+  }
+
+  /* ==========================================================
+     FIRESTORE LISTENER
+     ========================================================== */
+  function startListener() {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) return false;
+    if (Sync.unsub) { try { Sync.unsub(); } catch (e) {} Sync.unsub = null; }
+
+    const { doc, onSnapshot } = window.DrMediaFB.modules.fsMod;
+    const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+
+    Sync.unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (!snap.exists()) {
+          console.log('[Section 2 v5] Doc does not exist yet');
+          return;
+        }
         const remote = snap.data();
         if (!remote || !remote.payload) return;
 
-        // ✅ SKIP ONLY OUR OWN WRITES
-        if (remote.updatedBy === TAB_ID) {
-          console.log('[Section 2 v2] ← Own write echo — skip');
-          return;
-        }
+        const isMine = remote.updatedBy === TAB_ID;
+        console.log('%c[Section 2 v5] 👁 Snapshot (from=' + remote.updatedBy + ', mine=' + isMine + ')',
+                    isMine ? 'color:#64748b' : 'color:#10b981;font-weight:bold');
 
-        console.log('[Section 2 v2] ← Update from another tab:', {
-          from: (remote.updatedBy || '').slice(0, 12),
-          user: remote.updatedByUser
-        });
+        if (isMine) return;
 
+        // Apply remote
         Sync.updatesReceived++;
         Sync.lastSyncAt = new Date();
         Sync.applyingRemote = true;
 
         const session = State.user;
         State.data = remote.payload;
-
         if (session && State.data.users) {
           const u = State.data.users.find(x => x.id === session.id);
-          if (u) {
-            State.user = { id: u.id, username: u.username, name: u.name, role: u.role, employeeId: u.employeeId };
-          }
+          if (u) State.user = { id: u.id, username: u.username, name: u.name, role: u.role, employeeId: u.employeeId };
         }
-
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+        Sync.lastHash = computeHash();
 
+        console.log('%c[Section 2 v5] ✅ APPLIED REMOTE UPDATE (#' + Sync.updatesReceived + ')', 'color:#10b981;font-weight:bold;font-size:13px');
         if (typeof showToast === 'function') {
           showToast(
-            State.lang === 'ar' ? '🔄 تم تحديث البيانات من السحابة' : '🔄 Data updated from cloud',
-            'info'
+            '🔄 ' + (State.lang === 'ar' ? 'تحديث من جهاز آخر' : 'Update from another device'),
+            'success'
           );
         }
-        flashIndicator();
+        updateIndicator('receive');
 
         setTimeout(() => {
           try {
@@ -910,58 +878,215 @@
             if (typeof updateNotifBadge === 'function') updateNotifBadge();
           } catch (e) {}
           Sync.applyingRemote = false;
-        }, 250);
-      }, (err) => {
-        console.warn('[Section 2 v2] Snapshot error:', err);
-      });
+        }, 300);
+      },
+      (err) => {
+        console.error('[Section 2 v5] Listener error:', err);
+        Sync.lastError = err.code + ': ' + err.message;
+        updateIndicator('error');
+      }
+    );
 
-      Sync.active = true;
-      console.log('%c[Section 2 v2] ✓ ACTIVE', 'color:#10b981;font-weight:bold');
-    } catch (err) {
-      console.error('[Section 2 v2] Failed to start:', err);
+    Sync.active = true;
+    console.log('%c[Section 2 v5] ✓ Listener active', 'color:#10b981;font-weight:bold');
+    return true;
+  }
+
+  /* ==========================================================
+     REPLACE saveData ENTIRELY
+     ========================================================== */
+  function replaceSaveData() {
+    window.saveData = function saveData() {
+      // 1. Always persist locally
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data));
+      } catch (e) {
+        console.warn('[Section 2 v5] localStorage failed:', e);
+      }
+
+      // 2. Skip cloud push if we're just applying remote data
+      if (Sync.applyingRemote) return;
+
+      // 3. Skip if not logged in
+      if (!State.user) return;
+
+      // 4. Debounced push
+      clearTimeout(Sync.pushTimer);
+      Sync.pushTimer = setTimeout(function () {
+        pushToCloud('saveData');
+      }, 400);
+    };
+    console.log('%c[Section 2 v5] ✓ saveData REPLACED (not wrapped)', 'color:#10b981;font-weight:bold');
+  }
+
+  /* ==========================================================
+     HASH POLLING — backup trigger
+     ========================================================== */
+  function startPolling() {
+    Sync.lastHash = computeHash();
+    Sync.pollTimer = setInterval(function () {
+      if (Sync.applyingRemote) return;
+      if (!State.user) return;
+
+      const h = computeHash();
+      if (h !== Sync.lastHash) {
+        console.log('[Section 2 v5] ⚡ Hash changed — polling detected change');
+        Sync.lastHash = h;
+        clearTimeout(Sync.pushTimer);
+        Sync.pushTimer = setTimeout(function () {
+          pushToCloud('poll');
+        }, 300);
+      }
+    }, 2500);
+    console.log('%c[Section 2 v5] ✓ Hash polling active (2.5s)', 'color:#10b981');
+  }
+
+  /* ==========================================================
+     TOPBAR SYNC INDICATOR
+     ========================================================== */
+  function injectIndicator() {
+    if (document.getElementById('dm-sync-indicator')) return;
+    const topbar = document.getElementById('topbar');
+    if (!topbar) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'dm-sync-indicator';
+    wrap.style.cssText = 'display:flex;align-items:center;gap:.4rem;padding:.35rem .65rem;border-radius:8px;background:rgba(16,185,129,.12);color:#10b981;font-size:.7rem;font-weight:600;margin-inline-end:.35rem;cursor:pointer;transition:all .3s;user-select:none';
+    wrap.title = 'Click to sync manually';
+    wrap.innerHTML = '<span id="dm-sync-dot" style="width:8px;height:8px;border-radius:50%;background:#10b981;transition:all .3s"></span><span id="dm-sync-label">Live</span>';
+
+    const notifBtn = document.getElementById('notif-btn');
+    if (notifBtn && notifBtn.parentNode) notifBtn.parentNode.insertBefore(wrap, notifBtn);
+    else topbar.appendChild(wrap);
+
+    // Add keyframes
+    if (!document.getElementById('dm-pulse-style')) {
+      const s = document.createElement('style');
+      s.id = 'dm-pulse-style';
+      s.textContent = '@keyframes dmPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}';
+      document.head.appendChild(s);
     }
+    const dot = document.getElementById('dm-sync-dot');
+    if (dot) dot.style.animation = 'dmPulse 2s infinite';
+
+    // Click → manual sync
+    wrap.onclick = function () {
+      console.log('[Section 2 v5] Manual sync requested');
+      pushToCloud('manual');
+    };
   }
 
-  function stopSync() {
-    if (Sync.unsub) { try { Sync.unsub(); } catch (e) {} Sync.unsub = null; }
-    Sync.active = false;
-    console.log('[Section 2 v2] Paused');
+  function updateIndicator(mode) {
+    const wrap = document.getElementById('dm-sync-indicator');
+    const label = document.getElementById('dm-sync-label');
+    const dot = document.getElementById('dm-sync-dot');
+    if (!wrap || !label || !dot) return;
+
+    const colors = {
+      push:    { bg: 'rgba(245,158,11,.15)', fg: '#f59e0b', text: 'Pushing…', dot: '#f59e0b' },
+      receive: { bg: 'rgba(124,58,237,.15)', fg: '#7c3aed', text: 'Synced ✓',  dot: '#7c3aed' },
+      error:   { bg: 'rgba(239,68,68,.15)',  fg: '#ef4444', text: 'Error',     dot: '#ef4444' },
+      active:  { bg: 'rgba(16,185,129,.12)', fg: '#10b981', text: 'Live',      dot: '#10b981' }
+    };
+    const c = colors[mode] || colors.active;
+    wrap.style.background = c.bg;
+    wrap.style.color = c.fg;
+    label.textContent = c.text;
+    dot.style.background = c.dot;
+
+    // Reset to "Live" after 3 seconds
+    clearTimeout(wrap._resetT);
+    wrap._resetT = setTimeout(function () {
+      wrap.style.background = colors.active.bg;
+      wrap.style.color = colors.active.fg;
+      label.textContent = colors.active.text;
+      dot.style.background = colors.active.dot;
+    }, 3000);
   }
 
-  /* ---------- hooks ---------- */
-  function hookLogout() {
-    try {
-      const orig = window.logout;
-      window.logout = function () { stopSync(); return orig.apply(this, arguments); };
-    } catch (e) {}
+  /* ==========================================================
+     VISIBILITY CHANGE — force sync when tab comes back
+     ========================================================== */
+  function watchVisibility() {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && State.user && Sync.active) {
+        console.log('[Section 2 v5] Tab visible — refreshing listener');
+        // Trigger a fresh read
+        startListener();
+      }
+    });
   }
 
-  function hookLogin() {
-    try {
-      const orig = window.attemptLogin;
-      window.attemptLogin = function (u, p) {
-        const ok = orig.apply(this, arguments);
-        if (ok) setTimeout(() => { startSync(); setIndicatorState('active'); }, 500);
-        return ok;
-      };
-    } catch (e) {}
-  }
+  /* ==========================================================
+     MANUAL TEST HELPERS
+     ========================================================== */
+  window.__dmSyncNow = function () {
+    console.log('=== MANUAL SYNC ===');
+    pushToCloud('manual-cli');
+  };
 
-  /* ---------- boot ---------- */
+  window.__dmSyncStatus = function () {
+    const s = {
+      tabId: TAB_ID,
+      firebaseReady: window.DrMediaFB && window.DrMediaFB.ready,
+      syncActive: Sync.active,
+      loggedIn: !!State.user,
+      username: State.user && State.user.username,
+      writesSent: Sync.writesSent,
+      updatesReceived: Sync.updatesReceived,
+      lastPushAt: Sync.lastPushAt,
+      lastSyncAt: Sync.lastSyncAt,
+      lastError: Sync.lastError,
+      bookingsCount: (State.data.bookings || []).length,
+      employeesCount: (State.data.employees || []).length,
+      currentHash: computeHash()
+    };
+    console.table(s);
+    return s;
+  };
+
+  /* ==========================================================
+     BOOT
+     ========================================================== */
   waitFor(
-    () => typeof window.DrMediaFB !== 'undefined' && window.DrMediaFB.ready
-        && typeof State !== 'undefined' && typeof navigate === 'function',
     function () {
-      patchI18n();
+      return window.DrMediaFB && window.DrMediaFB.ready
+          && typeof State !== 'undefined'
+          && document.getElementById('topbar');
+    },
+    function () {
+      console.log('%c[Section 2 v5] Firebase ready — bootstrapping', 'color:#10b981');
+
+      replaceSaveData();
       injectIndicator();
-      hookLogout();
-      hookLogin();
-      overrideSaveData();
+      watchVisibility();
+      startPolling();
 
-      if (State.user) { startSync(); setIndicatorState('active'); }
-      else setIndicatorState('paused');
+      if (State.user) {
+        console.log('[Section 2 v5] Session found — starting listener');
+        startListener();
+        // Push current state so other devices see us
+        setTimeout(function () { pushToCloud('boot'); }, 800);
+      } else {
+        console.log('[Section 2 v5] No session — will start on login');
+        // Hook login
+        const origLogin = window.attemptLogin;
+        if (typeof origLogin === 'function') {
+          window.attemptLogin = function () {
+            const ok = origLogin.apply(this, arguments);
+            if (ok) setTimeout(function () {
+              console.log('[Section 2 v5] Login detected — starting sync');
+              startListener();
+              setTimeout(function () { pushToCloud('login'); }, 500);
+            }, 400);
+            return ok;
+          };
+        }
+      }
 
-      console.log('%c[Section 2 v2] ✓ Initialized', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 2 v5] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('%c[Section 2 v5] Test commands:\n  __dmSyncNow()    — force push\n  __dmSyncStatus() — check status',
+                  'color:#06b6d4;font-style:italic');
     }
   );
 
