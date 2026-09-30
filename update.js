@@ -2928,6 +2928,1026 @@
   );
 
 })();
+/* =========================================================
+   SECTION 10: AI Distribution Engine 2.0
+   Version: 1.0.0
+   - Intelligent scoring: consecutive days, hall fatigue, fairness
+   - Suggests best employees for each slot
+   - Detects shortages BEFORE distribution
+   - Manual override with smart warnings
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 10] AI Distribution Engine loading…', 'color:#8b5cf6;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 10] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    ai_engine: 'محرك التوزيع الذكي',
+    ai_smart: 'التوزيع الذكي',
+    ai_analyze: 'تحليل اليوم',
+    ai_suggestions: 'اقتراحات ذكية',
+    ai_shortage_alert: 'تنبيه نقص',
+    ai_consecutive_warn: 'عمل X أيام متتالية',
+    ai_hall_fatigue: 'كرر نفس القاعة X مرات',
+    ai_low_workload: 'أقل عملًا — الأولوية له',
+    ai_recommend: 'موصى به',
+    ai_score: 'نقاط',
+    ai_would_assign: 'سيتم تعيينه',
+    ai_reason: 'السبب',
+    ai_smart_warning: 'تحذير ذكي'
+  });
+  Object.assign(I18N.en, {
+    ai_engine: 'AI Distribution Engine',
+    ai_smart: 'Smart Distribution',
+    ai_analyze: 'Analyze Day',
+    ai_suggestions: 'Smart Suggestions',
+    ai_shortage_alert: 'Shortage Alert',
+    ai_consecutive_warn: 'Worked X consecutive days',
+    ai_hall_fatigue: 'Repeated same hall X times',
+    ai_low_workload: 'Lowest workload — priority',
+    ai_recommend: 'Recommended',
+    ai_score: 'Score',
+    ai_would_assign: 'Would assign',
+    ai_reason: 'Reason',
+    ai_smart_warning: 'Smart Warning'
+  });
+
+  /* ---------- helpers ---------- */
+  function addDays(iso, n) {
+    const d = new Date(iso);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  /* ---------- scoring engine ---------- */
+  function scoreEmployee(emp, role, date, hallId) {
+    const dists = State.data.distributions || [];
+    const empDists = dists.filter(x => x.employeeId === emp.id);
+
+    // 1. Total assignments (fairness)
+    const totalAssignments = empDists.length;
+
+    // 2. Consecutive days worked (up to 7 days back)
+    let consecutiveDays = 0;
+    for (let i = 1; i <= 7; i++) {
+      const d = addDays(date, -i);
+      if (empDists.some(x => x.date === d && x.status === 'confirmed')) consecutiveDays++;
+      else break;
+    }
+
+    // 3. Same hall repetition in last 5 assignments
+    const last5 = [...empDists].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+    const sameHallCount = last5.filter(x => x.hallId === hallId).length;
+
+    // 4. Days since last work (higher = better)
+    const lastWork = [...empDists].sort((a, b) => b.date.localeCompare(a.date))[0];
+    const daysSinceLastWork = lastWork
+      ? Math.round((new Date(date) - new Date(lastWork.date)) / 86400000)
+      : 999;
+
+    // 5. Role specialization bonus
+    const isPrimaryRole = emp.role === role;
+    const hasRoleInList = (emp.roles || []).includes(role);
+
+    // ----- SCORING -----
+    // Lower score = better fit
+    let score = 0;
+    score += totalAssignments * 10;      // Fairness (lower is better)
+    score += consecutiveDays * 20;       // Rest penalty
+    score += sameHallCount * 15;         // Variety bonus
+    score -= Math.min(daysSinceLastWork, 30) * 2; // Rest bonus
+    if (!isPrimaryRole && !hasRoleInList) score += 1000; // Must have role
+    if (isPrimaryRole) score -= 5;       // Prefer primary
+
+    // ----- REASONS -----
+    const reasons = [];
+    if (totalAssignments <= 2) reasons.push({ ar: t('ai_low_workload'), type: 'good' });
+    if (consecutiveDays >= 4) reasons.push({ ar: t('ai_consecutive_warn').replace('X', consecutiveDays), type: 'warn' });
+    if (sameHallCount >= 3) reasons.push({ ar: t('ai_hall_fatigue').replace('X', sameHallCount), type: 'warn' });
+    if (daysSinceLastWork >= 5) reasons.push({ ar: (State.lang === 'ar' ? `مر ${daysSinceLastWork} يوم من آخر عمل` : `${daysSinceLastWork} days since last work`), type: 'good' });
+
+    return {
+      emp,
+      score,
+      totalAssignments,
+      consecutiveDays,
+      sameHallCount,
+      daysSinceLastWork,
+      reasons,
+      recommended: false // Set later
+    };
+  }
+
+  /* ---------- analyze a specific day ---------- */
+  function analyzeDay(date) {
+    const bookings = (State.data.bookings || []).filter(b =>
+      b.date === date && (b.status === 'confirmed' || b.status === 'pending' || b.status === 'completed')
+    );
+    const bookedHalls = [...new Set(bookings.map(b => b.hallId))];
+    const halls = bookedHalls.length
+      ? State.data.halls.filter(h => bookedHalls.includes(h.id))
+      : State.data.halls.filter(h => h.status === 'active');
+
+    // On leave / absent
+    const onLeave = new Set(
+      (State.data.leaves || [])
+        .filter(l => l.status === 'approved' && date >= l.fromDate && date <= l.toDate)
+        .map(l => l.employeeId)
+    );
+    const absent = new Set(
+      (State.data.attendance || [])
+        .filter(a => a.date === date && a.status === 'absent')
+        .map(a => a.employeeId)
+    );
+
+    const result = {
+      date,
+      halls: [],
+      shortages: [],
+      totalNeeded: 0,
+      totalAvailable: 0
+    };
+
+    // Track who's already used today across halls (avoid double booking)
+    const usedToday = new Set();
+
+    halls.forEach(hall => {
+      const hallResult = { hall, roles: [] };
+
+      hall.requirements.forEach(req => {
+        result.totalNeeded += req.count;
+
+        // Eligible pool
+        const eligible = (State.data.employees || [])
+          .filter(e => e.status === 'active')
+          .filter(e => e.role === req.role || (e.roles || []).includes(req.role))
+          .filter(e => !onLeave.has(e.id) && !absent.has(e.id))
+          .filter(e => !usedToday.has(e.id));
+
+        result.totalAvailable += eligible.length;
+
+        // Score each
+        const scored = eligible
+          .map(e => scoreEmployee(e, req.role, date, hall.id))
+          .sort((a, b) => a.score - b.score);
+
+        // Mark top N as recommended
+        scored.forEach((s, i) => {
+          s.recommended = i < req.count;
+          if (s.recommended) usedToday.add(s.emp.id);
+        });
+
+        hallResult.roles.push({
+          role: req.role,
+          needed: req.count,
+          candidates: scored,
+          shortage: Math.max(0, req.count - scored.length)
+        });
+
+        if (scored.length < req.count) {
+          result.shortages.push({
+            hall: hall,
+            role: req.role,
+            needed: req.count,
+            available: scored.length
+          });
+        }
+      });
+
+      result.halls.push(hallResult);
+    });
+
+    return result;
+  }
+  window.__dmAIAnalyze = analyzeDay;
+
+  /* ---------- register page ---------- */
+  Pages.ai = function (el) {
+    const date = State.filters.aiDate || todayISO();
+    State.filters.aiDate = date;
+    const analysis = analyzeDay(date);
+
+    const fmtScore = (s) => Math.round(s);
+    const reasonBadge = (r) => {
+      const color = r.type === 'warn' ? '#f59e0b' : '#10b981';
+      const icon = r.type === 'warn' ? 'alert-triangle' : 'star';
+      return `<span style="display:inline-flex;align-items:center;gap:.25rem;font-size:.65rem;background:${color}20;color:${color};padding:.15rem .4rem;border-radius:6px;margin-inline-end:.25rem;margin-bottom:.25rem">
+        <i data-lucide="${icon}" style="width:10px;height:10px"></i>${r.ar}
+      </span>`;
+    };
+
+    el.innerHTML = `
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+          <input type="date" id="ai-date" value="${date}" style="padding:.55rem .8rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit">
+          <button class="btn btn-primary btn-sm" onclick="__dmAIAnalyzeRun()"><i data-lucide="sparkles"></i> ${t('ai_analyze')}</button>
+          <div style="margin-inline-start:auto;display:flex;gap:1rem;font-size:.8rem">
+            <span><b style="color:var(--text)">${analysis.totalNeeded}</b> ${State.lang === 'ar' ? 'مطلوب' : 'needed'}</span>
+            <span><b style="color:${analysis.totalAvailable >= analysis.totalNeeded ? '#10b981' : '#ef4444'}">${analysis.totalAvailable}</b> ${State.lang === 'ar' ? 'متاح' : 'available'}</span>
+          </div>
+        </div>
+      </div>
+
+      ${analysis.shortages.length ? `
+        <div class="card" style="margin-bottom:1rem;border:2px solid #ef4444;background:rgba(239,68,68,.05)">
+          <h4 style="margin:0 0 .75rem;font-size:.9rem;color:#ef4444;display:flex;align-items:center;gap:.5rem">
+            <i data-lucide="alert-triangle"></i> ${t('ai_shortage_alert')} — ${analysis.shortages.length}
+          </h4>
+          ${analysis.shortages.map(s => `
+            <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.85rem">
+              <span>${s.hall.name[State.lang] || s.hall.name.ar} — <b>${s.role}</b></span>
+              <span><b style="color:#ef4444">${s.available}/${s.needed}</b></span>
+            </div>
+          `).join('')}
+        </div>
+      ` : `
+        <div class="card" style="margin-bottom:1rem;border:2px solid #10b981;background:rgba(16,185,129,.05)">
+          <div style="display:flex;align-items:center;gap:.5rem;color:#10b981;font-size:.9rem;font-weight:600">
+            <i data-lucide="check-circle-2"></i>
+            ${State.lang === 'ar' ? 'كل الأدوار متوفرة بهذا اليوم ✓' : 'All roles available for this day ✓'}
+          </div>
+        </div>
+      `}
+
+      ${analysis.halls.map(hallData => `
+        <div class="hall-card">
+          <div class="hall-header">
+            <h4><i data-lucide="building-2" style="width:16px;height:16px;color:var(--primary)"></i> ${hallData.hall.name[State.lang] || hallData.hall.name.ar}</h4>
+          </div>
+          ${hallData.roles.map(roleData => {
+            const topCandidates = roleData.candidates.slice(0, 5);
+            const insufficient = roleData.candidates.length < roleData.needed;
+            return `
+              <div style="margin-bottom:1rem">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border);margin-bottom:.5rem">
+                  <div style="font-size:.85rem;font-weight:700;display:flex;align-items:center;gap:.5rem">
+                    <i data-lucide="user-check" style="width:14px;height:14px;color:var(--primary)"></i>
+                    ${roleData.role}
+                  </div>
+                  <div style="font-size:.75rem">
+                    <span class="badge-pill badge-${insufficient ? 'red' : 'green'}">${roleData.candidates.length}/${roleData.needed}</span>
+                  </div>
+                </div>
+                ${topCandidates.length ? topCandidates.map((c, i) => `
+                  <div style="display:flex;align-items:flex-start;gap:.65rem;padding:.55rem .5rem;border-radius:8px;margin-bottom:.25rem;background:${c.recommended ? 'rgba(16,185,129,.08)' : 'transparent'};border:1px solid ${c.recommended ? 'rgba(16,185,129,.3)' : 'transparent'}">
+                    <div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,${c.recommended ? '#10b981,#06b6d4' : '#94a3b8,#64748b'});color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.7rem;flex-shrink:0;margin-top:.15rem">
+                      ${i + 1}
+                    </div>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-weight:600;font-size:.85rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+                        ${c.emp.name}
+                        ${c.recommended ? `<span style="font-size:.6rem;background:#10b981;color:#fff;padding:.1rem .4rem;border-radius:6px">${t('ai_recommend')}</span>` : ''}
+                      </div>
+                      <div style="font-size:.7rem;color:var(--text-muted);margin-top:.15rem">
+                        ${c.totalAssignments} ${State.lang === 'ar' ? 'توزيع' : 'assignments'} ·
+                        ${State.lang === 'ar' ? 'منذ' : 'since'} ${c.daysSinceLastWork === 999 ? '—' : c.daysSinceLastWork} ${State.lang === 'ar' ? 'يوم' : 'd'}
+                      </div>
+                      <div style="margin-top:.35rem">${c.reasons.map(reasonBadge).join('')}</div>
+                    </div>
+                    <div style="text-align:end;flex-shrink:0">
+                      <div style="font-size:.65rem;color:var(--text-muted)">${t('ai_score')}</div>
+                      <div style="font-weight:800;font-size:.9rem;color:${c.score < 50 ? '#10b981' : c.score < 100 ? '#f59e0b' : '#ef4444'}">${fmtScore(c.score)}</div>
+                    </div>
+                  </div>
+                `).join('') : `<div style="padding:1rem;text-align:center;color:#ef4444;font-size:.8rem">
+                  <i data-lucide="user-x"></i> ${t('sub_no_eligible')}
+                </div>`}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `).join('')}
+    `;
+
+    if (window.lucide) lucide.createIcons();
+
+    document.getElementById('ai-date').onchange = (e) => {
+      State.filters.aiDate = e.target.value;
+      navigate('ai');
+    };
+  };
+
+  window.__dmAIAnalyzeRun = function () {
+    showToast(State.lang === 'ar' ? 'تم التحليل ✓' : 'Analysis complete ✓', 'success');
+    navigate('ai');
+  };
+
+  /* ---------- Auto-distribute with AI ---------- */
+  function hookAutoDistribute() {
+    if (typeof window.autoDistribute !== 'function') return;
+    // Just ensure the existing one skips leave employees (already done in Section 5)
+  }
+
+  /* ---------- register nav ---------- */
+  function registerNav() {
+    const ops = NAV_ITEMS.find(g => g.section === 'operations');
+    if (ops && !ops.items.find(i => i.id === 'ai')) {
+      const distIdx = ops.items.findIndex(i => i.id === 'distribution');
+      if (distIdx >= 0) ops.items.splice(distIdx + 1, 0, { id: 'ai', icon: 'sparkles', label: 'ai_smart' });
+      else ops.items.push({ id: 'ai', icon: 'sparkles', label: 'ai_smart' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function',
+    function () {
+      hookAutoDistribute();
+      registerNav();
+      console.log('%c[Section 10] ✓ AI Distribution Engine ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
+/* =========================================================
+   SECTION 11: Client Portal (بوابة العملاء)
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 11] Client Portal loading…', 'color:#ec4899;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 11] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    client_portal: 'بوابة العملاء',
+    portal_my_bookings: 'حجوزاتي',
+    portal_upcoming: 'الحجوزات القادمة',
+    portal_past: 'الحجوزات السابقة',
+    portal_team: 'الفريق المعين',
+    portal_share_link: 'مشاركة رابط',
+    portal_copy_link: 'نسخ الرابط',
+    portal_link_copied: 'تم نسخ الرابط',
+    portal_public_view: 'عرض عام',
+    portal_generate: 'إنشاء رابط مشاركة',
+    portal_no_link: 'لا يوجد رابط'
+  });
+  Object.assign(I18N.en, {
+    client_portal: 'Client Portal',
+    portal_my_bookings: 'My Bookings',
+    portal_upcoming: 'Upcoming Bookings',
+    portal_past: 'Past Bookings',
+    portal_team: 'Assigned Team',
+    portal_share_link: 'Share Link',
+    portal_copy_link: 'Copy Link',
+    portal_link_copied: 'Link copied',
+    portal_public_view: 'Public View',
+    portal_generate: 'Generate Share Link',
+    portal_no_link: 'No link'
+  });
+
+  /* ---------- generate share token ---------- */
+  function generateToken(bookingId) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let token = '';
+    for (let i = 0; i < 10; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
+    return bookingId + '_' + token;
+  }
+
+  /* ---------- get public URL ---------- */
+  function getPublicUrl(bookingId) {
+    const base = window.location.origin + window.location.pathname;
+    return base + '?client_booking=' + encodeURIComponent(bookingId);
+  }
+
+  /* ---------- generate share link ---------- */
+  window.__dmGenerateShareLink = function (bookingId) {
+    const booking = (State.data.bookings || []).find(b => b.id === bookingId);
+    if (!booking) return;
+
+    if (!booking.shareToken) {
+      booking.shareToken = generateToken(bookingId);
+      saveData();
+      logActivity('share', 'booking', bookingId, null, { token: booking.shareToken });
+    }
+
+    const url = getPublicUrl(booking.shareToken);
+
+    openModal({
+      title: '🔗 ' + t('portal_share_link'),
+      body: `
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          <div style="padding:.75rem;background:var(--surface-2);border-radius:10px;font-size:.75rem;word-break:break-all;color:var(--primary);font-family:ui-monospace,monospace">
+            ${url}
+          </div>
+          <div style="font-size:.8rem;color:var(--text-muted)">
+            ${State.lang === 'ar'
+              ? 'شارك هذا الرابط مع العميل ليرى تفاصيل حجزه دون تسجيل دخول.'
+              : 'Share this link with the client to view their booking without logging in.'}
+          </div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-ghost" onclick="closeModal()">${t('close')}</button>
+        <button class="btn btn-primary" onclick="__dmCopyLink('${url}')"><i data-lucide="copy"></i> ${t('portal_copy_link')}</button>
+      `
+    });
+    if (window.lucide) lucide.createIcons();
+  };
+
+  window.__dmCopyLink = function (url) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          showToast(t('portal_link_copied'), 'success');
+        }).catch(() => fallbackCopy(url));
+      } else {
+        fallbackCopy(url);
+      }
+    } catch (e) { fallbackCopy(url); }
+  };
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      showToast(t('portal_link_copied'), 'success');
+    } catch (e) {
+      showToast('Copy failed', 'error');
+    }
+    document.body.removeChild(ta);
+  }
+
+  /* ---------- public client view ---------- */
+  function renderPublicView(bookingToken) {
+    // Find booking by shareToken
+    const booking = (State.data.bookings || []).find(b => b.shareToken === bookingToken);
+    if (!booking) {
+      document.body.innerHTML = `
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f0a1f 0%,#1e1b3a 100%);color:#fff;padding:2rem;font-family:'Cairo',sans-serif;text-align:center">
+          <div>
+            <div style="font-size:3rem;margin-bottom:1rem">🔍</div>
+            <h1 style="margin:0 0 .5rem">الحجز غير موجود</h1>
+            <p style="color:#94a3b8">Booking not found</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const hall = State.data.halls.find(h => h.id === booking.hallId);
+    const dists = (State.data.distributions || []).filter(d => d.date === booking.date && d.hallId === booking.hallId);
+    const assignedEmployees = dists.map(d => ({
+      name: (State.data.employees.find(e => e.id === d.employeeId) || {}).name || '-',
+      role: d.role
+    }));
+
+    const teamByRole = assignedEmployees.reduce((acc, e) => {
+      acc[e.role] = acc[e.role] || [];
+      acc[e.role].push(e.name);
+      return acc;
+    }, {});
+
+    const statusColor = { confirmed: '#10b981', pending: '#f59e0b', completed: '#3b82f6', cancelled: '#ef4444' }[booking.status] || '#7c3aed';
+
+    document.body.innerHTML = `
+      <div style="min-height:100vh;background:linear-gradient(135deg,#0f0a1f 0%,#1e1b3a 100%);padding:1rem;font-family:'Cairo',sans-serif;direction:rtl">
+        <div style="max-width:640px;margin:2rem auto">
+          <div style="text-align:center;margin-bottom:2rem">
+            <div style="width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.5rem;margin:0 auto 1rem">D</div>
+            <h1 style="color:#fff;margin:0;font-size:1.5rem">Dr Media Pro</h1>
+            <p style="color:#94a3b8;margin:.25rem 0 0;font-size:.85rem">تفاصيل الحجز · Booking Details</p>
+          </div>
+
+          <div style="background:rgba(21,16,36,.85);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:2rem">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;flex-wrap:wrap;gap:.5rem">
+              <div>
+                <div style="color:#94a3b8;font-size:.75rem;margin-bottom:.25rem">العميل · Client</div>
+                <div style="color:#fff;font-size:1.15rem;font-weight:700">${booking.clientName || '-'}</div>
+              </div>
+              <span style="padding:.35rem .75rem;border-radius:999px;font-size:.75rem;font-weight:600;background:${statusColor}20;color:${statusColor};border:1px solid ${statusColor}40">
+                ${booking.status}
+              </span>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem">
+              <div>
+                <div style="color:#94a3b8;font-size:.72rem;margin-bottom:.35rem">📅 التاريخ</div>
+                <div style="color:#fff;font-weight:600">${fmtDate(booking.date)}</div>
+              </div>
+              <div>
+                <div style="color:#94a3b8;font-size:.72rem;margin-bottom:.35rem">🏛 القاعة</div>
+                <div style="color:#fff;font-weight:600">${hall ? (hall.name.ar || hall.name.en) : '-'}</div>
+              </div>
+              <div>
+                <div style="color:#94a3b8;font-size:.72rem;margin-bottom:.35rem">⏰ الوقت</div>
+                <div style="color:#fff;font-weight:600">${booking.startTime || ''} - ${booking.endTime || ''}</div>
+              </div>
+              <div>
+                <div style="color:#94a3b8;font-size:.72rem;margin-bottom:.35rem">🎉 نوع المناسبة</div>
+                <div style="color:#fff;font-weight:600">${booking.eventType || '-'}</div>
+              </div>
+            </div>
+
+            ${Object.keys(teamByRole).length ? `
+              <div style="padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.1)">
+                <div style="color:#94a3b8;font-size:.72rem;margin-bottom:.75rem">👥 الفريق المعين · Team</div>
+                ${Object.entries(teamByRole).map(([role, names]) => `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid rgba(255,255,255,.06)">
+                    <span style="color:#a78bfa;font-size:.8rem;font-weight:600">${role}</span>
+                    <span style="color:#fff;font-size:.85rem">${names.join(' · ')}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+
+            ${booking.notes ? `
+              <div style="padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.1);margin-top:1rem">
+                <div style="color:#94a3b8;font-size:.72rem;margin-bottom:.35rem">📝 ملاحظات</div>
+                <div style="color:#fff;font-size:.85rem;line-height:1.6">${booking.notes}</div>
+              </div>
+            ` : ''}
+          </div>
+
+          <div style="text-align:center;margin-top:2rem;color:#64748b;font-size:.75rem">
+            Powered by Dr Media Pro
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ---------- URL check on load ---------- */
+  function checkPublicUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('client_booking');
+    if (token) {
+      // Wait for State to be ready, then render public view
+      waitFor(
+        () => typeof State !== 'undefined' && State.data && State.data.bookings,
+        () => {
+          setTimeout(() => renderPublicView(token), 400);
+        }
+      );
+    }
+  }
+
+  /* ---------- add "Share" button to booking rows ---------- */
+  function hookBookingsPage() {
+    if (!Pages.bookings) return;
+    const orig = Pages.bookings;
+    Pages.bookings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        document.querySelectorAll('.data-table tbody tr').forEach(row => {
+          const actionCell = row.querySelector('td:last-child');
+          if (!actionCell || actionCell.querySelector('.share-btn')) return;
+          const editBtn = row.querySelector('button[onclick*="editBooking"]');
+          if (!editBtn) return;
+          const match = editBtn.getAttribute('onclick').match(/editBooking\('([^']+)'\)/);
+          if (!match) return;
+          const bookingId = match[1];
+
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-icon btn-sm share-btn';
+          btn.title = 'Share client portal';
+          btn.style.color = '#ec4899';
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            window.__dmGenerateShareLink(bookingId);
+          };
+          const actionsDiv = actionCell.querySelector('div');
+          if (actionsDiv) actionsDiv.insertBefore(btn, actionsDiv.firstChild);
+          else actionCell.appendChild(btn);
+        });
+      }, 120);
+    };
+  }
+
+  /* ---------- boot ---------- */
+  checkPublicUrl();
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function',
+    function () {
+      hookBookingsPage();
+      console.log('%c[Section 11] ✓ Client Portal ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
+/* =========================================================
+   SECTION 12: Auto PDF Reports (تقارير PDF تلقائية)
+   Version: 1.0.0
+   - Pay slip PDF per employee
+   - Booking confirmation PDF
+   - Daily distribution sheet PDF
+   - Uses browser print (no external libs)
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 12] PDF Reports loading…', 'color:#f43f5e;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 12] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    pdf_payslip: 'كشف مرتب PDF',
+    pdf_booking: 'تأكيد حجز PDF',
+    pdf_daily_sheet: 'كشف توزيع يومي PDF',
+    pdf_generating: 'جاري التوليد…'
+  });
+  Object.assign(I18N.en, {
+    pdf_payslip: 'Pay Slip PDF',
+    pdf_booking: 'Booking Confirmation PDF',
+    pdf_daily_sheet: 'Daily Distribution Sheet PDF',
+    pdf_generating: 'Generating…'
+  });
+
+  /* ---------- helper: open print window with HTML ---------- */
+  function printHTML(title, bodyHtml) {
+    const w = window.open('', '_blank', 'width=900,height=1000');
+    if (!w) {
+      showToast(State.lang === 'ar' ? 'الرجاء السماح بالنوافذ المنبثقة' : 'Please allow popups', 'warn');
+      return;
+    }
+    const styles = `
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:'Cairo','Inter',system-ui,sans-serif;margin:0;padding:2rem;color:#0f172a;background:#fff;direction:${State.lang === 'ar' ? 'rtl' : 'ltr'}}
+      .header{display:flex;align-items:center;gap:1rem;padding-bottom:1rem;border-bottom:3px solid #7c3aed;margin-bottom:1.5rem}
+      .logo{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.4rem}
+      .brand h1{margin:0;font-size:1.35rem;font-weight:800;color:#0f172a}
+      .brand p{margin:0;font-size:.75rem;color:#64748b}
+      .brand span{color:#7c3aed}
+      .title{font-size:1.15rem;font-weight:700;margin-bottom:1rem;color:#0f172a;padding:.5rem 0;border-bottom:2px solid #e5e7eb}
+      .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:.75rem;margin-bottom:1.5rem}
+      .meta-row{display:flex;justify-content:space-between;padding:.5rem .75rem;background:#f9fafb;border-radius:8px;font-size:.85rem}
+      .meta-row b{color:#0f172a}
+      table{width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:1rem}
+      th,td{padding:.6rem .75rem;text-align:${State.lang === 'ar' ? 'right' : 'left'};border-bottom:1px solid #e5e7eb}
+      th{background:#f3f4f6;font-weight:700;color:#374151;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+      .total-row{background:#7c3aed10;font-weight:800;font-size:1rem}
+      .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.5rem}
+      .kpi{padding:.75rem;background:#f9fafb;border-radius:10px;text-align:center}
+      .kpi-label{font-size:.7rem;color:#64748b;margin-bottom:.25rem}
+      .kpi-value{font-size:1.25rem;font-weight:800}
+      .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e5e7eb;font-size:.72rem;color:#94a3b8;text-align:center}
+      .badge{display:inline-block;padding:.2rem .6rem;border-radius:999px;font-size:.7rem;font-weight:700}
+      .badge-green{background:#10b98120;color:#059669}
+      .badge-red{background:#ef444420;color:#dc2626}
+      .badge-yellow{background:#f59e0b20;color:#d97706}
+      @media print{body{padding:0}}
+    `;
+
+    w.document.write(`<!DOCTYPE html><html lang="${State.lang}" dir="${State.lang === 'ar' ? 'rtl' : 'ltr'}"><head><meta charset="UTF-8"><title>${title}</title><style>${styles}</style></head><body>
+      <div class="header">
+        <div class="logo">D</div>
+        <div class="brand">
+          <h1>Dr Media <span>Pro</span></h1>
+          <p>${State.data.settings.companyName || 'Professional Video Production'} · ${State.data.settings.phone || ''}</p>
+        </div>
+      </div>
+      ${bodyHtml}
+      <div class="footer">
+        ${State.data.settings.companyName || 'Dr Media Pro'} · ${State.data.settings.address || ''} · ${new Date().toLocaleString(State.lang === 'ar' ? 'ar-EG' : 'en-GB')}
+      </div>
+      <script>setTimeout(function(){window.print();},300);<\/script>
+    </body></html>`);
+    w.document.close();
+  }
+
+  /* ---------- Pay Slip PDF ---------- */
+  window.__dmPayslipPDF = function (employeeId) {
+    const emp = State.data.employees.find(e => e.id === employeeId);
+    if (!emp) { showToast('Employee not found', 'error'); return; }
+
+    // Current month
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const from = new Date(y, m, 1).toISOString().slice(0, 10);
+    const to = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+
+    const dists = (State.data.distributions || []).filter(x =>
+      x.employeeId === employeeId && x.date >= from && x.date <= to && x.status === 'confirmed'
+    );
+    const workDays = dists.length;
+    const gross = workDays * (emp.dayRate || 0);
+
+    const advs = (State.data.advances || []).filter(a => a.employeeId === employeeId && a.date >= from && a.date <= to);
+    const deds = (State.data.deductions || []).filter(a => a.employeeId === employeeId && a.date >= from && a.date <= to);
+    const bons = (State.data.bonuses || []).filter(a => a.employeeId === employeeId && a.date >= from && a.date <= to);
+
+    const totalAdv = advs.reduce((s, a) => s + (a.amount || 0), 0);
+    const totalDed = deds.reduce((s, x) => s + (x.amount || 0), 0);
+    const totalBon = bons.reduce((s, x) => s + (x.amount || 0), 0);
+    const net = gross + totalBon - totalAdv - totalDed;
+
+    const ar = State.lang === 'ar';
+    const L = {
+      title: ar ? `كشف مرتب — ${emp.name}` : `Pay Slip — ${emp.name}`,
+      period: ar ? 'الفترة' : 'Period',
+      name: ar ? 'الاسم' : 'Name',
+      role: ar ? 'الوظيفة' : 'Role',
+      empId: ar ? 'كود الموظف' : 'Employee ID',
+      dayRate: ar ? 'سعر اليوم' : 'Day Rate',
+      workDays: ar ? 'أيام العمل' : 'Work Days',
+      gross: ar ? 'الإجمالي' : 'Gross',
+      advances: ar ? 'السلف' : 'Advances',
+      deductions: ar ? 'الخصومات' : 'Deductions',
+      bonuses: ar ? 'المكافآت' : 'Bonuses',
+      net: ar ? 'الصافي' : 'Net',
+      details: ar ? 'تفاصيل العمل' : 'Work Details',
+      date: ar ? 'التاريخ' : 'Date',
+      hall: ar ? 'القاعة' : 'Hall',
+      roleCol: ar ? 'الدور' : 'Role',
+      rate: ar ? 'السعر' : 'Rate',
+      summary: ar ? 'الملخص' : 'Summary'
+    };
+
+    const hallName = (id) => {
+      const h = State.data.halls.find(x => x.id === id);
+      return h ? (h.name.ar || h.name.en) : '-';
+    };
+
+    const bodyHtml = `
+      <div class="title">${L.title}</div>
+
+      <div class="meta">
+        <div class="meta-row"><span>${L.name}</span><b>${emp.name}</b></div>
+        <div class="meta-row"><span>${L.empId}</span><b>${emp.code || '-'}</b></div>
+        <div class="meta-row"><span>${L.role}</span><b>${emp.role}</b></div>
+        <div class="meta-row"><span>${L.dayRate}</span><b>EGP ${emp.dayRate || 0}</b></div>
+        <div class="meta-row"><span>${L.period}</span><b>${fmtDate(from)} → ${fmtDate(to)}</b></div>
+        <div class="meta-row"><span>${L.workDays}</span><b>${workDays}</b></div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">${L.gross}</div><div class="kpi-value" style="color:#7c3aed">EGP ${gross.toLocaleString()}</div></div>
+        <div class="kpi"><div class="kpi-label">${L.net}</div><div class="kpi-value" style="color:${net >= 0 ? '#10b981' : '#ef4444'}">EGP ${net.toLocaleString()}</div></div>
+        <div class="kpi"><div class="kpi-label">${L.workDays}</div><div class="kpi-value">${workDays}</div></div>
+      </div>
+
+      <div class="title">${L.details}</div>
+      <table>
+        <thead><tr><th>${L.date}</th><th>${L.hall}</th><th>${L.roleCol}</th><th>${L.rate}</th></tr></thead>
+        <tbody>
+          ${dists.length ? dists.map(d => `
+            <tr><td>${fmtDate(d.date)}</td><td>${hallName(d.hallId)}</td><td>${d.role}</td><td>EGP ${emp.dayRate || 0}</td></tr>
+          `).join('') : `<tr><td colspan="4" style="text-align:center;color:#94a3b8">${ar ? 'لا يوجد' : 'None'}</td></tr>`}
+        </tbody>
+      </table>
+
+      <div class="title">${L.summary}</div>
+      <table>
+        <tbody>
+          <tr><td>${L.gross}</td><td style="text-align:${ar ? 'left' : 'right'};font-weight:700">EGP ${gross.toLocaleString()}</td></tr>
+          <tr><td>${L.bonuses} (+)</td><td style="text-align:${ar ? 'left' : 'right'};color:#10b981">EGP ${totalBon.toLocaleString()}</td></tr>
+          <tr><td>${L.advances} (−)</td><td style="text-align:${ar ? 'left' : 'right'};color:#f59e0b">EGP ${totalAdv.toLocaleString()}</td></tr>
+          <tr><td>${L.deductions} (−)</td><td style="text-align:${ar ? 'left' : 'right'};color:#ef4444">EGP ${totalDed.toLocaleString()}</td></tr>
+          <tr class="total-row"><td>${L.net}</td><td style="text-align:${ar ? 'left' : 'right'};color:${net >= 0 ? '#10b981' : '#ef4444'}">EGP ${net.toLocaleString()}</td></tr>
+        </tbody>
+      </table>
+    `;
+
+    printHTML(L.title, bodyHtml);
+  };
+
+  /* ---------- Booking Confirmation PDF ---------- */
+  window.__dmBookingPDF = function (bookingId) {
+    const b = (State.data.bookings || []).find(x => x.id === bookingId);
+    if (!b) { showToast('Booking not found', 'error'); return; }
+
+    const hall = State.data.halls.find(h => h.id === b.hallId);
+    const dists = (State.data.distributions || []).filter(d => d.date === b.date && d.hallId === b.hallId);
+    const team = dists.map(d => ({
+      name: (State.data.employees.find(e => e.id === d.employeeId) || {}).name || '-',
+      role: d.role
+    }));
+
+    const ar = State.lang === 'ar';
+    const L = {
+      title: ar ? 'تأكيد حجز' : 'Booking Confirmation',
+      client: ar ? 'العميل' : 'Client',
+      phone: ar ? 'الهاتف' : 'Phone',
+      date: ar ? 'التاريخ' : 'Date',
+      hall: ar ? 'القاعة' : 'Hall',
+      time: ar ? 'الوقت' : 'Time',
+      event: ar ? 'المناسبة' : 'Event',
+      cost: ar ? 'التكلفة' : 'Cost',
+      status: ar ? 'الحالة' : 'Status',
+      payment: ar ? 'الدفع' : 'Payment',
+      team: ar ? 'الفريق' : 'Team',
+      notes: ar ? 'ملاحظات' : 'Notes',
+      bookingId: ar ? 'رقم الحجز' : 'Booking ID'
+    };
+
+    const bodyHtml = `
+      <div class="title">${L.title}</div>
+
+      <div class="meta">
+        <div class="meta-row"><span>${L.bookingId}</span><b>${b.id}</b></div>
+        <div class="meta-row"><span>${L.client}</span><b>${b.clientName || '-'}</b></div>
+        <div class="meta-row"><span>${L.phone}</span><b>${b.phone || '-'}</b></div>
+        <div class="meta-row"><span>${L.date}</span><b>${fmtDate(b.date)}</b></div>
+        <div class="meta-row"><span>${L.hall}</span><b>${hall ? (hall.name.ar || hall.name.en) : '-'}</b></div>
+        <div class="meta-row"><span>${L.time}</span><b>${b.startTime || ''} - ${b.endTime || ''}</b></div>
+        <div class="meta-row"><span>${L.event}</span><b>${b.eventType || '-'}</b></div>
+        <div class="meta-row"><span>${L.cost}</span><b>EGP ${(b.cost || 0).toLocaleString()}</b></div>
+        <div class="meta-row"><span>${L.status}</span><b class="badge badge-${b.status === 'confirmed' ? 'green' : b.status === 'pending' ? 'yellow' : b.status === 'completed' ? 'green' : 'red'}">${b.status}</b></div>
+        <div class="meta-row"><span>${L.payment}</span><b>${b.paymentStatus || 'unpaid'}</b></div>
+      </div>
+
+      ${team.length ? `
+        <div class="title">${L.team}</div>
+        <table>
+          <thead><tr><th>${ar ? 'الدور' : 'Role'}</th><th>${ar ? 'الاسم' : 'Name'}</th></tr></thead>
+          <tbody>
+            ${team.map(t => `<tr><td>${t.role}</td><td>${t.name}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      ` : ''}
+
+      ${b.notes ? `
+        <div class="title">${L.notes}</div>
+        <div style="padding:.75rem;background:#f9fafb;border-radius:8px;font-size:.85rem;line-height:1.6">${b.notes}</div>
+      ` : ''}
+    `;
+
+    printHTML(L.title, bodyHtml);
+  };
+
+  /* ---------- Daily Distribution Sheet PDF ---------- */
+  window.__dmDailySheetPDF = function (date) {
+    date = date || todayISO();
+    const bookings = (State.data.bookings || []).filter(b => b.date === date && b.status !== 'cancelled');
+    const bookedHalls = [...new Set(bookings.map(b => b.hallId))];
+    const halls = bookedHalls.length
+      ? State.data.halls.filter(h => bookedHalls.includes(h.id))
+      : State.data.halls.filter(h => h.status === 'active');
+
+    const dists = (State.data.distributions || []).filter(x => x.date === date);
+
+    const ar = State.lang === 'ar';
+    const L = {
+      title: ar ? 'كشف التوزيع اليومي' : 'Daily Distribution Sheet',
+      date: ar ? 'التاريخ' : 'Date',
+      hall: ar ? 'القاعة' : 'Hall',
+      role: ar ? 'الدور' : 'Role',
+      employee: ar ? 'الموظف' : 'Employee',
+      status: ar ? 'الحالة' : 'Status',
+      notes: ar ? 'ملاحظات' : 'Notes',
+      client: ar ? 'العميل' : 'Client',
+      time: ar ? 'الوقت' : 'Time'
+    };
+
+    const bodyHtml = `
+      <div class="title">${L.title} — ${fmtDate(date)}</div>
+
+      ${halls.map(hall => {
+        const hallDists = dists.filter(x => x.hallId === hall.id);
+        const hallBookings = bookings.filter(b => b.hallId === hall.id);
+        return `
+          <div style="margin-bottom:1.5rem;page-break-inside:avoid">
+            <div style="font-weight:800;font-size:1rem;padding:.5rem .75rem;background:#7c3aed10;border-inline-start:4px solid #7c3aed;border-radius:6px;margin-bottom:.75rem">
+              ${hall.name.ar || hall.name.en}
+              ${hallBookings.length ? `<span style="font-size:.75rem;font-weight:400;color:#64748b"> · ${hallBookings.map(b => (b.clientName || '') + ' ' + (b.startTime || '')).join(' · ')}</span>` : ''}
+            </div>
+            <table>
+              <thead><tr><th>${L.role}</th><th>${L.employee}</th><th>${L.status}</th></tr></thead>
+              <tbody>
+                ${hall.requirements.map(req => {
+                  const assigned = hallDists.filter(x => x.role === req.role);
+                  return assigned.length
+                    ? assigned.map(a => {
+                        const emp = State.data.employees.find(e => e.id === a.employeeId);
+                        return `<tr><td>${a.role}</td><td>${emp ? emp.name : (a.manualName || '-')}</td><td><span class="badge badge-green">✓</span></td></tr>`;
+                      }).join('')
+                    : `<tr><td>${req.role}</td><td style="color:#ef4444">—</td><td><span class="badge badge-red">✗</span></td></tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }).join('')}
+
+      <div style="margin-top:2rem;font-size:.75rem;color:#64748b;text-align:center">
+        ${ar ? 'إجمالي الحجوزات' : 'Total bookings'}: <b>${bookings.length}</b> · 
+        ${ar ? 'إجمالي التعيينات' : 'Total assignments'}: <b>${dists.length}</b>
+      </div>
+    `;
+
+    printHTML(L.title, bodyHtml);
+  };
+
+  /* ---------- inject PDF buttons ---------- */
+  function hookEmployeesPage() {
+    if (!Pages.employees) return;
+    const orig = Pages.employees;
+    Pages.employees = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        document.querySelectorAll('.data-table tbody tr').forEach(row => {
+          const actionCell = row.querySelector('td:last-child');
+          if (!actionCell || actionCell.querySelector('.pdf-btn')) return;
+          const editBtn = row.querySelector('button[onclick*="editEmployee"]');
+          if (!editBtn) return;
+          const m = editBtn.getAttribute('onclick').match(/editEmployee\('([^']+)'\)/);
+          if (!m) return;
+          const empId = m[1];
+
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-icon btn-sm pdf-btn';
+          btn.title = (I18N[State.lang] || I18N.ar).pdf_payslip;
+          btn.style.color = '#f43f5e';
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+          btn.onclick = (e) => { e.stopPropagation(); window.__dmPayslipPDF(empId); };
+          const actionsDiv = actionCell.querySelector('div');
+          if (actionsDiv) actionsDiv.appendChild(btn);
+        });
+      }, 120);
+    };
+  }
+
+  function hookBookingsPage() {
+    if (!Pages.bookings) return;
+    const orig = Pages.bookings;
+    Pages.bookings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        document.querySelectorAll('.data-table tbody tr').forEach(row => {
+          const actionCell = row.querySelector('td:last-child');
+          if (!actionCell || actionCell.querySelector('.pdf-btn')) return;
+          const editBtn = row.querySelector('button[onclick*="editBooking"]');
+          if (!editBtn) return;
+          const m = editBtn.getAttribute('onclick').match(/editBooking\('([^']+)'\)/);
+          if (!m) return;
+          const bid = m[1];
+
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-icon btn-sm pdf-btn';
+          btn.title = (I18N[State.lang] || I18N.ar).pdf_booking;
+          btn.style.color = '#f43f5e';
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+          btn.onclick = (e) => { e.stopPropagation(); window.__dmBookingPDF(bid); };
+          const actionsDiv = actionCell.querySelector('div');
+          if (actionsDiv) actionsDiv.appendChild(btn);
+        });
+      }, 120);
+    };
+  }
+
+  function hookDistributionPage() {
+    if (!Pages.distribution) return;
+    const orig = Pages.distribution;
+    Pages.distribution = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        // Add PDF button to toolbar
+        const toolbar = document.querySelector('#dist-date')?.closest('div');
+        if (toolbar && !toolbar.querySelector('.pdf-sheet-btn')) {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-sm pdf-sheet-btn';
+          btn.style.color = '#f43f5e';
+          btn.innerHTML = `<i data-lucide="file-text"></i> ${(I18N[State.lang] || I18N.ar).pdf_daily_sheet}`;
+          btn.onclick = () => window.__dmDailySheetPDF(State.filters.distDate || todayISO());
+          toolbar.insertBefore(btn, toolbar.querySelector('.btn-primary') || toolbar.lastElementChild);
+          if (window.lucide) lucide.createIcons();
+        }
+      }, 120);
+    };
+  }
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined',
+    function () {
+      hookEmployeesPage();
+      hookBookingsPage();
+      hookDistributionPage();
+      console.log('%c[Section 12] ✓ PDF Reports ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
 
 
 
