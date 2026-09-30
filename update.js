@@ -5481,6 +5481,660 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 16: Distribution Log (سجل التوزيعات)
+   Version: 1.0.0
+   - View all distributed employees (flat list)
+   - Filter by date range / single date / hall / employee / role
+   - Professional print sheet
+   - Export CSV
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 16] Distribution Log loading…', 'color:#0ea5e9;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 16] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  Object.assign(I18N.ar, {
+    dist_log: 'سجل التوزيعات',
+    dl_date_from: 'من تاريخ',
+    dl_date_to: 'إلى تاريخ',
+    dl_single_date: 'تاريخ محدد',
+    dl_all_dates: 'كل التواريخ',
+    dl_filter_hall: 'القاعة',
+    dl_filter_employee: 'الموظف',
+    dl_filter_role: 'الدور',
+    dl_all: 'الكل',
+    dl_today: 'اليوم',
+    dl_this_week: 'هذا الأسبوع',
+    dl_this_month: 'هذا الشهر',
+    dl_print: 'طباعة',
+    dl_export: 'تصدير',
+    dl_total_records: 'إجمالي السجلات',
+    dl_unique_employees: 'عدد الموظفين',
+    dl_total_days: 'عدد الأيام',
+    dl_no_data: 'لا توجد بيانات في هذه الفترة',
+    dl_print_title: 'كشف الموظفين الموزعين',
+    dl_print_subtitle: 'Distributed Staff Report',
+    dl_employee: 'الموظف',
+    dl_role: 'الدور',
+    dl_hall: 'القاعة',
+    dl_date: 'التاريخ',
+    dl_day: 'اليوم',
+    dl_status: 'الحالة',
+    dl_day_ar: 'اليوم',
+    dl_clear_filters: 'مسح الفلاتر',
+    dl_print_summary: 'ملخص',
+    dl_per_employee: 'لكل موظف',
+    dl_per_hall: 'لكل قاعة',
+    dl_per_role: 'لكل دور',
+    dl_include_summary: 'إضافة ملخص للطباعة',
+    dl_include_per_employee: 'إضافة تفصيل لكل موظف',
+    dl_created_by: 'أنشأه',
+    dl_manual: 'يدوي'
+  });
+  Object.assign(I18N.en, {
+    dist_log: 'Distribution Log',
+    dl_date_from: 'From date',
+    dl_date_to: 'To date',
+    dl_single_date: 'Single date',
+    dl_all_dates: 'All dates',
+    dl_filter_hall: 'Hall',
+    dl_filter_employee: 'Employee',
+    dl_filter_role: 'Role',
+    dl_all: 'All',
+    dl_today: 'Today',
+    dl_this_week: 'This Week',
+    dl_this_month: 'This Month',
+    dl_print: 'Print',
+    dl_export: 'Export',
+    dl_total_records: 'Total records',
+    dl_unique_employees: 'Employees',
+    dl_total_days: 'Days',
+    dl_no_data: 'No data in this range',
+    dl_print_title: 'Distributed Staff Report',
+    dl_print_subtitle: 'Distribution Sheet',
+    dl_employee: 'Employee',
+    dl_role: 'Role',
+    dl_hall: 'Hall',
+    dl_date: 'Date',
+    dl_day: 'Day',
+    dl_status: 'Status',
+    dl_day_ar: 'Day',
+    dl_clear_filters: 'Clear filters',
+    dl_print_summary: 'Summary',
+    dl_per_employee: 'Per Employee',
+    dl_per_hall: 'Per Hall',
+    dl_per_role: 'Per Role',
+    dl_include_summary: 'Include summary in print',
+    dl_include_per_employee: 'Include per-employee breakdown',
+    dl_created_by: 'Created by',
+    dl_manual: 'Manual'
+  });
+
+  /* ---------- state ---------- */
+  const DL = {
+    mode: 'range',          // 'range' | 'single'
+    from: addDaysISO(todayISO(), -30),
+    to: todayISO(),
+    singleDate: todayISO(),
+    hallId: 'all',
+    employeeId: 'all',
+    role: 'all',
+    printIncludeSummary: true,
+    printIncludePerEmployee: true
+  };
+  window.__dmDL = DL;
+
+  function addDaysISO(d, n) {
+    const x = new Date(d);
+    x.setDate(x.getDate() + n);
+    return x.toISOString().slice(0, 10);
+  }
+
+  function hallName(id) {
+    const h = State.data.halls.find(x => x.id === id);
+    return h ? (h.name[State.lang] || h.name.ar) : '-';
+  }
+
+  function getDayNameAr(dateStr) {
+    if (!dateStr) return '';
+    const days = State.lang === 'ar'
+      ? ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[new Date(dateStr).getDay()];
+  }
+
+  function getFiltered() {
+    let list = [...(State.data.distributions || [])];
+
+    // Date filter
+    if (DL.mode === 'single') {
+      list = list.filter(x => x.date === DL.singleDate);
+    } else {
+      list = list.filter(x => x.date >= DL.from && x.date <= DL.to);
+    }
+
+    // Hall filter
+    if (DL.hallId !== 'all') {
+      list = list.filter(x => x.hallId === DL.hallId);
+    }
+
+    // Employee filter
+    if (DL.employeeId !== 'all') {
+      list = list.filter(x => x.employeeId === DL.employeeId);
+    }
+
+    // Role filter
+    if (DL.role !== 'all') {
+      list = list.filter(x => x.role === DL.role);
+    }
+
+    // Sort by date desc, then by hall
+    list.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return (a.hallId || '').localeCompare(b.hallId || '');
+    });
+
+    return list;
+  }
+
+  /* ---------- register page ---------- */
+  Pages.distlog = function (el) {
+    const records = getFiltered();
+    const uniqueEmployees = new Set(records.map(r => r.employeeId).filter(Boolean)).size;
+    const uniqueDays = new Set(records.map(r => r.date)).size;
+    const roles = [...new Set((State.data.employees || []).flatMap(e => e.roles || [e.role]))].filter(Boolean);
+
+    el.innerHTML = `
+      <!-- FILTERS -->
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">
+          <i data-lucide="filter" style="width:18px;height:18px;color:var(--primary)"></i>
+          <span style="font-weight:700;font-size:.95rem">${t('dist_log')}</span>
+          <div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="__dmDLClearFilters()">
+              <i data-lucide="x"></i> ${t('dl_clear_filters')}
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmDLExport()">
+              <i data-lucide="download"></i> ${t('dl_export')}
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="__dmDLPrint()">
+              <i data-lucide="printer"></i> ${t('dl_print')}
+            </button>
+          </div>
+        </div>
+
+        <!-- Mode selector -->
+        <div class="tabs" style="margin:0 0 1rem;border-bottom:1px solid var(--border)">
+          <div class="tab ${DL.mode === 'range' ? 'active' : ''}" onclick="__dmDLSetMode('range')">
+            <i data-lucide="calendar-range" style="width:12px;height:12px;display:inline;vertical-align:-1px"></i>
+            ${t('dl_date_from')} → ${t('dl_date_to')}
+          </div>
+          <div class="tab ${DL.mode === 'single' ? 'active' : ''}" onclick="__dmDLSetMode('single')">
+            <i data-lucide="calendar" style="width:12px;height:12px;display:inline;vertical-align:-1px"></i>
+            ${t('dl_single_date')}
+          </div>
+        </div>
+
+        <!-- Date inputs -->
+        ${DL.mode === 'range' ? `
+          <div class="form-row" style="margin-bottom:1rem">
+            <div class="field"><label>${t('dl_date_from')}</label>
+              <input type="date" id="dl-from" value="${DL.from}">
+            </div>
+            <div class="field"><label>${t('dl_date_to')}</label>
+              <input type="date" id="dl-to" value="${DL.to}">
+            </div>
+          </div>
+          <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:1rem">
+            <button class="btn btn-ghost btn-sm" onclick="__dmDLQuick('today')">${t('dl_today')}</button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmDLQuick('week')">${t('dl_this_week')}</button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmDLQuick('month')">${t('dl_this_month')}</button>
+          </div>
+        ` : `
+          <div class="form-row" style="margin-bottom:1rem">
+            <div class="field"><label>${t('dl_single_date')}</label>
+              <input type="date" id="dl-single" value="${DL.singleDate}">
+            </div>
+          </div>
+        `}
+
+        <div class="form-row">
+          <div class="field"><label>${t('dl_filter_hall')}</label>
+            <select id="dl-hall">
+              <option value="all" ${DL.hallId === 'all' ? 'selected' : ''}>${t('dl_all')}</option>
+              ${State.data.halls.map(h => `<option value="${h.id}" ${DL.hallId === h.id ? 'selected' : ''}>${h.name[State.lang] || h.name.ar}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>${t('dl_filter_employee')}</label>
+            <select id="dl-emp">
+              <option value="all" ${DL.employeeId === 'all' ? 'selected' : ''}>${t('dl_all')}</option>
+              ${State.data.employees.map(e => `<option value="${e.id}" ${DL.employeeId === e.id ? 'selected' : ''}>${e.name}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>${t('dl_filter_role')}</label>
+            <select id="dl-role">
+              <option value="all" ${DL.role === 'all' ? 'selected' : ''}>${t('dl_all')}</option>
+              ${roles.map(r => `<option value="${r}" ${DL.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;gap:1rem;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer">
+            <input type="checkbox" id="dl-inc-summary" ${DL.printIncludeSummary ? 'checked' : ''} style="accent-color:var(--primary)">
+            ${t('dl_include_summary')}
+          </label>
+          <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer">
+            <input type="checkbox" id="dl-inc-employee" ${DL.printIncludePerEmployee ? 'checked' : ''} style="accent-color:var(--primary)">
+            ${t('dl_include_per_employee')}
+          </label>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <div class="grid-stats" style="margin-bottom:1rem">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(124,58,237,.1);color:#7c3aed"><i data-lucide="list"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('dl_total_records')}</div>
+            <div class="value">${records.length}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i data-lucide="users"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('dl_unique_employees')}</div>
+            <div class="value">${uniqueEmployees}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(245,158,11,.1);color:#f59e0b"><i data-lucide="calendar-days"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('dl_total_days')}</div>
+            <div class="value">${uniqueDays}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE -->
+      <div class="card">
+        ${records.length ? `
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>${t('dl_date')}</th>
+                  <th>${t('dl_day')}</th>
+                  <th>${t('dl_employee')}</th>
+                  <th>${t('dl_role')}</th>
+                  <th>${t('dl_hall')}</th>
+                  <th>${t('dl_status')}</th>
+                  <th>${t('dl_created_by')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${records.map(r => {
+                  const emp = State.data.employees.find(x => x.id === r.employeeId);
+                  const statusColor = { confirmed: 'green', pending: 'yellow', missing: 'red' }[r.status] || 'gray';
+                  return `<tr>
+                    <td><b>${fmtDate(r.date)}</b></td>
+                    <td>${getDayNameAr(r.date)}</td>
+                    <td>
+                      <div class="cell-user">
+                        <div class="av">${initials(emp?.name || r.manualName)}</div>
+                        <div>
+                          <div style="font-weight:600">${emp?.name || r.manualName || '-'}</div>
+                          <div style="font-size:.7rem;color:var(--text-muted)">${emp?.code || ''}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span class="badge-pill badge-purple">${r.role}</span></td>
+                    <td>${hallName(r.hallId)}</td>
+                    <td><span class="badge-pill badge-${statusColor}">${t(r.status) || r.status}</span></td>
+                    <td style="font-size:.75rem;color:var(--text-muted)">${r.createdBy === 'auto' || r.createdBy === 'bulk' ? (r.createdBy === 'auto' ? '⚡ Auto' : '📦 Bulk') : (r.createdBy || '-')}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        ` : `
+          <div class="empty-state" style="padding:3rem 1rem">
+            <i data-lucide="inbox"></i>
+            <p>${t('dl_no_data')}</p>
+          </div>
+        `}
+      </div>
+    `;
+
+    if (window.lucide) lucide.createIcons();
+
+    /* attach filter listeners */
+    const fromEl = document.getElementById('dl-from');
+    const toEl = document.getElementById('dl-to');
+    const singleEl = document.getElementById('dl-single');
+    const hallEl = document.getElementById('dl-hall');
+    const empEl = document.getElementById('dl-emp');
+    const roleEl = document.getElementById('dl-role');
+    const incSumEl = document.getElementById('dl-inc-summary');
+    const incEmpEl = document.getElementById('dl-inc-employee');
+
+    if (fromEl) fromEl.onchange = (e) => { DL.from = e.target.value; navigate('distlog'); };
+    if (toEl) toEl.onchange = (e) => { DL.to = e.target.value; navigate('distlog'); };
+    if (singleEl) singleEl.onchange = (e) => { DL.singleDate = e.target.value; navigate('distlog'); };
+    if (hallEl) hallEl.onchange = (e) => { DL.hallId = e.target.value; navigate('distlog'); };
+    if (empEl) empEl.onchange = (e) => { DL.employeeId = e.target.value; navigate('distlog'); };
+    if (roleEl) roleEl.onchange = (e) => { DL.role = e.target.value; navigate('distlog'); };
+    if (incSumEl) incSumEl.onchange = (e) => { DL.printIncludeSummary = e.target.checked; };
+    if (incEmpEl) incEmpEl.onchange = (e) => { DL.printIncludePerEmployee = e.target.checked; };
+  };
+
+  /* ---------- handlers ---------- */
+  window.__dmDLSetMode = function (mode) {
+    DL.mode = mode;
+    navigate('distlog');
+  };
+
+  window.__dmDLClearFilters = function () {
+    DL.mode = 'range';
+    DL.from = addDaysISO(todayISO(), -30);
+    DL.to = todayISO();
+    DL.singleDate = todayISO();
+    DL.hallId = 'all';
+    DL.employeeId = 'all';
+    DL.role = 'all';
+    navigate('distlog');
+  };
+
+  window.__dmDLQuick = function (range) {
+    const today = new Date();
+    if (range === 'today') {
+      DL.from = today.toISOString().slice(0, 10);
+      DL.to = DL.from;
+    } else if (range === 'week') {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 6);
+      DL.from = d.toISOString().slice(0, 10);
+      DL.to = today.toISOString().slice(0, 10);
+    } else if (range === 'month') {
+      DL.from = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+      DL.to = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+    }
+    navigate('distlog');
+  };
+
+  /* ---------- print ---------- */
+  window.__dmDLPrint = function () {
+    const records = getFiltered();
+    if (!records.length) {
+      if (typeof showToast === 'function') showToast(t('dl_no_data'), 'warn');
+      return;
+    }
+
+    const ar = State.lang === 'ar';
+    const L = {
+      title: ar ? 'كشف الموظفين الموزعين' : 'Distributed Staff Report',
+      period: ar ? 'الفترة' : 'Period',
+      from: ar ? 'من' : 'From',
+      to: ar ? 'إلى' : 'To',
+      date: ar ? 'التاريخ' : 'Date',
+      day: ar ? 'اليوم' : 'Day',
+      employee: ar ? 'الموظف' : 'Employee',
+      code: ar ? 'الكود' : 'Code',
+      role: ar ? 'الدور' : 'Role',
+      hall: ar ? 'القاعة' : 'Hall',
+      status: ar ? 'الحالة' : 'Status',
+      totalRecords: ar ? 'إجمالي السجلات' : 'Total records',
+      uniqueEmployees: ar ? 'عدد الموظفين' : 'Employees',
+      uniqueDays: ar ? 'عدد الأيام' : 'Days',
+      summary: ar ? 'الملخص' : 'Summary',
+      perEmployee: ar ? 'التوزيع لكل موظف' : 'Per-Employee Breakdown',
+      count: ar ? 'العدد' : 'Count',
+      total: ar ? 'الإجمالي' : 'Total'
+    };
+
+    const periodLabel = DL.mode === 'single'
+      ? `${L.date}: ${fmtDate(DL.singleDate)}`
+      : `${L.from} ${fmtDate(DL.from)} — ${L.to} ${fmtDate(DL.to)}`;
+
+    // Group per employee
+    const perEmployee = {};
+    records.forEach(r => {
+      const emp = State.data.employees.find(x => x.id === r.employeeId);
+      const name = emp ? emp.name : (r.manualName || '—');
+      perEmployee[name] = perEmployee[name] || { count: 0, days: new Set(), roles: {} };
+      perEmployee[name].count++;
+      perEmployee[name].days.add(r.date);
+      perEmployee[name].roles[r.role] = (perEmployee[name].roles[r.role] || 0) + 1;
+    });
+
+    const uniqueEmps = Object.keys(perEmployee).length;
+    const uniqueDays = new Set(records.map(r => r.date)).size;
+
+    // HTML body
+    const statusBadge = (s) => {
+      const colors = { confirmed: '#10b981', pending: '#f59e0b', missing: '#ef4444' };
+      const bg = colors[s] || '#64748b';
+      return `<span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;background:${bg}20;color:${bg}">${s || '-'}</span>`;
+    };
+
+    let html = `
+      <div class="title">${L.title}</div>
+
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.75rem;padding:.75rem;background:#f9fafb;border-radius:10px;margin-bottom:1.5rem;font-size:.85rem">
+        <div><b>${L.period}:</b> ${periodLabel}</div>
+        ${DL.hallId !== 'all' ? `<div><b>${ar ? 'القاعة' : 'Hall'}:</b> ${hallName(DL.hallId)}</div>` : ''}
+        ${DL.employeeId !== 'all' ? `<div><b>${ar ? 'الموظف' : 'Employee'}:</b> ${empName(DL.employeeId)}</div>` : ''}
+        ${DL.role !== 'all' ? `<div><b>${ar ? 'الدور' : 'Role'}:</b> ${DL.role}</div>` : ''}
+      </div>
+    `;
+
+    // Summary
+    if (DL.printIncludeSummary) {
+      html += `
+        <div class="title">${L.summary}</div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="kpi-label">${L.totalRecords}</div><div class="kpi-value">${records.length}</div></div>
+          <div class="kpi"><div class="kpi-label">${L.uniqueEmployees}</div><div class="kpi-value">${uniqueEmps}</div></div>
+          <div class="kpi"><div class="kpi-label">${L.uniqueDays}</div><div class="kpi-value">${uniqueDays}</div></div>
+        </div>
+      `;
+    }
+
+    // Main table
+    html += `
+      <div class="title">${ar ? 'التفاصيل' : 'Details'}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>${L.date}</th>
+            <th>${L.day}</th>
+            <th>${L.employee}</th>
+            <th>${L.role}</th>
+            <th>${L.hall}</th>
+            <th>${L.status}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${records.map(r => {
+            const emp = State.data.employees.find(x => x.id === r.employeeId);
+            return `<tr>
+              <td>${fmtDate(r.date)}</td>
+              <td>${getDayNameAr(r.date)}</td>
+              <td><b>${emp?.name || r.manualName || '-'}</b></td>
+              <td>${r.role}</td>
+              <td>${hallName(r.hallId)}</td>
+              <td>${statusBadge(r.status)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+
+    // Per-employee breakdown
+    if (DL.printIncludePerEmployee) {
+      html += `
+        <div class="title" style="margin-top:2rem">${L.perEmployee}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>${L.employee}</th>
+              <th>${L.count}</th>
+              <th>${ar ? 'الأيام' : 'Days'}</th>
+              <th>${ar ? 'الأدوار' : 'Roles'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${Object.entries(perEmployee)
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([name, info]) => `
+                <tr>
+                  <td><b>${name}</b></td>
+                  <td>${info.count}</td>
+                  <td>${info.days.size}</td>
+                  <td>${Object.entries(info.roles).map(([r, c]) => `${r}: ${c}`).join(' · ')}</td>
+                </tr>
+              `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // Print via Section 12's helper if available, else fallback
+    if (typeof window.__dmDailySheetPDF === 'function') {
+      // Use the same print infrastructure
+    }
+
+    // Custom print window
+    printCustom(ar ? L.title : 'Report', html);
+  };
+
+  function printCustom(title, bodyHtml) {
+    const w = window.open('', '_blank', 'width=1000,height=1000');
+    if (!w) {
+      if (typeof showToast === 'function') showToast(State.lang === 'ar' ? 'الرجاء السماح بالنوافذ المنبثقة' : 'Please allow popups', 'warn');
+      return;
+    }
+
+    const ar = State.lang === 'ar';
+    const styles = `
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:'Cairo','Inter',system-ui,sans-serif;margin:0;padding:2rem;color:#0f172a;background:#fff;direction:${ar ? 'rtl' : 'ltr'}}
+      .header{display:flex;align-items:center;gap:1rem;padding-bottom:1rem;border-bottom:3px solid #7c3aed;margin-bottom:1.5rem}
+      .logo{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.4rem}
+      .brand h1{margin:0;font-size:1.35rem;font-weight:800}
+      .brand p{margin:0;font-size:.75rem;color:#64748b}
+      .brand span{color:#7c3aed}
+      .title{font-size:1.1rem;font-weight:700;margin:1.5rem 0 .75rem;padding-bottom:.4rem;border-bottom:2px solid #e5e7eb}
+      .title:first-child{margin-top:0}
+      table{width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:1rem}
+      th,td{padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb}
+      th{background:#f3f4f6;font-weight:700;color:#374151;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
+      tbody tr:nth-child(even){background:#fafafa}
+      .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1rem}
+      .kpi{padding:.75rem;background:#f9fafb;border-radius:10px;text-align:center}
+      .kpi-label{font-size:.7rem;color:#64748b;margin-bottom:.25rem}
+      .kpi-value{font-size:1.25rem;font-weight:800;color:#7c3aed}
+      .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e5e7eb;font-size:.7rem;color:#94a3b8;text-align:center}
+      @media print{
+        body{padding:1rem}
+        .page-break{page-break-before:always}
+        tbody tr{page-break-inside:avoid}
+      }
+    `;
+
+    w.document.write(`<!DOCTYPE html>
+<html lang="${State.lang}" dir="${ar ? 'rtl' : 'ltr'}">
+<head><meta charset="UTF-8"><title>${title}</title><style>${styles}</style></head>
+<body>
+  <div class="header">
+    <div class="logo">D</div>
+    <div class="brand">
+      <h1>Dr Media <span>Pro</span></h1>
+      <p>${(State.data.settings.companyName || 'Professional Video Production')} · ${State.data.settings.phone || ''}</p>
+    </div>
+  </div>
+  ${bodyHtml}
+  <div class="footer">
+    ${State.data.settings.companyName || 'Dr Media Pro'} · ${State.data.settings.address || ''} · ${new Date().toLocaleString(ar ? 'ar-EG' : 'en-GB')}
+  </div>
+  <script>setTimeout(function(){window.print();},400);<\/script>
+</body></html>`);
+    w.document.close();
+  }
+
+  /* ---------- export CSV ---------- */
+  window.__dmDLExport = function () {
+    const records = getFiltered();
+    if (!records.length) {
+      if (typeof showToast === 'function') showToast(t('dl_no_data'), 'warn');
+      return;
+    }
+
+    const headers = ['Date', 'Day', 'Employee', 'Code', 'Role', 'Hall', 'Status', 'CreatedBy'];
+    const rows = records.map(r => {
+      const emp = State.data.employees.find(x => x.id === r.employeeId);
+      return [
+        r.date,
+        getDayNameAr(r.date),
+        emp?.name || r.manualName || '',
+        emp?.code || '',
+        r.role,
+        hallName(r.hallId),
+        r.status,
+        r.createdBy || ''
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map(row => row.map(x => `"${String(x || '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'distribution-log-' + todayISO() + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    if (typeof showToast === 'function') showToast('Exported ✓', 'success');
+  };
+
+  /* ---------- register nav ---------- */
+  function registerNav() {
+    const ops = NAV_ITEMS.find(g => g.section === 'operations');
+    if (ops && !ops.items.find(i => i.id === 'distlog')) {
+      // Insert after distribution/bulkdist
+      const idx = ops.items.findIndex(i => i.id === 'bulkdist');
+      const insertAt = idx >= 0 ? idx + 1 : ops.items.findIndex(i => i.id === 'distribution') + 1;
+      ops.items.splice(insertAt, 0, { id: 'distlog', icon: 'scroll-text', label: 'dist_log' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    () => typeof State !== 'undefined'
+        && typeof Pages !== 'undefined'
+        && typeof navigate === 'function',
+    function () {
+      registerNav();
+      console.log('%c[Section 16] ✓ Distribution Log ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
 
 
 
