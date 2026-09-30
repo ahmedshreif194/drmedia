@@ -1938,3 +1938,266 @@
   );
 
 })();
+/* =========================================================
+   SECTION 2 (v2): Realtime Live Sync — FIXED
+   Version: 3.1.1
+   Fix: Uses unique TAB_ID per browser tab instead of username
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 2 v2] Realtime Live Sync loading…', 'color:#7c3aed;font-weight:bold');
+
+  /* ---------- kill old Section 2 listener ---------- */
+  if (window.DrMediaSync && typeof window.DrMediaSync.unsub === 'function') {
+    try {
+      window.DrMediaSync.unsub();
+      window.DrMediaSync.active = false;
+      console.log('[Section 2 v2] Killed old Section 2 listener');
+    } catch (e) {}
+  }
+
+  /* ---------- unique tab identifier ---------- */
+  const TAB_ID = 'tab_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now();
+  console.log('[Section 2 v2] My TAB_ID:', TAB_ID);
+
+  /* ---------- wait helper ---------- */
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 100;
+    let tries = 0;
+    const t = setInterval(() => {
+      tries++;
+      if (cond()) { clearInterval(t); cb(); }
+      else if (tries >= maxTries) { clearInterval(t); console.warn('[Section 2 v2] timeout'); }
+    }, 100);
+  }
+
+  /* ---------- sync state ---------- */
+  const Sync = {
+    active: false,
+    unsub: null,
+    lastSyncAt: null,
+    updatesReceived: 0,
+    writesSent: 0,
+    applyingRemote: false,
+    pushTimer: null
+  };
+  window.DrMediaSync = Sync;
+
+  /* ---------- i18n ---------- */
+  function patchI18n() {
+    if (typeof I18N === 'undefined') return;
+    Object.assign(I18N.ar, {
+      sync_updated: 'تم تحديث البيانات من السحابة'
+    });
+    Object.assign(I18N.en, {
+      sync_updated: 'Data updated from cloud'
+    });
+  }
+
+  /* ---------- topbar indicator ---------- */
+  function injectIndicator() {
+    if (document.getElementById('dm-sync-indicator')) return;
+    const topbar = document.getElementById('topbar');
+    if (!topbar) return;
+
+    const notifBtn = document.getElementById('notif-btn');
+    const wrap = document.createElement('div');
+    wrap.id = 'dm-sync-indicator';
+    wrap.style.cssText = `display:flex;align-items:center;gap:.35rem;padding:.35rem .65rem;border-radius:8px;background:rgba(16,185,129,.1);color:#10b981;font-size:.7rem;font-weight:600;margin-inline-end:.35rem;cursor:pointer;transition:all .2s`;
+    wrap.innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;animation:dm-pulse 2s infinite"></span><span id="dm-sync-label">Live</span>`;
+    wrap.title = 'Realtime Live Sync — Click to toggle';
+
+    if (notifBtn && notifBtn.parentNode) notifBtn.parentNode.insertBefore(wrap, notifBtn);
+    else topbar.appendChild(wrap);
+
+    if (!document.getElementById('dm-pulse-style')) {
+      const s = document.createElement('style');
+      s.id = 'dm-pulse-style';
+      s.textContent = `@keyframes dm-pulse {0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.2);}}`;
+      document.head.appendChild(s);
+    }
+
+    wrap.addEventListener('click', () => {
+      if (Sync.active) { stopSync(); setIndicatorState('paused'); }
+      else { startSync(); setIndicatorState('active'); }
+    });
+  }
+
+  function setIndicatorState(state) {
+    const wrap = document.getElementById('dm-sync-indicator');
+    const label = document.getElementById('dm-sync-label');
+    if (!wrap || !label) return;
+    const dot = wrap.querySelector('span');
+    if (state === 'active') {
+      wrap.style.background = 'rgba(16,185,129,.1)';
+      wrap.style.color = '#10b981';
+      label.textContent = 'Live';
+      if (dot) dot.style.background = '#10b981';
+    } else {
+      wrap.style.background = 'rgba(100,116,139,.1)';
+      wrap.style.color = '#64748b';
+      label.textContent = 'Paused';
+      if (dot) dot.style.background = '#64748b';
+    }
+  }
+
+  function flashIndicator() {
+    const wrap = document.getElementById('dm-sync-indicator');
+    if (!wrap) return;
+    wrap.style.transform = 'scale(1.2)';
+    setTimeout(() => { wrap.style.transform = 'scale(1)'; }, 350);
+  }
+
+  /* ---------- OVERRIDE saveData completely ---------- */
+  function overrideSaveData() {
+    window.saveData = function () {
+      // 1. Persist locally
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+      // 2. Don't echo remote data back
+      if (Sync.applyingRemote) return;
+      // 3. Debounced push
+      if (Sync.active && window.DrMediaFB && window.DrMediaFB.ready) {
+        clearTimeout(Sync.pushTimer);
+        Sync.pushTimer = setTimeout(pushNow, 700);
+      }
+    };
+    console.log('[Section 2 v2] saveData overridden');
+  }
+
+  /* ---------- PUSH ---------- */
+  function pushNow() {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) return;
+    try {
+      const { doc, setDoc, serverTimestamp } = window.DrMediaFB.modules.fsMod;
+      const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+      setDoc(ref, {
+        payload: State.data,
+        version: Date.now(),
+        updatedBy: TAB_ID,
+        updatedByUser: State.user ? State.user.username : null,
+        updatedAt: serverTimestamp()
+      }).then(() => {
+        Sync.writesSent++;
+        Sync.lastSyncAt = new Date();
+        console.log('[Section 2 v2] → Pushed to cloud');
+        if (window.DrMediaCounters) window.DrMediaCounters.trackWrite('app_state', 1);
+      }).catch(err => {
+        console.warn('[Section 2 v2] Push failed:', err);
+      });
+    } catch (e) { console.error('[Section 2 v2] pushNow error:', e); }
+  }
+
+  /* ---------- LISTENER ---------- */
+  function startSync() {
+    if (Sync.active) return;
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) {
+      console.warn('[Section 2 v2] Firebase not ready');
+      return;
+    }
+    try {
+      const { doc, onSnapshot } = window.DrMediaFB.modules.fsMod;
+      const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+
+      Sync.unsub = onSnapshot(ref, (snap) => {
+        if (!snap.exists()) return;
+        const remote = snap.data();
+        if (!remote || !remote.payload) return;
+
+        // ✅ SKIP ONLY OUR OWN WRITES
+        if (remote.updatedBy === TAB_ID) {
+          console.log('[Section 2 v2] ← Own write echo — skip');
+          return;
+        }
+
+        console.log('[Section 2 v2] ← Update from another tab:', {
+          from: (remote.updatedBy || '').slice(0, 12),
+          user: remote.updatedByUser
+        });
+
+        Sync.updatesReceived++;
+        Sync.lastSyncAt = new Date();
+        Sync.applyingRemote = true;
+
+        const session = State.user;
+        State.data = remote.payload;
+
+        if (session && State.data.users) {
+          const u = State.data.users.find(x => x.id === session.id);
+          if (u) {
+            State.user = { id: u.id, username: u.username, name: u.name, role: u.role, employeeId: u.employeeId };
+          }
+        }
+
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+
+        if (typeof showToast === 'function') {
+          showToast(
+            State.lang === 'ar' ? '🔄 تم تحديث البيانات من السحابة' : '🔄 Data updated from cloud',
+            'info'
+          );
+        }
+        flashIndicator();
+
+        setTimeout(() => {
+          try {
+            if (State.page && typeof navigate === 'function') navigate(State.page);
+            if (typeof updateNotifBadge === 'function') updateNotifBadge();
+          } catch (e) {}
+          Sync.applyingRemote = false;
+        }, 250);
+      }, (err) => {
+        console.warn('[Section 2 v2] Snapshot error:', err);
+      });
+
+      Sync.active = true;
+      console.log('%c[Section 2 v2] ✓ ACTIVE', 'color:#10b981;font-weight:bold');
+    } catch (err) {
+      console.error('[Section 2 v2] Failed to start:', err);
+    }
+  }
+
+  function stopSync() {
+    if (Sync.unsub) { try { Sync.unsub(); } catch (e) {} Sync.unsub = null; }
+    Sync.active = false;
+    console.log('[Section 2 v2] Paused');
+  }
+
+  /* ---------- hooks ---------- */
+  function hookLogout() {
+    try {
+      const orig = window.logout;
+      window.logout = function () { stopSync(); return orig.apply(this, arguments); };
+    } catch (e) {}
+  }
+
+  function hookLogin() {
+    try {
+      const orig = window.attemptLogin;
+      window.attemptLogin = function (u, p) {
+        const ok = orig.apply(this, arguments);
+        if (ok) setTimeout(() => { startSync(); setIndicatorState('active'); }, 500);
+        return ok;
+      };
+    } catch (e) {}
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    () => typeof window.DrMediaFB !== 'undefined' && window.DrMediaFB.ready
+        && typeof State !== 'undefined' && typeof navigate === 'function',
+    function () {
+      patchI18n();
+      injectIndicator();
+      hookLogout();
+      hookLogin();
+      overrideSaveData();
+
+      if (State.user) { startSync(); setIndicatorState('active'); }
+      else setIndicatorState('paused');
+
+      console.log('%c[Section 2 v2] ✓ Initialized', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
