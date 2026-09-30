@@ -4507,6 +4507,364 @@
   );
 
 })();
+/* =========================================================
+   SECTION 14: Firebase Auth Integration (Optional)
+   Version: 1.0.1
+   - Opt-in: only activates when enabled in Settings
+   - Allows linking existing custom users to Firebase Auth
+   - Does NOT break existing custom auth
+   - Provides secure Firestore rules template
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 14] Firebase Auth loading…', 'color:#f43f5e;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 14] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  Object.assign(I18N.ar, {
+    fa_title: 'مصادقة Firebase',
+    fa_enable: 'تفعيل Firebase Auth',
+    fa_disable: 'تعطيل Firebase Auth',
+    fa_migrate: 'ترحيل المستخدمين',
+    fa_status: 'الحالة',
+    fa_off: 'معطّل',
+    fa_on: 'مفعّل',
+    fa_migrate_desc: 'إنشاء حسابات Firebase Auth للمستخدمين الحاليين (كلمة المرور المؤقتة = admin)',
+    fa_rules: 'Firestore Security Rules',
+    fa_copy_rules: 'نسخ القواعد',
+    fa_rules_copied: 'تم نسخ القواعد',
+    fa_warning: 'تنبيه',
+    fa_warning_text: 'لا تفعّل Firebase Auth قبل تنفيذ الترحيل ونشر القواعد الآمنة، وإلا سيتوقف النظام.',
+    fa_signed_in: 'مسجل حاليًا',
+    fa_migrating: 'جاري الترحيل…',
+    fa_migrate_done: 'انتهى الترحيل',
+    fa_created: 'تم إنشاء',
+    fa_existing: 'موجود مسبقًا',
+    fa_failed: 'فشل',
+    fa_firebase_ready: 'Firebase جاهز',
+    fa_firebase_not_ready: 'Firebase غير جاهز'
+  });
+  Object.assign(I18N.en, {
+    fa_title: 'Firebase Auth',
+    fa_enable: 'Enable Firebase Auth',
+    fa_disable: 'Disable Firebase Auth',
+    fa_migrate: 'Migrate Users',
+    fa_status: 'Status',
+    fa_off: 'Disabled',
+    fa_on: 'Enabled',
+    fa_migrate_desc: 'Create Firebase Auth accounts for existing users (temporary password = admin)',
+    fa_rules: 'Firestore Security Rules',
+    fa_copy_rules: 'Copy Rules',
+    fa_rules_copied: 'Rules copied',
+    fa_warning: 'Warning',
+    fa_warning_text: 'Do NOT enable Firebase Auth before migrating users and publishing secure rules, or the system will break.',
+    fa_signed_in: 'Signed in as',
+    fa_migrating: 'Migrating…',
+    fa_migrate_done: 'Migration complete',
+    fa_created: 'Created',
+    fa_existing: 'Existing',
+    fa_failed: 'Failed',
+    fa_firebase_ready: 'Firebase ready',
+    fa_firebase_not_ready: 'Firebase not ready'
+  });
+
+  /* ---------- secure rules template ---------- */
+  const SECURE_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Main app state: readable/writable by any authenticated user
+    match /app_state/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Per-user documents (if you split data later)
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Everything else: deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}`;
+
+  /* ---------- state ---------- */
+  const Auth = {
+    enabled: false,
+    currentUser: null,
+    onAuthChange: null
+  };
+  window.DrMediaAuth = Auth;
+
+  function loadState() {
+    try {
+      Auth.enabled = localStorage.getItem('dm_fb_auth_enabled') === '1';
+    } catch (e) {}
+  }
+  function saveState() {
+    try { localStorage.setItem('dm_fb_auth_enabled', Auth.enabled ? '1' : '0'); } catch (e) {}
+  }
+
+  /* ---------- render Auth section in Settings ---------- */
+  function renderAuthSection(container) {
+    const L = I18N[State.lang] || I18N.ar;
+    const statusText = Auth.enabled ? L.fa_on : L.fa_off;
+    const statusColor = Auth.enabled ? '#10b981' : '#64748b';
+    const fbReady = !!(window.DrMediaFB && window.DrMediaFB.ready);
+
+    const section = document.createElement('div');
+    section.className = 'card';
+    section.setAttribute('data-dm-auth-section', '1');
+    section.innerHTML = `
+      <h4 style="margin-top:0;font-size:.95rem">
+        <i data-lucide="shield-check" style="width:16px;height:16px;display:inline;color:#f43f5e"></i>
+        ${L.fa_title}
+      </h4>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.85rem;padding:.65rem;background:var(--surface-2);border-radius:10px">
+        <span style="font-size:.85rem;font-weight:600">${L.fa_status}</span>
+        <span style="padding:.25rem .65rem;border-radius:999px;font-size:.75rem;font-weight:700;background:${statusColor}20;color:${statusColor}">${statusText}</span>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.5rem;padding:.65rem;background:${fbReady ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)'};border-radius:10px;font-size:.75rem">
+        <span style="font-weight:600">${L.fa_firebase_ready}</span>
+        <span style="color:${fbReady ? '#10b981' : '#ef4444'};font-weight:700">${fbReady ? '✓' : '✗'}</span>
+      </div>
+
+      ${Auth.currentUser ? `
+        <div style="margin-top:.75rem;padding:.65rem;background:rgba(16,185,129,.08);border-radius:10px;font-size:.78rem">
+          <b>${L.fa_signed_in}:</b> ${Auth.currentUser.email || Auth.currentUser.uid}
+        </div>
+      ` : ''}
+
+      <div style="margin-top:.75rem;padding:.65rem;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:10px;font-size:.75rem;line-height:1.5">
+        <b style="color:#f59e0b">⚠ ${L.fa_warning}:</b> ${L.fa_warning_text}
+      </div>
+
+      <div style="display:flex;gap:.5rem;margin-top:.85rem;flex-wrap:wrap">
+        <button class="btn ${Auth.enabled ? 'btn-danger' : 'btn-primary'} btn-sm" id="fa-toggle" ${!fbReady ? 'disabled' : ''}>
+          ${Auth.enabled ? L.fa_disable : L.fa_enable}
+        </button>
+        ${Auth.enabled ? `
+          <button class="btn btn-ghost btn-sm" id="fa-migrate">${L.fa_migrate}</button>
+        ` : ''}
+        <button class="btn btn-ghost btn-sm" id="fa-rules">📋 ${L.fa_copy_rules}</button>
+      </div>
+
+      <p style="font-size:.72rem;color:var(--text-muted);margin-top:.75rem;margin-bottom:0">
+        ${L.fa_migrate_desc}
+      </p>
+    `;
+
+    container.appendChild(section);
+    if (window.lucide) lucide.createIcons();
+
+    /* toggle button */
+    const toggleBtn = section.querySelector('#fa-toggle');
+    if (toggleBtn && !toggleBtn.disabled) {
+      toggleBtn.onclick = () => {
+        Auth.enabled = !Auth.enabled;
+        saveState();
+        if (typeof showToast === 'function') {
+          showToast(
+            Auth.enabled ? L.fa_enable + ' ✓' : L.fa_disable + ' ✓',
+            'success'
+          );
+        }
+        navigate('settings');
+      };
+    }
+
+    /* migrate button */
+    const migrateBtn = section.querySelector('#fa-migrate');
+    if (migrateBtn) {
+      migrateBtn.onclick = () => {
+        if (typeof confirmDialog === 'function') {
+          confirmDialog(
+            State.lang === 'ar'
+              ? 'سيتم إنشاء حسابات Firebase Auth للمستخدمين الحاليين. كلمة المرور المؤقتة = admin. متابعة؟'
+              : 'Firebase Auth accounts will be created for existing users. Temporary password = admin. Continue?',
+            doMigration
+          );
+        } else {
+          doMigration();
+        }
+      };
+    }
+
+    /* rules copy button */
+    const rulesBtn = section.querySelector('#fa-rules');
+    if (rulesBtn) {
+      rulesBtn.onclick = () => {
+        copyToClipboard(SECURE_RULES).then(() => {
+          if (typeof showToast === 'function') showToast(L.fa_rules_copied + ' ✓', 'success');
+        }).catch(() => {
+          if (typeof showToast === 'function') showToast('Copy failed', 'error');
+        });
+      };
+    }
+  }
+
+  /* ---------- clipboard helper ---------- */
+  function copyToClipboard(text) {
+    return new Promise((resolve, reject) => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(resolve).catch(() => {
+          fallbackCopy(text) ? resolve() : reject();
+        });
+      } else {
+        fallbackCopy(text) ? resolve() : reject();
+      }
+    });
+  }
+  function fallbackCopy(text) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  /* ---------- migration ---------- */
+  async function doMigration() {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) {
+      if (typeof showToast === 'function') showToast(I18N[State.lang].fa_firebase_not_ready, 'error');
+      return;
+    }
+
+    const authMod = window.DrMediaFB.modules.authMod;
+    if (!authMod || !authMod.createUserWithEmailAndPassword) {
+      if (typeof showToast === 'function') showToast('Auth module not available', 'error');
+      return;
+    }
+
+    const { createUserWithEmailAndPassword } = authMod;
+    const users = State.data.users || [];
+    let created = 0, existing = 0, failed = 0;
+
+    if (typeof showToast === 'function') {
+      showToast(I18N[State.lang].fa_migrating, 'info');
+    }
+
+    for (const u of users) {
+      if (!u.username) continue;
+      const email = String(u.username).includes('@')
+        ? u.username
+        : (u.username + '@drmedia.local');
+      const password = u.password || 'admin';
+
+      try {
+        await createUserWithEmailAndPassword(window.DrMediaFB.auth, email, password);
+        created++;
+        console.log('[Section 14] ✓ Created:', email);
+      } catch (err) {
+        if (err.code === 'auth/email-already-in-use') {
+          existing++;
+          console.log('[Section 14] ~ Exists:', email);
+        } else {
+          failed++;
+          console.warn('[Section 14] ✗ Failed:', email, err.code);
+        }
+      }
+    }
+
+    const L = I18N[State.lang];
+    const msg = `${L.fa_migrate_done} — ${L.fa_created}: ${created} · ${L.fa_existing}: ${existing} · ${L.fa_failed}: ${failed}`;
+    if (typeof showToast === 'function') showToast(msg, 'success');
+  }
+
+  /* ---------- hook Settings page to inject Auth section ---------- */
+  function hookSettingsPage() {
+    if (!Pages.settings) return;
+    const orig = Pages.settings;
+    Pages.settings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        // Look for an existing wrapper to avoid duplicates
+        if (el.querySelector('[data-dm-auth-section]')) return;
+
+        // Find the grid container (settings uses .grid-2)
+        const grid = el.querySelector('.grid-2');
+        if (!grid) {
+          // Fallback: append at the end of the settings container
+          const wrap = document.createElement('div');
+          wrap.style.marginTop = '1.5rem';
+          el.appendChild(wrap);
+          renderAuthSection(wrap);
+        } else {
+          const wrap = document.createElement('div');
+          grid.appendChild(wrap);
+          renderAuthSection(wrap);
+        }
+      }, 150);
+    };
+  }
+
+  /* ---------- attach auth state listener ---------- */
+  function attachAuthListener() {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) return;
+    const authMod = window.DrMediaFB.modules.authMod;
+    if (!authMod || !authMod.onAuthStateChanged) return;
+
+    try {
+      Auth.onAuthChange = authMod.onAuthStateChanged(window.DrMediaFB.auth, (user) => {
+        Auth.currentUser = user;
+        console.log('[Section 14] Auth state:', user ? (user.email || user.uid) : 'signed out');
+      });
+    } catch (e) {
+      console.warn('[Section 14] Auth listener failed:', e);
+    }
+  }
+
+  /* ---------- expose helpers ---------- */
+  window.__dmAuthStatus = function () {
+    return {
+      enabled: Auth.enabled,
+      firebaseReady: !!(window.DrMediaFB && window.DrMediaFB.ready),
+      currentUser: Auth.currentUser ? (Auth.currentUser.email || Auth.currentUser.uid) : null,
+      usersCount: (State.data.users || []).length
+    };
+  };
+  window.__dmAuthMigrate = doMigration;
+  window.__dmAuthCopyRules = function () {
+    copyToClipboard(SECURE_RULES).then(() => {
+      if (typeof showToast === 'function') showToast('Rules copied ✓', 'success');
+    });
+  };
+
+  /* ---------- boot ---------- */
+  waitFor(
+    () => window.DrMediaFB && window.DrMediaFB.ready
+        && typeof Pages !== 'undefined'
+        && typeof State !== 'undefined',
+    function () {
+      loadState();
+      hookSettingsPage();
+      attachAuthListener();
+      console.log('%c[Section 14] ✓ Firebase Auth ready — toggle in Settings', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 14] Try: __dmAuthStatus()', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
 
 
 
