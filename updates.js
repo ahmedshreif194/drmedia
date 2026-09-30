@@ -699,3 +699,61 @@
 
   /* =========================================================
      NETWORK STATUS LISTENER
+     ========================================================= */
+  function watchNetwork() {
+    window.addEventListener('online', () => {
+      FB.status = FB.ready ? 'online' : 'error';
+      if (FB.ready) schedulePush();
+      showToast('Network: Online', 'success');
+    });
+    window.addEventListener('offline', () => {
+      FB.status = 'offline';
+      showToast('Network: Offline — changes will sync later', 'warn');
+    });
+  }
+
+  /* =========================================================
+     MAIN
+     ========================================================= */
+  whenAppReady(async function () {
+    console.log('%c[DrMedia Pro] update.js v2 loading…', 'color:#7c3aed;font-weight:bold');
+
+    patchI18N();
+    registerCountersPage();
+    watchNetwork();
+
+    // Try to init Firebase
+    const ok = await bootstrapFirebase();
+
+    if (!ok) {
+      showToast('Firebase init failed — running in local mode', 'warn');
+      return;
+    }
+
+    // Hooks
+    hookSaveData();
+    hookLogin();
+    hookLogout();
+
+    // Initial sync (pull) if user already logged in
+    if (State.user) {
+      await syncOnLogin();
+    }
+
+    // Welcome toast (first install)
+    const WELCOME_KEY = 'drmedia_update_welcome_v2';
+    if (!localStorage.getItem(WELCOME_KEY)) {
+      setTimeout(() => {
+        showToast(
+          State.lang === 'ar'
+            ? '🔥 Firebase متصل — تبويب العدادات شغّال بالبيانات الحقيقية'
+            : '🔥 Firebase connected — Counters tab now tracking real data',
+          'success'
+        );
+        localStorage.setItem(WELCOME_KEY, '1');
+      }, 2000);
+    }
+
+    console.log('%c[DrMedia Pro] ✓ update.js v2 ready', 'color:#10b981;font-weight:bold');
+  });
+})();
