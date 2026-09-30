@@ -6136,11 +6136,12 @@ service cloud.firestore {
 
 })();
 /* =========================================================
-   SECTION 17: Distribution by Hall (توزيع حسب القاعة)
-   Version: 3.0.0 (HORIZONTAL NAMES)
+   SECTION 17: Distribution by Hall
+   Version: 4.0.0 (MONTHLY 2-PAGE PRINT)
    ---------------------------------------------------------
-   - الأسماء في الطباعة أفقية (بطاقات جنب بعضها)
-   - عمود توقيع تحت كل اسم
+   - عرض تفاعلي حسب القاعة
+   - طباعة تفصيلية (كل يوم لوحده)
+   - 🆕 طباعة الشهر كامل في ورقتين A4 (2 columns)
    ========================================================= */
 (function () {
   'use strict';
@@ -6168,7 +6169,8 @@ service cloud.firestore {
     dbh_today: 'اليوم',
     dbh_week: 'هذا الأسبوع',
     dbh_month: 'هذا الشهر',
-    dbh_print: 'طباعة الكشف',
+    dbh_print: 'طباعة تفصيلية',
+    dbh_print_month: 'طباعة الشهر (ورقتين)',
     dbh_export: 'تصدير CSV',
     dbh_clear: 'مسح الفلاتر',
     dbh_records: 'إجمالي التعيينات',
@@ -6181,8 +6183,9 @@ service cloud.firestore {
     dbh_time: 'الوقت',
     dbh_signature: 'التوقيع',
     dbh_print_hint: 'يُرجى التوقيع أمام الاسم عند الاستلام والتسليم',
-    dbh_code: 'كود',
-    dbh_phone: 'هاتف'
+    dbh_month_title: 'كشف التوزيع الشهري',
+    dbh_page: 'صفحة',
+    dbh_of: 'من'
   });
   Object.assign(I18N.en, {
     dist_by_hall: 'Distribution by Hall',
@@ -6195,7 +6198,8 @@ service cloud.firestore {
     dbh_today: 'Today',
     dbh_week: 'This Week',
     dbh_month: 'This Month',
-    dbh_print: 'Print Sheet',
+    dbh_print: 'Detailed Print',
+    dbh_print_month: 'Print Month (2 pages)',
     dbh_export: 'Export CSV',
     dbh_clear: 'Clear filters',
     dbh_records: 'Assignments',
@@ -6208,8 +6212,9 @@ service cloud.firestore {
     dbh_time: 'Time',
     dbh_signature: 'Sign',
     dbh_print_hint: 'Please sign next to your name upon receipt',
-    dbh_code: 'Code',
-    dbh_phone: 'Phone'
+    dbh_month_title: 'Monthly Distribution Sheet',
+    dbh_page: 'Page',
+    dbh_of: 'of'
   });
 
   /* ---------- state ---------- */
@@ -6236,14 +6241,36 @@ service cloud.firestore {
     const h = State.data.halls.find(x => x.id === id);
     return h ? (h.code || '') : '';
   }
+  function hallShortName(id) {
+    const h = State.data.halls.find(x => x.id === id);
+    if (!h) return '-';
+    // Try to use short name (last word) for compact print
+    const full = h.name[State.lang] || h.name.ar;
+    return full.length > 12 ? full.slice(0, 12) + '…' : full;
+  }
   function getDayName(dateStr) {
     const days = State.lang === 'ar'
       ? ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
       : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[new Date(dateStr).getDay()];
   }
+  function getDayShort(dateStr) {
+    const days = State.lang === 'ar'
+      ? ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[new Date(dateStr).getDay()];
+  }
   function roleOrder(role) {
     return { Director: 1, Photographer: 2, Crane: 3, Supervisor: 4, Assistant: 5 }[role] || 99;
+  }
+  function roleShort(role) {
+    return {
+      Director: State.lang === 'ar' ? 'مخرج' : 'Dir',
+      Photographer: State.lang === 'ar' ? 'مصور' : 'Photo',
+      Crane: State.lang === 'ar' ? 'كرين' : 'Crane',
+      Supervisor: State.lang === 'ar' ? 'مشرف' : 'Sup',
+      Assistant: State.lang === 'ar' ? 'مساعد' : 'Asst'
+    }[role] || role;
   }
 
   /* ---------- filter + group ---------- */
@@ -6303,7 +6330,8 @@ service cloud.firestore {
           <div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="__dmDBHClear()"><i data-lucide="x"></i> ${t('dbh_clear')}</button>
             <button class="btn btn-ghost btn-sm" onclick="__dmDBHExport()"><i data-lucide="download"></i> ${t('dbh_export')}</button>
-            <button class="btn btn-primary btn-sm" onclick="__dmDBHPrint()"><i data-lucide="printer"></i> ${t('dbh_print')}</button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmDBHPrint()"><i data-lucide="printer"></i> ${t('dbh_print')}</button>
+            <button class="btn btn-primary btn-sm" onclick="__dmDBHPrintMonth()"><i data-lucide="calendar-range"></i> ${t('dbh_print_month')}</button>
           </div>
         </div>
 
@@ -6360,8 +6388,8 @@ service cloud.firestore {
                 <b style="font-size:1rem">${getDayName(date)} — ${fmtDate(date)}</b>
               </div>
               <div style="display:flex;gap:.75rem;font-size:.78rem;opacity:.95">
-                <span>🏛 <b>${hallIds.length}</b> ${State.lang === 'ar' ? 'قاعة' : 'halls'}</span>
-                <span>👥 <b>${dayTotal}</b> ${State.lang === 'ar' ? 'موظف' : 'staff'}</span>
+                <span>🏛 <b>${hallIds.length}</b></span>
+                <span>👥 <b>${dayTotal}</b></span>
               </div>
             </div>
 
@@ -6392,7 +6420,6 @@ service cloud.firestore {
                           const emp = State.data.employees.find(x => x.id === e.employeeId);
                           const name = emp ? emp.name : (e.manualName || '-');
                           const code = emp ? (emp.code || '') : '';
-                          const phone = emp ? (emp.phone || '') : '';
                           return `
                             <div style="display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;background:var(--surface);border:1px solid var(--border);border-radius:10px">
                               <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.75rem;flex-shrink:0">${initials(name)}</div>
@@ -6459,7 +6486,7 @@ service cloud.firestore {
   };
 
   /* =========================================================
-     PRINT — HORIZONTAL EMPLOYEE CARDS (الأسماء أفقية)
+     PRINT — DETAILED (كل يوم في صفحة)
      ========================================================= */
   window.__dmDBHPrint = function () {
     const records = getFiltered();
@@ -6489,14 +6516,6 @@ service cloud.firestore {
     const dates = Object.keys(grouped);
     const periodLabel = `${fmtDate(State17.from)} → ${fmtDate(State17.to)}`;
 
-    const activeFilters = [];
-    if (State17.hallId !== 'all') activeFilters.push(`${L.hall}: ${hallName(State17.hallId)}`);
-    if (State17.role !== 'all') activeFilters.push(`${L.role}: ${State17.role}`);
-    if (State17.employeeId !== 'all') {
-      const e = State.data.employees.find(x => x.id === State17.employeeId);
-      activeFilters.push(`${L.employee}: ${e ? e.name : '—'}`);
-    }
-
     let html = `
       <div style="margin-bottom:1.25rem">
         <div style="font-size:1.3rem;font-weight:800;color:#0f172a;margin-bottom:.25rem">${L.title}</div>
@@ -6505,7 +6524,6 @@ service cloud.firestore {
           <span><b>${dates.length}</b> ${ar ? 'يوم' : 'days'}</span>
           <span><b>${records.length}</b> ${ar ? 'تعيين' : 'assignments'}</span>
         </div>
-        ${activeFilters.length ? `<div style="font-size:.75rem;color:#7c3aed;margin-top:.35rem">${activeFilters.join(' · ')}</div>` : ''}
       </div>
     `;
 
@@ -6516,7 +6534,6 @@ service cloud.firestore {
 
       html += `
         <div style="page-break-inside:avoid;margin-bottom:1.5rem">
-          <!-- Day Header -->
           <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:.65rem 1rem;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
             <div style="font-size:1rem;font-weight:800">📅 ${getDayName(date)} — ${fmtDate(date)}</div>
             <div style="font-size:.75rem;opacity:.95">🏛 ${hallIds.length} · 👥 ${dayTotal}</div>
@@ -6529,7 +6546,6 @@ service cloud.firestore {
 
             return `
               <div style="border:2px solid #e5e7eb;border-radius:10px;padding:.85rem;margin-bottom:.75rem;page-break-inside:avoid">
-                <!-- Hall header -->
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;padding-bottom:.5rem;margin-bottom:.75rem;border-bottom:2px solid #7c3aed20">
                   <div style="font-size:1rem;font-weight:800;color:#7c3aed">
                     🏛 ${hallName(hallId)} ${hallCode(hallId) ? `<span style="font-size:.7rem;color:#94a3b8;font-weight:400">(${hallCode(hallId)})</span>` : ''}
@@ -6542,7 +6558,6 @@ service cloud.firestore {
                   ` : ''}
                 </div>
 
-                <!-- HORIZONTAL EMPLOYEE CARDS -->
                 ${employees.length ? `
                   <div style="display:flex;flex-wrap:wrap;gap:.5rem">
                     ${employees.map(e => {
@@ -6552,35 +6567,22 @@ service cloud.firestore {
                       const phone = emp ? (emp.phone || '—') : '—';
                       return `
                         <div style="flex:1 1 calc(25% - .5rem);min-width:150px;border:1px solid #cbd5e1;border-radius:8px;padding:.55rem;background:#fafafa;box-sizing:border-box">
-                          <!-- Role badge -->
-                          <div style="font-size:.6rem;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;padding-bottom:.3rem;margin-bottom:.35rem;border-bottom:1px dashed #e5e7eb">
-                            ${e.role}
-                          </div>
-                          <!-- Employee name -->
-                          <div style="font-size:.9rem;font-weight:800;color:#0f172a;margin-bottom:.2rem;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                            ${name}
-                          </div>
-                          <!-- Meta info -->
+                          <div style="font-size:.6rem;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;padding-bottom:.3rem;margin-bottom:.35rem;border-bottom:1px dashed #e5e7eb">${e.role}</div>
+                          <div style="font-size:.9rem;font-weight:800;color:#0f172a;margin-bottom:.2rem;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
                           <div style="font-size:.65rem;color:#64748b;display:flex;justify-content:space-between;gap:.25rem;flex-wrap:wrap;margin-bottom:.5rem">
                             <span><b>${L.code}:</b> ${code}</span>
                             <span>${phone !== '—' ? '📞 ' + phone : ''}</span>
                           </div>
-                          <!-- Signature line -->
-                          <div style="border-top:1px dashed #94a3b8;padding-top:.3rem;font-size:.6rem;color:#94a3b8;text-align:center;margin-top:.35rem">
-                            ${L.sign}
-                          </div>
+                          <div style="border-top:1px dashed #94a3b8;padding-top:.3rem;font-size:.6rem;color:#94a3b8;text-align:center;margin-top:.35rem">${L.sign}</div>
                         </div>
                       `;
                     }).join('')}
                   </div>
-
                   <div style="margin-top:.5rem;padding-top:.4rem;border-top:1px dashed #e5e7eb;display:flex;justify-content:space-between;font-size:.72rem;color:#64748b;flex-wrap:wrap;gap:.5rem">
                     <div>${Object.entries(employees.reduce((acc, e) => { acc[e.role] = (acc[e.role] || 0) + 1; return acc; }, {})).map(([r, c]) => `<b>${r}:</b> ${c}`).join(' · ')}</div>
                     <div><b>${L.totals}:</b> ${employees.length}</div>
                   </div>
-                ` : `
-                  <div style="padding:.75rem;text-align:center;color:#ef4444;font-size:.8rem">${L.noStaff}</div>
-                `}
+                ` : `<div style="padding:.75rem;text-align:center;color:#ef4444;font-size:.8rem">${L.noStaff}</div>`}
               </div>
             `;
           }).join('')}
@@ -6588,19 +6590,217 @@ service cloud.firestore {
       `;
     });
 
-    html += `
-      <div style="margin-top:1.5rem;padding:.75rem 1rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:.75rem;color:#78350f;text-align:center">
-        ⚠️ ${L.hint}
-      </div>
-    `;
+    html += `<div style="margin-top:1.5rem;padding:.75rem 1rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:.75rem;color:#78350f;text-align:center">⚠️ ${L.hint}</div>`;
 
     openPrintWindow(L.title, html);
   };
 
+  /* =========================================================
+     🆕 PRINT MONTH — COMPACT 2-PAGE A4 (2 columns)
+     ========================================================= */
+  window.__dmDBHPrintMonth = function () {
+    const records = getFiltered();
+    if (!records.length) {
+      if (typeof showToast === 'function') showToast(t('dbh_no_data'), 'warn');
+      return;
+    }
+
+    const ar = State.lang === 'ar';
+    const L = {
+      title: ar ? 'كشف التوزيع الشهري' : 'Monthly Distribution Sheet',
+      period: ar ? 'الفترة' : 'Period',
+      noStaff: ar ? 'لا يوجد موظفون' : 'No staff',
+      hint: ar ? 'يُرجى التوقيع عند الاستلام' : 'Sign upon receipt',
+      days: ar ? 'يوم' : 'days',
+      assignments: ar ? 'تعيين' : 'assignments'
+    };
+
+    const grouped = buildGrouped(records);
+    const dates = Object.keys(grouped).sort(); // ASC (oldest first)
+
+    const periodLabel = `${fmtDate(State17.from)} → ${fmtDate(State17.to)}`;
+
+    // Build a compact day block
+    // Each day: header line + one line per hall
+    const dayBlock = (date) => {
+      const dayHalls = grouped[date];
+      const hallIds = Object.keys(dayHalls);
+
+      let block = `
+        <div class="day-block">
+          <div class="day-header">
+            <span class="day-name">${getDayShort(date)} ${date.slice(5).replace('-', '/')}</span>
+            <span class="day-badge">${hallIds.length}🏛</span>
+          </div>
+          <div class="day-halls">
+      `;
+
+      hallIds.forEach(hallId => {
+        const employees = [...dayHalls[hallId].employees].sort((a, b) => roleOrder(a.role) - roleOrder(b.role));
+        const names = employees.map(e => {
+          const emp = State.data.employees.find(x => x.id === e.employeeId);
+          const name = emp ? emp.name : (e.manualName || '—');
+          // If multiple roles, prefix with short role
+          const roles = new Set(employees.map(x => x.role));
+          if (roles.size > 1) {
+            return `<span class="chip role-${e.role}">${name}</span>`;
+          }
+          return `<span class="chip">${name}</span>`;
+        }).join('');
+
+        block += `
+          <div class="hall-row">
+            <span class="hall-name">${hallShortName(hallId)}</span>
+            <span class="hall-staff">${names || '—'}</span>
+          </div>
+        `;
+      });
+
+      block += `</div></div>`;
+      return block;
+    };
+
+    let daysHtml = '';
+    dates.forEach(date => {
+      daysHtml += dayBlock(date);
+    });
+
+    const html = `
+      <div class="monthly-print">
+        <div class="print-header-info">
+          <div><b>${L.period}:</b> ${periodLabel}</div>
+          <div><b>${dates.length}</b> ${L.days} · <b>${records.length}</b> ${L.assignments}</div>
+        </div>
+        <div class="monthly-columns">
+          ${daysHtml}
+        </div>
+      </div>
+    `;
+
+    const w = window.open('', '_blank', 'width=1000,height=1000');
+    if (!w) {
+      if (typeof showToast === 'function') showToast('Please allow popups', 'warn');
+      return;
+    }
+
+    const styles = `
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      @page{size:A4 portrait;margin:8mm}
+      body{font-family:'Cairo','Inter',system-ui,sans-serif;margin:0;padding:0;color:#0f172a;background:#fff;direction:${ar ? 'rtl' : 'ltr'};font-size:8pt;line-height:1.35}
+      .header{display:flex;align-items:center;gap:.5rem;padding-bottom:.35rem;border-bottom:2px solid #7c3aed;margin-bottom:.5rem}
+      .logo{width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:.75rem;flex-shrink:0}
+      .brand h1{margin:0;font-size:.9rem;font-weight:800;letter-spacing:-.02em}
+      .brand p{margin:0;font-size:.55rem;color:#64748b}
+      .brand span{color:#7c3aed}
+      .print-header-info{
+        display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;
+        font-size:.7rem;color:#475569;
+        padding:.3rem .5rem;background:#f3f4f6;border-radius:4px;margin-bottom:.5rem;
+      }
+      .monthly-columns{
+        column-count:2;
+        column-gap:6mm;
+        column-rule:1px dashed #cbd5e1;
+      }
+      .day-block{
+        break-inside:avoid;
+        page-break-inside:avoid;
+        margin-bottom:2.5mm;
+        border:1px solid #e5e7eb;
+        border-radius:3px;
+        overflow:hidden;
+      }
+      .day-header{
+        display:flex;justify-content:space-between;align-items:center;
+        background:linear-gradient(135deg,#7c3aed,#6d28d9);
+        color:#fff;
+        padding:.15rem .4rem;
+        font-size:.65rem;
+        font-weight:800;
+      }
+      .day-name{letter-spacing:.02em}
+      .day-badge{font-size:.55rem;opacity:.9}
+      .day-halls{
+        padding:.2rem .3rem;
+        background:#fafafa;
+      }
+      .hall-row{
+        display:flex;
+        align-items:flex-start;
+        gap:.3rem;
+        padding:.15rem 0;
+        border-bottom:1px dotted #e5e7eb;
+        font-size:.62rem;
+      }
+      .hall-row:last-child{border-bottom:none}
+      .hall-name{
+        flex-shrink:0;
+        min-width:14mm;
+        max-width:18mm;
+        font-weight:800;
+        color:#7c3aed;
+        font-size:.6rem;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+      }
+      .hall-staff{
+        flex:1;
+        display:flex;
+        flex-wrap:wrap;
+        gap:.15rem .3rem;
+      }
+      .chip{
+        display:inline-block;
+        padding:.05rem .3rem;
+        background:#fff;
+        border:1px solid #cbd5e1;
+        border-radius:3px;
+        font-size:.58rem;
+        font-weight:600;
+        white-space:nowrap;
+        color:#0f172a;
+      }
+      .chip.role-Director{border-color:#7c3aed;background:#7c3aed10;color:#6d28d9}
+      .chip.role-Photographer{border-color:#10b981;background:#10b98110;color:#059669}
+      .chip.role-Crane{border-color:#f59e0b;background:#f59e0b10;color:#d97706}
+      .chip.role-Supervisor{border-color:#3b82f6;background:#3b82f610;color:#2563eb}
+      .footer{
+        margin-top:.4rem;padding-top:.3rem;border-top:1px solid #e5e7eb;
+        font-size:.55rem;color:#94a3b8;text-align:center;
+      }
+      @media print{
+        body{padding:0;font-size:8pt}
+        .page-break{page-break-before:always}
+      }
+    `;
+
+    w.document.write(`<!DOCTYPE html>
+<html lang="${State.lang}" dir="${ar ? 'rtl' : 'ltr'}">
+<head><meta charset="UTF-8"><title>${L.title}</title><style>${styles}</style></head>
+<body>
+  <div class="header">
+    <div class="logo">D</div>
+    <div class="brand">
+      <h1>Dr Media <span>Pro</span></h1>
+      <p>${(State.data.settings.companyName || 'Video Production')} · ${State.data.settings.phone || ''}</p>
+    </div>
+  </div>
+  <div style="font-size:1rem;font-weight:800;color:#0f172a;margin-bottom:.25rem">${L.title}</div>
+  ${html}
+  <div class="footer">
+    ${State.data.settings.companyName || 'Dr Media Pro'} · ${new Date().toLocaleDateString(ar ? 'ar-EG' : 'en-GB')}
+  </div>
+  <script>setTimeout(function(){window.print();},500);<\/script>
+</body></html>`);
+    w.document.close();
+  };
+
+  /* ---------- print window helper (للطباعة التفصيلية) ---------- */
   function openPrintWindow(title, bodyHtml) {
     const w = window.open('', '_blank', 'width=1000,height=1000');
     if (!w) {
-      if (typeof showToast === 'function') showToast(State.lang === 'ar' ? 'الرجاء السماح بالنوافذ المنبثقة' : 'Please allow popups', 'warn');
+      if (typeof showToast === 'function') showToast('Please allow popups', 'warn');
       return;
     }
     const ar = State.lang === 'ar';
@@ -6676,7 +6876,8 @@ service cloud.firestore {
     () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function',
     function () {
       registerNav();
-      console.log('%c[Section 17] ✓ Distribution by Hall ready (horizontal names)', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 17] ✓ Distribution by Hall ready (v4 — Monthly 2-page print)', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 17] Try: __dmDBHPrintMonth()', 'color:#06b6d4;font-style:italic');
     }
   );
 
