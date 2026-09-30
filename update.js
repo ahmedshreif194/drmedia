@@ -2201,3 +2201,198 @@
   );
 
 })();
+/* =========================================================
+   SECTION 2 (v4): Realtime Live Sync — FINAL
+   Version: 4.0.0
+   - Waits 2s after boot, then FORCE-overrides saveData
+   - Exposes __dmTestSync() for manual testing
+   - Verbose logging with clear markers
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 2 v4] Loading…', 'color:#7c3aed;font-weight:bold;font-size:14px');
+
+  // Kill old listeners
+  if (window.DrMediaSync && window.DrMediaSync.unsub) {
+    try { window.DrMediaSync.unsub(); } catch (e) {}
+  }
+
+  const TAB_ID = 'tab_' + Math.random().toString(36).slice(2, 8);
+  window.__DM_TAB_ID = TAB_ID;
+  console.log('%c[Section 2 v4] This tab ID: ' + TAB_ID, 'color:#06b6d4;font-weight:bold');
+
+  const Sync = {
+    active: false,
+    unsub: null,
+    updatesReceived: 0,
+    writesSent: 0,
+    pushTimer: null,
+    applyingRemote: false,
+    tabId: TAB_ID
+  };
+  window.DrMediaSync = Sync;
+
+  function waitFor(cond, cb) {
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > 200) { clearInterval(t); console.warn('[Section 2 v4] wait timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ============= PUSH ============= */
+  function pushToCloud(reason) {
+    console.log('[Section 2 v4] 📤 pushToCloud() — reason:', reason || 'auto');
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) {
+      console.warn('[Section 2 v4] Firebase not ready — skip push');
+      return;
+    }
+
+    const { doc, setDoc, serverTimestamp } = window.DrMediaFB.modules.fsMod;
+    const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+
+    const data = {
+      payload: State.data,
+      updatedBy: TAB_ID,
+      updatedByUser: (State.user && State.user.username) || 'anon',
+      updatedAt: serverTimestamp(),
+      version: Date.now()
+    };
+
+    setDoc(ref, data)
+      .then(() => {
+        Sync.writesSent++;
+        console.log('%c[Section 2 v4] ✓ WRITE SUCCESS — total: ' + Sync.writesSent, 'color:#10b981;font-weight:bold');
+        if (typeof showToast === 'function') showToast('✓ Synced (' + TAB_ID + ')', 'success');
+      })
+      .catch(err => {
+        console.error('[Section 2 v4] ✗ WRITE FAILED:', err.code, err.message);
+        if (typeof showToast === 'function') showToast('Write failed: ' + err.code, 'error');
+      });
+  }
+
+  /* ============= LISTENER ============= */
+  function startListener() {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) return;
+    const { doc, onSnapshot } = window.DrMediaFB.modules.fsMod;
+    const ref = doc(window.DrMediaFB.db, 'app_state', 'main');
+
+    Sync.unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) {
+        console.log('[Section 2 v4] 📭 No doc yet');
+        return;
+      }
+      const remote = snap.data();
+      if (!remote) return;
+
+      const isMine = remote.updatedBy === TAB_ID;
+      console.log('[Section 2 v4] 👁 Snapshot: from=' + remote.updatedBy + ' mine=' + isMine);
+
+      if (isMine) return; // skip own echo
+      if (!remote.payload) return;
+
+      Sync.updatesReceived++;
+      Sync.applyingRemote = true;
+
+      const session = State.user;
+      State.data = remote.payload;
+      if (session && State.data.users) {
+        const u = State.data.users.find(x => x.id === session.id);
+        if (u) State.user = { id: u.id, username: u.username, name: u.name, role: u.role, employeeId: u.employeeId };
+      }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+
+      console.log('%c[Section 2 v4] ✓ APPLIED remote update #' + Sync.updatesReceived, 'color:#10b981;font-weight:bold');
+      if (typeof showToast === 'function') {
+        showToast('🔄 ' + (State.lang === 'ar' ? 'تحديث من السحابة' : 'Update from cloud'), 'info');
+      }
+
+      setTimeout(() => {
+        try {
+          if (State.page && typeof navigate === 'function') navigate(State.page);
+          if (typeof updateNotifBadge === 'function') updateNotifBadge();
+        } catch (e) {}
+        Sync.applyingRemote = false;
+      }, 300);
+    }, (err) => {
+      console.error('[Section 2 v4] listener error:', err);
+    });
+
+    Sync.active = true;
+    console.log('%c[Section 2 v4] ✓ Listener active', 'color:#10b981');
+  }
+
+  /* ============= BOOT ============= */
+  waitFor(
+    () => window.DrMediaFB && window.DrMediaFB.ready
+        && typeof State !== 'undefined'
+        && typeof saveData === 'function',
+    function () {
+      // Wait 2s so all other sections finish loading first
+      setTimeout(function () {
+        const PREVIOUS = window.saveData;
+
+        window.saveData = function () {
+          const r = PREVIOUS.apply(this, arguments);
+
+          // Skip if we're just applying remote data
+          if (Sync.applyingRemote) return r;
+
+          // Skip if no user
+          if (!State.user) return r;
+
+          // Debounced push
+          clearTimeout(Sync.pushTimer);
+          Sync.pushTimer = setTimeout(function () {
+            pushToCloud('saveData hook');
+          }, 500);
+
+          return r;
+        };
+
+        console.log('%c[Section 2 v4] ✓ saveData hook INSTALLED (final)', 'color:#10b981;font-weight:bold');
+
+        // Expose manual test
+        window.__dmTestSync = function () {
+          console.log('=== MANUAL SYNC TEST ===');
+          console.log('TAB_ID:', TAB_ID);
+          console.log('User:', State.user && State.user.username);
+          console.log('FB ready:', window.DrMediaFB && window.DrMediaFB.ready);
+          pushToCloud('manual test');
+        };
+
+        window.__dmSyncStatus = function () {
+          console.log({
+            tabId: TAB_ID,
+            syncActive: Sync.active,
+            writesSent: Sync.writesSent,
+            updatesReceived: Sync.updatesReceived,
+            firebaseReady: window.DrMediaFB && window.DrMediaFB.ready
+          });
+        };
+      }, 2000);
+
+      // Start listener
+      if (State.user) {
+        startListener();
+        console.log('[Section 2 v4] Session found — listener started');
+      } else {
+        console.log('[Section 2 v4] No session yet — will start on login');
+      }
+
+      // Hook login to start listener
+      const origLogin = window.attemptLogin;
+      window.attemptLogin = function () {
+        const ok = origLogin.apply(this, arguments);
+        if (ok) setTimeout(function () {
+          if (!Sync.active) startListener();
+        }, 400);
+        return ok;
+      };
+
+      console.log('%c[Section 2 v4] ✓ Ready. Run __dmTestSync() to test manually.', 'color:#10b981;font-weight:bold;font-size:13px');
+    }
+  );
+
+})();
