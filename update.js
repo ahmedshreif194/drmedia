@@ -6135,6 +6135,412 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 17: Distribution by Hall (توزيع حسب القاعة)
+   Version: 1.0.0
+   - Adds a "By Hall" view mode to Distribution Log page
+   - Prints staff grouped by Day → Hall → Employees
+   - Ideal for handing to supervisors
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 17] Distribution by Hall loading…', 'color:#22c55e;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 17] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  Object.assign(I18N.ar, {
+    dl_view_flat: 'عرض مسطّح',
+    dl_view_by_hall: 'عرض حسب القاعة',
+    dl_print_by_hall: 'طباعة حسب القاعة',
+    dl_by_hall_title: 'كشف التوزيع حسب القاعة',
+    dl_by_hall_subtitle: 'Distribution Sheet by Hall',
+    dl_hall_employees: 'الموظفون المعيّنون',
+    dl_no_employees: 'لا يوجد موظفون معيّنون',
+    dl_role_label: 'الدور',
+    dl_time_label: 'الوقت',
+    dl_client_label: 'العميل',
+    dl_day_summary: 'ملخص اليوم',
+    dl_halls_count: 'عدد القاعات',
+    dl_employees_count: 'عدد الموظفين'
+  });
+  Object.assign(I18N.en, {
+    dl_view_flat: 'Flat View',
+    dl_view_by_hall: 'By Hall View',
+    dl_print_by_hall: 'Print by Hall',
+    dl_by_hall_title: 'Distribution Sheet by Hall',
+    dl_by_hall_subtitle: 'Distribution Sheet by Hall',
+    dl_hall_employees: 'Assigned Employees',
+    dl_no_employees: 'No employees assigned',
+    dl_role_label: 'Role',
+    dl_time_label: 'Time',
+    dl_client_label: 'Client',
+    dl_day_summary: 'Day Summary',
+    dl_halls_count: 'Halls',
+    dl_employees_count: 'Employees'
+  });
+
+  /* ---------- state ---------- */
+  const ByHall = {
+    viewMode: 'flat', // 'flat' | 'byhall'
+    groupByDate: true // group primarily by date
+  };
+  window.__dmByHall = ByHall;
+
+  /* ---------- helpers ---------- */
+  function hallName(id) {
+    const h = State.data.halls.find(x => x.id === id);
+    return h ? (h.name[State.lang] || h.name.ar) : '-';
+  }
+
+  function empName(id) {
+    const e = State.data.employees.find(x => x.id === id);
+    return e ? e.name : '-';
+  }
+
+  function empCode(id) {
+    const e = State.data.employees.find(x => x.id === id);
+    return e ? (e.code || '') : '';
+  }
+
+  function getDayName(dateStr) {
+    if (!dateStr) return '';
+    const days = State.lang === 'ar'
+      ? ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+      : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[new Date(dateStr).getDay()];
+  }
+
+  function getDayNameShort(dateStr) {
+    if (!dateStr) return '';
+    const days = State.lang === 'ar'
+      ? ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[new Date(dateStr).getDay()];
+  }
+
+  /* ---------- build grouped structure ---------- */
+  function buildGrouped(records) {
+    // { date: { hall: { employees: [...], bookings: [...] } } }
+    const grouped = {};
+
+    records.forEach(r => {
+      const d = r.date || 'unknown';
+      const h = r.hallId || 'unknown';
+      grouped[d] = grouped[d] || {};
+      grouped[d][h] = grouped[d][h] || { hallId: h, employees: [], bookings: [] };
+      grouped[d][h].employees.push(r);
+    });
+
+    // Attach booking info per hall/date
+    Object.keys(grouped).forEach(date => {
+      const dayBookings = (State.data.bookings || []).filter(b => b.date === date && b.status !== 'cancelled');
+      Object.keys(grouped[date]).forEach(hallId => {
+        grouped[date][hallId].bookings = dayBookings.filter(b => b.hallId === hallId);
+      });
+    });
+
+    // Sort by date desc, then by hall name
+    const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+    const result = {};
+    sortedDates.forEach(d => {
+      const halls = Object.keys(grouped[d]).sort((a, b) => {
+        const na = hallName(a), nb = hallName(b);
+        return na.localeCompare(nb);
+      });
+      result[d] = {};
+      halls.forEach(h => { result[d][h] = grouped[d][h]; });
+    });
+    return result;
+  }
+
+  /* ---------- get filtered records (reuse Section 16's filter) ---------- */
+  function getFilteredRecords() {
+    const DL = window.__dmDL || { mode: 'range', from: '1970-01-01', to: '2099-12-31', hallId: 'all', employeeId: 'all', role: 'all' };
+    let list = [...(State.data.distributions || [])];
+
+    if (DL.mode === 'single') {
+      list = list.filter(x => x.date === DL.singleDate);
+    } else {
+      list = list.filter(x => x.date >= DL.from && x.date <= DL.to);
+    }
+    if (DL.hallId && DL.hallId !== 'all') list = list.filter(x => x.hallId === DL.hallId);
+    if (DL.employeeId && DL.employeeId !== 'all') list = list.filter(x => x.employeeId === DL.employeeId);
+    if (DL.role && DL.role !== 'all') list = list.filter(x => x.role === DL.role);
+
+    return list;
+  }
+
+  /* ---------- print: by hall ---------- */
+  function printByHall() {
+    const records = getFilteredRecords();
+    if (!records.length) {
+      if (typeof showToast === 'function') showToast(t('dl_no_data') || 'No data', 'warn');
+      return;
+    }
+
+    const ar = State.lang === 'ar';
+    const L = {
+      title: ar ? 'كشف التوزيع حسب القاعة' : 'Distribution Sheet by Hall',
+      subtitle: ar ? 'يُسلّم للمشرف المسؤول عن كل قاعة' : 'Hand to the hall supervisor',
+      dateLabel: ar ? 'التاريخ' : 'Date',
+      dayLabel: ar ? 'اليوم' : 'Day',
+      hallLabel: ar ? 'القاعة' : 'Hall',
+      employees: ar ? 'الموظفون المعيّنون' : 'Assigned Employees',
+      role: ar ? 'الدور' : 'Role',
+      employee: ar ? 'الموظف' : 'Employee',
+      code: ar ? 'الكود' : 'Code',
+      phone: ar ? 'الهاتف' : 'Phone',
+      client: ar ? 'العميل' : 'Client',
+      time: ar ? 'الوقت' : 'Time',
+      event: ar ? 'المناسبة' : 'Event',
+      noEmployees: ar ? 'لا يوجد موظفون معيّنون' : 'No employees assigned',
+      daySummary: ar ? 'ملخص اليوم' : 'Day Summary',
+      hallsCount: ar ? 'عدد القاعات' : 'Halls',
+      employeesCount: ar ? 'عدد الموظفين' : 'Employees',
+      totalDays: ar ? 'عدد الأيام' : 'Days'
+    };
+
+    const DL = window.__dmDL || {};
+    const periodLabel = DL.mode === 'single'
+      ? fmtDate(DL.singleDate)
+      : (DL.from && DL.to ? `${fmtDate(DL.from)} → ${fmtDate(DL.to)}` : '—');
+
+    const grouped = buildGrouped(records);
+    const datesList = Object.keys(grouped);
+
+    // Summary stats
+    let totalHalls = 0, totalEmployees = 0;
+    datesList.forEach(d => {
+      totalHalls += Object.keys(grouped[d]).length;
+      Object.keys(grouped[d]).forEach(h => {
+        totalEmployees += grouped[d][h].employees.length;
+      });
+    });
+
+    // Build HTML
+    let html = `
+      <div class="title">${L.title}</div>
+      <div style="font-size:.85rem;color:#64748b;margin-bottom:1.25rem">${L.subtitle}</div>
+
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.75rem;padding:.75rem;background:#f9f9fb;border-radius:10px;margin-bottom:1.5rem;font-size:.82rem;border:1px solid #e5e7eb">
+        <div><b>${L.dateLabel}:</b> ${periodLabel}</div>
+        <div><b>${L.totalDays}:</b> ${datesList.length}</div>
+        <div><b>${L.employeesCount}:</b> ${totalEmployees}</div>
+      </div>
+    `;
+
+    // For each date
+    datesList.forEach(date => {
+      const dayHalls = grouped[date];
+      const hallIds = Object.keys(dayHalls);
+
+      html += `
+        <div style="margin-bottom:1.75rem;page-break-inside:avoid">
+          <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:.75rem 1rem;border-radius:10px;font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center">
+            <span>📅 ${getDayName(date)} — ${fmtDate(date)}</span>
+            <span style="font-size:.8rem;font-weight:500;opacity:.9">${hallIds.length} ${ar ? 'قاعة' : 'halls'} · ${hallIds.reduce((s, h) => s + dayHalls[h].employees.length, 0)} ${ar ? 'موظف' : 'staff'}</span>
+          </div>
+
+          ${hallIds.map(hallId => {
+            const hallData = dayHalls[hallId];
+            const booking = hallData.bookings[0];
+            const employees = hallData.employees;
+            const hall = State.data.halls.find(x => x.id === hallId);
+
+            return `
+              <div style="border:2px solid #e5e7eb;border-radius:12px;padding:1rem;margin-bottom:1rem;page-break-inside:avoid">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.85rem;padding-bottom:.65rem;border-bottom:2px solid #7c3aed20;flex-wrap:wrap;gap:.5rem">
+                  <div style="font-size:1.05rem;font-weight:800;color:#7c3aed">
+                    🏛 ${hall ? (hall.name[State.lang] || hall.name.ar) : '-'}
+                    ${hall && hall.code ? `<span style="font-size:.7rem;color:#94a3b8;font-weight:400">(${hall.code})</span>` : ''}
+                  </div>
+                  <div style="display:flex;gap:.75rem;font-size:.78rem;color:#475569;flex-wrap:wrap">
+                    ${booking ? `
+                      <div><b>${L.time}:</b> ${booking.startTime || ''}${booking.endTime ? ' - ' + booking.endTime : ''}</div>
+                      <div><b>${L.client}:</b> ${booking.clientName || '-'}</div>
+                      ${booking.eventType ? `<div><b>${L.event}:</b> ${booking.eventType}</div>` : ''}
+                    ` : ''}
+                  </div>
+                </div>
+
+                <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+                  <thead>
+                    <tr style="background:#f3f4f6">
+                      <th style="padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb;width:2.2rem;font-size:.7rem">#</th>
+                      <th style="padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb;font-size:.7rem">${L.role}</th>
+                      <th style="padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb;font-size:.7rem">${L.employee}</th>
+                      <th style="padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb;font-size:.7rem">${L.code}</th>
+                      <th style="padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb;font-size:.7rem">${L.phone}</th>
+                      <th style="padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb;font-size:.7rem;width:5rem">${ar ? 'توقيع' : 'Sign'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${employees.length ? employees
+                      .sort((a, b) => {
+                        // Sort by role order: Director, Photographer, Crane, others
+                        const order = { Director: 1, Photographer: 2, Crane: 3 };
+                        return (order[a.role] || 99) - (order[b.role] || 99);
+                      })
+                      .map((emp, idx) => {
+                        const eName = empName(emp.employeeId) || emp.manualName || '-';
+                        const eCode = empCode(emp.employeeId) || '—';
+                        const empObj = State.data.employees.find(x => x.id === emp.employeeId);
+                        const phone = empObj ? (empObj.phone || '') : '';
+                        return `
+                          <tr>
+                            <td style="padding:.5rem .65rem;border-bottom:1px solid #f1f5f9;color:#94a3b8;font-weight:600">${idx + 1}</td>
+                            <td style="padding:.5rem .65rem;border-bottom:1px solid #f1f5f9">
+                              <span style="display:inline-block;padding:.15rem .5rem;border-radius:6px;font-size:.72rem;font-weight:700;background:#7c3aed15;color:#7c3aed">
+                                ${emp.role}
+                              </span>
+                            </td>
+                            <td style="padding:.5rem .65rem;border-bottom:1px solid #f1f5f9;font-weight:700">${eName}</td>
+                            <td style="padding:.5rem .65rem;border-bottom:1px solid #f1f5f9;font-size:.75rem;color:#64748b">${eCode}</td>
+                            <td style="padding:.5rem .65rem;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:#64748b">${phone || '—'}</td>
+                            <td style="padding:.5rem .65rem;border-bottom:1px solid #f1f5f9"></td>
+                          </tr>
+                        `;
+                      }).join('') : `
+                        <tr><td colspan="6" style="padding:1rem;text-align:center;color:#ef4444;font-size:.85rem">${L.noEmployees}</td></tr>
+                      `}
+                  </tbody>
+                </table>
+
+                ${employees.length ? `
+                  <div style="margin-top:.65rem;padding-top:.5rem;border-top:1px dashed #e5e7eb;display:flex;justify-content:space-between;font-size:.75rem;color:#64748b;flex-wrap:wrap;gap:.5rem">
+                    <div>
+                      ${Object.entries(employees.reduce((acc, e) => { acc[e.role] = (acc[e.role] || 0) + 1; return acc; }, {}))
+                        .map(([r, c]) => `<b>${r}:</b> ${c}`).join(' · ')}
+                    </div>
+                    <div><b>${ar ? 'الإجمالي' : 'Total'}:</b> ${employees.length}</div>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    });
+
+    // Footer note
+    html += `
+      <div style="margin-top:2rem;padding:1rem;background:#fef3c7;border:1px solid #fde68a;border-radius:10px;font-size:.75rem;color:#78350f;text-align:center">
+        ${ar
+          ? '⚠️ يُرجى التوقيع أمام الاسم عند الاستلام والتسليم'
+          : '⚠️ Please sign next to your name upon receipt'}
+      </div>
+    `;
+
+    openPrintWindow(L.title, html);
+  }
+
+  /* ---------- print window ---------- */
+  function openPrintWindow(title, bodyHtml) {
+    const w = window.open('', '_blank', 'width=1000,height=1000');
+    if (!w) {
+      if (typeof showToast === 'function') showToast(State.lang === 'ar' ? 'الرجاء السماح بالنوافذ المنبثقة' : 'Please allow popups', 'warn');
+      return;
+    }
+
+    const ar = State.lang === 'ar';
+    const styles = `
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{font-family:'Cairo','Inter',system-ui,sans-serif;margin:0;padding:1.75rem;color:#0f172a;background:#fff;direction:${ar ? 'rtl' : 'ltr'}}
+      .header{display:flex;align-items:center;gap:1rem;padding-bottom:1rem;border-bottom:3px solid #7c3aed;margin-bottom:1.25rem}
+      .logo{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.4rem;flex-shrink:0}
+      .brand h1{margin:0;font-size:1.35rem;font-weight:800;letter-spacing:-.02em}
+      .brand p{margin:0;font-size:.75rem;color:#64748b}
+      .brand span{color:#7c3aed}
+      .title{font-size:1.15rem;font-weight:800;margin:0 0 .35rem}
+      .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e5e7eb;font-size:.7rem;color:#94a3b8;text-align:center}
+      table{width:100%;border-collapse:collapse;font-size:.8rem}
+      th,td{padding:.5rem .65rem;text-align:${ar ? 'right' : 'left'};border-bottom:1px solid #e5e7eb}
+      th{background:#f3f4f6;font-weight:700;color:#374151}
+      tbody tr:nth-child(even){background:#fafafa}
+      @media print{
+        body{padding:.75rem}
+        .page-break{page-break-before:always}
+        tbody tr{page-break-inside:avoid}
+        div{page-break-inside:avoid}
+      }
+    `;
+
+    w.document.write(`<!DOCTYPE html>
+<html lang="${State.lang}" dir="${ar ? 'rtl' : 'ltr'}">
+<head><meta charset="UTF-8"><title>${title}</title><style>${styles}</style></head>
+<body>
+  <div class="header">
+    <div class="logo">D</div>
+    <div class="brand">
+      <h1>Dr Media <span>Pro</span></h1>
+      <p>${(State.data.settings.companyName || 'Professional Video Production')} · ${State.data.settings.phone || ''}</p>
+    </div>
+  </div>
+  ${bodyHtml}
+  <div class="footer">
+    ${State.data.settings.companyName || 'Dr Media Pro'} · ${State.data.settings.address || ''} · ${new Date().toLocaleString(ar ? 'ar-EG' : 'en-GB')}
+  </div>
+  <script>setTimeout(function(){window.print();},400);<\/script>
+</body></html>`);
+    w.document.close();
+  }
+
+  /* ---------- expose for the log page ---------- */
+  window.__dmPrintByHall = printByHall;
+  window.__dmToggleViewMode = function (mode) {
+    if (window.__dmByHall) {
+      window.__dmByHall.viewMode = mode;
+      if (typeof navigate === 'function' && State.page === 'distlog') navigate('distlog');
+    }
+  };
+
+  /* ---------- hook Distribution Log page to add the toggle + button ---------- */
+  function hookDistlogPage() {
+    if (!Pages.distlog) return;
+    const orig = Pages.distlog;
+    Pages.distlog = function (el) {
+      orig.apply(this, arguments);
+
+      setTimeout(() => {
+        // 1) Add "Print by Hall" button next to "Print"
+        const toolbar = el.querySelector('.card div[style*="margin-inline-start:auto"]');
+        if (toolbar && !toolbar.querySelector('.print-by-hall-btn')) {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-success btn-sm print-by-hall-btn';
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;vertical-align:-2px;margin-inline-end:.35rem"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>${t('dl_print_by_hall')}`;
+          btn.onclick = () => window.__dmPrintByHall();
+          // Insert before Print button
+          const printBtn = toolbar.querySelector('.btn-primary');
+          if (printBtn) toolbar.insertBefore(btn, printBtn);
+          else toolbar.appendChild(btn);
+        }
+      }, 120);
+    };
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    () => typeof State !== 'undefined'
+        && typeof Pages !== 'undefined'
+        && typeof Pages.distlog === 'function'
+        && typeof navigate === 'function',
+    function () {
+      hookDistlogPage();
+      console.log('%c[Section 17] ✓ Distribution by Hall ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 17] Console: __dmPrintByHall()', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
 
 
 
