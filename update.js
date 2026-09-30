@@ -1407,6 +1407,759 @@
   );
 
 })();
+/* =========================================================
+   SECTION 5: Leave Management (إدارة الإجازات)
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 5] Leave Management loading…', 'color:#7c3aed;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 5] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  Object.assign(I18N.ar, {
+    leaves: 'الإجازات', leave_add: 'طلب إجازة', leave_my: 'إجازاتي',
+    leave_type: 'نوع الإجازة', leave_from: 'من تاريخ', leave_to: 'إلى تاريخ',
+    leave_reason: 'السبب', leave_status: 'الحالة', leave_approve: 'اعتماد',
+    leave_reject: 'رفض', leave_pending: 'قيد الموافقة', leave_approved: 'معتمدة',
+    leave_rejected: 'مرفوضة', leave_type_sick: 'مرضية', leave_type_vacation: 'سنوية',
+    leave_type_emergency: 'طارئة', leave_type_unpaid: 'بدون راتب',
+    leave_days: 'عدد الأيام', leave_conflict_warning: 'يوجد توزيعات في هذه الفترة'
+  });
+  Object.assign(I18N.en, {
+    leaves: 'Leaves', leave_add: 'Request Leave', leave_my: 'My Leaves',
+    leave_type: 'Leave Type', leave_from: 'From Date', leave_to: 'To Date',
+    leave_reason: 'Reason', leave_status: 'Status', leave_approve: 'Approve',
+    leave_reject: 'Reject', leave_pending: 'Pending', leave_approved: 'Approved',
+    leave_rejected: 'Rejected', leave_type_sick: 'Sick', leave_type_vacation: 'Vacation',
+    leave_type_emergency: 'Emergency', leave_type_unpaid: 'Unpaid',
+    leave_days: 'Days Count', leave_conflict_warning: 'Has distributions in this period'
+  });
+
+  /* ---------- ensure data ---------- */
+  function ensure() {
+    if (!State.data.leaves) State.data.leaves = [];
+    if (!State.data.leaveTypes) {
+      State.data.leaveTypes = ['sick', 'vacation', 'emergency', 'unpaid'];
+    }
+  }
+
+  /* ---------- helpers ---------- */
+  function daysBetween(a, b) {
+    try {
+      const d1 = new Date(a), d2 = new Date(b);
+      return Math.round((d2 - d1) / 86400000) + 1;
+    } catch (e) { return 1; }
+  }
+
+  function isOnLeave(employeeId, dateStr) {
+    if (!State.data.leaves) return false;
+    return State.data.leaves.some(l => {
+      if (l.employeeId !== employeeId) return false;
+      if (l.status !== 'approved') return false;
+      return dateStr >= l.fromDate && dateStr <= l.toDate;
+    });
+  }
+  window.__dmIsOnLeave = isOnLeave;
+
+  /* ---------- register page ---------- */
+  Pages.leaves = function (el) {
+    ensure();
+    const isAdmin = State.user.role === 'Admin' || State.user.role === 'Manager';
+    const myEmpId = State.user.employeeId;
+    const statusFilter = State.filters.leaveStatus || 'all';
+
+    let leaves = [...(State.data.leaves || [])].sort((a, b) =>
+      (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
+
+    // Employee: only own leaves
+    if (!isAdmin && myEmpId) {
+      leaves = leaves.filter(l => l.employeeId === myEmpId);
+    }
+
+    if (statusFilter !== 'all') {
+      leaves = leaves.filter(l => l.status === statusFilter);
+    }
+
+    el.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;align-items:center">
+        <select id="lv-status" style="padding:.55rem .8rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit">
+          <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>${t('filter_all')}</option>
+          <option value="pending" ${statusFilter === 'pending' ? 'selected' : ''}>${t('leave_pending')}</option>
+          <option value="approved" ${statusFilter === 'approved' ? 'selected' : ''}>${t('leave_approved')}</option>
+          <option value="rejected" ${statusFilter === 'rejected' ? 'selected' : ''}>${t('leave_rejected')}</option>
+        </select>
+        <div style="margin-inline-start:auto">
+          <button class="btn btn-primary btn-sm" onclick="__dmLeaveAdd()"><i data-lucide="plus"></i> ${t('leave_add')}</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr>
+            <th>${t('employees')}</th>
+            <th>${t('leave_type')}</th>
+            <th>${t('leave_from')}</th>
+            <th>${t('leave_to')}</th>
+            <th>${t('leave_days')}</th>
+            <th>${t('leave_status')}</th>
+            <th>${t('actions')}</th>
+          </tr></thead>
+          <tbody>
+            ${leaves.length ? leaves.map(l => {
+              const emp = State.data.employees.find(e => e.id === l.employeeId);
+              const statusColor = { pending: 'yellow', approved: 'green', rejected: 'red' }[l.status] || 'gray';
+              return `<tr>
+                <td><div class="cell-user"><div class="av">${initials(emp?.name)}</div><div style="font-weight:600">${emp?.name || '-'}</div></div></td>
+                <td><span class="badge-pill badge-purple">${t('leave_type_' + l.type) || l.type}</span></td>
+                <td>${fmtDate(l.fromDate)}</td>
+                <td>${fmtDate(l.toDate)}</td>
+                <td>${daysBetween(l.fromDate, l.toDate)}</td>
+                <td><span class="badge-pill badge-${statusColor}">${t('leave_' + l.status) || l.status}</span></td>
+                <td>
+                  <div style="display:flex;gap:.25rem">
+                    ${isAdmin && l.status === 'pending' ? `
+                      <button class="btn btn-success btn-sm" onclick="__dmLeaveApprove('${l.id}')"><i data-lucide="check"></i> ${t('leave_approve')}</button>
+                      <button class="btn btn-danger btn-sm" onclick="__dmLeaveReject('${l.id}')"><i data-lucide="x"></i> ${t('leave_reject')}</button>
+                    ` : ''}
+                    ${isAdmin ? `<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmLeaveDelete('${l.id}')" style="color:#ef4444"><i data-lucide="trash-2"></i></button>` : ''}
+                  </div>
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="7"><div class="empty-state"><i data-lucide="plane"></i><p>${t('no_data')}</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+
+    document.getElementById('lv-status').onchange = (e) => {
+      State.filters.leaveStatus = e.target.value;
+      navigate('leaves');
+    };
+  };
+
+  /* ---------- open add modal ---------- */
+  window.__dmLeaveAdd = function () {
+    const employees = State.data.employees.filter(e => e.status === 'active');
+    const isAdmin = State.user.role === 'Admin' || State.user.role === 'Manager';
+    const types = State.data.leaveTypes;
+
+    openModal({
+      title: t('leave_add'),
+      size: 'lg',
+      body: `
+        <div class="form-row">
+          <div class="field"><label>${t('employees')} *</label>
+            <select id="lv-emp">${employees.map(e => `<option value="${e.id}" ${State.user.employeeId === e.id ? 'selected' : ''}>${e.name}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>${t('leave_type')} *</label>
+            <select id="lv-type">${types.map(x => `<option value="${x}">${t('leave_type_' + x) || x}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>${t('leave_from')} *</label><input type="date" id="lv-from" value="${todayISO()}"></div>
+          <div class="field"><label>${t('leave_to')} *</label><input type="date" id="lv-to" value="${todayISO()}"></div>
+        </div>
+        <div class="field" style="margin-top:1rem"><label>${t('leave_reason')}</label><textarea id="lv-reason"></textarea></div>
+      `,
+      footer: `
+        <button class="btn btn-ghost" onclick="closeModal()">${t('cancel')}</button>
+        <button class="btn btn-primary" onclick="__dmLeaveSave()">${t('save')}</button>
+      `
+    });
+  };
+
+  window.__dmLeaveSave = function () {
+    const empId = document.getElementById('lv-emp').value;
+    const type = document.getElementById('lv-type').value;
+    const fromDate = document.getElementById('lv-from').value;
+    const toDate = document.getElementById('lv-to').value;
+    const reason = document.getElementById('lv-reason').value.trim();
+
+    if (!empId || !fromDate || !toDate) {
+      showToast(t('required_field'), 'error'); return;
+    }
+    if (toDate < fromDate) {
+      showToast('تاريخ النهاية قبل البداية', 'error'); return;
+    }
+
+    const isAdmin = State.user.role === 'Admin' || State.user.role === 'Manager';
+
+    const newLeave = {
+      id: uid('lv'),
+      employeeId: empId,
+      type, fromDate, toDate, reason,
+      status: isAdmin ? 'approved' : 'pending',
+      createdAt: new Date().toISOString(),
+      createdBy: State.user.username,
+      approvedBy: isAdmin ? State.user.username : null,
+      approvedAt: isAdmin ? new Date().toISOString() : null
+    };
+
+    State.data.leaves.push(newLeave);
+    saveData();
+    logActivity('create', 'leave', newLeave.id, null, newLeave);
+
+    // Notification
+    State.data.notifications.unshift({
+      id: uid('n'),
+      userId: null,
+      title: 'طلب إجازة جديد',
+      body: `${empName(empId)} — ${fmtDate(fromDate)} إلى ${fmtDate(toDate)}`,
+      date: todayISO(),
+      read: false,
+      type: 'leave'
+    });
+
+    closeModal();
+    showToast(t('saved'), 'success');
+    if (State.page === 'leaves') navigate('leaves');
+  };
+
+  window.__dmLeaveApprove = function (id) {
+    const l = State.data.leaves.find(x => x.id === id);
+    if (!l) return;
+    l.status = 'approved';
+    l.approvedBy = State.user.username;
+    l.approvedAt = new Date().toISOString();
+    saveData();
+    logActivity('approve', 'leave', id, null, l);
+    showToast(t('saved'), 'success');
+    navigate('leaves');
+  };
+
+  window.__dmLeaveReject = function (id) {
+    const l = State.data.leaves.find(x => x.id === id);
+    if (!l) return;
+    l.status = 'rejected';
+    l.approvedBy = State.user.username;
+    l.approvedAt = new Date().toISOString();
+    saveData();
+    logActivity('reject', 'leave', id, null, l);
+    showToast(t('deleted'), 'success');
+    navigate('leaves');
+  };
+
+  window.__dmLeaveDelete = function (id) {
+    confirmDialog(t('confirm_delete'), () => {
+      State.data.leaves = State.data.leaves.filter(x => x.id !== id);
+      saveData();
+      showToast(t('deleted'), 'success');
+      navigate('leaves');
+    });
+  };
+
+  /* ---------- register nav item ---------- */
+  function registerNav() {
+    const ops = NAV_ITEMS.find(g => g.section === 'operations');
+    if (ops && !ops.items.find(i => i.id === 'leaves')) {
+      ops.items.push({ id: 'leaves', icon: 'plane', label: 'leaves' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* ---------- hook autoDistribute to skip leaves ---------- */
+  function hookAutoDistribute() {
+    if (typeof window.autoDistribute !== 'function') return;
+    const orig = window.autoDistribute;
+    window.autoDistribute = function () {
+      // Before running, warn if any employees on leave
+      const date = State.filters.distDate || todayISO();
+      const onLeaveToday = (State.data.employees || []).filter(e => isOnLeave(e.id, date));
+      if (onLeaveToday.length > 0) {
+        console.log('[Section 5] Employees on leave today:', onLeaveToday.map(e => e.name));
+      }
+      return orig.apply(this, arguments);
+    };
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof openModal === 'function',
+    function () {
+      ensure();
+      registerNav();
+      hookAutoDistribute();
+      console.log('%c[Section 5] ✓ Leave Management ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
+/* =========================================================
+   SECTION 6: Substitution System (نظام الاستبدال)
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 6] Substitution loading…', 'color:#f59e0b;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 6] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    substitutions: 'الاستبدالات', substitute: 'استبدال',
+    original_employee: 'الأصلي', replacement_employee: 'البديل',
+    sub_reason: 'سبب الاستبدال', sub_confirm: 'تأكيد الاستبدال',
+    sub_no_eligible: 'لا يوجد موظف بديل متاح بنفس الدور',
+    sub_history: 'سجل الاستبدالات'
+  });
+  Object.assign(I18N.en, {
+    substitutions: 'Substitutions', substitute: 'Substitute',
+    original_employee: 'Original', replacement_employee: 'Replacement',
+    sub_reason: 'Reason', sub_confirm: 'Confirm Substitution',
+    sub_no_eligible: 'No eligible substitute available for this role',
+    sub_history: 'Substitution History'
+  });
+
+  function ensure() {
+    if (!State.data.substitutions) State.data.substitutions = [];
+  }
+
+  /* ---------- register page for history ---------- */
+  Pages.substitutions = function (el) {
+    ensure();
+    const list = [...(State.data.substitutions || [])].sort((a, b) =>
+      (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
+
+    el.innerHTML = `
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr>
+            <th>${t('date')}</th>
+            <th>${t('hall')}</th>
+            <th>${t('role')}</th>
+            <th>${t('original_employee')}</th>
+            <th>${t('replacement_employee')}</th>
+            <th>${t('sub_reason')}</th>
+            <th>${t('approved')}</th>
+          </tr></thead>
+          <tbody>
+            ${list.length ? list.map(s => `
+              <tr>
+                <td>${fmtDate(s.date)}</td>
+                <td>${hallName(s.hallId)}</td>
+                <td>${s.role}</td>
+                <td><div class="cell-user"><div class="av">${initials(empName(s.originalEmployeeId))}</div><div>${empName(s.originalEmployeeId)}</div></div></td>
+                <td><div class="cell-user"><div class="av" style="background:linear-gradient(135deg,#10b981,#06b6d4)">${initials(empName(s.replacementEmployeeId))}</div><div>${empName(s.replacementEmployeeId)}</div></div></td>
+                <td>${s.reason || '-'}</td>
+                <td><span class="badge-pill badge-green">${s.approvedBy || '-'}</span></td>
+              </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><i data-lucide="repeat"></i><p>${t('no_data')}</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+  };
+
+  function hallName(id) {
+    const h = State.data.halls.find(x => x.id === id);
+    return h ? (h.name[State.lang] || h.name.ar) : '-';
+  }
+
+  /* ---------- open substitution modal ---------- */
+  window.__dmOpenSubstitution = function (distId) {
+    const dist = (State.data.distributions || []).find(x => x.id === distId);
+    if (!dist) { showToast('Distribution not found', 'error'); return; }
+
+    const originalEmp = State.data.employees.find(e => e.id === dist.employeeId);
+    const date = dist.date;
+    const role = dist.role;
+
+    // Already assigned today (in any distribution on this date)
+    const assignedToday = new Set(
+      (State.data.distributions || [])
+        .filter(x => x.date === date)
+        .map(x => x.employeeId)
+        .filter(Boolean)
+    );
+
+    // On leave
+    const onLeaveIds = new Set(
+      (State.data.leaves || [])
+        .filter(l => l.status === 'approved' && date >= l.fromDate && date <= l.toDate)
+        .map(l => l.employeeId)
+    );
+
+    // Eligible: has role, active, not assigned today, not on leave
+    const eligible = State.data.employees.filter(e =>
+      e.status === 'active' &&
+      (e.role === role || (e.roles || []).includes(role)) &&
+      !assignedToday.has(e.id) &&
+      !onLeaveIds.has(e.id)
+    );
+
+    // Sort by work count ascending (fair)
+    eligible.sort((a, b) => {
+      const ca = (State.data.distributions || []).filter(x => x.employeeId === a.id).length;
+      const cb = (State.data.distributions || []).filter(x => x.employeeId === b.id).length;
+      return ca - cb;
+    });
+
+    openModal({
+      title: `🔄 ${t('substitute')} — ${originalEmp?.name || '-'}`,
+      size: 'lg',
+      body: `
+        <div class="card" style="margin-bottom:1rem;padding:.75rem;background:var(--surface-2);border:none">
+          <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.35rem">${t('sub_history')}</div>
+          <div style="font-size:.85rem"><b>${originalEmp?.name || '-'}</b> — ${role} — ${hallName(dist.hallId)} — ${fmtDate(date)}</div>
+        </div>
+
+        <div class="field" style="margin-bottom:1rem">
+          <label>${t('replacement_employee')} *</label>
+          ${eligible.length ? `
+            <select id="sub-emp" style="width:100%;padding:.65rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:inherit">
+              ${eligible.map((e, i) => {
+                const count = (State.data.distributions || []).filter(x => x.employeeId === e.id).length;
+                return `<option value="${e.id}">${e.name} — ${count} ${State.lang === 'ar' ? 'توزيع' : 'assignments'}${i === 0 ? ' ✓ ' + (State.lang === 'ar' ? 'الأقل' : 'best') : ''}</option>`;
+              }).join('')}
+            </select>
+          ` : `<div class="empty-state" style="padding:1rem"><i data-lucide="user-x"></i><p>${t('sub_no_eligible')}</p></div>`}
+        </div>
+
+        <div class="field">
+          <label>${t('sub_reason')}</label>
+          <textarea id="sub-reason" rows="3" placeholder="${State.lang === 'ar' ? 'سبب الاستبدال (اختياري)' : 'Reason (optional)'}"></textarea>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-ghost" onclick="closeModal()">${t('cancel')}</button>
+        ${eligible.length ? `<button class="btn btn-primary" onclick="__dmConfirmSubstitution('${distId}')">
+          <i data-lucide="check"></i> ${t('sub_confirm')}
+        </button>` : ''}
+      `
+    });
+    if (window.lucide) lucide.createIcons();
+  };
+
+  window.__dmConfirmSubstitution = function (distId) {
+    const dist = (State.data.distributions || []).find(x => x.id === distId);
+    if (!dist) return;
+
+    const replacementId = document.getElementById('sub-emp').value;
+    const reason = document.getElementById('sub-reason').value.trim();
+    if (!replacementId) return;
+
+    const originalId = dist.employeeId;
+
+    // Update distribution
+    dist.employeeId = replacementId;
+    dist.substitutedFrom = originalId;
+    dist.substitutedAt = new Date().toISOString();
+    dist.substitutedBy = State.user.username;
+
+    // Record substitution
+    State.data.substitutions.push({
+      id: uid('sub'),
+      date: dist.date,
+      hallId: dist.hallId,
+      role: dist.role,
+      originalEmployeeId: originalId,
+      replacementEmployeeId: replacementId,
+      reason,
+      approvedBy: State.user.username,
+      createdAt: new Date().toISOString()
+    });
+
+    saveData();
+    logActivity('substitute', 'distribution', distId, { original: originalId }, { replacement: replacementId });
+
+    // Notification
+    State.data.notifications.unshift({
+      id: uid('n'),
+      userId: null,
+      title: 'تم استبدال موظف',
+      body: `${empName(originalId)} → ${empName(replacementId)} في ${hallName(dist.hallId)}`,
+      date: dist.date,
+      read: false,
+      type: 'substitution'
+    });
+
+    closeModal();
+    showToast(State.lang === 'ar' ? 'تم الاستبدال بنجاح' : 'Substitution done', 'success');
+    if (State.page === 'distribution') navigate('distribution');
+  };
+
+  /* ---------- register nav ---------- */
+  function registerNav() {
+    const ops = NAV_ITEMS.find(g => g.section === 'operations');
+    if (ops && !ops.items.find(i => i.id === 'substitutions')) {
+      ops.items.push({ id: 'substitutions', icon: 'repeat', label: 'substitutions' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* ---------- inject substitute button in distribution chips ---------- */
+  function hookDistributionPage() {
+    if (!Pages.distribution) return;
+    const orig = Pages.distribution;
+    Pages.distribution = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        document.querySelectorAll('.emp-chip').forEach(chip => {
+          if (chip.querySelector('.sub-btn')) return;
+          const distId = chip.dataset.dist;
+          if (!distId) return;
+          const btn = document.createElement('button');
+          btn.className = 'sub-btn';
+          btn.title = (I18N[State.lang] || I18N.ar).substitute;
+          btn.style.cssText = 'margin-inline-start:.25rem;background:none;border:none;color:#f59e0b;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px';
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`;
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            window.__dmOpenSubstitution(distId);
+          };
+          chip.appendChild(btn);
+        });
+      }, 120);
+    };
+  }
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof openModal === 'function',
+    function () {
+      ensure();
+      registerNav();
+      hookDistributionPage();
+      console.log('%c[Section 6] ✓ Substitution ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
+/* =========================================================
+   SECTION 7: Equipment Assignment (ربط المعدات بالحجوزات)
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 7] Equipment Assignment loading…', 'color:#06b6d4;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 7] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    equipment_assignment: 'تعيين المعدات',
+    assign_equipment: 'إضافة معدة',
+    assigned_equipment: 'المعدات المعينة',
+    equipment_conflict: 'تحذير: هذه المعدة معينة لحجز آخر في نفس اليوم',
+    no_equipment_assigned: 'لا توجد معدات معينة',
+    quantity_assigned: 'الكمية'
+  });
+  Object.assign(I18N.en, {
+    equipment_assignment: 'Equipment Assignment',
+    assign_equipment: 'Assign Equipment',
+    assigned_equipment: 'Assigned Equipment',
+    equipment_conflict: 'Warning: This equipment is assigned to another booking on the same day',
+    no_equipment_assigned: 'No equipment assigned',
+    quantity_assigned: 'Quantity'
+  });
+
+  function ensure() {
+    if (!State.data.equipmentAssignments) State.data.equipmentAssignments = [];
+  }
+
+  function getAssignmentsForBooking(bookingId) {
+    return (State.data.equipmentAssignments || []).filter(a => a.bookingId === bookingId);
+  }
+
+  function getConflicts(equipmentId, date, excludeBookingId) {
+    const todayBookings = (State.data.bookings || []).filter(b => b.date === date && b.id !== excludeBookingId);
+    const bookingIds = new Set(todayBookings.map(b => b.id));
+    return (State.data.equipmentAssignments || []).filter(a =>
+      a.equipmentId === equipmentId && bookingIds.has(a.bookingId)
+    );
+  }
+
+  /* ---------- open equipment assignment modal ---------- */
+  window.__dmOpenEquipmentAssign = function (bookingId) {
+    ensure();
+    const booking = (State.data.bookings || []).find(b => b.id === bookingId);
+    if (!booking) { showToast('Booking not found', 'error'); return; }
+
+    const currentAssignments = getAssignmentsForBooking(bookingId);
+    const availableEquip = (State.data.equipment || []).filter(eq =>
+      eq.status === 'available' || eq.status === 'assigned'
+    );
+
+    const renderAssignmentRow = (a, idx) => {
+      const eq = State.data.equipment.find(x => x.id === a.equipmentId);
+      const conflicts = getConflicts(a.equipmentId, booking.date, bookingId);
+      const hasConflict = conflicts.length > 0;
+      return `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem;border:1px solid ${hasConflict ? '#ef4444' : 'var(--border)'};border-radius:10px;margin-bottom:.35rem">
+          <i data-lucide="camera" style="width:16px;height:16px;color:${hasConflict ? '#ef4444' : 'var(--primary)'}"></i>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.85rem">${eq?.name || '—'}</div>
+            <div style="font-size:.7rem;color:var(--text-muted)">${eq?.category || ''} · ${eq?.code || ''} × ${a.quantity || 1}</div>
+            ${hasConflict ? `<div style="font-size:.7rem;color:#ef4444;margin-top:.25rem">⚠️ ${t('equipment_conflict')}</div>` : ''}
+          </div>
+          <button class="btn btn-ghost btn-icon btn-sm" onclick="__dmRemoveEquipmentAssignment('${a.id}','${bookingId}')" style="color:#ef4444">
+            <i data-lucide="trash-2"></i>
+          </button>
+        </div>
+      `;
+    };
+
+    openModal({
+      title: `🎥 ${t('equipment_assignment')} — ${booking.clientName || booking.id}`,
+      size: 'lg',
+      body: `
+        <div style="margin-bottom:1rem;font-size:.8rem;color:var(--text-muted)">
+          ${t('date')}: ${fmtDate(booking.date)} · ${t('hall')}: ${hallName(booking.hallId)}
+        </div>
+
+        <div style="margin-bottom:1rem">
+          <div style="font-size:.75rem;font-weight:700;margin-bottom:.5rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
+            ${t('assigned_equipment')}
+          </div>
+          <div id="dm-eq-list">
+            ${currentAssignments.length ? currentAssignments.map(renderAssignmentRow).join('') : `<div class="empty-state" style="padding:1rem"><i data-lucide="camera-off"></i><p>${t('no_equipment_assigned')}</p></div>`}
+          </div>
+        </div>
+
+        <div style="padding-top:1rem;border-top:1px solid var(--border)">
+          <div style="font-size:.75rem;font-weight:700;margin-bottom:.5rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">
+            ${t('assign_equipment')}
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+            <div style="flex:2;min-width:200px">
+              <select id="dm-eq-pick" style="width:100%;padding:.6rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:inherit">
+                ${availableEquip.map(eq => `<option value="${eq.id}">${eq.name} — ${eq.category} (${eq.code})</option>`).join('')}
+              </select>
+            </div>
+            <div style="flex:1;min-width:80px">
+              <input type="number" id="dm-eq-qty" value="1" min="1" placeholder="${t('quantity_assigned')}" style="width:100%;padding:.6rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:inherit">
+            </div>
+            <button class="btn btn-primary" onclick="__dmAddEquipmentAssignment('${bookingId}')">
+              <i data-lucide="plus"></i>
+            </button>
+          </div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-ghost" onclick="closeModal()">${t('close')}</button>
+      `
+    });
+    if (window.lucide) lucide.createIcons();
+  };
+
+  window.__dmAddEquipmentAssignment = function (bookingId) {
+    ensure();
+    const eqId = document.getElementById('dm-eq-pick').value;
+    const qty = parseInt(document.getElementById('dm-eq-qty').value) || 1;
+    if (!eqId) return;
+
+    const booking = (State.data.bookings || []).find(b => b.id === bookingId);
+    if (!booking) return;
+
+    // Check for conflicts
+    const conflicts = getConflicts(eqId, booking.date, bookingId);
+    if (conflicts.length > 0) {
+      const proceed = confirm(t('equipment_conflict') + '\n\n' + (State.lang === 'ar' ? 'هل تريد المتابعة؟' : 'Continue anyway?'));
+      if (!proceed) return;
+    }
+
+    State.data.equipmentAssignments.push({
+      id: uid('eqa'),
+      bookingId,
+      equipmentId: eqId,
+      quantity: qty,
+      date: booking.date,
+      assignedBy: State.user.username,
+      createdAt: new Date().toISOString()
+    });
+
+    saveData();
+    logActivity('create', 'equipment-assignment', eqId, null, { bookingId, qty });
+
+    showToast(t('saved'), 'success');
+    // Refresh modal
+    closeModal();
+    setTimeout(() => window.__dmOpenEquipmentAssign(bookingId), 100);
+  };
+
+  window.__dmRemoveEquipmentAssignment = function (assignmentId, bookingId) {
+    State.data.equipmentAssignments = (State.data.equipmentAssignments || []).filter(a => a.id !== assignmentId);
+    saveData();
+    logActivity('delete', 'equipment-assignment', assignmentId, null, null);
+    showToast(t('deleted'), 'success');
+    closeModal();
+    setTimeout(() => window.__dmOpenEquipmentAssign(bookingId), 100);
+  };
+
+  /* ---------- add "Equipment" button to booking rows ---------- */
+  function hookBookingsPage() {
+    if (!Pages.bookings) return;
+    const orig = Pages.bookings;
+    Pages.bookings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(() => {
+        const rows = document.querySelectorAll('.data-table tbody tr');
+        rows.forEach(row => {
+          const actionCell = row.querySelector('td:last-child');
+          if (!actionCell || actionCell.querySelector('.eq-btn')) return;
+          const editBtn = row.querySelector('button[onclick*="editBooking"]');
+          if (!editBtn) return;
+          const match = editBtn.getAttribute('onclick').match(/editBooking\('([^']+)'\)/);
+          if (!match) return;
+          const bookingId = match[1];
+
+          const eqBtn = document.createElement('button');
+          eqBtn.className = 'btn btn-ghost btn-icon btn-sm eq-btn';
+          eqBtn.title = (I18N[State.lang] || I18N.ar).equipment_assignment;
+          eqBtn.style.color = '#06b6d4';
+          eqBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
+          eqBtn.onclick = (e) => {
+            e.stopPropagation();
+            window.__dmOpenEquipmentAssign(bookingId);
+          };
+          const actionsDiv = actionCell.querySelector('div');
+          if (actionsDiv) actionsDiv.insertBefore(eqBtn, actionsDiv.firstChild);
+          else actionCell.appendChild(eqBtn);
+        });
+      }, 120);
+    };
+  }
+
+  /* ---------- show assigned equipment count in booking list ---------- */
+  function hookEditBooking() {
+    if (typeof window.editBooking !== 'function') return;
+    // Just leave it — the equipment button in the row is enough
+  }
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof openModal === 'function',
+    function () {
+      ensure();
+      hookBookingsPage();
+      console.log('%c[Section 7] ✓ Equipment Assignment ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
+
 
 
 /* #########################################################
