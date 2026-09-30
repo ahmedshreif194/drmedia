@@ -2159,6 +2159,775 @@
   );
 
 })();
+/* =========================================================
+   SECTION 8: P&L Dashboard (تحليل مالي كامل)
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 8] P&L Dashboard loading…', 'color:#10b981;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 8] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    pl_dashboard: 'التحليل المالي',
+    revenue: 'الإيرادات',
+    costs: 'التكاليف',
+    net_profit: 'صافي الربح',
+    margin: 'هامش الربح',
+    per_hall: 'لكل قاعة',
+    per_event: 'لكل نوع مناسبة',
+    per_month: 'شهريًا',
+    top_clients: 'أعلى العملاء ربحية',
+    forecast: 'توقع الشهر القادم',
+    confirmed_bookings: 'حجوزات مؤكدة',
+    projected_revenue: 'الإيرادات المتوقعة',
+    payroll_cost: 'تكاليف الموظفين',
+    equipment_cost: 'تكاليف المعدات',
+    expenses_cost: 'مصروفات تشغيلية',
+    filter_period: 'الفترة',
+    period_month: 'هذا الشهر',
+    period_quarter: 'هذا الربع',
+    period_year: 'هذه السنة',
+    period_all: 'كل الفترات'
+  });
+  Object.assign(I18N.en, {
+    pl_dashboard: 'P&L Dashboard',
+    revenue: 'Revenue',
+    costs: 'Costs',
+    net_profit: 'Net Profit',
+    margin: 'Margin',
+    per_hall: 'Per Hall',
+    per_event: 'Per Event Type',
+    per_month: 'Per Month',
+    top_clients: 'Top Clients by Profit',
+    forecast: 'Next Month Forecast',
+    confirmed_bookings: 'Confirmed Bookings',
+    projected_revenue: 'Projected Revenue',
+    payroll_cost: 'Payroll Cost',
+    equipment_cost: 'Equipment Cost',
+    expenses_cost: 'Operating Expenses',
+    filter_period: 'Period',
+    period_month: 'This Month',
+    period_quarter: 'This Quarter',
+    period_year: 'This Year',
+    period_all: 'All Time'
+  });
+
+  function ensure() {
+    if (!State.data.expenses) State.data.expenses = [];
+  }
+
+  /* ---------- period helpers ---------- */
+  function getPeriodRange(period) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    if (period === 'month') {
+      return {
+        from: new Date(y, m, 1).toISOString().slice(0, 10),
+        to: new Date(y, m + 1, 0).toISOString().slice(0, 10)
+      };
+    }
+    if (period === 'quarter') {
+      const q = Math.floor(m / 3);
+      return {
+        from: new Date(y, q * 3, 1).toISOString().slice(0, 10),
+        to: new Date(y, q * 3 + 3, 0).toISOString().slice(0, 10)
+      };
+    }
+    if (period === 'year') {
+      return {
+        from: new Date(y, 0, 1).toISOString().slice(0, 10),
+        to: new Date(y, 11, 31).toISOString().slice(0, 10)
+      };
+    }
+    // all
+    return { from: '1970-01-01', to: '2099-12-31' };
+  }
+
+  /* ---------- calculate P&L ---------- */
+  function calculatePL(from, to) {
+    const d = State.data;
+
+    // Revenue: sum of booking costs in period
+    const periodBookings = (d.bookings || []).filter(b =>
+      b.date >= from && b.date <= to && b.status !== 'cancelled'
+    );
+    const revenue = periodBookings.reduce((s, b) => s + (b.cost || 0), 0);
+
+    // Costs: payroll for confirmed distributions in period
+    const periodDists = (d.distributions || []).filter(x =>
+      x.date >= from && x.date <= to && x.status === 'confirmed'
+    );
+    const payrollCost = periodDists.reduce((s, dist) => {
+      const emp = d.employees.find(e => e.id === dist.employeeId);
+      return s + (emp ? (emp.dayRate || 0) : 0);
+    }, 0);
+
+    // Advances, deductions, bonuses in period
+    const totalAdvances = (d.advances || []).filter(a => a.date >= from && a.date <= to)
+      .reduce((s, a) => s + (a.amount || 0), 0);
+    const totalDeductions = (d.deductions || []).filter(x => x.date >= from && x.date <= to)
+      .reduce((s, x) => s + (x.amount || 0), 0);
+    const totalBonuses = (d.bonuses || []).filter(x => x.date >= from && x.date <= to)
+      .reduce((s, x) => s + (x.amount || 0), 0);
+
+    // Equipment cost (approximation from assignments)
+    const periodEqAssigns = (d.equipmentAssignments || []).filter(a => a.date >= from && a.date <= to);
+    const equipmentCost = periodEqAssigns.reduce((s, a) => {
+      const eq = d.equipment.find(x => x.id === a.equipmentId);
+      return s + (eq ? (eq.price || 0) * 0.02 * (a.quantity || 1) : 0); // 2% depreciation per assignment
+    }, 0);
+
+    // Operating expenses
+    const operatingExpenses = (d.expenses || []).filter(e => e.date >= from && e.date <= to)
+      .reduce((s, e) => s + (e.amount || 0), 0);
+
+    const totalCosts = payrollCost + totalBonuses + equipmentCost + operatingExpenses;
+    const netProfit = revenue - totalCosts;
+    const margin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+
+    return {
+      revenue,
+      payrollCost,
+      equipmentCost,
+      operatingExpenses,
+      totalBonuses,
+      totalAdvances,
+      totalDeductions,
+      totalCosts,
+      netProfit,
+      margin,
+      periodBookings,
+      periodDists
+    };
+  }
+
+  /* ---------- breakdowns ---------- */
+  function breakdownByHall(from, to) {
+    const map = {};
+    (State.data.halls || []).forEach(h => {
+      const bookings = (State.data.bookings || []).filter(b =>
+        b.hallId === h.id && b.date >= from && b.date <= to && b.status !== 'cancelled'
+      );
+      const revenue = bookings.reduce((s, b) => s + (b.cost || 0), 0);
+      const dists = (State.data.distributions || []).filter(x =>
+        x.hallId === h.id && x.date >= from && x.date <= to && x.status === 'confirmed'
+      );
+      const cost = dists.reduce((s, dist) => {
+        const emp = State.data.employees.find(e => e.id === dist.employeeId);
+        return s + (emp ? (emp.dayRate || 0) : 0);
+      }, 0);
+      map[h.id] = {
+        name: h.name[State.lang] || h.name.ar,
+        revenue, cost, profit: revenue - cost,
+        bookings: bookings.length
+      };
+    });
+    return map;
+  }
+
+  function breakdownByEvent(from, to) {
+    const map = {};
+    (State.data.bookings || [])
+      .filter(b => b.date >= from && b.date <= to && b.status !== 'cancelled')
+      .forEach(b => {
+        const t = b.eventType || 'Other';
+        map[t] = map[t] || { revenue: 0, count: 0 };
+        map[t].revenue += b.cost || 0;
+        map[t].count++;
+      });
+    return map;
+  }
+
+  function breakdownByMonth(from, to) {
+    const map = {};
+    (State.data.bookings || [])
+      .filter(b => b.date >= from && b.date <= to && b.status !== 'cancelled')
+      .forEach(b => {
+        const m = b.date.slice(0, 7);
+        map[m] = map[m] || { revenue: 0, cost: 0 };
+        map[m].revenue += b.cost || 0;
+      });
+    (State.data.distributions || [])
+      .filter(x => x.date >= from && x.date <= to && x.status === 'confirmed')
+      .forEach(dist => {
+        const m = dist.date.slice(0, 7);
+        map[m] = map[m] || { revenue: 0, cost: 0 };
+        const emp = State.data.employees.find(e => e.id === dist.employeeId);
+        map[m].cost += emp ? (emp.dayRate || 0) : 0;
+      });
+    return map;
+  }
+
+  function topClients(from, to, limit) {
+    const map = {};
+    (State.data.bookings || [])
+      .filter(b => b.date >= from && b.date <= to && b.status !== 'cancelled')
+      .forEach(b => {
+        const k = b.clientName || 'Unknown';
+        map[k] = map[k] || { revenue: 0, count: 0 };
+        map[k].revenue += b.cost || 0;
+        map[k].count++;
+      });
+    return Object.entries(map)
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .slice(0, limit || 5);
+  }
+
+  /* ---------- forecast next month ---------- */
+  function forecastNextMonth() {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    const from = nextMonth.toISOString().slice(0, 10);
+    const to = nextMonthEnd.toISOString().slice(0, 10);
+
+    const confirmedBookings = (State.data.bookings || []).filter(b =>
+      b.date >= from && b.date <= to && (b.status === 'confirmed' || b.status === 'pending')
+    );
+
+    const projectedRevenue = confirmedBookings.reduce((s, b) => s + (b.cost || 0), 0);
+
+    // Estimate cost from average per booking
+    const avgCostPerBooking = 1200; // rough estimate
+    const estimatedCost = confirmedBookings.length * avgCostPerBooking;
+
+    return {
+      confirmedBookings: confirmedBookings.length,
+      projectedRevenue,
+      estimatedCost,
+      projectedProfit: projectedRevenue - estimatedCost
+    };
+  }
+
+  /* ---------- register page ---------- */
+  Pages.pl = function (el) {
+    ensure();
+    const period = State.filters.plPeriod || 'month';
+    const range = getPeriodRange(period);
+    const pl = calculatePL(range.from, range.to);
+    const hallBreakdown = breakdownByHall(range.from, range.to);
+    const eventBreakdown = breakdownByEvent(range.from, range.to);
+    const monthBreakdown = breakdownByMonth(range.from, range.to);
+    const top = topClients(range.from, range.to, 5);
+    const forecast = forecastNextMonth();
+
+    const fmtMoney = (n) => 'EGP ' + Math.round(n || 0).toLocaleString();
+    const pct = (n) => (n || 0).toFixed(1) + '%';
+
+    el.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;align-items:center">
+        <div class="tabs" style="margin:0;border:none">
+          <div class="tab ${period === 'month' ? 'active' : ''}" onclick="State.filters.plPeriod='month';navigate('pl')">${t('period_month')}</div>
+          <div class="tab ${period === 'quarter' ? 'active' : ''}" onclick="State.filters.plPeriod='quarter';navigate('pl')">${t('period_quarter')}</div>
+          <div class="tab ${period === 'year' ? 'active' : ''}" onclick="State.filters.plPeriod='year';navigate('pl')">${t('period_year')}</div>
+          <div class="tab ${period === 'all' ? 'active' : ''}" onclick="State.filters.plPeriod='all';navigate('pl')">${t('period_all')}</div>
+        </div>
+        <div style="margin-inline-start:auto;font-size:.78rem;color:var(--text-muted)">
+          ${fmtDate(range.from)} → ${fmtDate(range.to)}
+        </div>
+      </div>
+
+      <!-- Top KPIs -->
+      <div class="grid-stats" style="margin-bottom:1.5rem">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i data-lucide="trending-up"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('revenue')}</div>
+            <div class="value">${fmtMoney(pl.revenue)}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(239,68,68,.1);color:#ef4444"><i data-lucide="trending-down"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('costs')}</div>
+            <div class="value">${fmtMoney(pl.totalCosts)}</div>
+          </div>
+        </div>
+        <div class="stat-card" style="border:2px solid ${pl.netProfit >= 0 ? '#10b981' : '#ef4444'}">
+          <div class="stat-icon" style="background:${pl.netProfit >= 0 ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)'};color:${pl.netProfit >= 0 ? '#10b981' : '#ef4444'}"><i data-lucide="badge-dollar-sign"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('net_profit')}</div>
+            <div class="value" style="color:${pl.netProfit >= 0 ? '#10b981' : '#ef4444'}">${fmtMoney(pl.netProfit)}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(124,58,237,.1);color:#7c3aed"><i data-lucide="percent"></i></div>
+          <div class="stat-body">
+            <div class="label">${t('margin')}</div>
+            <div class="value">${pct(pl.margin)}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts row -->
+      <div class="grid-2" style="margin-bottom:1.5rem">
+        <div class="chart-box">
+          <h4><i data-lucide="bar-chart-3"></i> ${t('per_hall')}</h4>
+          <div class="chart-canvas-wrap"><canvas id="ch-pl-hall"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h4><i data-lucide="pie-chart"></i> ${t('per_event')}</h4>
+          <div class="chart-canvas-wrap"><canvas id="ch-pl-event"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Cost breakdown -->
+      <div class="grid-2" style="margin-bottom:1.5rem">
+        <div class="card">
+          <h4 class="section-title" style="margin-top:0"><i data-lucide="receipt"></i> ${t('costs')}</h4>
+          ${[
+            { label: t('payroll_cost'), value: pl.payrollCost, color: '#7c3aed' },
+            { label: t('equipment_cost'), value: pl.equipmentCost, color: '#06b6d4' },
+            { label: t('expenses_cost'), value: pl.operatingExpenses, color: '#f59e0b' },
+            { label: t('bonuses'), value: pl.totalBonuses, color: '#10b981' }
+          ].map(row => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--border)">
+              <span style="font-size:.85rem"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${row.color};margin-inline-end:.5rem"></span>${row.label}</span>
+              <span style="font-weight:700;font-size:.85rem">${fmtMoney(row.value)}</span>
+            </div>
+          `).join('')}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 0;font-weight:800;border-top:2px solid var(--border);margin-top:.5rem">
+            <span>${t('total')}</span>
+            <span style="color:#ef4444">${fmtMoney(pl.totalCosts)}</span>
+          </div>
+        </div>
+        <div class="card">
+          <h4 class="section-title" style="margin-top:0"><i data-lucide="trophy"></i> ${t('top_clients')}</h4>
+          ${top.length ? top.map(([name, info], i) => `
+            <div style="display:flex;align-items:center;gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--border)">
+              <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem">${i + 1}</div>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:.85rem">${name}</div>
+                <div style="font-size:.7rem;color:var(--text-muted)">${info.count} ${t('bookings')}</div>
+              </div>
+              <div style="font-weight:700;color:#10b981;font-size:.85rem">${fmtMoney(info.revenue)}</div>
+            </div>
+          `).join('') : `<div class="empty-state" style="padding:1.5rem"><i data-lucide="inbox"></i><p>${t('no_data')}</p></div>`}
+        </div>
+      </div>
+
+      <!-- Forecast -->
+      <div class="card" style="margin-bottom:1.5rem;background:linear-gradient(135deg,rgba(124,58,237,.05),rgba(245,158,11,.05));border:1px solid var(--primary)">
+        <h4 class="section-title" style="margin-top:0"><i data-lucide="crystal-ball" style="color:var(--primary)"></i> ${t('forecast')}</h4>
+        <div class="grid-3" style="margin-top:1rem">
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted)">${t('confirmed_bookings')}</div>
+            <div style="font-size:1.5rem;font-weight:800">${forecast.confirmedBookings}</div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted)">${t('projected_revenue')}</div>
+            <div style="font-size:1.5rem;font-weight:800;color:#10b981">${fmtMoney(forecast.projectedRevenue)}</div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-muted)">${t('net_profit')}</div>
+            <div style="font-size:1.5rem;font-weight:800;color:${forecast.projectedProfit >= 0 ? '#10b981' : '#ef4444'}">${fmtMoney(forecast.projectedProfit)}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monthly trend -->
+      <div class="chart-box">
+        <h4><i data-lucide="activity"></i> ${t('per_month')}</h4>
+        <div class="chart-canvas-wrap"><canvas id="ch-pl-month"></canvas></div>
+      </div>
+    `;
+
+    if (window.lucide) lucide.createIcons();
+
+    /* charts */
+    setTimeout(() => {
+      const hallLabels = Object.values(hallBreakdown).map(h => h.name);
+      const hallRevenue = Object.values(hallBreakdown).map(h => h.revenue);
+      const hallProfit = Object.values(hallBreakdown).map(h => h.profit);
+
+      const hallCanvas = document.getElementById('ch-pl-hall');
+      if (hallCanvas && window.Chart) {
+        if (window.__ch_pl_hall) { try { window.__ch_pl_hall.destroy(); } catch (e) {} }
+        window.__ch_pl_hall = new Chart(hallCanvas, {
+          type: 'bar',
+          data: {
+            labels: hallLabels,
+            datasets: [
+              { label: t('revenue'), data: hallRevenue, backgroundColor: '#7c3aed', borderRadius: 6 },
+              { label: t('net_profit'), data: hallProfit, backgroundColor: '#10b981', borderRadius: 6 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } },
+            scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+          }
+        });
+      }
+
+      const eventLabels = Object.keys(eventBreakdown);
+      const eventRevenue = Object.values(eventBreakdown).map(e => e.revenue);
+
+      const evCanvas = document.getElementById('ch-pl-event');
+      if (evCanvas && window.Chart) {
+        if (window.__ch_pl_event) { try { window.__ch_pl_event.destroy(); } catch (e) {} }
+        window.__ch_pl_event = new Chart(evCanvas, {
+          type: 'doughnut',
+          data: {
+            labels: eventLabels,
+            datasets: [{ data: eventRevenue, backgroundColor: ['#7c3aed', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#06b6d4'], borderWidth: 0 }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } }
+          }
+        });
+      }
+
+      const monthKeys = Object.keys(monthBreakdown).sort();
+      const monthRevenue = monthKeys.map(k => monthBreakdown[k].revenue);
+      const monthCost = monthKeys.map(k => monthBreakdown[k].cost);
+
+      const moCanvas = document.getElementById('ch-pl-month');
+      if (moCanvas && window.Chart) {
+        if (window.__ch_pl_month) { try { window.__ch_pl_month.destroy(); } catch (e) {} }
+        window.__ch_pl_month = new Chart(moCanvas, {
+          type: 'line',
+          data: {
+            labels: monthKeys,
+            datasets: [
+              { label: t('revenue'), data: monthRevenue, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.1)', fill: true, tension: 0.4, borderWidth: 2 },
+              { label: t('costs'), data: monthCost, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.1)', fill: true, tension: 0.4, borderWidth: 2 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } },
+            scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+          }
+        });
+      }
+    }, 80);
+  };
+
+  /* ---------- register nav ---------- */
+  function registerNav() {
+    const finance = NAV_ITEMS.find(g => g.section === 'finance');
+    if (finance && !finance.items.find(i => i.id === 'pl')) {
+      finance.items.push({ id: 'pl', icon: 'trending-up', label: 'pl_dashboard' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function',
+    function () {
+      ensure();
+      registerNav();
+      console.log('%c[Section 8] ✓ P&L Dashboard ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
+/* =========================================================
+   SECTION 9: Timeline / Gantt View (عرض زمني للحجوزات)
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 9] Timeline View loading…', 'color:#06b6d4;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 9] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    timeline: 'العرض الزمني',
+    timeline_date: 'التاريخ',
+    timeline_hours: 'الساعات',
+    timeline_no_bookings: 'لا توجد حجوزات في هذا اليوم'
+  });
+  Object.assign(I18N.en, {
+    timeline: 'Timeline',
+    timeline_date: 'Date',
+    timeline_hours: 'Hours',
+    timeline_no_bookings: 'No bookings for this day'
+  });
+
+  /* ---------- styles ---------- */
+  function injectStyles() {
+    if (document.getElementById('dm-timeline-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'dm-timeline-styles';
+    s.textContent = `
+      .dm-tl-wrap {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 1.25rem;
+        overflow-x: auto;
+      }
+      .dm-tl-header {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 0;
+        border-bottom: 2px solid var(--border);
+        padding-bottom: .5rem;
+        margin-bottom: .5rem;
+        min-width: 900px;
+      }
+      .dm-tl-hours {
+        display: grid;
+        grid-template-columns: repeat(24, 1fr);
+        gap: 2px;
+      }
+      .dm-tl-hour {
+        text-align: center;
+        font-size: .65rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        padding: .25rem 0;
+        border-inline-start: 1px dashed var(--border);
+      }
+      .dm-tl-row {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 0;
+        align-items: center;
+        padding: .5rem 0;
+        border-bottom: 1px solid var(--border);
+        min-width: 900px;
+      }
+      .dm-tl-row:hover {
+        background: var(--surface-2);
+      }
+      .dm-tl-label {
+        font-size: .8rem;
+        font-weight: 600;
+        padding-inline-end: .75rem;
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+      }
+      .dm-tl-label .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .dm-tl-track {
+        position: relative;
+        height: 32px;
+        background: repeating-linear-gradient(
+          to right,
+          transparent 0,
+          transparent calc(100% / 24 - 1px),
+          var(--border) calc(100% / 24 - 1px),
+          var(--border) calc(100% / 24)
+        );
+        border-radius: 6px;
+      }
+      .dm-tl-bar {
+        position: absolute;
+        top: 4px;
+        height: 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all .2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: .7rem;
+        font-weight: 600;
+        overflow: hidden;
+        white-space: nowrap;
+        padding: 0 .35rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,.15);
+      }
+      .dm-tl-bar:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,.25);
+        z-index: 10;
+      }
+      .dm-tl-now {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #ef4444;
+        z-index: 5;
+      }
+      .dm-tl-now::before {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ef4444;
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  function timeToHours(t) {
+    if (!t) return 0;
+    const parts = String(t).split(':');
+    return parseInt(parts[0]) + (parseInt(parts[1]) || 0) / 60;
+  }
+
+  function hallName(id) {
+    const h = State.data.halls.find(x => x.id === id);
+    return h ? (h.name[State.lang] || h.name.ar) : '-';
+  }
+
+  function getStatusColor(status) {
+    return {
+      confirmed: '#10b981',
+      pending: '#f59e0b',
+      completed: '#3b82f6',
+      cancelled: '#ef4444'
+    }[status] || '#7c3aed';
+  }
+
+  /* ---------- register page ---------- */
+  Pages.timeline = function (el) {
+    injectStyles();
+
+    const date = State.filters.tlDate || todayISO();
+    State.filters.tlDate = date;
+
+    const dayBookings = (State.data.bookings || []).filter(b => b.date === date && b.status !== 'cancelled');
+
+    const hoursHeader = Array.from({ length: 24 }, (_, i) => {
+      const h = i.toString().padStart(2, '0');
+      return `<div class="dm-tl-hour">${h}</div>`;
+    }).join('');
+
+    const now = new Date();
+    const isToday = date === todayISO();
+    const nowPercent = isToday ? ((now.getHours() + now.getMinutes() / 60) / 24) * 100 : null;
+
+    el.innerHTML = `
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:center">
+          <input type="date" id="tl-date" value="${date}" style="padding:.55rem .8rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit">
+          <div style="display:flex;gap:.35rem">
+            <button class="btn btn-ghost btn-sm" onclick="__dmTLPrev()"><i data-lucide="${State.lang === 'ar' ? 'chevron-right' : 'chevron-left'}"></i></button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmTLToday()">${State.lang === 'ar' ? 'اليوم' : 'Today'}</button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmTLNext()"><i data-lucide="${State.lang === 'ar' ? 'chevron-left' : 'chevron-right'}"></i></button>
+          </div>
+          <div style="margin-inline-start:auto;font-size:.8rem;color:var(--text-muted)">
+            <b style="color:var(--text)">${dayBookings.length}</b> ${t('bookings')}
+          </div>
+        </div>
+      </div>
+
+      ${dayBookings.length === 0 ? `
+        <div class="dm-tl-wrap">
+          <div class="empty-state" style="padding:4rem 1rem">
+            <i data-lucide="calendar-x"></i>
+            <p>${t('timeline_no_bookings')}</p>
+          </div>
+        </div>
+      ` : `
+        <div class="dm-tl-wrap">
+          <div class="dm-tl-header">
+            <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;padding-inline-end:.75rem">
+              ${t('hall')}
+            </div>
+            <div class="dm-tl-hours">${hoursHeader}</div>
+          </div>
+          ${dayBookings.map(b => {
+            const startH = timeToHours(b.startTime);
+            const endH = timeToHours(b.endTime);
+            const leftPct = (startH / 24) * 100;
+            const widthPct = ((endH - startH) / 24) * 100;
+            const color = getStatusColor(b.status);
+            return `
+              <div class="dm-tl-row">
+                <div class="dm-tl-label">
+                  <span class="dot" style="background:${color}"></span>
+                  <span>${hallName(b.hallId)}</span>
+                </div>
+                <div class="dm-tl-track">
+                  ${isToday && nowPercent !== null ? `<div class="dm-tl-now" style="left:${nowPercent}%"></div>` : ''}
+                  <div class="dm-tl-bar"
+                       style="left:${leftPct}%; width:${widthPct}%; background:${color}"
+                       onclick="editBooking('${b.id}')"
+                       title="${b.clientName || ''} · ${b.startTime} - ${b.endTime} · ${b.eventType || ''}">
+                    ${b.clientName || ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+    `;
+
+    if (window.lucide) lucide.createIcons();
+
+    document.getElementById('tl-date').onchange = (e) => {
+      State.filters.tlDate = e.target.value;
+      navigate('timeline');
+    };
+  };
+
+  window.__dmTLPrev = function () {
+    const d = State.filters.tlDate || todayISO();
+    const nd = new Date(d);
+    nd.setDate(nd.getDate() - 1);
+    State.filters.tlDate = nd.toISOString().slice(0, 10);
+    navigate('timeline');
+  };
+  window.__dmTLNext = function () {
+    const d = State.filters.tlDate || todayISO();
+    const nd = new Date(d);
+    nd.setDate(nd.getDate() + 1);
+    State.filters.tlDate = nd.toISOString().slice(0, 10);
+    navigate('timeline');
+  };
+  window.__dmTLToday = function () {
+    State.filters.tlDate = todayISO();
+    navigate('timeline');
+  };
+
+  /* ---------- register nav ---------- */
+  function registerNav() {
+    const ops = NAV_ITEMS.find(g => g.section === 'operations');
+    if (ops && !ops.items.find(i => i.id === 'timeline')) {
+      // Insert after calendar
+      const calIdx = ops.items.findIndex(i => i.id === 'calendar');
+      if (calIdx >= 0) ops.items.splice(calIdx + 1, 0, { id: 'timeline', icon: 'gantt-chart', label: 'timeline' });
+      else ops.items.push({ id: 'timeline', icon: 'gantt-chart', label: 'timeline' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function',
+    function () {
+      registerNav();
+      console.log('%c[Section 9] ✓ Timeline View ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
 
 
 
