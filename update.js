@@ -4865,6 +4865,622 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 15: Bulk Distribution (التوزيع الجماعي)
+   Version: 1.0.0
+   - Multi-select days from calendar
+   - OR pick bookings from dropdown
+   - Preview totals before running
+   - Auto-distribute all selected at once
+   - Show per-day results + shortages
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 15] Bulk Distribution loading…', 'color:#8b5cf6;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 15] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  Object.assign(I18N.ar, {
+    bulk_dist: 'التوزيع الجماعي',
+    bulk_pick_days: 'اختر الأيام',
+    bulk_pick_bookings: 'أو اختر حجوزات',
+    bulk_selected: 'المُختار',
+    bulk_no_selection: 'لم تختر شيء بعد',
+    bulk_clear: 'مسح الاختيار',
+    bulk_preview: 'معاينة',
+    bulk_run: 'توزيع الكل',
+    bulk_running: 'جاري التوزيع…',
+    bulk_done: 'تم التوزيع',
+    bulk_results: 'النتائج',
+    bulk_day: 'اليوم',
+    bulk_bookings_count: 'حجوزات',
+    bulk_needed: 'مطلوب',
+    bulk_assigned: 'تم تعيين',
+    bulk_missing: 'ناقص',
+    bulk_total_needed: 'إجمالي المطلوب',
+    bulk_total_assigned: 'إجمالي المعين',
+    bulk_total_missing: 'إجمالي الناقص',
+    bulk_select_hint: 'اضغط على أي يوم في التقويم لاختياره',
+    bulk_skip_days_with_shortage: 'تخطي الأيام التي بها نقص',
+    bulk_overwrite: 'استبدال التوزيعات الموجودة',
+    bulk_confirm_msg: 'سيتم التوزيع على كل الأيام المختارة. متابعة؟'
+  });
+  Object.assign(I18N.en, {
+    bulk_dist: 'Bulk Distribution',
+    bulk_pick_days: 'Pick days',
+    bulk_pick_bookings: 'Or pick bookings',
+    bulk_selected: 'Selected',
+    bulk_no_selection: 'Nothing selected yet',
+    bulk_clear: 'Clear selection',
+    bulk_preview: 'Preview',
+    bulk_run: 'Distribute All',
+    bulk_running: 'Distributing…',
+    bulk_done: 'Distribution complete',
+    bulk_results: 'Results',
+    bulk_day: 'Day',
+    bulk_bookings_count: 'Bookings',
+    bulk_needed: 'Needed',
+    bulk_assigned: 'Assigned',
+    bulk_missing: 'Missing',
+    bulk_total_needed: 'Total needed',
+    bulk_total_assigned: 'Total assigned',
+    bulk_total_missing: 'Total missing',
+    bulk_select_hint: 'Click a day in the calendar to select it',
+    bulk_skip_days_with_shortage: 'Skip days with shortages',
+    bulk_overwrite: 'Overwrite existing distributions',
+    bulk_confirm_msg: 'Distribution will run on all selected days. Continue?'
+  });
+
+  /* ---------- helpers ---------- */
+  function addDaysISO(dateIso, n) {
+    const d = new Date(dateIso);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function getBookingsForDate(date) {
+    return (State.data.bookings || []).filter(b =>
+      b.date === date && b.status !== 'cancelled'
+    );
+  }
+
+  function getHallsForDate(date) {
+    const bookings = getBookingsForDate(date);
+    const bookedHalls = [...new Set(bookings.map(b => b.hallId))];
+    if (bookedHalls.length) {
+      return State.data.halls.filter(h => bookedHalls.includes(h.id));
+    }
+    return State.data.halls.filter(h => h.status === 'active');
+  }
+
+  /* ---------- core: distribute for one date ---------- */
+  function distributeForDate(date, opts) {
+    opts = opts || {};
+    const { overwrite = true, skipShortage = false } = opts;
+
+    const halls = getHallsForDate(date);
+    const onLeave = new Set(
+      (State.data.leaves || [])
+        .filter(l => l.status === 'approved' && date >= l.fromDate && date <= l.toDate)
+        .map(l => l.employeeId)
+    );
+    const absent = new Set(
+      (State.data.attendance || [])
+        .filter(a => a.date === date && a.status === 'absent')
+        .map(a => a.employeeId)
+    );
+
+    // Optionally overwrite existing
+    if (overwrite) {
+      State.data.distributions = (State.data.distributions || []).filter(x => x.date !== date);
+    }
+
+    // Existing assignments for this day (if not overwriting)
+    const existingToday = new Set(
+      (State.data.distributions || [])
+        .filter(x => x.date === date)
+        .map(x => x.employeeId)
+        .filter(Boolean)
+    );
+
+    // Score function
+    function score(emp, role, hallId) {
+      const empDists = (State.data.distributions || []).filter(x => x.employeeId === emp.id);
+      const totalAssignments = empDists.length;
+
+      let consecutiveDays = 0;
+      for (let i = 1; i <= 7; i++) {
+        const d = addDaysISO(date, -i);
+        if (empDists.some(x => x.date === d && x.status === 'confirmed')) consecutiveDays++;
+        else break;
+      }
+
+      const last5 = [...empDists].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+      const sameHallCount = last5.filter(x => x.hallId === hallId).length;
+
+      const lastWork = [...empDists].sort((a, b) => b.date.localeCompare(a.date))[0];
+      const daysSince = lastWork
+        ? Math.round((new Date(date) - new Date(lastWork.date)) / 86400000)
+        : 999;
+
+      let s = 0;
+      s += totalAssignments * 10;
+      s += consecutiveDays * 20;
+      s += sameHallCount * 15;
+      s -= Math.min(daysSince, 30) * 2;
+
+      return s;
+    }
+
+    // Distribute per hall / per role
+    const usedToday = new Set(existingToday);
+    const assignments = [];
+    const result = {
+      date,
+      halls: [],
+      needed: 0,
+      assigned: 0,
+      missing: 0,
+      shortages: []
+    };
+
+    halls.forEach(hall => {
+      const hallResult = { hall, roles: [] };
+      hall.requirements.forEach(req => {
+        result.needed += req.count;
+
+        const pool = (State.data.employees || [])
+          .filter(e => e.status === 'active')
+          .filter(e => e.role === req.role || (e.roles || []).includes(req.role))
+          .filter(e => !onLeave.has(e.id) && !absent.has(e.id))
+          .filter(e => !usedToday.has(e.id))
+          .map(e => ({ emp: e, score: score(e, req.role, hall.id) }))
+          .sort((a, b) => a.score - b.score);
+
+        const assignedNow = [];
+        for (let i = 0; i < req.count; i++) {
+          if (pool[i]) {
+            const chosen = pool[i].emp;
+            usedToday.add(chosen.id);
+            assignedNow.push(chosen);
+            assignments.push({
+              id: uid('d'),
+              date, hallId: hall.id, employeeId: chosen.id, role: req.role,
+              status: 'confirmed',
+              createdAt: new Date().toISOString(),
+              createdBy: State.user ? State.user.username : 'bulk'
+            });
+            result.assigned++;
+          } else {
+            result.missing++;
+            result.shortages.push({ hall, role: req.role, missing: 1 });
+          }
+        }
+        hallResult.roles.push({ role: req.role, needed: req.count, assigned: assignedNow });
+      });
+      result.halls.push(hallResult);
+    });
+
+    // If skipShortage and there's a shortage, don't apply
+    if (skipShortage && result.missing > 0) {
+      return { ...result, applied: false, reason: 'shortage' };
+    }
+
+    // Apply
+    State.data.distributions = (State.data.distributions || []).concat(assignments);
+    result.applied = true;
+    return result;
+  }
+
+  /* ---------- bulk page state ---------- */
+  const Bulk = {
+    selectedDays: new Set(),
+    calendarYear: new Date().getFullYear(),
+    calendarMonth: new Date().getMonth(),
+    results: null,
+    lastRunSummary: null
+  };
+  window.__dmBulk = Bulk;
+
+  /* ---------- register page ---------- */
+  Pages.bulkdist = function (el) {
+    const y = Bulk.calendarYear;
+    const m = Bulk.calendarMonth;
+    const monthName = new Date(y, m, 1).toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', { month: 'long', year: 'numeric' });
+    const dayNames = State.lang === 'ar'
+      ? ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    // Build calendar cells
+    const firstDay = new Date(y, m, 1);
+    const startOffset = firstDay.getDay();
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const prevDays = new Date(y, m, 0).getDate();
+
+    const cells = [];
+    for (let i = startOffset - 1; i >= 0; i--) {
+      cells.push({ day: prevDays - i, muted: true, date: new Date(y, m - 1, prevDays - i) });
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      cells.push({ day: i, date: new Date(y, m, i) });
+    }
+    while (cells.length % 7 !== 0 || cells.length < 35) {
+      const last = cells[cells.length - 1];
+      const nd = new Date(last.date);
+      nd.setDate(nd.getDate() + 1);
+      cells.push({ day: nd.getDate(), muted: true, date: nd });
+      if (cells.length >= 42) break;
+    }
+
+    const todayStr = todayISO();
+    const selectedArr = [...Bulk.selectedDays].sort();
+
+    // Compute preview totals
+    let previewNeeded = 0;
+    let previewBookings = 0;
+    selectedArr.forEach(date => {
+      const halls = getHallsForDate(date);
+      halls.forEach(h => {
+        h.requirements.forEach(r => { previewNeeded += r.count; });
+      });
+      previewBookings += getBookingsForDate(date).length;
+    });
+
+    // Get upcoming bookings for dropdown
+    const upcomingBookings = [...(State.data.bookings || [])]
+      .filter(b => b.date >= todayStr && b.status !== 'cancelled')
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 60);
+
+    el.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;align-items:center">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <i data-lucide="calendar-range" style="width:18px;height:18px;color:var(--primary)"></i>
+          <span style="font-weight:700;font-size:.95rem">${t('bulk_dist')}</span>
+        </div>
+        <div style="margin-inline-start:auto;font-size:.75rem;color:var(--text-muted)">
+          ${t('bulk_select_hint')}
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:1rem">
+        <!-- CALENDAR -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-icon" onclick="__dmBulkPrev()">
+              <i data-lucide="${State.lang === 'ar' ? 'chevron-right' : 'chevron-left'}"></i>
+            </button>
+            <h3 style="margin:0;font-size:1rem;font-weight:700;flex:1;text-align:center;min-width:140px">${monthName}</h3>
+            <button class="btn btn-ghost btn-icon" onclick="__dmBulkNext()">
+              <i data-lucide="${State.lang === 'ar' ? 'chevron-left' : 'chevron-right'}"></i>
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmBulkToday()">${State.lang === 'ar' ? 'اليوم' : 'Today'}</button>
+          </div>
+
+          <div class="cal-head">${dayNames.map(d => `<div>${d}</div>`).join('')}</div>
+          <div class="cal-grid">
+            ${cells.map(c => {
+              const iso = c.date.toISOString().slice(0, 10);
+              const dayBk = getBookingsForDate(iso);
+              const isToday = iso === todayStr;
+              const isSelected = Bulk.selectedDays.has(iso);
+              const hasBookings = dayBk.length > 0;
+              return `<div class="cal-day ${c.muted ? 'empty' : ''} ${isToday ? 'today' : ''}"
+                        style="${isSelected ? 'outline:3px solid var(--primary);background:rgba(124,58,237,.12)' : ''} ${hasBookings && !c.muted ? 'cursor:pointer;border-color:var(--primary)' : ''}"
+                        ${!c.muted ? `onclick="__dmBulkToggle('${iso}')"` : ''}>
+                <div class="num">${c.day}</div>
+                ${dayBk.length ? `<span class="ev-count">${dayBk.length}</span><div class="events">${dayBk.slice(0, 4).map(() => '<div class="ev-dot"></div>').join('')}</div>` : ''}
+                ${isSelected ? `<div style="position:absolute;bottom:4px;inset-inline-end:4px;color:var(--primary)"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>` : ''}
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- DROPDOWN + SELECTION -->
+        <div class="card">
+          <h4 class="section-title" style="margin-top:0">
+            <i data-lucide="list-checks"></i> ${t('bulk_pick_bookings')}
+          </h4>
+
+          <div class="field" style="margin-bottom:1rem">
+            <label>${t('bookings')} — ${State.lang === 'ar' ? 'اضغط للاختيار' : 'click to select'}</label>
+            <select id="bulk-bookings-dd" style="width:100%;padding:.65rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:inherit">
+              <option value="">—</option>
+              ${upcomingBookings.map(b => {
+                const h = State.data.halls.find(x => x.id === b.hallId);
+                const hName = h ? (h.name[State.lang] || h.name.ar) : '-';
+                const alreadyPicked = Bulk.selectedDays.has(b.date);
+                return `<option value="${b.date}" ${alreadyPicked ? 'disabled' : ''}>
+                  ${fmtDate(b.date)} — ${hName} — ${b.clientName || '-'} ${alreadyPicked ? '(مختار)' : ''}
+                </option>`;
+              }).join('')}
+            </select>
+          </div>
+
+          <div class="field">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+              <label style="margin:0">${t('bulk_selected')} (${selectedArr.length})</label>
+              ${selectedArr.length ? `<button class="btn btn-ghost btn-sm" onclick="__dmBulkClear()" style="color:#ef4444"><i data-lucide="x" style="width:12px;height:12px"></i> ${t('bulk_clear')}</button>` : ''}
+            </div>
+            <div style="min-height:80px;max-height:180px;overflow-y:auto;padding:.5rem;background:var(--surface-2);border-radius:10px;display:flex;flex-wrap:wrap;gap:.35rem">
+              ${selectedArr.length ? selectedArr.map(d => {
+                const cnt = getBookingsForDate(d).length;
+                return `<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .6rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:.75rem">
+                  <b>${fmtDate(d)}</b>
+                  <span style="color:var(--text-muted)">· ${cnt}</span>
+                  <button onclick="event.stopPropagation();__dmBulkToggle('${d}')" style="background:none;border:none;color:#ef4444;cursor:pointer;padding:0;display:flex;align-items:center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+                  </button>
+                </span>`;
+              }).join('') : `<div style="width:100%;text-align:center;color:var(--text-muted);font-size:.8rem;padding:.5rem">${t('bulk_no_selection')}</div>`}
+            </div>
+          </div>
+
+          ${selectedArr.length ? `
+            <div style="margin-top:1rem;padding:.75rem;background:rgba(124,58,237,.08);border-radius:10px;font-size:.8rem">
+              <div style="display:flex;justify-content:space-between;margin-bottom:.35rem">
+                <span>${t('bulk_bookings_count')}:</span><b>${previewBookings}</b>
+              </div>
+              <div style="display:flex;justify-content:space-between">
+                <span>${t('bulk_total_needed')}:</span><b>${previewNeeded} ${State.lang === 'ar' ? 'موظف' : 'staff'}</b>
+              </div>
+            </div>
+          ` : ''}
+
+          <div style="margin-top:1rem">
+            <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer;margin-bottom:.5rem">
+              <input type="checkbox" id="bulk-overwrite" checked style="accent-color:var(--primary)">
+              ${t('bulk_overwrite')}
+            </label>
+            <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer">
+              <input type="checkbox" id="bulk-skip-shortage" style="accent-color:var(--primary)">
+              ${t('bulk_skip_days_with_shortage')}
+            </label>
+          </div>
+
+          <button class="btn btn-primary" id="bulk-run-btn" style="width:100%;margin-top:1rem" ${!selectedArr.length ? 'disabled' : ''}>
+            <i data-lucide="wand-2"></i> ${t('bulk_run')} (${selectedArr.length})
+          </button>
+        </div>
+      </div>
+
+      ${Bulk.lastRunSummary ? `
+        <div class="card" style="margin-bottom:1rem">
+          <h4 class="section-title" style="margin-top:0">
+            <i data-lucide="check-circle-2" style="color:#10b981"></i> ${t('bulk_done')}
+          </h4>
+          <div class="grid-3">
+            <div>
+              <div style="font-size:.72rem;color:var(--text-muted)">${t('bulk_total_needed')}</div>
+              <div style="font-size:1.4rem;font-weight:800;color:#7c3aed">${Bulk.lastRunSummary.totalNeeded}</div>
+            </div>
+            <div>
+              <div style="font-size:.72rem;color:var(--text-muted)">${t('bulk_total_assigned')}</div>
+              <div style="font-size:1.4rem;font-weight:800;color:#10b981">${Bulk.lastRunSummary.totalAssigned}</div>
+            </div>
+            <div>
+              <div style="font-size:.72rem;color:var(--text-muted)">${t('bulk_total_missing')}</div>
+              <div style="font-size:1.4rem;font-weight:800;color:${Bulk.lastRunSummary.totalMissing > 0 ? '#ef4444' : '#10b981'}">${Bulk.lastRunSummary.totalMissing}</div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
+      ${Bulk.results && Bulk.results.length ? `
+        <div class="card">
+          <h4 class="section-title" style="margin-top:0">
+            <i data-lucide="clipboard-list"></i> ${t('bulk_results')}
+          </h4>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>${t('bulk_day')}</th>
+                  <th>${t('bulk_bookings_count')}</th>
+                  <th>${t('bulk_needed')}</th>
+                  <th>${t('bulk_assigned')}</th>
+                  <th>${t('bulk_missing')}</th>
+                  <th>${t('status')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${Bulk.results.map(r => `
+                  <tr>
+                    <td><b>${fmtDate(r.date)}</b></td>
+                    <td>${getBookingsForDate(r.date).length}</td>
+                    <td>${r.needed}</td>
+                    <td style="color:#10b981;font-weight:700">${r.assigned}</td>
+                    <td style="color:${r.missing > 0 ? '#ef4444' : 'var(--text-muted)'};font-weight:700">${r.missing}</td>
+                    <td>
+                      ${r.applied
+                        ? `<span class="badge-pill badge-green">${State.lang === 'ar' ? 'تم' : 'Applied'}</span>`
+                        : `<span class="badge-pill badge-yellow">${State.lang === 'ar' ? 'تم تخطيه' : 'Skipped'}</span>`}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="navigate('distribution')">
+              <i data-lucide="arrow-left"></i> ${State.lang === 'ar' ? 'فتح التوزيع اليومي' : 'Open Distribution'}
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="__dmBulkClearResults()">
+              <i data-lucide="x"></i> ${State.lang === 'ar' ? 'مسح النتائج' : 'Clear results'}
+            </button>
+          </div>
+        </div>
+      ` : ''}
+    `;
+
+    if (window.lucide) lucide.createIcons();
+
+    /* dropdown onchange */
+    const dd = document.getElementById('bulk-bookings-dd');
+    if (dd) {
+      dd.onchange = (e) => {
+        const date = e.target.value;
+        if (date && !Bulk.selectedDays.has(date)) {
+          Bulk.selectedDays.add(date);
+          navigate('bulkdist');
+        }
+      };
+    }
+
+    /* run button */
+    const runBtn = document.getElementById('bulk-run-btn');
+    if (runBtn && selectedArr.length) {
+      runBtn.onclick = () => {
+        if (typeof confirmDialog === 'function') {
+          confirmDialog(t('bulk_confirm_msg'), () => __dmBulkRun());
+        } else {
+          __dmBulkRun();
+        }
+      };
+    }
+  };
+
+  /* ---------- event handlers ---------- */
+  window.__dmBulkPrev = function () {
+    let m = Bulk.calendarMonth - 1;
+    let y = Bulk.calendarYear;
+    if (m < 0) { m = 11; y--; }
+    Bulk.calendarMonth = m; Bulk.calendarYear = y;
+    navigate('bulkdist');
+  };
+  window.__dmBulkNext = function () {
+    let m = Bulk.calendarMonth + 1;
+    let y = Bulk.calendarYear;
+    if (m > 11) { m = 0; y++; }
+    Bulk.calendarMonth = m; Bulk.calendarYear = y;
+    navigate('bulkdist');
+  };
+  window.__dmBulkToday = function () {
+    const n = new Date();
+    Bulk.calendarMonth = n.getMonth();
+    Bulk.calendarYear = n.getFullYear();
+    navigate('bulkdist');
+  };
+  window.__dmBulkToggle = function (date) {
+    if (Bulk.selectedDays.has(date)) {
+      Bulk.selectedDays.delete(date);
+    } else {
+      Bulk.selectedDays.add(date);
+    }
+    navigate('bulkdist');
+  };
+  window.__dmBulkClear = function () {
+    Bulk.selectedDays.clear();
+    Bulk.results = null;
+    Bulk.lastRunSummary = null;
+    navigate('bulkdist');
+  };
+  window.__dmBulkClearResults = function () {
+    Bulk.results = null;
+    Bulk.lastRunSummary = null;
+    navigate('bulkdist');
+  };
+
+  window.__dmBulkRun = function () {
+    const days = [...Bulk.selectedDays].sort();
+    if (!days.length) {
+      if (typeof showToast === 'function') showToast(t('bulk_no_selection'), 'warn');
+      return;
+    }
+
+    const overwrite = document.getElementById('bulk-overwrite')?.checked ?? true;
+    const skipShortage = document.getElementById('bulk-skip-shortage')?.checked ?? false;
+
+    if (typeof showToast === 'function') showToast(t('bulk_running'), 'info');
+
+    const results = [];
+    let totalNeeded = 0;
+    let totalAssigned = 0;
+    let totalMissing = 0;
+
+    days.forEach(date => {
+      try {
+        const r = distributeForDate(date, { overwrite, skipShortage });
+        results.push(r);
+        totalNeeded += r.needed;
+        totalAssigned += r.assigned;
+        totalMissing += r.missing;
+      } catch (err) {
+        console.error('[Section 15] Failed for', date, err);
+        results.push({
+          date,
+          needed: 0, assigned: 0, missing: 0,
+          halls: [], shortages: [],
+          applied: false,
+          reason: 'error'
+        });
+      }
+    });
+
+    Bulk.results = results;
+    Bulk.lastRunSummary = { totalNeeded, totalAssigned, totalMissing };
+
+    // Log + save once
+    try {
+      if (typeof logActivity === 'function') {
+        logActivity('bulk-distribute', 'distribution', null, null, {
+          days: days.length,
+          totalNeeded, totalAssigned, totalMissing
+        });
+      }
+    } catch (e) {}
+
+    // Persist via saveData (this also triggers Firebase sync if live)
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+
+    if (typeof showToast === 'function') {
+      showToast(
+        `${t('bulk_done')} — ${totalAssigned}/${totalNeeded}`,
+        totalMissing > 0 ? 'warn' : 'success'
+      );
+    }
+
+    // Clear selection for next round (keep results)
+    Bulk.selectedDays.clear();
+    navigate('bulkdist');
+  };
+
+  /* ---------- register nav ---------- */
+  function registerNav() {
+    const ops = NAV_ITEMS.find(g => g.section === 'operations');
+    if (ops && !ops.items.find(i => i.id === 'bulkdist')) {
+      const distIdx = ops.items.findIndex(i => i.id === 'distribution');
+      if (distIdx >= 0) {
+        ops.items.splice(distIdx + 1, 0, { id: 'bulkdist', icon: 'calendar-range', label: 'bulk_dist' });
+      } else {
+        ops.items.push({ id: 'bulkdist', icon: 'calendar-range', label: 'bulk_dist' });
+      }
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    () => typeof State !== 'undefined'
+        && typeof Pages !== 'undefined'
+        && typeof navigate === 'function'
+        && typeof saveData === 'function',
+    function () {
+      registerNav();
+      console.log('%c[Section 15] ✓ Bulk Distribution ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+})();
 
 
 
