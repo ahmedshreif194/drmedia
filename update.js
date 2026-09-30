@@ -3948,6 +3948,565 @@
   );
 
 })();
+/* =========================================================
+   SECTION 13: AI Chat Assistant (FIXED)
+   Version: 1.0.1
+   - Rule-based smart assistant (no API key needed)
+   - Understands Arabic + English commands
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 13] AI Chat loading…', 'color:#a855f7;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 13] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  Object.assign(I18N.ar, {
+    ai_chat: 'المساعد الذكي',
+    ai_ask: 'اسأل أي حاجة…',
+    ai_hello: 'أهلاً! 👋 اسألني عن حجوزات، موظفين، توزيعات، أو اطلب مني أوامر.',
+    ai_clear: 'مسح المحادثة',
+    ai_you: 'أنت',
+    ai_me: 'المساعد',
+    ai_quick: 'أسئلة سريعة',
+    ai_not_understood: 'مش فاهم، جرب تسأل بشكل تاني.'
+  });
+  Object.assign(I18N.en, {
+    ai_chat: 'AI Assistant',
+    ai_ask: 'Ask me anything…',
+    ai_hello: "Hi! 👋 Ask me about bookings, employees, distributions, or give me commands.",
+    ai_clear: 'Clear chat',
+    ai_you: 'You',
+    ai_me: 'Assistant',
+    ai_quick: 'Quick asks',
+    ai_not_understood: "I didn't understand, try asking differently."
+  });
+
+  const history = [];
+  window.__dmChatHistory = history;
+
+  /* ---------- styles ---------- */
+  function injectStyles() {
+    if (document.getElementById('dm-chat-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'dm-chat-styles';
+    s.textContent = `
+      #dm-chat-fab{
+        position:fixed;bottom:1.25rem;inset-inline-end:1.25rem;z-index:9000;
+        width:56px;height:56px;border-radius:50%;
+        background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;
+        border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;
+        box-shadow:0 12px 32px -8px rgba(168,85,247,.5);
+        transition:all .25s;
+      }
+      #dm-chat-fab:hover{transform:scale(1.08);box-shadow:0 16px 40px -8px rgba(168,85,247,.7)}
+      #dm-chat-fab::after{
+        content:'';position:absolute;inset:-2px;border-radius:50%;
+        background:linear-gradient(135deg,#a855f7,#7c3aed);
+        z-index:-1;animation:dmChatPulse 2.5s infinite;
+      }
+      @keyframes dmChatPulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:0;transform:scale(1.4)}}
+
+      #dm-chat-panel{
+        position:fixed;bottom:5.75rem;inset-inline-end:1.25rem;z-index:9000;
+        width:min(420px,calc(100vw - 2rem));height:min(600px,75vh);
+        background:var(--surface);border:1px solid var(--border);border-radius:20px;
+        box-shadow:0 30px 60px -20px rgba(0,0,0,.4);
+        display:flex;flex-direction:column;overflow:hidden;
+        transform-origin:bottom right;animation:dmChatIn .25s cubic-bezier(.2,.9,.3,1.3);
+      }
+      [dir="rtl"] #dm-chat-panel{transform-origin:bottom left}
+      @keyframes dmChatIn{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:none}}
+
+      .dm-chat-head{
+        padding:1rem 1.25rem;border-bottom:1px solid var(--border);
+        display:flex;align-items:center;gap:.75rem;
+        background:linear-gradient(135deg,rgba(168,85,247,.08),rgba(124,58,237,.08));
+      }
+      .dm-chat-avatar{
+        width:36px;height:36px;border-radius:50%;
+        background:linear-gradient(135deg,#a855f7,#7c3aed);
+        display:flex;align-items:center;justify-content:center;color:#fff;
+        font-weight:700;font-size:.9rem;
+      }
+      .dm-chat-title{flex:1;font-weight:700;font-size:.9rem;color:var(--text)}
+      .dm-chat-sub{font-size:.7rem;color:var(--text-muted);font-weight:400}
+      .dm-chat-close{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:.4rem;border-radius:8px;display:flex}
+      .dm-chat-close:hover{background:var(--surface-2);color:var(--text)}
+
+      .dm-chat-body{
+        flex:1;overflow-y:auto;padding:1rem;
+        display:flex;flex-direction:column;gap:.75rem;
+        background:var(--bg);
+      }
+      .dm-chat-body::-webkit-scrollbar{width:6px}
+      .dm-chat-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+
+      .dm-chat-msg{max-width:85%;padding:.75rem 1rem;border-radius:14px;font-size:.85rem;line-height:1.5;word-wrap:break-word;white-space:pre-wrap}
+      .dm-chat-msg.user{align-self:flex-end;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff}
+      [dir="rtl"] .dm-chat-msg.user{border-bottom-left-radius:4px}
+      [dir="ltr"] .dm-chat-msg.user{border-bottom-right-radius:4px}
+      .dm-chat-msg.bot{align-self:flex-start;background:var(--surface);color:var(--text);border:1px solid var(--border)}
+      [dir="rtl"] .dm-chat-msg.bot{border-bottom-right-radius:4px}
+      [dir="ltr"] .dm-chat-msg.bot{border-bottom-left-radius:4px}
+
+      .dm-chat-actions{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem}
+      .dm-chat-action{
+        padding:.35rem .7rem;border-radius:8px;font-size:.72rem;
+        background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+        cursor:pointer;transition:all .15s;
+      }
+      .dm-chat-action:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+      .dm-chat-quick{padding:.5rem 1rem;border-top:1px solid var(--border);display:flex;gap:.35rem;overflow-x:auto;flex-shrink:0;background:var(--surface)}
+      .dm-chat-quick::-webkit-scrollbar{display:none}
+      .dm-chat-qchip{
+        padding:.35rem .7rem;border-radius:999px;font-size:.7rem;
+        background:var(--surface-2);border:1px solid var(--border);color:var(--text-muted);
+        cursor:pointer;white-space:nowrap;transition:all .15s;
+      }
+      .dm-chat-qchip:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+      .dm-chat-foot{padding:.65rem .75rem;border-top:1px solid var(--border);display:flex;gap:.5rem;background:var(--surface);flex-shrink:0}
+      .dm-chat-input{
+        flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+        padding:.6rem .85rem;font-size:.85rem;color:var(--text);font-family:inherit;outline:none;
+      }
+      .dm-chat-input:focus{border-color:var(--primary)}
+      .dm-chat-send{
+        width:38px;height:38px;border-radius:10px;background:var(--primary);color:#fff;
+        border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;
+        transition:all .15s;flex-shrink:0;
+      }
+      .dm-chat-send:hover{background:var(--primary-dark)}
+      .dm-chat-send svg{width:16px;height:16px}
+
+      .dm-chat-typing{align-self:flex-start;padding:.6rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;gap:.35rem;align-items:center}
+      .dm-chat-typing span{width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:dmChatBounce 1.4s infinite}
+      .dm-chat-typing span:nth-child(2){animation-delay:.15s}
+      .dm-chat-typing span:nth-child(3){animation-delay:.3s}
+      @keyframes dmChatBounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+
+      @media (max-width:640px){
+        #dm-chat-fab{bottom:1rem;inset-inline-end:1rem;width:52px;height:52px}
+        #dm-chat-panel{bottom:4.5rem;inset-inline-end:.5rem;inset-inline-start:.5rem;width:auto;height:calc(100vh - 6rem);max-height:none}
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  /* ---------- helpers ---------- */
+  function norm(text) {
+    return String(text || '').toLowerCase().trim()
+      .replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي');
+  }
+
+  function findEmployeeByName(text) {
+    const n = norm(text);
+    return State.data.employees.find(e => n.includes(norm(e.name)));
+  }
+
+  function findHallByName(text) {
+    const n = norm(text);
+    return State.data.halls.find(h =>
+      n.includes(norm(h.name.ar)) ||
+      n.includes(norm(h.name.en)) ||
+      n.includes(norm(h.code))
+    );
+  }
+
+  /* ---------- answer builders ---------- */
+  function answerBookingsToday() {
+    const today = todayISO();
+    const bookings = State.data.bookings.filter(b => b.date === today && b.status !== 'cancelled');
+    if (!bookings.length) return { text: `📅 لا يوجد حجوزات اليوم (${fmtDate(today)})`, actions: [] };
+    const lines = bookings.map(b => {
+      const h = State.data.halls.find(x => x.id === b.hallId);
+      return `• ${b.clientName} — ${h ? (h.name.ar || h.name.en) : '-'} (${b.startTime || ''}-${b.endTime || ''})`;
+    });
+    return {
+      text: `📅 حجوزات اليوم (${fmtDate(today)}) — ${bookings.length}\n${lines.join('\n')}`,
+      actions: [{ label: 'فتح الحجوزات', fn: () => navigate('bookings') }]
+    };
+  }
+
+  function answerBookingsDate(date) {
+    const bookings = State.data.bookings.filter(b => b.date === date && b.status !== 'cancelled');
+    if (!bookings.length) return { text: `📅 لا يوجد حجوزات في ${fmtDate(date)}`, actions: [] };
+    const lines = bookings.map(b => {
+      const h = State.data.halls.find(x => x.id === b.hallId);
+      return `• ${b.clientName} — ${h ? (h.name.ar || h.name.en) : '-'}`;
+    });
+    return {
+      text: `📅 حجوزات ${fmtDate(date)} — ${bookings.length}\n${lines.join('\n')}`,
+      actions: [{ label: 'التوزيع اليومي', fn: () => { State.filters.distDate = date; navigate('distribution'); } }]
+    };
+  }
+
+  function answerEmployeesCount() {
+    const total = State.data.employees.length;
+    const active = State.data.employees.filter(e => e.status === 'active').length;
+    const byRole = {};
+    State.data.employees.forEach(e => { byRole[e.role] = (byRole[e.role] || 0) + 1; });
+    const lines = Object.entries(byRole).map(([r, c]) => `• ${r}: ${c}`);
+    return {
+      text: `👥 الموظفون\nالإجمالي: ${total} · النشط: ${active}\n${lines.join('\n')}`,
+      actions: [{ label: 'فتح الموظفين', fn: () => navigate('employees') }]
+    };
+  }
+
+  function answerEmployeeInfo(emp) {
+    const dists = State.data.distributions.filter(d => d.employeeId === emp.id && d.status === 'confirmed');
+    const workDays = dists.length;
+    const adv = State.data.advances.filter(a => a.employeeId === emp.id).reduce((s, x) => s + (x.amount || 0), 0);
+    const gross = workDays * (emp.dayRate || 0);
+    return {
+      text: `👤 ${emp.name}\nالوظيفة: ${emp.role}\nكود: ${emp.code || '-'}\nأيام العمل: ${workDays}\nالإجمالي: EGP ${gross.toLocaleString()}\nالسلف: EGP ${adv.toLocaleString()}`,
+      actions: [{ label: 'عرض الملف', fn: () => viewEmployee(emp.id) }]
+    };
+  }
+
+  function answerLeastWorked() {
+    const employees = State.data.employees.filter(e => e.status === 'active');
+    const sorted = employees.map(e => ({
+      e,
+      count: State.data.distributions.filter(d => d.employeeId === e.id && d.status === 'confirmed').length
+    })).sort((a, b) => a.count - b.count);
+    const top5 = sorted.slice(0, 5).map((x, i) => `${i + 1}. ${x.e.name} — ${x.count} ${State.lang === 'ar' ? 'توزيع' : 'assignments'}`);
+    return {
+      text: `📉 الأقل عملًا\n${top5.join('\n')}`,
+      actions: [{ label: 'التحليل الذكي', fn: () => navigate('ai') }]
+    };
+  }
+
+  function answerMostWorked() {
+    const employees = State.data.employees.filter(e => e.status === 'active');
+    const sorted = employees.map(e => ({
+      e,
+      count: State.data.distributions.filter(d => d.employeeId === e.id && d.status === 'confirmed').length
+    })).sort((a, b) => b.count - a.count);
+    const top5 = sorted.slice(0, 5).map((x, i) => `${i + 1}. ${x.e.name} — ${x.count} ${State.lang === 'ar' ? 'توزيع' : 'assignments'}`);
+    return {
+      text: `📈 الأكثر عملًا\n${top5.join('\n')}`,
+      actions: [{ label: 'التحليل الذكي', fn: () => navigate('ai') }]
+    };
+  }
+
+  function answerRevenue() {
+    const total = State.data.bookings.filter(b => b.status !== 'cancelled').reduce((s, b) => s + (b.cost || 0), 0);
+    const month = todayISO().slice(0, 7);
+    const monthRev = State.data.bookings.filter(b => b.date.startsWith(month) && b.status !== 'cancelled').reduce((s, b) => s + (b.cost || 0), 0);
+    return {
+      text: `💰 الإيرادات\nهذا الشهر: EGP ${monthRev.toLocaleString()}\nالإجمالي: EGP ${total.toLocaleString()}`,
+      actions: [{ label: 'التحليل المالي', fn: () => navigate('pl') }]
+    };
+  }
+
+  function answerHallBookings(hall) {
+    const bookings = State.data.bookings.filter(b => b.hallId === hall.id && b.status !== 'cancelled');
+    return {
+      text: `🏛 ${hall.name.ar || hall.name.en}\nعدد الحجوزات: ${bookings.length}\nالاحتياجات: ${hall.requirements.map(r => r.role + ' x' + r.count).join(', ')}`,
+      actions: [{ label: 'عرض القاعة', fn: () => editHall(hall.id) }]
+    };
+  }
+
+  function answerShortage() {
+    const today = todayISO();
+    if (typeof window.__dmAIAnalyze === 'function') {
+      const analysis = window.__dmAIAnalyze(today);
+      if (!analysis.shortages.length) {
+        return { text: `✅ لا يوجد نقص في موظفي اليوم`, actions: [{ label: 'التوزيع الذكي', fn: () => navigate('ai') }] };
+      }
+      const lines = analysis.shortages.map(s => `⚠️ ${s.hall.name.ar || s.hall.name.en} — ${s.role}: ناقص ${s.needed - s.available}`);
+      return {
+        text: `⚠️ نقص في ${analysis.shortages.length} دور\n${lines.join('\n')}`,
+        actions: [{ label: 'التحليل الكامل', fn: () => navigate('ai') }]
+      };
+    }
+    return { text: '❌ محرك التحليل غير متاح', actions: [] };
+  }
+
+  function answerHelp() {
+    return {
+      text: `${t('ai_hello')}\n\n${State.lang === 'ar'
+        ? 'أمثلة:\n• حجوزات اليوم\n• كام موظف\n• مين أقل موظف عمل\n• إيرادات الشهر\n• نقص اليوم\n• اعرض قاعة المغلقة\n• ابحث عن زكاوة'
+        : 'Examples:\n• Bookings today\n• Employee count\n• Least worked\n• Revenue this month\n• Shortages today\n• Show Closed Hall\n• Find Zakawa'}`,
+      actions: []
+    };
+  }
+
+  /* ---------- main dispatcher ---------- */
+  function respond(text) {
+    const n = norm(text);
+    if (!n) return { text: '❓', actions: [] };
+
+    // Help
+    if (/^(مرحبا|سلام|اهلا|هاي|help|مساعدة|hi|hello)/.test(n)) return answerHelp();
+
+    // Today's bookings
+    if (/حجوزات|bookings/.test(n) && /اليوم|today/.test(n)) return answerBookingsToday();
+
+    // Tomorrow
+    if (/حجوزات|bookings/.test(n) && /بكرة|غدا|بكره|tomorrow/.test(n)) {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return answerBookingsDate(d.toISOString().slice(0, 10));
+    }
+
+    // Revenue
+    if (/ايراد|ربح|revenue|profit|income/.test(n)) return answerRevenue();
+
+    // Shortage
+    if (/نقص|shortage|ينقص|مش كفاية/.test(n)) return answerShortage();
+
+    // Least worked
+    if (/اقل|least/.test(n) && /موظف|employee/.test(n)) return answerLeastWorked();
+
+    // Most worked
+    if (/اكتر|اكثر|most/.test(n) && /موظف|employee/.test(n)) return answerMostWorked();
+
+    // Employee count
+    if (/كام|كم|عدد|count|how many/.test(n) && /موظف|employee/.test(n)) return answerEmployeesCount();
+
+    // Employee by name
+    const emp = findEmployeeByName(text);
+    if (emp && !/كام|كم/.test(n)) return answerEmployeeInfo(emp);
+
+    // Hall by name
+    const hall = findHallByName(text);
+    if (hall) return answerHallBookings(hall);
+
+    // Navigation commands
+    if (/افتح|روح|open|go to|navigate|اعرض/.test(n)) {
+      const navMap = {
+        'حجوزات': 'bookings', 'bookings': 'bookings',
+        'موظفين': 'employees', 'employees': 'employees',
+        'قاعات': 'halls', 'halls': 'halls',
+        'توزيع': 'distribution', 'distribution': 'distribution',
+        'رواتب': 'payroll', 'payroll': 'payroll',
+        'تقارير': 'reports', 'reports': 'reports',
+        'كالندر': 'calendar', 'تقويم': 'calendar', 'calendar': 'calendar',
+        'اجازات': 'leaves', 'leaves': 'leaves',
+        'معدات': 'equipment', 'equipment': 'equipment',
+        'عملاء': 'clients', 'clients': 'clients',
+        'اعدادات': 'settings', 'settings': 'settings',
+        'احصائيات': 'pl', 'financial': 'pl',
+        'ذكي': 'ai', 'ai': 'ai',
+        'timeline': 'timeline', 'زمني': 'timeline'
+      };
+      for (const key of Object.keys(navMap)) {
+        if (n.includes(norm(key))) {
+          const page = navMap[key];
+          return { text: `✅ جاري فتح ${key}…`, actions: [{ label: `فتح ${key}`, fn: () => navigate(page) }] };
+        }
+      }
+    }
+
+    // Add commands
+    if (/ضيف|اضف|add|new|جديد/.test(n)) {
+      if (/حجز|booking/.test(n)) return { text: '📅 اضغط الزر لفتح نموذج الحجز الجديد', actions: [{ label: '➕ حجز جديد', fn: () => editBooking() }] };
+      if (/موظف|employee/.test(n)) return { text: '👤 اضغط الزر لفتح نموذج الموظف الجديد', actions: [{ label: '➕ موظف جديد', fn: () => editEmployee() }] };
+      if (/معدة|معدات|equipment/.test(n)) return { text: '🎥 اضغط الزر لإضافة معدة', actions: [{ label: '➕ معدة جديدة', fn: () => editEquipment() }] };
+      if (/عميل|client/.test(n)) return { text: '👥 اضغط الزر لإضافة عميل', actions: [{ label: '➕ عميل جديد', fn: () => editClient() }] };
+    }
+
+    // Distribution
+    if (/توزيع|distribution|وزع/.test(n)) {
+      if (/auto|تلقائي/.test(n)) {
+        return { text: '🤖 جاري التوزيع التلقائي…', actions: [{ label: '⚡ تشغيل', fn: () => { navigate('distribution'); setTimeout(autoDistribute, 400); } }] };
+      }
+      return { text: '📋 التوزيع اليومي', actions: [{ label: 'فتح', fn: () => navigate('distribution') }] };
+    }
+
+    // Sync
+    if (/sync|مزامنة|زامن/.test(n)) {
+      return { text: '🔄 المزامنة اليدوية', actions: [{ label: '🔄 Sync Now', fn: () => window.__dmSyncNow && window.__dmSyncNow() }] };
+    }
+
+    // Status
+    if (/حالة|status/.test(n)) {
+      return { text: '📊 حالة المزامنة', actions: [{ label: '📊 عرض الحالة', fn: () => window.__dmSyncStatus && window.__dmSyncStatus() }] };
+    }
+
+    return { text: `🤔 ${t('ai_not_understood')}`, actions: [{ label: 'مساعدة', fn: () => { pushBot(respond('help')); } }] };
+  }
+
+  /* ---------- UI ---------- */
+  let panelOpen = false;
+
+  function renderMessage(msg) {
+    const body = document.getElementById('dm-chat-body');
+    if (!body) return;
+
+    if (msg.role === 'user') {
+      const el = document.createElement('div');
+      el.className = 'dm-chat-msg user';
+      el.textContent = msg.text;
+      body.appendChild(el);
+    } else if (msg.role === 'bot') {
+      const el = document.createElement('div');
+      el.className = 'dm-chat-msg bot';
+      el.textContent = msg.text;
+      if (msg.actions && msg.actions.length) {
+        const acts = document.createElement('div');
+        acts.className = 'dm-chat-actions';
+        msg.actions.forEach(a => {
+          const btn = document.createElement('button');
+          btn.className = 'dm-chat-action';
+          btn.textContent = a.label;
+          btn.onclick = () => { try { a.fn(); } catch (e) { console.error(e); } };
+          acts.appendChild(btn);
+        });
+        el.appendChild(acts);
+      }
+      body.appendChild(el);
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function pushBot(response) {
+    const msg = { role: 'bot', text: response.text, actions: response.actions || [] };
+    history.push(msg);
+    renderMessage(msg);
+  }
+
+  function sendUserMessage(text) {
+    if (!text.trim()) return;
+    const userMsg = { role: 'user', text };
+    history.push(userMsg);
+    renderMessage(userMsg);
+
+    const body = document.getElementById('dm-chat-body');
+    const typing = document.createElement('div');
+    typing.className = 'dm-chat-typing';
+    typing.id = 'dm-chat-typing';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    body.appendChild(typing);
+    body.scrollTop = body.scrollHeight;
+
+    setTimeout(() => {
+      const tp = document.getElementById('dm-chat-typing');
+      if (tp) tp.remove();
+      const response = respond(text);
+      pushBot(response);
+    }, 400);
+  }
+
+  function renderPanel() {
+    const panel = document.createElement('div');
+    panel.id = 'dm-chat-panel';
+    const L = I18N[State.lang] || I18N.ar;
+    panel.innerHTML = `
+      <div class="dm-chat-head">
+        <div class="dm-chat-avatar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        </div>
+        <div style="flex:1">
+          <div class="dm-chat-title">${L.ai_chat}</div>
+          <div class="dm-chat-sub">${State.lang === 'ar' ? 'اسأل أي حاجة' : 'Ask me anything'}</div>
+        </div>
+        <button class="dm-chat-close" id="dm-chat-close" title="${L.ai_clear}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="dm-chat-body" id="dm-chat-body"></div>
+
+      <div class="dm-chat-quick">
+        <button class="dm-chat-qchip" data-q="حجوزات اليوم">📅 ${State.lang === 'ar' ? 'حجوزات اليوم' : 'Today'}</button>
+        <button class="dm-chat-qchip" data-q="كام موظف">👥 ${State.lang === 'ar' ? 'الموظفون' : 'Employees'}</button>
+        <button class="dm-chat-qchip" data-q="مين اقل موظف عمل">📉 ${State.lang === 'ar' ? 'أقل عملًا' : 'Least worked'}</button>
+        <button class="dm-chat-qchip" data-q="ايرادات الشهر">💰 ${State.lang === 'ar' ? 'الإيرادات' : 'Revenue'}</button>
+        <button class="dm-chat-qchip" data-q="نقص اليوم">⚠️ ${State.lang === 'ar' ? 'نقص' : 'Shortages'}</button>
+      </div>
+
+      <div class="dm-chat-foot">
+        <input type="text" class="dm-chat-input" id="dm-chat-input" placeholder="${L.ai_ask}" autocomplete="off">
+        <button class="dm-chat-send" id="dm-chat-send">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+        </button>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    pushBot({ text: L.ai_hello, actions: [] });
+
+    panel.querySelector('#dm-chat-close').onclick = () => togglePanel(false);
+
+    const input = panel.querySelector('#dm-chat-input');
+    const send = () => {
+      const v = input.value;
+      input.value = '';
+      sendUserMessage(v);
+    };
+    panel.querySelector('#dm-chat-send').onclick = send;
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+
+    panel.querySelectorAll('.dm-chat-qchip').forEach(chip => {
+      chip.onclick = () => sendUserMessage(chip.dataset.q);
+    });
+
+    setTimeout(() => input.focus(), 200);
+  }
+
+  function togglePanel(force) {
+    const existing = document.getElementById('dm-chat-panel');
+    const open = force !== undefined ? force : !panelOpen;
+
+    if (open && !existing) {
+      panelOpen = true;
+      renderPanel();
+    } else if (!open && existing) {
+      panelOpen = false;
+      existing.remove();
+    }
+  }
+
+  function injectFab() {
+    if (document.getElementById('dm-chat-fab')) return;
+    const fab = document.createElement('button');
+    fab.id = 'dm-chat-fab';
+    fab.title = (I18N[State.lang] || I18N.ar).ai_chat;
+    fab.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M12 8V4H8"/>
+        <rect width="16" height="12" x="4" y="8" rx="2"/>
+        <path d="M2 14h2"/><path d="M20 14h2"/>
+        <path d="M15 13v2"/><path d="M9 13v2"/>
+      </svg>`;
+    fab.onclick = () => togglePanel();
+    document.body.appendChild(fab);
+  }
+
+  window.__dmAsk = function (text) {
+    togglePanel(true);
+    setTimeout(() => sendUserMessage(text), 100);
+  };
+  window.__dmChatOpen = () => togglePanel(true);
+  window.__dmChatClose = () => togglePanel(false);
+
+  waitFor(
+    () => typeof State !== 'undefined' && typeof navigate === 'function',
+    function () {
+      injectStyles();
+      injectFab();
+      console.log('%c[Section 13] ✓ AI Chat ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 13] Try: __dmAsk("حجوزات اليوم")', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
 
 
 
