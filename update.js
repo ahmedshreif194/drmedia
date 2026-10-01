@@ -9670,6 +9670,994 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 23: SaaS Multi-Tenant + Auth + Subscription
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Multi-tenancy (isolated data per company)
+   - Email/Password Auth via Firebase
+   - Registration & Onboarding
+   - Subscription plans & trial
+   - Super Admin panel
+   - Payment integration hooks (Paymob-ready)
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 23] SaaS layer loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 23] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* =========================================================
+     1. PLANS CONFIG
+     ========================================================= */
+  var PLANS = {
+    trial: {
+      id: 'trial', name: 'تجربة', nameEn: 'Trial', price: 0, durationDays: 14,
+      limits: { employees: 10, bookings: 100, halls: 1, users: 3 }
+    },
+    starter: {
+      id: 'starter', name: 'Starter', nameEn: 'Starter', price: 500, durationDays: 30,
+      limits: { employees: 5, bookings: 100, halls: 1, users: 2 }
+    },
+    pro: {
+      id: 'pro', name: 'Professional', nameEn: 'Professional', price: 1200, durationDays: 30,
+      limits: { employees: 20, bookings: 500, halls: 3, users: 10 }
+    },
+    business: {
+      id: 'business', name: 'Business', nameEn: 'Business', price: 2500, durationDays: 30,
+      limits: { employees: 50, bookings: 99999, halls: 99, users: 50 }
+    },
+    enterprise: {
+      id: 'enterprise', name: 'Enterprise', nameEn: 'Enterprise', price: -1, durationDays: 30,
+      limits: { employees: 999, bookings: 999999, halls: 999, users: 999 }
+    }
+  };
+  window.__dmPlans = PLANS;
+
+  /* =========================================================
+     2. STATE
+     ========================================================= */
+  var SaaS = {
+    user: null,          // Firebase user
+    profile: null,       // Firestore /users/{uid}
+    company: null,       // Firestore /companies/{companyId}
+    subscription: null,  // Firestore /subscriptions/{companyId}
+    isSuperAdmin: false,
+    ready: false,
+    authListener: null,
+    companyUnsub: null,
+    subUnsub: null
+  };
+  window.__dmSaaS = SaaS;
+
+  function getFb() { return window.DrMediaFB || null; }
+  function getDb() { var fb = getFb(); return fb ? fb.db : null; }
+  function getAuth() { var fb = getFb(); return fb ? fb.auth : null; }
+  function getFsMod() { var fb = getFb(); return fb ? fb.modules.fsMod : null; }
+  function getAuthMod() { var fb = getFb(); return fb ? fb.modules.authMod : null; }
+
+  /* =========================================================
+     3. i18n
+     ========================================================= */
+  I18N.ar.saas_register = 'تسجيل جديد';
+  I18N.ar.saas_login = 'دخول';
+  I18N.ar.saas_email = 'البريد الإلكتروني';
+  I18N.ar.saas_password = 'كلمة المرور';
+  I18N.ar.saas_company_name = 'اسم الشركة';
+  I18N.ar.saas_your_name = 'اسمك';
+  I18N.ar.saas_phone = 'رقم الهاتف';
+  I18N.ar.saas_create_account = 'إنشاء الحساب';
+  I18N.ar.saas_have_account = 'عندك حساب بالفعل؟';
+  I18N.ar.saas_no_account = 'معندكش حساب؟';
+  I18N.ar.saas_forgot = 'نسيت كلمة المرور؟';
+  I18N.ar.saas_plan = 'الباقة';
+  I18N.ar.saas_trial = 'تجربة مجانية 14 يوم';
+  I18N.ar.saas_welcome = 'أهلاً بيك';
+  I18N.ar.saas_my_company = 'شركتي';
+  I18N.ar.saas_my_subscription = 'اشتراكي';
+  I18N.ar.saas_days_left = 'يوم متبقي';
+  I18N.ar.saas_expired = 'انتهى الاشتراك';
+  I18N.ar.saas_upgrade = 'ترقية';
+  I18N.ar.saas_super_admin = 'لوحة المدير العام';
+  I18N.ar.saas_companies = 'الشركات';
+  I18N.ar.saas_users_count = 'عدد المستخدمين';
+  I18N.ar.saas_logout = 'خروج';
+  I18N.ar.saas_email_exists = 'البريد مستخدم بالفعل';
+  I18N.ar.saas_invalid_email = 'البريد غير صحيح';
+  I18N.ar.saas_weak_pass = 'كلمة المرور ضعيفة (6 أحرف على الأقل)';
+  I18N.ar.saas_signup_success = 'تم إنشاء الحساب بنجاح';
+  I18N.ar.saas_login_success = 'تم تسجيل الدخول';
+  I18N.ar.saas_login_failed = 'البريد أو كلمة المرور غير صحيحة';
+  I18N.ar.saas_reset_sent = 'تم إرسال رابط إعادة التعيين للإيميل';
+  I18N.ar.saas_old_login = 'دخول قديم (Local)';
+
+  I18N.en.saas_register = 'Sign Up';
+  I18N.en.saas_login = 'Login';
+  I18N.en.saas_email = 'Email';
+  I18N.en.saas_password = 'Password';
+  I18N.en.saas_company_name = 'Company Name';
+  I18N.en.saas_your_name = 'Your Name';
+  I18N.en.saas_phone = 'Phone';
+  I18N.en.saas_create_account = 'Create Account';
+  I18N.en.saas_have_account = 'Already have an account?';
+  I18N.en.saas_no_account = "Don't have an account?";
+  I18N.en.saas_forgot = 'Forgot password?';
+  I18N.en.saas_plan = 'Plan';
+  I18N.en.saas_trial = '14-day free trial';
+  I18N.en.saas_welcome = 'Welcome';
+  I18N.en.saas_my_company = 'My Company';
+  I18N.en.saas_my_subscription = 'My Subscription';
+  I18N.en.saas_days_left = 'days left';
+  I18N.en.saas_expired = 'Subscription expired';
+  I18N.en.saas_upgrade = 'Upgrade';
+  I18N.en.saas_super_admin = 'Super Admin';
+  I18N.en.saas_companies = 'Companies';
+  I18N.en.saas_users_count = 'Users';
+  I18N.en.saas_logout = 'Logout';
+  I18N.en.saas_email_exists = 'Email already in use';
+  I18N.en.saas_invalid_email = 'Invalid email';
+  I18N.en.saas_weak_pass = 'Password too weak (6+ chars)';
+  I18N.en.saas_signup_success = 'Account created';
+  I18N.en.saas_login_success = 'Logged in';
+  I18N.en.saas_login_failed = 'Wrong email or password';
+  I18N.en.saas_reset_sent = 'Reset link sent to email';
+  I18N.en.saas_old_login = 'Legacy login (Local)';
+
+  /* =========================================================
+     4. UTILITIES
+     ========================================================= */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function uid(p) { return (p || 'id') + '_' + Math.random().toString(36).slice(2, 11); }
+
+  function toast(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'info');
+    else console.log('[' + (type || 'info') + ']', msg);
+  }
+
+  function validEmail(e) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
+  }
+
+  function nowMs() { return Date.now(); }
+
+  function daysUntil(ts) {
+    if (!ts) return 0;
+    return Math.max(0, Math.ceil((ts - nowMs()) / 86400000));
+  }
+
+  /* =========================================================
+     5. AUTH UI — replaces login screen
+     ========================================================= */
+  function injectSaaSUI() {
+    var loginScreen = document.getElementById('login-screen');
+    if (!loginScreen) return;
+
+    // Add tabs above the form
+    var card = loginScreen.querySelector('.login-card');
+    if (!card || card.querySelector('.saas-tabs')) return;
+
+    var tabs = document.createElement('div');
+    tabs.className = 'saas-tabs';
+    tabs.style.cssText = 'display:flex;gap:.5rem;margin-bottom:1.25rem;background:rgba(255,255,255,.05);padding:.35rem;border-radius:12px';
+    tabs.innerHTML =
+      '<button type="button" class="saas-tab active" data-tab="login" style="flex:1;padding:.65rem;border-radius:9px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s">' +
+        esc(I18N[State.lang].saas_login || 'Login') +
+      '</button>' +
+      '<button type="button" class="saas-tab" data-tab="register" style="flex:1;padding:.65rem;border-radius:9px;background:transparent;color:#cbd5e1;border:none;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s">' +
+        esc(I18N[State.lang].saas_register || 'Sign Up') +
+      '</button>';
+
+    // Insert at top of card (after brand logo)
+    var brandLogo = card.querySelector('.brand-logo');
+    if (brandLogo && brandLogo.nextSibling) {
+      card.insertBefore(tabs, brandLogo.nextSibling);
+    } else {
+      card.insertBefore(tabs, card.firstChild);
+    }
+
+    // Replace the login form
+    var oldForm = card.querySelector('#login-form');
+    if (oldForm) oldForm.remove();
+
+    // Add the SaaS form
+    var form = document.createElement('div');
+    form.id = 'saas-form';
+    form.style.cssText = 'display:flex;flex-direction:column;gap:.85rem;margin-top:1rem';
+    form.innerHTML = buildLoginForm();
+    card.appendChild(form);
+
+    // Add super-admin block (hidden by default)
+    var superBlock = document.createElement('div');
+    superBlock.id = 'saas-super-block';
+    superBlock.style.cssText = 'display:none;margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.1)';
+    superBlock.innerHTML =
+      '<div style="font-size:.7rem;color:#94a3b8;text-align:center;margin-bottom:.5rem">' +
+        (State.lang === 'ar' ? '— أو —' : '— OR —') +
+      '</div>' +
+      '<button type="button" id="saas-legacy-btn" style="width:100%;padding:.65rem;border-radius:10px;background:rgba(255,255,255,.05);color:#94a3b8;border:1px solid rgba(255,255,255,.1);cursor:pointer;font-family:inherit;font-size:.8rem">' +
+        esc(I18N[State.lang].saas_old_login || 'Legacy login') +
+      '</button>';
+    card.appendChild(superBlock);
+
+    // Bind tabs
+    tabs.querySelectorAll('.saas-tab').forEach(function (tb) {
+      tb.onclick = function () {
+        var mode = tb.dataset.tab;
+        tabs.querySelectorAll('.saas-tab').forEach(function (x) {
+          x.classList.remove('active');
+          x.style.background = 'transparent';
+          x.style.color = '#cbd5e1';
+        });
+        tb.classList.add('active');
+        tb.style.background = 'linear-gradient(135deg,#7c3aed,#6d28d9)';
+        tb.style.color = '#fff';
+        form.innerHTML = mode === 'register' ? buildRegisterForm() : buildLoginForm();
+        bindForm(mode);
+      };
+    });
+
+    // Super admin button
+    var legacyBtn = superBlock.querySelector('#saas-legacy-btn');
+    if (legacyBtn) {
+      legacyBtn.onclick = function () {
+        toast(State.lang === 'ar' ? 'استخدم Admin / admin' : 'Use Admin / admin', 'info');
+      };
+    }
+
+    bindForm('login');
+  }
+
+  function buildLoginForm() {
+    var L = I18N[State.lang] || I18N.ar;
+    return '' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_email) + '</label>' +
+        '<div style="position:relative">' +
+          '<input id="saas-email" type="email" placeholder="you@example.com" autocomplete="email" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" required>' +
+        '</div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_password) + '</label>' +
+        '<div style="position:relative">' +
+          '<input id="saas-password" type="password" placeholder="••••••••" autocomplete="current-password" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" required>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.8rem">' +
+        '<label style="display:flex;align-items:center;gap:.4rem;color:#cbd5e1;cursor:pointer">' +
+          '<input type="checkbox" id="saas-remember" checked style="accent-color:#7c3aed">' +
+          (State.lang === 'ar' ? 'تذكرني' : 'Remember me') +
+        '</label>' +
+        '<a href="#" id="saas-forgot" style="color:#a78bfa;text-decoration:none;font-weight:500">' + esc(L.saas_forgot) + '</a>' +
+      '</div>' +
+      '<button type="button" id="saas-login-btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;padding:.95rem;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit;margin-top:.35rem;box-shadow:0 10px 25px -8px #7c3aed">' +
+        esc(L.saas_login) +
+      '</button>' +
+      '<div id="saas-login-msg" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em"></div>';
+  }
+
+  function buildRegisterForm() {
+    var L = I18N[State.lang] || I18N.ar;
+    return '' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_company_name) + '</label>' +
+        '<input id="saas-company" type="text" placeholder="' + esc(L.saas_company_name) + '" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" required>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_your_name) + '</label>' +
+        '<input id="saas-name" type="text" placeholder="' + esc(L.saas_your_name) + '" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" required>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_email) + '</label>' +
+        '<input id="saas-email" type="email" placeholder="you@example.com" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" required>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_phone) + '</label>' +
+        '<input id="saas-phone" type="tel" placeholder="01xxxxxxxxx" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">' + esc(L.saas_password) + '</label>' +
+        '<input id="saas-password" type="password" placeholder="••••••••" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" required>' +
+      '</div>' +
+      '<div style="padding:.75rem;background:rgba(16,185,129,.1);border:1px dashed rgba(16,185,129,.4);border-radius:10px;color:#6ee7b7;font-size:.78rem;text-align:center">' +
+        '🎁 ' + esc(L.saas_trial) +
+      '</div>' +
+      '<button type="button" id="saas-register-btn" style="width:100%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;padding:.95rem;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit;margin-top:.35rem;box-shadow:0 10px 25px -8px #10b981">' +
+        esc(L.saas_create_account) +
+      '</button>' +
+      '<div id="saas-register-msg" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em"></div>';
+  }
+
+  function bindForm(mode) {
+    if (mode === 'login') {
+      var loginBtn = document.getElementById('saas-login-btn');
+      var forgotBtn = document.getElementById('saas-forgot');
+      if (loginBtn) loginBtn.onclick = doLogin;
+      if (forgotBtn) forgotBtn.onclick = function (e) { e.preventDefault(); doForgotPassword(); };
+
+      // Enter key
+      ['saas-email', 'saas-password'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+      });
+    } else {
+      var regBtn = document.getElementById('saas-register-btn');
+      if (regBtn) regBtn.onclick = doRegister;
+      ['saas-company', 'saas-name', 'saas-email', 'saas-phone', 'saas-password'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') doRegister(); });
+      });
+    }
+  }
+
+  /* =========================================================
+     6. AUTH ACTIONS
+     ========================================================= */
+  async function doLogin() {
+    var L = I18N[State.lang] || I18N.ar;
+    var email = (document.getElementById('saas-email') || {}).value || '';
+    var pass = (document.getElementById('saas-password') || {}).value || '';
+    var msgEl = document.getElementById('saas-login-msg');
+
+    email = email.trim();
+    if (!validEmail(email)) { if (msgEl) msgEl.textContent = L.saas_invalid_email; return; }
+    if (!pass) { if (msgEl) msgEl.textContent = L.saas_password + '?'; return; }
+
+    if (msgEl) msgEl.textContent = '...';
+
+    try {
+      var authMod = getAuthMod();
+      if (!authMod || !authMod.signInWithEmailAndPassword) throw new Error('Auth not available');
+      var cred = await authMod.signInWithEmailAndPassword(getAuth(), email, pass);
+      if (msgEl) msgEl.textContent = '';
+      toast(L.saas_login_success + ' ✓', 'success');
+      await onUserLoggedIn(cred.user);
+    } catch (err) {
+      console.error('[Section 23] Login failed:', err);
+      var msg = L.saas_login_failed;
+      if (err.code === 'auth/user-not-found') msg = State.lang === 'ar' ? 'الحساب غير موجود' : 'User not found';
+      else if (err.code === 'auth/wrong-password') msg = L.saas_login_failed;
+      else if (err.code === 'auth/too-many-requests') msg = State.lang === 'ar' ? 'محاولات كثيرة، انتظر قليلاً' : 'Too many attempts';
+      if (msgEl) msgEl.textContent = msg;
+    }
+  }
+
+  async function doRegister() {
+    var L = I18N[State.lang] || I18N.ar;
+    var companyName = (document.getElementById('saas-company') || {}).value || '';
+    var name = (document.getElementById('saas-name') || {}).value || '';
+    var email = (document.getElementById('saas-email') || {}).value || '';
+    var phone = (document.getElementById('saas-phone') || {}).value || '';
+    var pass = (document.getElementById('saas-password') || {}).value || '';
+    var msgEl = document.getElementById('saas-register-msg');
+
+    companyName = companyName.trim();
+    name = name.trim();
+    email = email.trim();
+
+    if (!companyName) { if (msgEl) msgEl.textContent = L.saas_company_name; return; }
+    if (!name) { if (msgEl) msgEl.textContent = L.saas_your_name; return; }
+    if (!validEmail(email)) { if (msgEl) msgEl.textContent = L.saas_invalid_email; return; }
+    if (pass.length < 6) { if (msgEl) msgEl.textContent = L.saas_weak_pass; return; }
+
+    if (msgEl) msgEl.textContent = '...';
+
+    try {
+      var authMod = getAuthMod();
+      var fsMod = getFsMod();
+      if (!authMod || !fsMod) throw new Error('Firebase not ready');
+
+      // 1) Create Firebase Auth user
+      var cred = await authMod.createUserWithEmailAndPassword(getAuth(), email, pass);
+      var user = cred.user;
+
+      // 2) Create company document
+      var companyId = 'c_' + user.uid.slice(0, 12);
+      var companyRef = fsMod.doc(getDb(), 'companies', companyId);
+
+      var settings = {
+        companyName: companyName,
+        phone: phone,
+        email: email,
+        address: '',
+        rolePrices: { Director: 300, Photographer: 200, Crane: 250, Supervisor: 250, Assistant: 150 },
+        payroll: { p1: { from: 1, to: 10 }, p2: { from: 11, to: 20 }, p3: { from: 21, to: 31 } },
+        notifications: { enabled: true, whatsapp: false, whatsappApi: '' },
+        distribution: { preventSameHallConsecutive: true, fairRotation: true, maxConsecutiveDays: 6 },
+        security: { passwordMin: 6, sessionTimeout: 60 },
+        theme: 'light',
+        lang: State.lang || 'ar'
+      };
+
+      await fsMod.setDoc(companyRef, {
+        id: companyId,
+        name: companyName,
+        ownerUid: user.uid,
+        ownerEmail: email,
+        phone: phone,
+        createdAt: fsMod.serverTimestamp(),
+        active: true
+      });
+
+      // 3) Create user profile
+      var userRef = fsMod.doc(getDb(), 'users', user.uid);
+      await fsMod.setDoc(userRef, {
+        uid: user.uid,
+        email: email,
+        name: name,
+        phone: phone,
+        companyId: companyId,
+        role: 'owner',
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      // 4) Create subscription (trial)
+      var trialEnd = nowMs() + (PLANS.trial.durationDays * 86400000);
+      var subRef = fsMod.doc(getDb(), 'subscriptions', companyId);
+      await fsMod.setDoc(subRef, {
+        companyId: companyId,
+        planId: 'trial',
+        status: 'trialing',
+        startedAt: nowMs(),
+        expiresAt: trialEnd,
+        trialEndsAt: trialEnd,
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      // 5) Seed initial company data (empty state)
+      var stateRef = fsMod.doc(getDb(), 'companies', companyId, 'app', 'main');
+      var seed = {
+        users: [],
+        roles: [
+          { id: 'r1', name: 'Admin', permissions: { '*': ['view', 'create', 'edit', 'delete', 'export', 'print', 'approve'] } },
+          { id: 'r2', name: 'Manager', permissions: { employees: ['view', 'create', 'edit'], bookings: ['view', 'create', 'edit', 'approve'], reports: ['view', 'export'] } },
+          { id: 'r3', name: 'Employee', permissions: { self: ['view'] } }
+        ],
+        employees: [],
+        halls: [
+          { id: 'hall1', name: { ar: 'القاعة المغلقة', en: 'Closed Hall' }, code: 'H1', type: 'Closed', status: 'active', address: '', notes: '', requirements: [{ role: 'Director', count: 1 }, { role: 'Photographer', count: 2 }, { role: 'Crane', count: 1 }], cost: 5000 },
+          { id: 'hall2', name: { ar: 'القاعة الأوبن', en: 'Open Hall' }, code: 'H2', type: 'Open', status: 'active', address: '', notes: '', requirements: [{ role: 'Director', count: 1 }, { role: 'Photographer', count: 2 }, { role: 'Crane', count: 1 }], cost: 4500 },
+          { id: 'hall3', name: { ar: 'الكافيه', en: 'Cafe' }, code: 'H3', type: 'Cafe', status: 'active', address: '', notes: '', requirements: [{ role: 'Photographer', count: 1 }], cost: 1500 }
+        ],
+        clients: [],
+        equipment: [],
+        bookings: [],
+        distributions: [],
+        attendance: [],
+        leaves: [],
+        substitutions: [],
+        advances: [],
+        deductions: [],
+        bonuses: [],
+        notifications: [],
+        activityLogs: [],
+        settings: settings,
+        trash: []
+      };
+
+      // Add owner as an admin user in their company
+      seed.users.push({
+        id: user.uid,
+        username: email,
+        password: '',
+        name: name,
+        role: 'Admin',
+        employeeId: null,
+        email: email,
+        firebaseUid: user.uid
+      });
+
+      await fsMod.setDoc(stateRef, {
+        payload: seed,
+        updatedBy: 'system',
+        updatedByUser: email,
+        updatedAt: fsMod.serverTimestamp(),
+        version: nowMs()
+      });
+
+      if (msgEl) msgEl.textContent = '';
+      toast(L.saas_signup_success + ' 🎉', 'success');
+      await onUserLoggedIn(user);
+    } catch (err) {
+      console.error('[Section 23] Register failed:', err);
+      var msg = State.lang === 'ar' ? 'فشل التسجيل' : 'Registration failed';
+      if (err.code === 'auth/email-already-in-use') msg = L.saas_email_exists;
+      else if (err.code === 'auth/weak-password') msg = L.saas_weak_pass;
+      else if (err.code === 'auth/invalid-email') msg = L.saas_invalid_email;
+      else if (err.message) msg = err.message;
+      if (msgEl) msgEl.textContent = msg;
+    }
+  }
+
+  async function doForgotPassword() {
+    var L = I18N[State.lang] || I18N.ar;
+    var email = ((document.getElementById('saas-email') || {}).value || '').trim();
+    if (!validEmail(email)) { toast(L.saas_invalid_email, 'error'); return; }
+    try {
+      var authMod = getAuthMod();
+      if (!authMod || !authMod.sendPasswordResetEmail) throw new Error('Auth not available');
+      await authMod.sendPasswordResetEmail(getAuth(), email);
+      toast(L.saas_reset_sent + ' ✓', 'success');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Failed', 'error');
+    }
+  }
+
+  /* =========================================================
+     7. ON LOGIN — load company + subscription + sync
+     ========================================================= */
+  async function onUserLoggedIn(user) {
+    if (!user) return;
+    SaaS.user = user;
+    var fsMod = getFsMod();
+
+    try {
+      // Load profile
+      var userRef = fsMod.doc(getDb(), 'users', user.uid);
+      var userSnap = await fsMod.getDoc(userRef);
+      if (!userSnap.exists()) {
+        // Legacy user without profile → create one
+        console.warn('[Section 23] No profile for user, creating…');
+        await fsMod.setDoc(userRef, {
+          uid: user.uid,
+          email: user.email || '',
+          name: user.displayName || user.email || 'User',
+          phone: '',
+          companyId: 'c_' + user.uid.slice(0, 12),
+          role: 'owner',
+          createdAt: fsMod.serverTimestamp()
+        });
+        // reload
+        var s2 = await fsMod.getDoc(userRef);
+        SaaS.profile = s2.data();
+      } else {
+        SaaS.profile = userSnap.data();
+      }
+
+      // Check super admin
+      SaaS.isSuperAdmin = SaaS.profile && SaaS.profile.role === 'super_admin';
+
+      if (SaaS.isSuperAdmin) {
+        console.log('[Section 23] Super admin detected');
+      }
+
+      // Load company
+      if (SaaS.profile && SaaS.profile.companyId) {
+        var compRef = fsMod.doc(getDb(), 'companies', SaaS.profile.companyId);
+        var compSnap = await fsMod.getDoc(compRef);
+        if (compSnap.exists()) SaaS.company = compSnap.data();
+      }
+
+      // Load subscription
+      if (SaaS.company) {
+        var subRef = fsMod.doc(getDb(), 'subscriptions', SaaS.company.id);
+        var subSnap = await fsMod.getDoc(subRef);
+        if (subSnap.exists()) SaaS.subscription = subSnap.data();
+      }
+
+      // Attach realtime listeners
+      attachCompanyListeners();
+
+      // Set State.user from profile
+      if (State) {
+        State.user = {
+          id: user.uid,
+          username: user.email,
+          name: SaaS.profile ? SaaS.profile.name : (user.email || 'User'),
+          role: SaaS.isSuperAdmin ? 'Admin' : (SaaS.profile ? mapProfileRole(SaaS.profile.role) : 'Admin'),
+          employeeId: SaaS.profile ? SaaS.profile.employeeId : null,
+          firebaseUid: user.uid,
+          companyId: SaaS.profile ? SaaS.profile.companyId : null,
+          isSuperAdmin: SaaS.isSuperAdmin
+        };
+      }
+
+      SaaS.ready = true;
+
+      // Update the UI (show app)
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+
+      // Update user chip
+      var avatar = document.getElementById('user-avatar');
+      var nameEl = document.getElementById('user-name');
+      var roleEl = document.getElementById('user-role');
+      if (avatar) avatar.textContent = initials(State.user.name);
+      if (nameEl) nameEl.textContent = State.user.name;
+      if (roleEl) roleEl.textContent = SaaS.isSuperAdmin ? 'Super Admin' : (SaaS.company ? SaaS.company.name : State.user.role);
+
+      // Add subscription banner
+      renderSubscriptionBanner();
+
+      // Add super-admin nav if applicable
+      if (SaaS.isSuperAdmin) addSuperAdminNav();
+
+      // Navigate
+      if (typeof renderSidebar === 'function') renderSidebar();
+      if (typeof navigate === 'function') navigate('dashboard');
+
+      // Override saveData to write to Firestore (companies/{id}/app/main)
+      overrideSaveDataToFirestore();
+
+      // Update notification
+      toast((I18N[State.lang].saas_welcome || 'Welcome') + ' ' + State.user.name + ' 👋', 'success');
+    } catch (err) {
+      console.error('[Section 23] onUserLoggedIn failed:', err);
+      toast(State.lang === 'ar' ? 'فشل تحميل بيانات الشركة' : 'Failed to load company data', 'error');
+    }
+  }
+
+  function mapProfileRole(role) {
+    // Map SaaS roles to legacy roles
+    if (role === 'owner' || role === 'admin') return 'Admin';
+    if (role === 'manager') return 'Manager';
+    return 'Employee';
+  }
+
+  /* =========================================================
+     8. FIRESTORE LISTENERS — realtime company data
+     ========================================================= */
+  function attachCompanyListeners() {
+    if (!SaaS.company || !SaaS.profile) return;
+
+    var fsMod = getFsMod();
+    var stateRef = fsMod.doc(getDb(), 'companies', SaaS.profile.companyId, 'app', 'main');
+
+    if (SaaS.companyUnsub) try { SaaS.companyUnsub(); } catch (e) {}
+    SaaS.companyUnsub = fsMod.onSnapshot(stateRef, function (snap) {
+      if (!snap.exists()) return;
+      var data = snap.data();
+      if (!data || !data.payload) return;
+      if (data.updatedBy === (SaaS.user ? SaaS.user.uid : '') && !window.__dmSaaSForceRefresh) {
+        // own write
+        return;
+      }
+      // Apply remote (from another device)
+      console.log('[Section 23] Company data updated — refreshing');
+      State.data = data.payload;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+      if (typeof navigate === 'function' && State.page) navigate(State.page);
+    });
+  }
+
+  /* =========================================================
+     9. OVERRIDE saveData — write to Firestore company path
+     ========================================================= */
+  var overrideInstalled = false;
+  function overrideSaveDataToFirestore() {
+    if (overrideInstalled) return;
+    overrideInstalled = true;
+
+    var prev = window.saveData;
+    window.saveData = async function () {
+      // 1) Save locally
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+
+      // 2) Push to Firestore (company path)
+      if (!SaaS.company || !SaaS.user) return;
+
+      try {
+        var fsMod = getFsMod();
+        var ref = fsMod.doc(getDb(), 'companies', SaaS.profile.companyId, 'app', 'main');
+        await fsMod.setDoc(ref, {
+          payload: State.data,
+          updatedBy: SaaS.user.uid,
+          updatedByUser: SaaS.user.email,
+          updatedAt: fsMod.serverTimestamp(),
+          version: nowMs()
+        });
+      } catch (err) {
+        console.warn('[Section 23] saveData → Firestore failed:', err);
+      }
+    };
+
+    console.log('%c[Section 23] ✓ saveData → company Firestore path', 'color:#10b981;font-weight:bold');
+  }
+
+  /* =========================================================
+     10. SUBSCRIPTION BANNER
+     ========================================================= */
+  function renderSubscriptionBanner() {
+    if (!SaaS.subscription) return;
+    var existing = document.getElementById('dm-sub-banner');
+    if (existing) existing.remove();
+
+    var sub = SaaS.subscription;
+    var days = daysUntil(sub.expiresAt);
+    var expired = days <= 0;
+    var plan = PLANS[sub.planId] || PLANS.starter;
+
+    var banner = document.createElement('div');
+    banner.id = 'dm-sub-banner';
+    banner.style.cssText = 'padding:.6rem 1.25rem;background:' +
+      (expired ? 'linear-gradient(90deg,#ef4444,#dc2626)' : days < 3 ? 'linear-gradient(90deg,#f59e0b,#d97706)' : 'linear-gradient(90deg,#10b981,#059669)') +
+      ';color:#fff;font-size:.82rem;font-weight:600;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap';
+
+    var L = I18N[State.lang] || I18N.ar;
+    banner.innerHTML =
+      '<span>' +
+        (expired ? '🚫 ' : days < 3 ? '⚠️ ' : '✓ ') +
+        (expired ? L.saas_expired : 'باقة ' + plan.name + ' — ' + days + ' ' + L.saas_days_left) +
+      '</span>' +
+      '<button id="dm-sub-upgrade" style="margin-inline-start:auto;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;padding:.35rem .85rem;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.75rem">' +
+        L.saas_upgrade +
+      '</button>';
+
+    var main = document.getElementById('main');
+    var topbar = document.getElementById('topbar');
+    if (main && topbar) {
+      topbar.parentNode.insertBefore(banner, topbar.nextSibling);
+    }
+
+    var upBtn = banner.querySelector('#dm-sub-upgrade');
+    if (upBtn) upBtn.onclick = function () { showPlansModal(); };
+  }
+
+  /* =========================================================
+     11. PLANS MODAL
+     ========================================================= */
+  function showPlansModal() {
+    if (typeof openModal !== 'function') return;
+    var L = I18N[State.lang] || I18N.ar;
+    var current = SaaS.subscription ? SaaS.subscription.planId : 'trial';
+
+    var planCards = '';
+    Object.keys(PLANS).forEach(function (key) {
+      var p = PLANS[key];
+      var isCurrent = key === current;
+      var priceText = p.price === 0 ? (State.lang === 'ar' ? 'مجانًا' : 'Free') :
+        p.price < 0 ? (State.lang === 'ar' ? 'اتصل بنا' : 'Contact us') :
+        p.price + ' ' + (State.lang === 'ar' ? 'ج/شهر' : 'EGP/mo');
+
+      planCards +=
+        '<div style="border:2px solid ' + (isCurrent ? '#7c3aed' : 'var(--border)') + ';border-radius:14px;padding:1rem;' + (isCurrent ? 'background:rgba(124,58,237,.05);' : '') + '">' +
+          '<div style="font-weight:800;font-size:1rem;margin-bottom:.25rem">' + esc(p.name) + '</div>' +
+          '<div style="font-size:1.35rem;font-weight:800;color:#7c3aed;margin-bottom:.5rem">' + priceText + '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.75rem">' +
+            '👥 ' + p.limits.employees + ' · 📅 ' + p.limits.bookings + ' · 🏛 ' + p.limits.halls +
+          '</div>' +
+          (isCurrent ?
+            '<div style="padding:.4rem;background:#7c3aed;color:#fff;border-radius:8px;text-align:center;font-size:.75rem;font-weight:700">' + (State.lang === 'ar' ? 'باقتك الحالية' : 'Current') + '</div>' :
+            '<button onclick="__dmSaaSUpgrade(\'' + key + '\')" style="width:100%;padding:.5rem;background:var(--primary);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.8rem">' +
+              (State.lang === 'ar' ? 'ترقية' : 'Upgrade') +
+            '</button>') +
+        '</div>';
+    });
+
+    openModal({
+      title: '💎 ' + (State.lang === 'ar' ? 'الباقات' : 'Plans'),
+      size: 'xl',
+      body: '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem">' + planCards + '</div>' +
+        '<div style="margin-top:1rem;padding:.75rem;background:rgba(59,130,246,.08);border-inline-start:3px solid #3b82f6;border-radius:8px;font-size:.75rem;color:var(--text-muted)">' +
+          '💳 ' + (State.lang === 'ar' ? 'الدفع عبر Paymob / Fawry — قيد التفعيل' : 'Payment via Paymob / Fawry — coming soon') +
+        '</div>',
+      footer: '<button class="btn btn-ghost" onclick="closeModal()">' + (State.lang === 'ar' ? 'إغلاق' : 'Close') + '</button>'
+    });
+  }
+  window.__dmShowPlans = showPlansModal;
+
+  window.__dmSaaSUpgrade = function (planId) {
+    var L = I18N[State.lang] || I18N.ar;
+    toast(
+      State.lang === 'ar'
+        ? 'سيتم توجيهك لصفحة الدفع قريبًا (Paymob)'
+        : 'You will be redirected to payment soon (Paymob)',
+      'info'
+    );
+    // Placeholder — integrate Paymob here:
+    // 1. POST to your backend /api/checkout with planId + companyId
+    // 2. Backend creates Paymob order
+    // 3. Redirect to Paymob iframe
+    // 4. On success, backend updates subscriptions/{companyId}
+  };
+
+  /* =========================================================
+     12. SUPER ADMIN
+     ========================================================= */
+  function addSuperAdminNav() {
+    if (document.getElementById('dm-super-nav')) return;
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+
+    var section = document.createElement('div');
+    section.id = 'dm-super-nav';
+    section.innerHTML =
+      '<div class="nav-section" style="color:#f59e0b;opacity:1">⚡ SUPER ADMIN</div>' +
+      '<a class="nav-item" data-page="superadmin" onclick="event.preventDefault();__dmSuperAdmin()" style="cursor:pointer;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)">' +
+        '<i data-lucide="crown" style="color:#f59e0b"></i>' +
+        '<span>' + esc(I18N[State.lang].saas_super_admin || 'Super Admin') + '</span>' +
+      '</a>';
+    nav.appendChild(section);
+    if (window.lucide) lucide.createIcons();
+  }
+
+  window.__dmSuperAdmin = async function () {
+    if (!SaaS.isSuperAdmin) {
+      toast(State.lang === 'ar' ? 'هذه اللوحة للمدير العام فقط' : 'Super admin only', 'error');
+      return;
+    }
+    if (typeof navigate !== 'function') return;
+
+    // Register page
+    Pages.superadmin = async function (el) {
+      el.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+      try {
+        var fsMod = getFsMod();
+        var comps = await fsMod.getDocs(fsMod.collection(getDb(), 'companies'));
+        var subs = await fsMod.getDocs(fsMod.collection(getDb(), 'subscriptions'));
+        var subMap = {};
+        subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+        var rows = [];
+        var totalMRR = 0;
+        var activeCount = 0;
+        var trialCount = 0;
+
+        comps.forEach(function (d) {
+          var c = d.data();
+          var sub = subMap[c.id] || {};
+          var plan = PLANS[sub.planId] || PLANS.trial;
+          var days = sub.expiresAt ? daysUntil(sub.expiresAt) : 0;
+          var isExpired = days <= 0;
+
+          if (!isExpired) {
+            activeCount++;
+            if (sub.planId === 'trial') trialCount++;
+            else totalMRR += (plan.price || 0);
+          }
+
+          rows.push({
+            id: c.id,
+            name: c.name,
+            ownerEmail: c.ownerEmail,
+            phone: c.phone,
+            plan: plan.name,
+            planId: sub.planId || 'trial',
+            days: days,
+            expired: isExpired,
+            createdAt: c.createdAt
+          });
+        });
+
+        rows.sort(function (a, b) { return (b.days - a.days); });
+
+        el.innerHTML =
+          '<div class="grid-stats" style="margin-bottom:1.5rem">' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(124,58,237,.1);color:#7c3aed"><i data-lucide="building-2"></i></div><div class="stat-body"><div class="label">' + (State.lang === 'ar' ? 'إجمالي الشركات' : 'Companies') + '</div><div class="value">' + rows.length + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i data-lucide="check-circle"></i></div><div class="stat-body"><div class="label">' + (State.lang === 'ar' ? 'نشطة' : 'Active') + '</div><div class="value">' + activeCount + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(245,158,11,.1);color:#f59e0b"><i data-lucide="gift"></i></div><div class="stat-body"><div class="label">' + (State.lang === 'ar' ? 'تجارب' : 'Trials') + '</div><div class="value">' + trialCount + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(6,182,212,.1);color:#06b6d4"><i data-lucide="dollar-sign"></i></div><div class="stat-body"><div class="label">MRR</div><div class="value">' + totalMRR.toLocaleString() + ' EGP</div></div></div>' +
+          '</div>' +
+          '<div class="card" style="padding:0;overflow:hidden">' +
+            '<div class="table-wrap" style="border:none;border-radius:0">' +
+              '<table class="data-table">' +
+                '<thead><tr>' +
+                  '<th>' + (State.lang === 'ar' ? 'الشركة' : 'Company') + '</th>' +
+                  '<th>Email</th>' +
+                  '<th>' + (State.lang === 'ar' ? 'الباقة' : 'Plan') + '</th>' +
+                  '<th>' + (State.lang === 'ar' ? 'المتبقي' : 'Days left') + '</th>' +
+                  '<th>' + (State.lang === 'ar' ? 'الحالة' : 'Status') + '</th>' +
+                '</tr></thead>' +
+                '<tbody>' +
+                  (rows.length ?
+                    rows.map(function (r) {
+                      var statusColor = r.expired ? 'red' : (r.days <= 3 ? 'yellow' : 'green');
+                      return '<tr>' +
+                        '<td><b>' + esc(r.name) + '</b></td>' +
+                        '<td>' + esc(r.ownerEmail) + '</td>' +
+                        '<td><span class="badge-pill badge-purple">' + esc(r.plan) + '</span></td>' +
+                        '<td>' + r.days + ' ' + (State.lang === 'ar' ? 'يوم' : 'd') + '</td>' +
+                        '<td><span class="badge-pill badge-' + statusColor + '">' + (r.expired ? 'Expired' : 'Active') + '</span></td>' +
+                      '</tr>';
+                    }).join('') :
+                    '<tr><td colspan="5"><div class="empty-state"><i data-lucide="inbox"></i><p>No companies yet</p></div></td></tr>') +
+                '</tbody>' +
+              '</table>' +
+            '</div>' +
+          '</div>';
+
+        if (window.lucide) lucide.createIcons();
+      } catch (err) {
+        console.error('[Section 23] super admin failed:', err);
+        el.innerHTML = '<div class="empty-state"><i data-lucide="alert-triangle"></i><p>Failed to load: ' + esc(err.message) + '</p></div>';
+      }
+    };
+
+    navigate('superadmin');
+  };
+
+  /* =========================================================
+     13. LOGOUT — override
+     ========================================================= */
+  function hookLogout() {
+    var orig = window.logout;
+    window.logout = async function () {
+      try {
+        var authMod = getAuthMod();
+        if (authMod && authMod.signOut) await authMod.signOut(getAuth());
+      } catch (e) { console.warn(e); }
+      SaaS.user = null;
+      SaaS.profile = null;
+      SaaS.company = null;
+      SaaS.subscription = null;
+      SaaS.isSuperAdmin = false;
+      SaaS.ready = false;
+      if (SaaS.companyUnsub) try { SaaS.companyUnsub(); } catch (e) {}
+      // Call original (clears localStorage etc.)
+      if (typeof orig === 'function') return orig.apply(this, arguments);
+    };
+  }
+
+  /* =========================================================
+     14. AUTH STATE OBSERVER
+     ========================================================= */
+  function attachAuthObserver() {
+    var authMod = getAuthMod();
+    if (!authMod || !authMod.onAuthStateChanged) return;
+    authMod.onAuthStateChanged(getAuth(), function (user) {
+      if (user) {
+        console.log('[Section 23] Auth state: signed in as', user.email);
+        // If login screen still visible, run login handler
+        if (!SaaS.ready) {
+          onUserLoggedIn(user);
+        }
+      } else {
+        console.log('[Section 23] Auth state: signed out');
+        SaaS.user = null;
+        SaaS.ready = false;
+      }
+    });
+  }
+
+  /* =========================================================
+     15. INIT
+     ========================================================= */
+  function initSaaS() {
+    // 1. Inject login/register tabs
+    injectSaaSUI();
+
+    // 2. Hook logout
+    hookLogout();
+
+    // 3. Attach auth observer
+    attachAuthObserver();
+
+    // 4. Block old login form
+    var oldBtn = document.querySelector('.btn-login');
+    if (oldBtn) {
+      oldBtn.style.display = 'none';
+    }
+
+    console.log('%c[Section 23] ✓ SaaS layer ready', 'color:#10b981;font-weight:bold;font-size:13px');
+    console.log('%c[Section 23] Super admin: set role="super_admin" in /users/{uid}', 'color:#f59e0b;font-style:italic');
+  }
+
+  waitFor(
+    function () {
+      return window.DrMediaFB && window.DrMediaFB.ready
+        && typeof State !== 'undefined'
+        && document.getElementById('login-screen');
+    },
+    function () {
+      initSaaS();
+    }
+  );
+
+})();
 
 
 
