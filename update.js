@@ -13584,6 +13584,1461 @@ service cloud.firestore {
   window.__dmRemoveLegacyAuth = removeLegacyAuthSection;
 
 })();
+/* =========================================================
+   SECTION 34: Super Admin Master Panel
+   Version: 1.0.0
+   ---------------------------------------------------------
+   Full control center:
+   - Real-time dashboard with KPIs
+   - Subscribers management (view/extend/plan/delete)
+   - Payments tracking
+   - Revenue analytics + charts
+   - Broadcast notifications
+   - Feature flags
+   - Announcements banner
+   - Coupons / discount codes
+   - Impersonate customer (view their data)
+   - Activity log across all companies
+   - Backup management
+   - System health
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 34] Super Admin Master Panel loading…', 'color:#f59e0b;font-weight:bold;font-size:14px');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 34] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function isSuperAdmin() {
+    return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin);
+  }
+
+  function fmtMoney(n) {
+    return (n || 0).toLocaleString() + ' EGP';
+  }
+
+  function fmtDate(ts) {
+    if (!ts) return '—';
+    var d = new Date(typeof ts === 'object' && ts.seconds ? ts.seconds * 1000 : ts);
+    return d.toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB');
+  }
+
+  function daysBetween(a, b) {
+    return Math.ceil((b - a) / 86400000);
+  }
+
+  /* =========================================================
+     REGISTER SUPER ADMIN PAGE
+     ========================================================= */
+  function registerPage() {
+    Pages.superadmin = async function (el) {
+      if (!isSuperAdmin()) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="lock"></i><p>Super Admin only</p></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      el.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+      try {
+        var data = await loadAllData();
+        renderDashboard(el, data);
+      } catch (err) {
+        console.error('[Section 34] load failed:', err);
+        el.innerHTML = '<div class="empty-state"><i data-lucide="alert-triangle"></i><p>فشل التحميل: ' + esc(err.message) + '</p></div>';
+        if (window.lucide) lucide.createIcons();
+      }
+    };
+  }
+
+  /* =========================================================
+     LOAD DATA
+     ========================================================= */
+  async function loadAllData() {
+    var fsMod = window.DrMediaFB.modules.fsMod;
+    var db = window.DrMediaFB.db;
+
+    var [comps, subs, orders, users, notifSnap] = await Promise.all([
+      fsMod.getDocs(fsMod.collection(db, 'companies')),
+      fsMod.getDocs(fsMod.collection(db, 'subscriptions')),
+      fsMod.getDocs(fsMod.collection(db, 'payment_orders')),
+      fsMod.getDocs(fsMod.collection(db, 'users')),
+      fsMod.getDoc(fsMod.doc(db, 'super_admin', 'announcement')).catch(function () { return null; })
+    ]);
+
+    var subMap = {}, ordersMap = [], usersMap = {};
+    subs.forEach(function (d) { subMap[d.id] = d.data(); });
+    orders.forEach(function (d) { ordersMap.push(d.data()); });
+    users.forEach(function (d) {
+      var u = d.data();
+      usersMap[u.companyId] = usersMap[u.companyId] || [];
+      usersMap[u.companyId].push(u);
+    });
+
+    var companies = [];
+    var now = Date.now();
+
+    comps.forEach(function (d) {
+      var c = d.data();
+      var sub = subMap[c.id] || {};
+      var plan = (window.__dmPlans || {})[sub.planId] || { name: 'Trial', price: 0 };
+      var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - now) / 86400000)) : 0;
+      var expired = days <= 0;
+      var usersCount = (usersMap[c.id] || []).length;
+
+      companies.push({
+        id: c.id,
+        name: c.name || '—',
+        ownerEmail: c.ownerEmail || '—',
+        phone: c.phone || '—',
+        planId: sub.planId || 'trial',
+        planName: plan.name,
+        price: plan.price || 0,
+        days: days,
+        expired: expired,
+        status: sub.status || 'unknown',
+        startedAt: sub.startedAt,
+        expiresAt: sub.expiresAt,
+        createdAt: c.createdAt,
+        usersCount: usersCount,
+        active: c.active !== false
+      });
+    });
+
+    // Sort: expired first, then soonest expiry
+    companies.sort(function (a, b) {
+      if (a.expired !== b.expired) return a.expired ? 1 : -1;
+      return a.days - b.days;
+    });
+
+    var announcement = notifSnap && notifSnap.exists() ? notifSnap.data() : null;
+
+    return { companies: companies, orders: ordersMap, announcement: announcement };
+  }
+
+  /* =========================================================
+     RENDER DASHBOARD
+     ========================================================= */
+  function renderDashboard(el, data) {
+    var companies = data.companies;
+    var orders = data.orders;
+    var announcement = data.announcement;
+    var now = Date.now();
+
+    // KPIs
+    var total = companies.length;
+    var active = companies.filter(function (c) { return !c.expired && c.active; }).length;
+    var expired = companies.filter(function (c) { return c.expired; }).length;
+    var trials = companies.filter(function (c) { return c.planId === 'trial' && !c.expired; }).length;
+    var paid = companies.filter(function (c) { return c.planId !== 'trial' && !c.expired; }).length;
+
+    // MRR (Monthly Recurring Revenue)
+    var mrr = companies.reduce(function (sum, c) {
+      return sum + (!c.expired && c.planId !== 'trial' ? (c.price || 0) : 0);
+    }, 0);
+
+    // Total revenue (from successful orders)
+    var totalRevenue = orders
+      .filter(function (o) { return o.status === 'success'; })
+      .reduce(function (sum, o) { return sum + (o.amount || 0); }, 0);
+
+    // Pending payments
+    var pendingPayments = orders.filter(function (o) { return o.status === 'pending_verification'; });
+
+    // New this month
+    var monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    var newThisMonth = companies.filter(function (c) {
+      var created = c.createdAt && c.createdAt.seconds ? c.createdAt.seconds * 1000 : 0;
+      return created > monthStart.getTime();
+    }).length;
+
+    // Expiring soon (next 3 days)
+    var expiringSoon = companies.filter(function (c) {
+      return !c.expired && c.days <= 3;
+    }).length;
+
+    // Revenue by month (last 6 months)
+    var monthlyRevenue = computeMonthlyRevenue(orders);
+
+    // Plan distribution
+    var planDist = {};
+    companies.forEach(function (c) {
+      var k = c.planName;
+      planDist[k] = (planDist[k] || 0) + 1;
+    });
+
+    /* ----- RENDER HTML ----- */
+    var tabs = ['dashboard', 'subscribers', 'payments', 'analytics', 'broadcast', 'coupons', 'features', 'activity', 'backup'];
+    var activeTab = State.filters.saTab || 'dashboard';
+
+    el.innerHTML =
+      /* Header */
+      '<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap">' +
+        '<div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;box-shadow:0 10px 20px -8px rgba(245,158,11,.5)">👑</div>' +
+        '<div>' +
+          '<div style="font-weight:800;font-size:1.15rem">Super Admin — لوحة التحكم الكاملة</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted)">إدارة شاملة للمشتركين والإيرادات والنظام</div>' +
+        '</div>' +
+        '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmSAExportFull()"><i data-lucide="download"></i> تصدير شامل</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="__dmSARefresh()"><i data-lucide="refresh-cw"></i> تحديث</button>' +
+        '</div>' +
+      '</div>' +
+
+      /* Tabs */
+      '<div class="tabs" style="margin-bottom:1rem">' +
+        tabBtn(activeTab, 'dashboard', '📊', 'لوحة القيادة') +
+        tabBtn(activeTab, 'subscribers', '👥', 'المشتركين (' + total + ')') +
+        tabBtn(activeTab, 'payments', '💰', 'المدفوعات' + (pendingPayments.length ? ' (' + pendingPayments.length + ')' : '')) +
+        tabBtn(activeTab, 'analytics', '📈', 'التحليلات') +
+        tabBtn(activeTab, 'broadcast', '📢', 'إشعار جماعي') +
+        tabBtn(activeTab, 'coupons', '🎁', 'أكواد الخصم') +
+        tabBtn(activeTab, 'features', '⚙️', 'المميزات') +
+        tabBtn(activeTab, 'activity', '📜', 'سجل النشاط') +
+        tabBtn(activeTab, 'backup', '💾', 'النسخ الاحتياطي') +
+      '</div>' +
+
+      '<div id="dm-sa-content"></div>';
+
+    // Render active tab
+    var content = document.getElementById('dm-sa-content');
+    if (activeTab === 'dashboard') renderTabDashboard(content, {
+      total: total, active: active, expired: expired, trials: trials, paid: paid,
+      mrr: mrr, totalRevenue: totalRevenue, newThisMonth: newThisMonth,
+      expiringSoon: expiringSoon, pendingPayments: pendingPayments.length,
+      monthlyRevenue: monthlyRevenue, planDist: planDist, companies: companies
+    });
+    else if (activeTab === 'subscribers') renderTabSubscribers(content, companies);
+    else if (activeTab === 'payments') renderTabPayments(content, orders);
+    else if (activeTab === 'analytics') renderTabAnalytics(content, companies, orders);
+    else if (activeTab === 'broadcast') renderTabBroadcast(content, announcement);
+    else if (activeTab === 'coupons') renderTabCoupons(content);
+    else if (activeTab === 'features') renderTabFeatures(content);
+    else if (activeTab === 'activity') renderTabActivity(content);
+    else if (activeTab === 'backup') renderTabBackup(content);
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function tabBtn(active, id, icon, label) {
+    return '<div class="tab ' + (active === id ? 'active' : '') + '" onclick="__dmSATab(\'' + id + '\')" style="white-space:nowrap">' +
+      icon + ' ' + label +
+    '</div>';
+  }
+
+  /* =========================================================
+     TAB 1: DASHBOARD
+     ========================================================= */
+  function renderTabDashboard(el, s) {
+    el.innerHTML =
+      /* KPI Grid */
+      '<div class="grid-stats" style="margin-bottom:1.25rem">' +
+        kpiCard('المشتركين الكلي', s.total, 'building-2', '#7c3aed', '+ ' + s.newThisMonth + ' هذا الشهر') +
+        kpiCard('نشط', s.active, 'check-circle', '#10b981', 'يعمل بشكل طبيعي') +
+        kpiCard('تجارب', s.trials, 'gift', '#f59e0b', 'في الفترة التجريبية') +
+        kpiCard('مدفوع', s.paid, 'credit-card', '#06b6d4', 'اشتراك نشط') +
+        kpiCard('منتهي', s.expired, 'alert-circle', '#ef4444', 'يحتاج تجديد') +
+        kpiCard('ينتهي قريبًا', s.expiringSoon, 'clock', '#f97316', 'خلال 3 أيام') +
+      '</div>' +
+
+      /* Financial Row */
+      '<div class="grid-stats" style="margin-bottom:1.25rem">' +
+        kpiCard('MRR', fmtMoney(s.mrr), 'trending-up', '#10b981', 'إيراد شهري متكرر') +
+        kpiCard('إجمالي الإيراد', fmtMoney(s.totalRevenue), 'dollar-sign', '#7c3aed', 'من كل المدفوعات') +
+        kpiCard('مدفوعات معلقة', s.pendingPayments, 'hourglass', '#f59e0b', 'بحاجة لمراجعة') +
+      '</div>' +
+
+      /* Charts Row */
+      '<div class="grid-2" style="margin-bottom:1.25rem">' +
+        '<div class="chart-box"><h4><i data-lucide="bar-chart-3"></i> الإيراد الشهري (آخر 6 شهور)</h4><div class="chart-canvas-wrap"><canvas id="dm-sa-chart-revenue"></canvas></div></div>' +
+        '<div class="chart-box"><h4><i data-lucide="pie-chart"></i> توزيع الباقات</h4><div class="chart-canvas-wrap"><canvas id="dm-sa-chart-plans"></canvas></div></div>' +
+      '</div>' +
+
+      /* Attention needed */
+      (s.pendingPayments > 0 || s.expiringSoon > 0 || s.expired > 0 ?
+        '<div class="card" style="margin-bottom:1.25rem;border:2px solid #f59e0b">' +
+          '<h4 style="margin:0 0 .75rem;color:#f59e0b;display:flex;align-items:center;gap:.5rem"><i data-lucide="alert-triangle"></i> يحتاج انتباه</h4>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.75rem">' +
+            (s.pendingPayments > 0 ? alertItem('💰', s.pendingPayments + ' مدفوعات معلقة', '__dmSATab(\'payments\')') : '') +
+            (s.expiringSoon > 0 ? alertItem('⏰', s.expiringSoon + ' اشتراك ينتهي خلال 3 أيام', '__dmSATab(\'subscribers\')') : '') +
+            (s.expired > 0 ? alertItem('🚫', s.expired + ' اشتراك منتهي', '__dmSATab(\'subscribers\')') : '') +
+          '</div>' +
+        '</div>'
+        : '') +
+
+      /* Latest subscribers */
+      '<div class="card">' +
+        '<h4 style="margin:0 0 .75rem;display:flex;align-items:center;gap:.5rem;justify-content:space-between">' +
+          '<span><i data-lucide="clock" style="width:16px;height:16px;display:inline;color:var(--primary)"></i> آخر 5 مشتركين</span>' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmSATab(\'subscribers\')">عرض الكل →</button>' +
+        '</h4>' +
+        (s.companies.length ?
+          s.companies.slice().sort(function (a, b) {
+            return (b.createdAt && b.createdAt.seconds || 0) - (a.createdAt && a.createdAt.seconds || 0);
+          }).slice(0, 5).map(function (c) {
+            return '<div style="display:flex;align-items:center;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--border)">' +
+              '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem">' +
+                (c.name || '?').charAt(0).toUpperCase() +
+              '</div>' +
+              '<div style="flex:1;min-width:0">' +
+                '<div style="font-weight:600;font-size:.85rem">' + esc(c.name) + '</div>' +
+                '<div style="font-size:.7rem;color:var(--text-muted)">' + esc(c.ownerEmail) + '</div>' +
+              '</div>' +
+              '<div style="text-align:end">' +
+                '<div class="badge-pill badge-' + (c.expired ? 'red' : 'green') + '">' + (c.expired ? 'منتهي' : 'نشط') + '</div>' +
+                '<div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">' + c.planName + '</div>' +
+              '</div>' +
+            '</div>';
+          }).join('')
+          : '<div class="empty-state"><p>لا يوجد مشتركين بعد</p></div>') +
+      '</div>';
+
+    // Render charts
+    setTimeout(function () {
+      renderRevenueChart(s.monthlyRevenue);
+      renderPlanChart(s.planDist);
+    }, 100);
+  }
+
+  function kpiCard(label, value, icon, color, sub) {
+    return '<div class="stat-card">' +
+      '<div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div>' +
+      '<div class="stat-body">' +
+        '<div class="label">' + esc(label) + '</div>' +
+        '<div class="value">' + esc(value) + '</div>' +
+        (sub ? '<div style="font-size:.7rem;color:var(--text-muted);margin-top:.15rem">' + esc(sub) + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  }
+
+  function alertItem(icon, text, action) {
+    return '<button onclick="' + action + '" style="display:flex;align-items:center;gap:.65rem;padding:.75rem;background:var(--surface-2);border-radius:10px;border:1px solid var(--border);cursor:pointer;font-family:inherit;text-align:start;width:100%;transition:all .15s">' +
+      '<span style="font-size:1.25rem">' + icon + '</span>' +
+      '<span style="flex:1;font-size:.85rem;color:var(--text);font-weight:600">' + esc(text) + '</span>' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color:var(--text-muted)"><polyline points="9 18 15 12 9 6"/></svg>' +
+    '</button>';
+  }
+
+  function computeMonthlyRevenue(orders) {
+    var months = {};
+    var now = new Date();
+    for (var i = 5; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      months[key] = { label: d.toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', { month: 'short' }), amount: 0, count: 0 };
+    }
+    orders.forEach(function (o) {
+      if (o.status !== 'success') return;
+      var ts = o.paidAt ? (o.paidAt.seconds ? o.paidAt.seconds * 1000 : o.paidAt) :
+               o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+      if (!ts) return;
+      var d = new Date(ts);
+      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      if (months[key]) {
+        months[key].amount += (o.amount || 0);
+        months[key].count++;
+      }
+    });
+    return months;
+  }
+
+  function renderRevenueChart(monthly) {
+    var canvas = document.getElementById('dm-sa-chart-revenue');
+    if (!canvas || !window.Chart) return;
+    if (window.__dmSAChart1) try { window.__dmSAChart1.destroy(); } catch (e) {}
+    var labels = Object.values(monthly).map(function (m) { return m.label; });
+    var data = Object.values(monthly).map(function (m) { return m.amount; });
+    window.__dmSAChart1 = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'الإيراد',
+          data: data,
+          backgroundColor: '#7c3aed',
+          borderRadius: 8,
+          barThickness: 32
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: function (v) { return v.toLocaleString(); } } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function renderPlanChart(planDist) {
+    var canvas = document.getElementById('dm-sa-chart-plans');
+    if (!canvas || !window.Chart) return;
+    if (window.__dmSAChart2) try { window.__dmSAChart2.destroy(); } catch (e) {}
+    var labels = Object.keys(planDist);
+    var data = Object.values(planDist);
+    var colors = ['#7c3aed', '#10b981', '#f59e0b', '#06b6d4', '#ef4444', '#8b5cf6'];
+    window.__dmSAChart2 = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{ data: data, backgroundColor: colors.slice(0, labels.length), borderWidth: 0 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } }
+      }
+    });
+  }
+
+  /* =========================================================
+     TAB 2: SUBSCRIBERS
+     ========================================================= */
+  function renderTabSubscribers(el, companies) {
+    var filter = State.filters.saSubFilter || 'all';
+    var search = State.filters.saSearch || '';
+
+    var filtered = companies.filter(function (c) {
+      if (filter === 'active' && c.expired) return false;
+      if (filter === 'expired' && !c.expired) return false;
+      if (filter === 'trial' && c.planId !== 'trial') return false;
+      if (filter === 'paid' && (c.planId === 'trial' || c.expired)) return false;
+      if (search) {
+        var s = search.toLowerCase();
+        var hay = (c.name + ' ' + c.ownerEmail + ' ' + c.phone + ' ' + c.id).toLowerCase();
+        if (hay.indexOf(s) < 0) return false;
+      }
+      return true;
+    });
+
+    var rows = filtered.map(function (c) {
+      var statusColor = c.expired ? 'red' : (c.days <= 3 ? 'yellow' : 'green');
+      var statusText = c.expired ? 'منتهي' : (c.planId === 'trial' ? 'تجربة' : 'نشط');
+
+      return '<tr>' +
+        '<td>' +
+          '<div style="display:flex;align-items:center;gap:.6rem">' +
+            '<div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;flex-shrink:0">' +
+              (c.name || '?').charAt(0).toUpperCase() +
+            '</div>' +
+            '<div style="min-width:0">' +
+              '<div style="font-weight:700;font-size:.85rem">' + esc(c.name) + '</div>' +
+              '<div style="font-size:.68rem;color:var(--text-muted)">' + esc(c.id.slice(0, 16)) + '…</div>' +
+            '</div>' +
+          '</div>' +
+        '</td>' +
+        '<td>' +
+          '<div style="font-size:.82rem">' + esc(c.ownerEmail) + '</div>' +
+          '<div style="font-size:.7rem;color:var(--text-muted)">' + esc(c.phone) + '</div>' +
+        '</td>' +
+        '<td><span class="badge-pill badge-purple">' + esc(c.planName) + '</span></td>' +
+        '<td><b style="font-size:.85rem">' + (c.price || 0) + '</b> <span style="font-size:.7rem">EGP</span></td>' +
+        '<td style="text-align:center"><b style="color:' + (c.expired ? '#ef4444' : '#10b981') + ';font-size:1rem">' + c.days + '</b></td>' +
+        '<td style="text-align:center">' + c.usersCount + '</td>' +
+        '<td><span class="badge-pill badge-' + statusColor + '">' + statusText + '</span></td>' +
+        '<td>' +
+          '<div style="display:flex;gap:.2rem">' +
+            '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmSAViewCompany(\'' + c.id + '\')" title="عرض"><i data-lucide="eye"></i></button>' +
+            '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmSAImpersonate(\'' + c.id + '\')" title="انتحال شخصية" style="color:#8b5cf6"><i data-lucide="user-check"></i></button>' +
+            '<button class="btn btn-success btn-icon btn-sm" onclick="__dmSAExtend(\'' + c.id + '\')" title="تمديد"><i data-lucide="calendar-plus"></i></button>' +
+            '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmSAChangePlan(\'' + c.id + '\')" title="تغيير الباقة" style="color:#7c3aed"><i data-lucide="trending-up"></i></button>' +
+            '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmSADelete(\'' + c.id + '\',\'' + esc(c.name) + '\')" title="حذف" style="color:#ef4444"><i data-lucide="trash-2"></i></button>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    el.innerHTML =
+      '<div class="card" style="margin-bottom:1rem">' +
+        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">' +
+          '<input type="text" id="dm-sa-search" placeholder="بحث بالاسم / الإيميل / الشركة..." value="' + esc(search) + '" style="flex:1;min-width:200px;padding:.6rem .85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:.85rem">' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmSAExportSubs()"><i data-lucide="download"></i> تصدير CSV</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.75rem">' +
+          '<button class="btn ' + (filter === 'all' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmSASubFilter(\'all\')">الكل (' + companies.length + ')</button>' +
+          '<button class="btn ' + (filter === 'active' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmSASubFilter(\'active\')">نشط</button>' +
+          '<button class="btn ' + (filter === 'trial' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmSASubFilter(\'trial\')">تجارب</button>' +
+          '<button class="btn ' + (filter === 'paid' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmSASubFilter(\'paid\')">مدفوع</button>' +
+          '<button class="btn ' + (filter === 'expired' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmSASubFilter(\'expired\')">منتهي</button>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="card" style="padding:0;overflow:hidden">' +
+        '<div class="table-wrap" style="border:none;border-radius:0">' +
+          '<table class="data-table" style="min-width:1000px">' +
+            '<thead><tr>' +
+              '<th>الشركة</th>' +
+              '<th>المالك</th>' +
+              '<th>الباقة</th>' +
+              '<th>السعر</th>' +
+              '<th>الأيام</th>' +
+              '<th>المستخدمين</th>' +
+              '<th>الحالة</th>' +
+              '<th>إجراءات</th>' +
+            '</tr></thead>' +
+            '<tbody>' + (rows || '<tr><td colspan="8"><div class="empty-state"><p>لا يوجد نتائج</p></div></td></tr>') + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>';
+
+    // Bind search
+    var searchEl = document.getElementById('dm-sa-search');
+    if (searchEl) {
+      var searchT;
+      searchEl.oninput = function (e) {
+        clearTimeout(searchT);
+        searchT = setTimeout(function () {
+          State.filters.saSearch = e.target.value;
+          if (typeof navigate === 'function') navigate('superadmin');
+        }, 300);
+      };
+    }
+  }
+
+  /* =========================================================
+     TAB 3: PAYMENTS
+     ========================================================= */
+  function renderTabPayments(el, orders) {
+    orders.sort(function (a, b) {
+      var ta = a.createdAt ? (a.createdAt.seconds ? a.createdAt.seconds * 1000 : a.createdAt) : 0;
+      var tb = b.createdAt ? (b.createdAt.seconds ? b.createdAt.seconds * 1000 : b.createdAt) : 0;
+      return tb - ta;
+    });
+
+    var statusColors = {
+      success: 'green', pending: 'yellow', pending_verification: 'yellow', failed: 'red', rejected: 'red'
+    };
+    var statusLabels = {
+      success: 'مدفوع ✓', pending: 'معلق', pending_verification: 'ينتظر المراجعة', failed: 'فشل', rejected: 'مرفوض'
+    };
+
+    var rows = orders.map(function (o) {
+      var ts = o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+      return '<tr>' +
+        '<td>' +
+          '<div style="font-weight:700;font-size:.85rem">' + esc(o.companyName || o.companyId) + '</div>' +
+          '<div style="font-size:.7rem;color:var(--text-muted)">' + (o.userEmail ? esc(o.userEmail) : '—') + '</div>' +
+        '</td>' +
+        '<td><span class="badge-pill badge-purple">' + esc(o.planId || '—') + '</span></td>' +
+        '<td><b>' + (o.amount || 0) + '</b> EGP</td>' +
+        '<td><span class="badge-pill badge-' + (statusColors[o.status] || 'gray') + '">' + (statusLabels[o.status] || o.status) + '</span></td>' +
+        '<td style="font-size:.75rem">' + (ts ? fmtDate(ts) : '—') + '</td>' +
+        '<td>' +
+          (o.status === 'pending_verification' ?
+            '<div style="display:flex;gap:.25rem">' +
+              '<button class="btn btn-success btn-icon btn-sm" onclick="__dmSAApprove(\'' + o.orderId + '\',\'' + o.companyId + '\',\'' + o.planId + '\')" title="موافقة"><i data-lucide="check"></i></button>' +
+              '<button class="btn btn-danger btn-icon btn-sm" onclick="__dmSAReject(\'' + o.orderId + '\')" title="رفض"><i data-lucide="x"></i></button>' +
+            '</div>'
+            : '<span style="font-size:.7rem;color:var(--text-muted)">' + (o.mode || '—') + '</span>') +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    var pending = orders.filter(function (o) { return o.status === 'pending_verification'; }).length;
+    var successful = orders.filter(function (o) { return o.status === 'success'; });
+    var totalReceived = successful.reduce(function (s, o) { return s + (o.amount || 0); }, 0);
+
+    el.innerHTML =
+      '<div class="grid-stats" style="margin-bottom:1rem">' +
+        kpiCard('معلقة', pending, 'hourglass', '#f59e0b', 'بحاجة لمراجعة') +
+        kpiCard('مدفوعات ناجحة', successful.length, 'check-circle', '#10b981', '') +
+        kpiCard('إجمالي مستلم', fmtMoney(totalReceived), 'dollar-sign', '#7c3aed', '') +
+      '</div>' +
+
+      '<div class="card" style="padding:0;overflow:hidden">' +
+        '<div class="table-wrap" style="border:none;border-radius:0">' +
+          '<table class="data-table">' +
+            '<thead><tr>' +
+              '<th>الشركة</th><th>الباقة</th><th>المبلغ</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th>' +
+            '</tr></thead>' +
+            '<tbody>' + (rows || '<tr><td colspan="6"><div class="empty-state"><p>لا يوجد مدفوعات</p></div></td></tr>') + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* =========================================================
+     TAB 4: ANALYTICS
+     ========================================================= */
+  function renderTabAnalytics(el, companies, orders) {
+    // Conversions
+    var total = companies.length;
+    var paid = companies.filter(function (c) { return c.planId !== 'trial'; }).length;
+    var conversionRate = total > 0 ? ((paid / total) * 100).toFixed(1) : 0;
+
+    // Churn (expired)
+    var churn = total > 0 ? ((companies.filter(function (c) { return c.expired; }).length / total) * 100).toFixed(1) : 0;
+
+    // Avg revenue per user
+    var arpu = paid > 0 ? Math.round(companies.filter(function (c) { return !c.expired && c.planId !== 'trial'; }).reduce(function (s, c) { return s + (c.price || 0); }, 0) / paid) : 0;
+
+    // Monthly signups (last 6 months)
+    var monthlySignups = {};
+    var now = new Date();
+    for (var i = 5; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      monthlySignups[key] = { label: d.toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', { month: 'short' }), count: 0 };
+    }
+    companies.forEach(function (c) {
+      var created = c.createdAt && c.createdAt.seconds ? c.createdAt.seconds * 1000 : 0;
+      if (!created) return;
+      var d = new Date(created);
+      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      if (monthlySignups[key]) monthlySignups[key].count++;
+    });
+
+    // Top subscribers by revenue
+    var top = companies.filter(function (c) { return c.planId !== 'trial'; })
+      .sort(function (a, b) { return (b.price || 0) - (a.price || 0); })
+      .slice(0, 5);
+
+    el.innerHTML =
+      '<div class="grid-stats" style="margin-bottom:1.25rem">' +
+        kpiCard('معدل التحويل', conversionRate + '%', 'target', '#10b981', 'من تجربة إلى مدفوع') +
+        kpiCard('معدل التسرب', churn + '%', 'user-x', '#ef4444', 'اشتراكات منتهية') +
+        kpiCard('ARPU', fmtMoney(arpu), 'dollar-sign', '#7c3aed', 'متوسط الإيراد لكل مشترك') +
+      '</div>' +
+
+      '<div class="chart-box" style="margin-bottom:1.25rem">' +
+        '<h4><i data-lucide="line-chart"></i> تسجيلات جديدة (آخر 6 شهور)</h4>' +
+        '<div class="chart-canvas-wrap"><canvas id="dm-sa-chart-signups"></canvas></div>' +
+      '</div>' +
+
+      '<div class="card">' +
+        '<h4 style="margin:0 0 1rem;display:flex;align-items:center;gap:.5rem">' +
+          '<i data-lucide="trophy" style="color:#f59e0b;width:18px;height:18px"></i> أعلى المشتركين قيمة' +
+        '</h4>' +
+        (top.length ? top.map(function (c, i) {
+          return '<div style="display:flex;align-items:center;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--border)">' +
+            '<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,' + (i === 0 ? '#f59e0b,#d97706' : '#7c3aed,#a78bfa') + ');color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem">' + (i + 1) + '</div>' +
+            '<div style="flex:1">' +
+              '<div style="font-weight:600;font-size:.85rem">' + esc(c.name) + '</div>' +
+              '<div style="font-size:.7rem;color:var(--text-muted)">' + esc(c.planName) + '</div>' +
+            '</div>' +
+            '<div style="font-weight:800;color:#10b981;font-size:.95rem">' + (c.price || 0) + ' EGP</div>' +
+          '</div>';
+        }).join('') : '<div class="empty-state"><p>لا يوجد مشتركين مدفوعين</p></div>') +
+      '</div>';
+
+    setTimeout(function () {
+      var canvas = document.getElementById('dm-sa-chart-signups');
+      if (!canvas || !window.Chart) return;
+      if (window.__dmSAChart3) try { window.__dmSAChart3.destroy(); } catch (e) {}
+      var labels = Object.values(monthlySignups).map(function (m) { return m.label; });
+      var data = Object.values(monthlySignups).map(function (m) { return m.count; });
+      window.__dmSAChart3 = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'تسجيلات',
+            data: data,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,.1)',
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2.5,
+            pointRadius: 5,
+            pointBackgroundColor: '#10b981'
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+        }
+      });
+    }, 100);
+  }
+
+  /* =========================================================
+     TAB 5: BROADCAST
+     ========================================================= */
+  function renderTabBroadcast(el, currentAnnouncement) {
+    el.innerHTML =
+      '<div class="card">' +
+        '<h4 style="margin:0 0 1rem;display:flex;align-items:center;gap:.5rem">' +
+          '<i data-lucide="megaphone" style="color:#7c3aed;width:18px;height:18px"></i> إشعار جماعي لجميع المشتركين' +
+        '</h4>' +
+        '<p style="font-size:.85rem;color:var(--text-muted);margin:0 0 1.25rem">' +
+          'الإشعار ده هيظهر في شريط أعلى التطبيق عند كل المشتركين. استخدمه للإعلانات المهمة (صيانة، ميزات جديدة، عروض).' +
+        '</p>' +
+
+        '<div class="field" style="margin-bottom:1rem">' +
+          '<label>عنوان الإشعار</label>' +
+          '<input type="text" id="dm-bc-title" value="' + esc(currentAnnouncement && currentAnnouncement.title || '') + '" placeholder="مثال: صيانة مجدولة" style="width:100%;padding:.65rem .85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit">' +
+        '</div>' +
+
+        '<div class="field" style="margin-bottom:1rem">' +
+          '<label>نص الإشعار</label>' +
+          '<textarea id="dm-bc-body" rows="3" style="width:100%;padding:.65rem .85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;resize:vertical">' +
+            esc(currentAnnouncement && currentAnnouncement.body || '') +
+          '</textarea>' +
+        '</div>' +
+
+        '<div class="form-row" style="margin-bottom:1rem">' +
+          '<div class="field">' +
+            '<label>نوع الإشعار</label>' +
+            '<select id="dm-bc-type" style="width:100%;padding:.65rem .85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit">' +
+              '<option value="info" ' + (currentAnnouncement && currentAnnouncement.type === 'info' ? 'selected' : '') + '>ℹ️ معلومات</option>' +
+              '<option value="success" ' + (currentAnnouncement && currentAnnouncement.type === 'success' ? 'selected' : '') + '>✓ نجاح</option>' +
+              '<option value="warning" ' + (currentAnnouncement && currentAnnouncement.type === 'warning' ? 'selected' : '') + '>⚠️ تحذير</option>' +
+              '<option value="danger" ' + (currentAnnouncement && currentAnnouncement.type === 'danger' ? 'selected' : '') + '>🔴 خطير</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="field">' +
+            '<label>الحالة</label>' +
+            '<select id="dm-bc-active" style="width:100%;padding:.65rem .85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit">' +
+              '<option value="1" ' + (currentAnnouncement && currentAnnouncement.active ? 'selected' : '') + '>مفعّل</option>' +
+              '<option value="0" ' + (!currentAnnouncement || !currentAnnouncement.active ? 'selected' : '') + '>معطّل</option>' +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="display:flex;gap:.5rem">' +
+          '<button class="btn btn-primary" onclick="__dmSASaveBroadcast()"><i data-lucide="save"></i> حفظ ونشر</button>' +
+          '<button class="btn btn-ghost" onclick="__dmSAClearBroadcast()"><i data-lucide="trash-2"></i> حذف الإشعار</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* =========================================================
+     TAB 6: COUPONS
+     ========================================================= */
+  function renderTabCoupons(el) {
+    // Load coupons
+    (async function () {
+      try {
+        var fsMod = window.DrMediaFB.modules.fsMod;
+        var snap = await fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'coupons'));
+        var coupons = [];
+        snap.forEach(function (d) { coupons.push(Object.assign({ id: d.id }, d.data())); });
+
+        renderCouponsList(el, coupons);
+      } catch (err) {
+        el.innerHTML = '<div class="empty-state"><p>فشل التحميل</p></div>';
+      }
+    })();
+  }
+
+  function renderCouponsList(el, coupons) {
+    var rows = coupons.map(function (c) {
+      var expired = c.expiresAt && c.expiresAt < Date.now();
+      return '<tr>' +
+        '<td><code style="font-weight:800;font-size:.95rem;color:var(--primary);letter-spacing:.05em">' + esc(c.code) + '</code></td>' +
+        '<td>' + (c.discountType === 'percent' ? c.discount + '%' : c.discount + ' EGP') + '</td>' +
+        '<td>' + (c.usedCount || 0) + ' / ' + (c.maxUses || '∞') + '</td>' +
+        '<td>' + (c.expiresAt ? fmtDate(c.expiresAt) : '—') + '</td>' +
+        '<td>' + (expired ? '<span class="badge-pill badge-red">منتهي</span>' :
+          (c.active !== false ? '<span class="badge-pill badge-green">نشط</span>' : '<span class="badge-pill badge-gray">معطّل</span>')) + '</td>' +
+        '<td>' +
+          '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmSADeleteCoupon(\'' + c.id + '\')" style="color:#ef4444"><i data-lucide="trash-2"></i></button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    el.innerHTML =
+      '<div class="card" style="margin-bottom:1rem">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">' +
+          '<h4 style="margin:0;display:flex;align-items:center;gap:.5rem">' +
+            '<i data-lucide="gift" style="color:#ec4899;width:18px;height:18px"></i> أكواد الخصم' +
+          '</h4>' +
+          '<button class="btn btn-primary btn-sm" onclick="__dmSACreateCoupon()"><i data-lucide="plus"></i> كود جديد</button>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="card" style="padding:0;overflow:hidden">' +
+        '<div class="table-wrap" style="border:none;border-radius:0">' +
+          '<table class="data-table">' +
+            '<thead><tr><th>الكود</th><th>الخصم</th><th>الاستخدام</th><th>ينتهي</th><th>الحالة</th><th></th></tr></thead>' +
+            '<tbody>' + (rows || '<tr><td colspan="6"><div class="empty-state"><p>لا يوجد أكواد</p></div></td></tr>') + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* =========================================================
+     TAB 7: FEATURES (Feature Flags)
+     ========================================================= */
+  function renderTabFeatures(el) {
+    var features = [
+      { id: 'whatsapp', name: 'تكامل واتساب', desc: 'إرسال رسائل واتساب للعملاء والموظفين', icon: '💬', default: true },
+      { id: 'ai_distribution', name: 'التوزيع الذكي (AI)', desc: 'توزيع تلقائي ذكي للموظفين', icon: '🤖', default: true },
+      { id: 'client_portal', name: 'بوابة العملاء', desc: 'روابط مشاركة للعملاء', icon: '🔗', default: true },
+      { id: 'pdf_reports', name: 'تقارير PDF', desc: 'توليد تقارير PDF احترافية', icon: '📄', default: true },
+      { id: 'bulk_import', name: 'الاستيراد الذكي', desc: 'استيراد الحجوزات من PDF/صور/Excel', icon: '📥', default: true },
+      { id: 'ai_chat', name: 'المساعد الذكي', desc: 'مساعد AI داخل التطبيق', icon: '🧠', default: true },
+      { id: 'timeline', name: 'العرض الزمني', desc: 'Timeline / Gantt view للحجوزات', icon: '📅', default: true },
+      { id: 'p_l_dashboard', name: 'التحليل المالي', desc: 'لوحة P&L للشركة', icon: '💰', default: true },
+    ];
+
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem('dm_feature_flags') || '{}'); } catch (e) {}
+
+    el.innerHTML =
+      '<div class="card">' +
+        '<h4 style="margin:0 0 .35rem;display:flex;align-items:center;gap:.5rem">' +
+          '<i data-lucide="settings" style="color:#06b6d4;width:18px;height:18px"></i> المميزات المتاحة' +
+        '</h4>' +
+        '<p style="font-size:.8rem;color:var(--text-muted);margin:0 0 1.25rem">' +
+          'تحكم في المميزات اللي تظهر للمشتركين. لما تعطّل ميزة، بتختفي من كل الشركات.' +
+        '</p>' +
+
+        features.map(function (f) {
+          var isOn = saved[f.id] !== undefined ? saved[f.id] : f.default;
+          return '<div style="display:flex;align-items:center;gap:.85rem;padding:.85rem;background:var(--surface-2);border-radius:12px;margin-bottom:.5rem">' +
+            '<div style="width:40px;height:40px;border-radius:10px;background:rgba(124,58,237,.1);display:flex;align-items:center;justify-content:center;font-size:1.25rem">' + f.icon + '</div>' +
+            '<div style="flex:1">' +
+              '<div style="font-weight:700;font-size:.88rem">' + esc(f.name) + '</div>' +
+              '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">' + esc(f.desc) + '</div>' +
+            '</div>' +
+            '<label class="switch"><input type="checkbox" data-feature="' + f.id + '" ' + (isOn ? 'checked' : '') + '><span class="slider"></span></label>' +
+          '</div>';
+        }).join('') +
+
+        '<div style="margin-top:1rem;padding:.75rem;background:rgba(59,130,246,.08);border-inline-start:3px solid #3b82f6;border-radius:8px;font-size:.75rem;color:var(--text-muted);line-height:1.6">' +
+          '💡 المميزات المعطّلة بتختفي فورًا من الـ Sidebar عند تحديث المشتركين للصفحة.' +
+        '</div>' +
+      '</div>';
+
+    // Bind toggle changes
+    el.querySelectorAll('[data-feature]').forEach(function (cb) {
+      cb.onchange = function () {
+        var id = cb.dataset.feature;
+        var flags = {};
+        try { flags = JSON.parse(localStorage.getItem('dm_feature_flags') || '{}'); } catch (e) {}
+        flags[id] = cb.checked;
+        try { localStorage.setItem('dm_feature_flags', JSON.stringify(flags)); } catch (e) {}
+        if (typeof showToast === 'function') showToast('تم تحديث الميزة', 'success');
+      };
+    });
+  }
+
+  /* =========================================================
+     TAB 8: ACTIVITY LOG
+     ========================================================= */
+  async function renderTabActivity(el) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted)">جاري التحميل...</div>';
+
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var snap = await fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'payment_orders'));
+      var orders = [];
+      snap.forEach(function (d) { orders.push(d.data()); });
+
+      // Sort by date
+      orders.sort(function (a, b) {
+        var ta = a.createdAt ? (a.createdAt.seconds ? a.createdAt.seconds * 1000 : a.createdAt) : 0;
+        var tb = b.createdAt ? (b.createdAt.seconds ? b.createdAt.seconds * 1000 : b.createdAt) : 0;
+        return tb - ta;
+      });
+
+      var rows = orders.slice(0, 100).map(function (o) {
+        var ts = o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+        var icon = o.status === 'success' ? '✓' : o.status === 'pending_verification' ? '⏳' : o.status === 'failed' ? '✗' : '•';
+        var color = o.status === 'success' ? '#10b981' : o.status === 'pending_verification' ? '#f59e0b' : '#ef4444';
+        return '<div style="display:flex;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--border)">' +
+          '<div style="width:32px;height:32px;border-radius:50%;background:' + color + '20;color:' + color + ';display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">' + icon + '</div>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:.85rem;font-weight:600">' +
+              (o.status === 'success' ? 'دفعة ناجحة' : o.status === 'pending_verification' ? 'طلب ترقية' : 'عملية') +
+              ' — ' + esc(o.companyName || o.companyId || '—') +
+            '</div>' +
+            '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.15rem">' +
+              esc(o.planId || '—') + ' · ' + (o.amount || 0) + ' EGP · ' + (o.mode || 'manual') +
+            '</div>' +
+          '</div>' +
+          '<div style="font-size:.7rem;color:var(--text-muted);flex-shrink:0">' + (ts ? fmtDate(ts) : '—') + '</div>' +
+        '</div>';
+      }).join('');
+
+      el.innerHTML =
+        '<div class="card">' +
+          '<h4 style="margin:0 0 1rem;display:flex;align-items:center;gap:.5rem">' +
+            '<i data-lucide="list" style="color:#7c3aed;width:18px;height:18px"></i> سجل النشاط (آخر 100 عملية)' +
+          '</h4>' +
+          (rows || '<div class="empty-state"><p>لا يوجد نشاط</p></div>') +
+        '</div>';
+    } catch (err) {
+      el.innerHTML = '<div class="empty-state"><p>فشل التحميل: ' + esc(err.message) + '</p></div>';
+    }
+  }
+
+  /* =========================================================
+     TAB 9: BACKUP
+     ========================================================= */
+  function renderTabBackup(el) {
+    el.innerHTML =
+      '<div class="grid-2">' +
+        '<div class="card">' +
+          '<h4 style="margin:0 0 .75rem;display:flex;align-items:center;gap:.5rem">' +
+            '<i data-lucide="download" style="color:#10b981;width:18px;height:18px"></i> تصدير قاعدة البيانات' +
+          '</h4>' +
+          '<p style="font-size:.82rem;color:var(--text-muted);margin:0 0 1rem">' +
+            'نسخة كاملة من كل بيانات النظام (شركات، مشتركين، مدفوعات) بصيغة JSON.' +
+          '</p>' +
+          '<button class="btn btn-primary btn-sm" onclick="__dmSABackupAll()"><i data-lucide="download"></i> تصدير كامل</button>' +
+        '</div>' +
+
+        '<div class="card">' +
+          '<h4 style="margin:0 0 .75rem;display:flex;align-items:center;gap:.5rem">' +
+            '<i data-lucide="users" style="color:#7c3aed;width:18px;height:18px"></i> تصدير المشتركين' +
+          '</h4>' +
+          '<p style="font-size:.82rem;color:var(--text-muted);margin:0 0 1rem">' +
+            'ملف CSV بكل المشتركين لاستخدامه في Excel أو Google Sheets.' +
+          '</p>' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmSAExportSubs()"><i data-lucide="file-text"></i> تصدير CSV</button>' +
+        '</div>' +
+
+        '<div class="card">' +
+          '<h4 style="margin:0 0 .75rem;display:flex;align-items:center;gap:.5rem">' +
+            '<i data-lucide="dollar-sign" style="color:#f59e0b;width:18px;height:18px"></i> تصدير المدفوعات' +
+          '</h4>' +
+          '<p style="font-size:.82rem;color:var(--text-muted);margin:0 0 1rem">' +
+            'سجل كامل بكل المدفوعات للمراجعة المالية.' +
+          '</p>' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmSAExportPayments()"><i data-lucide="file-text"></i> تصدير CSV</button>' +
+        '</div>' +
+
+        '<div class="card" style="border-color:rgba(239,68,68,.3)">' +
+          '<h4 style="margin:0 0 .75rem;display:flex;align-items:center;gap:.5rem;color:#ef4444">' +
+            '<i data-lucide="alert-triangle" style="width:18px;height:18px"></i> تنظيف البيانات' +
+          '</h4>' +
+          '<p style="font-size:.82rem;color:var(--text-muted);margin:0 0 1rem">' +
+            'حذف التجارب المنتهية منذ أكثر من 24 ساعة.' +
+          '</p>' +
+          '<button class="btn btn-danger btn-sm" onclick="__dmSACleanupTrials()"><i data-lucide="trash-2"></i> تنظيف التجارب المنتهية</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* =========================================================
+     PUBLIC ACTIONS
+     ========================================================= */
+  window.__dmSATab = function (tab) {
+    State.filters.saTab = tab;
+    if (typeof navigate === 'function') navigate('superadmin');
+  };
+
+  window.__dmSARefresh = function () {
+    if (typeof navigate === 'function') navigate('superadmin');
+  };
+
+  window.__dmSASubFilter = function (filter) {
+    State.filters.saSubFilter = filter;
+    if (typeof navigate === 'function') navigate('superadmin');
+  };
+
+  /* View company details */
+  window.__dmSAViewCompany = async function (companyId) {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var [compSnap, subSnap, usersSnap, ordersSnap] = await Promise.all([
+        fsMod.getDoc(fsMod.doc(window.DrMediaFB.db, 'companies', companyId)),
+        fsMod.getDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId)),
+        fsMod.getDocs(fsMod.query(fsMod.collection(window.DrMediaFB.db, 'users'), fsMod.where('companyId', '==', companyId))),
+        fsMod.getDocs(fsMod.query(fsMod.collection(window.DrMediaFB.db, 'payment_orders'), fsMod.where('companyId', '==', companyId)))
+      ]);
+
+      var c = compSnap.exists() ? compSnap.data() : {};
+      var sub = subSnap.exists() ? subSnap.data() : {};
+      var users = [];
+      usersSnap.forEach(function (d) { users.push(d.data()); });
+      var orders = [];
+      ordersSnap.forEach(function (d) { orders.push(d.data()); });
+
+      var plan = (window.__dmPlans || {})[sub.planId] || { name: 'Trial', price: 0 };
+      var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - Date.now()) / 86400000)) : 0;
+      var totalRevenue = orders.filter(function (o) { return o.status === 'success'; })
+        .reduce(function (s, o) { return s + (o.amount || 0); }, 0);
+
+      var bodyHtml = '<div style="display:flex;flex-direction:column;gap:1rem">' +
+        '<div style="padding:.85rem;background:var(--surface-2);border-radius:10px">' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;font-size:.85rem">' +
+            '<div><b style="color:var(--text-muted);font-size:.7rem;display:block">اسم الشركة</b>' + esc(c.name || '—') + '</div>' +
+            '<div><b style="color:var(--text-muted);font-size:.7rem;display:block">كود الشركة</b><code style="font-size:.75rem">' + esc(companyId) + '</code></div>' +
+            '<div><b style="color:var(--text-muted);font-size:.7rem;display:block">البريد</b>' + esc(c.ownerEmail || '—') + '</div>' +
+            '<div><b style="color:var(--text-muted);font-size:.7rem;display:block">الهاتف</b>' + esc(c.phone || '—') + '</div>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">' +
+          '<div style="padding:.75rem;background:rgba(124,58,237,.08);border-radius:10px;text-align:center">' +
+            '<div style="font-size:.65rem;color:var(--text-muted)">الباقة</div>' +
+            '<div style="font-weight:800;font-size:1rem;color:#7c3aed">' + esc(plan.name) + '</div>' +
+          '</div>' +
+          '<div style="padding:.75rem;background:rgba(16,185,129,.08);border-radius:10px;text-align:center">' +
+            '<div style="font-size:.65rem;color:var(--text-muted)">الأيام المتبقية</div>' +
+            '<div style="font-weight:800;font-size:1rem;color:#10b981">' + days + '</div>' +
+          '</div>' +
+          '<div style="padding:.75rem;background:rgba(245,158,11,.08);border-radius:10px;text-align:center">' +
+            '<div style="font-size:.65rem;color:var(--text-muted)">إجمالي الإيراد</div>' +
+            '<div style="font-weight:800;font-size:1rem;color:#f59e0b">' + totalRevenue + ' EGP</div>' +
+          '</div>' +
+        '</div>' +
+
+        '<div>' +
+          '<div style="font-weight:700;font-size:.85rem;margin-bottom:.5rem">👥 المستخدمين (' + users.length + ')</div>' +
+          users.map(function (u) {
+            return '<div style="padding:.5rem .75rem;background:var(--surface-2);border-radius:8px;margin-bottom:.35rem;font-size:.8rem">' +
+              '<b>' + esc(u.name || u.email) + '</b> — <span style="color:var(--text-muted)">' + esc(u.role || '—') + '</span>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+
+        (orders.length ?
+          '<div>' +
+            '<div style="font-weight:700;font-size:.85rem;margin-bottom:.5rem">💰 آخر المدفوعات</div>' +
+            orders.slice(0, 5).map(function (o) {
+              var color = o.status === 'success' ? '#10b981' : '#f59e0b';
+              return '<div style="display:flex;justify-content:space-between;padding:.5rem .75rem;background:var(--surface-2);border-radius:8px;margin-bottom:.35rem;font-size:.8rem">' +
+                '<span>' + esc(o.planId) + '</span>' +
+                '<span style="color:' + color + ';font-weight:700">' + (o.amount || 0) + ' EGP · ' + esc(o.status) + '</span>' +
+              '</div>';
+            }).join('') +
+          '</div>'
+          : '') +
+      '</div>';
+
+      if (typeof openModal === 'function') {
+        openModal({
+          title: '🏢 ' + esc(c.name || 'شركة'),
+          size: 'lg',
+          body: bodyHtml,
+          footer: '<button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' +
+            '<button class="btn btn-primary" onclick="closeModal();__dmSAExtend(\'' + companyId + '\')"><i data-lucide="calendar-plus"></i> تمديد الاشتراك</button>'
+        });
+        if (window.lucide) lucide.createIcons();
+      }
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('فشل التحميل: ' + err.message, 'error');
+    }
+  };
+
+  /* Impersonate */
+  window.__dmSAImpersonate = function (companyId) {
+    if (!confirm('⚠️ هتشوف بيانات الشركة دي كأنك صاحبها.\n\nمتابعة؟')) return;
+    if (typeof showToast === 'function') showToast('ميزة الانتحال قيد التطوير', 'info');
+    // Future: swap current user context to read this company's data
+  };
+
+  /* Extend subscription */
+  window.__dmSAExtend = async function (companyId) {
+    var days = prompt('كم يوم تريد إضافته؟', '30');
+    if (!days) return;
+    days = parseInt(days);
+    if (!days || days <= 0) return;
+
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var subRef = fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId);
+      var snap = await fsMod.getDoc(subRef);
+      var current = snap.exists() ? snap.data() : {};
+      var base = Math.max(current.expiresAt || 0, Date.now());
+      var newExpiry = base + (days * 86400000);
+
+      await fsMod.setDoc(subRef, {
+        companyId: companyId,
+        status: 'active',
+        expiresAt: newExpiry,
+        extendedBy: window.__dmSaaS.user.uid,
+        extendedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+
+      if (typeof showToast === 'function') showToast('✓ تم تمديد ' + days + ' يوم', 'success');
+      window.__dmSARefresh();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  /* Change plan */
+  window.__dmSAChangePlan = function (companyId) {
+    var plans = window.__dmPlans || {};
+    var opts = Object.keys(plans).map(function (k) { return k; });
+    var chosen = prompt('اختر الباقة:\n' + opts.join('\n'), 'pro');
+    if (!chosen || !plans[chosen]) return;
+
+    (async function () {
+      try {
+        var fsMod = window.DrMediaFB.modules.fsMod;
+        var plan = plans[chosen];
+        var subRef = fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId);
+        await fsMod.setDoc(subRef, {
+          companyId: companyId,
+          planId: chosen,
+          status: 'active',
+          startedAt: Date.now(),
+          expiresAt: Date.now() + ((plan.durationDays || 30) * 86400000),
+          changedBy: window.__dmSaaS.user.uid,
+          updatedAt: fsMod.serverTimestamp()
+        }, { merge: true });
+        if (typeof showToast === 'function') showToast('✓ تم التغيير إلى ' + plan.name, 'success');
+        window.__dmSARefresh();
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+      }
+    })();
+  };
+
+  /* Delete company */
+  window.__dmSADelete = function (companyId, companyName) {
+    if (!confirm('⚠️ حذف نهائي لشركة "' + companyName + '"؟\n\nكل البيانات هتتشال ولا يمكن استرجاعها!')) return;
+    if (!confirm('تأكيد أخير: أنت متأكد 100%؟')) return;
+
+    (async function () {
+      try {
+        var fsMod = window.DrMediaFB.modules.fsMod;
+        await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'companies', companyId, 'app', 'main')).catch(function () {});
+        await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'companies', companyId));
+        await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId));
+        if (typeof showToast === 'function') showToast('✓ تم الحذف', 'success');
+        window.__dmSARefresh();
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+      }
+    })();
+  };
+
+  /* Approve payment */
+  window.__dmSAApprove = async function (orderId, companyId, planId) {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var plan = (window.__dmPlans || {})[planId] || { durationDays: 30 };
+      var now = Date.now();
+
+      await fsMod.updateDoc(fsMod.doc(window.DrMediaFB.db, 'payment_orders', orderId), {
+        status: 'success',
+        paidAt: fsMod.serverTimestamp(),
+        approvedBy: window.__dmSaaS.user.uid
+      });
+
+      await fsMod.setDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId), {
+        companyId: companyId,
+        planId: planId,
+        status: 'active',
+        startedAt: now,
+        expiresAt: now + ((plan.durationDays || 30) * 86400000),
+        lastPaymentOrderId: orderId,
+        updatedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+
+      if (typeof showToast === 'function') showToast('✓ تم التفعيل', 'success');
+      window.__dmSARefresh();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  /* Reject payment */
+  window.__dmSAReject = async function (orderId) {
+    if (!confirm('رفض الدفعة؟')) return;
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      await fsMod.updateDoc(fsMod.doc(window.DrMediaFB.db, 'payment_orders', orderId), {
+        status: 'rejected',
+        rejectedAt: fsMod.serverTimestamp(),
+        rejectedBy: window.__dmSaaS.user.uid
+      });
+      if (typeof showToast === 'function') showToast('تم الرفض', 'info');
+      window.__dmSARefresh();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  /* Broadcast */
+  window.__dmSASaveBroadcast = async function () {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var title = (document.getElementById('dm-bc-title') || {}).value || '';
+      var body = (document.getElementById('dm-bc-body') || {}).value || '';
+      var type = (document.getElementById('dm-bc-type') || {}).value || 'info';
+      var active = (document.getElementById('dm-bc-active') || {}).value === '1';
+
+      if (!title && !body) {
+        if (typeof showToast === 'function') showToast('اكتب عنوان أو نص', 'warn');
+        return;
+      }
+
+      await fsMod.setDoc(fsMod.doc(window.DrMediaFB.db, 'super_admin', 'announcement'), {
+        title: title,
+        body: body,
+        type: type,
+        active: active,
+        updatedBy: window.__dmSaaS.user.uid,
+        updatedAt: fsMod.serverTimestamp()
+      });
+
+      if (typeof showToast === 'function') showToast('✓ تم النشر', 'success');
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmSAClearBroadcast = async function () {
+    if (!confirm('حذف الإشعار الجماعي؟')) return;
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'super_admin', 'announcement'));
+      if (typeof showToast === 'function') showToast('تم الحذف', 'success');
+      window.__dmSARefresh();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  /* Coupons */
+  window.__dmSACreateCoupon = async function () {
+    var code = prompt('كود الخصم (بالأحرف الكبيرة):', 'WELCOME10');
+    if (!code) return;
+    var discount = prompt('نسبة الخصم (%) :', '10');
+    if (!discount) return;
+    var maxUses = prompt('أقصى عدد استخدامات:', '50');
+    var validityDays = prompt('صالح لمدة (بالأيام):', '30');
+
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var id = 'cp_' + code.toUpperCase();
+      await fsMod.setDoc(fsMod.doc(window.DrMediaFB.db, 'coupons', id), {
+        code: code.toUpperCase(),
+        discountType: 'percent',
+        discount: parseFloat(discount),
+        maxUses: parseInt(maxUses) || 50,
+        usedCount: 0,
+        expiresAt: Date.now() + ((parseInt(validityDays) || 30) * 86400000),
+        active: true,
+        createdAt: fsMod.serverTimestamp(),
+        createdBy: window.__dmSaaS.user.uid
+      });
+      if (typeof showToast === 'function') showToast('✓ تم إنشاء الكود', 'success');
+      window.__dmSATab('coupons');
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmSADeleteCoupon = async function (id) {
+    if (!confirm('حذف الكود؟')) return;
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'coupons', id));
+      if (typeof showToast === 'function') showToast('تم الحذف', 'success');
+      window.__dmSATab('coupons');
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  /* Backup */
+  window.__dmSABackupAll = async function () {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var collections = ['companies', 'subscriptions', 'users', 'payment_orders', 'coupons'];
+      var backup = { exportedAt: new Date().toISOString(), data: {} };
+
+      for (var i = 0; i < collections.length; i++) {
+        var col = collections[i];
+        var snap = await fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, col));
+        backup.data[col] = [];
+        snap.forEach(function (d) {
+          backup.data[col].push({ id: d.id, ...d.data() });
+        });
+      }
+
+      var blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'drmedia-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      if (typeof showToast === 'function') showToast('✓ تم التصدير', 'success');
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmSAExportSubs = async function () {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var [comps, subs] = await Promise.all([
+        fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'companies')),
+        fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'subscriptions'))
+      ]);
+      var subMap = {};
+      subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+      var rows = [['Company ID', 'Name', 'Owner Email', 'Phone', 'Plan', 'Price', 'Days Left', 'Status', 'Created']];
+      comps.forEach(function (d) {
+        var c = d.data();
+        var s = subMap[c.id] || {};
+        var days = s.expiresAt ? Math.max(0, Math.ceil((s.expiresAt - Date.now()) / 86400000)) : 0;
+        rows.push([
+          c.id, c.name || '', c.ownerEmail || '', c.phone || '',
+          s.planId || 'trial', s.price || 0, days, s.status || 'unknown',
+          c.createdAt ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : ''
+        ]);
+      });
+
+      exportCSV(rows, 'subscribers');
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmSAExportPayments = async function () {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var snap = await fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'payment_orders'));
+      var rows = [['Order ID', 'Company ID', 'Company Name', 'Email', 'Plan', 'Amount', 'Status', 'Mode', 'Date']];
+      snap.forEach(function (d) {
+        var o = d.data();
+        var ts = o.createdAt ? new Date(o.createdAt.seconds * 1000).toISOString().slice(0, 10) : '';
+        rows.push([
+          o.orderId || '', o.companyId || '', o.companyName || '', o.userEmail || '',
+          o.planId || '', o.amount || 0, o.status || '', o.mode || '', ts
+        ]);
+      });
+      exportCSV(rows, 'payments');
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmSAExportFull = function () {
+    if (typeof showToast === 'function') showToast('استخدم تبويب النسخ الاحتياطي', 'info');
+    window.__dmSATab('backup');
+  };
+
+  window.__dmSACleanupTrials = async function () {
+    if (!confirm('حذف كل التجارب المنتهية منذ أكثر من 24 ساعة؟')) return;
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var subs = await fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'subscriptions'));
+      var now = Date.now();
+      var count = 0;
+
+      var promises = [];
+      subs.forEach(function (d) {
+        var s = d.data();
+        if (s.planId === 'trial' && s.expiresAt && (now - s.expiresAt) > 86400000) {
+          count++;
+          var cid = s.companyId;
+          promises.push(fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'companies', cid, 'app', 'main')).catch(function () {}));
+          promises.push(fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'companies', cid)).catch(function () {}));
+          promises.push(fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', cid)).catch(function () {}));
+        }
+      });
+
+      await Promise.all(promises);
+      if (typeof showToast === 'function') showToast('✓ تم حذف ' + count + ' تجربة', 'success');
+      window.__dmSARefresh();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  function exportCSV(rows, name) {
+    var csv = rows.map(function (r) {
+      return r.map(function (x) { return '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"'; }).join(',');
+    }).join('\n');
+    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    if (typeof showToast === 'function') showToast('✓ تم التصدير', 'success');
+  }
+
+  /* =========================================================
+     NAV + BOOT
+     ========================================================= */
+  function ensureNav() {
+    if (!isSuperAdmin()) return;
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+
+    if (!document.getElementById('dm-super-nav')) {
+      var section = document.createElement('div');
+      section.id = 'dm-super-nav';
+      section.innerHTML =
+        '<div class="nav-section" style="color:#f59e0b;opacity:1;letter-spacing:.1em">⚡ SUPER ADMIN</div>' +
+        '<a class="nav-item" data-page="superadmin" style="cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#f59e0b">' +
+          '<i data-lucide="crown" style="color:#f59e0b"></i>' +
+          '<span style="color:#f59e0b;font-weight:700">لوحة المدير العام</span>' +
+        '</a>';
+      nav.appendChild(section);
+      var link = section.querySelector('.nav-item');
+      if (link) link.onclick = function (e) {
+        e.preventDefault();
+        if (typeof navigate === 'function') navigate('superadmin');
+      };
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined' && typeof State !== 'undefined';
+    },
+    function () {
+      registerPage();
+
+      // Update nav click handler to point to the new page
+      window.__dmSuperAdmin = function () {
+        if (typeof navigate === 'function') navigate('superadmin');
+      };
+
+      waitFor(
+        function () { return isSuperAdmin(); },
+        function () {
+          ensureNav();
+          // Hook renderSidebar to re-add nav
+          if (typeof window.renderSidebar === 'function' && !window.renderSidebar.__dm34) {
+            var orig = window.renderSidebar;
+            window.renderSidebar = function () {
+              var r = orig.apply(this, arguments);
+              setTimeout(ensureNav, 50);
+              return r;
+            };
+            window.renderSidebar.__dm34 = true;
+          }
+        }
+      );
+
+      console.log('%c[Section 34] ✓ Super Admin Master Panel ready', 'color:#10b981;font-weight:bold;font-size:13px');
+      console.log('%c[Section 34] Navigate: __dmSATab("dashboard")', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+  window.__dmShowSubscribers = function () {
+    window.__dmSATab('subscribers');
+  };
+
+  window.__dmViewPendingPayments = function () {
+    window.__dmSATab('payments');
+  };
+
+})();
 
 
 
