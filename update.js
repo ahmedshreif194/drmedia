@@ -8115,6 +8115,891 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 20: Unified Booking Import
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - PDF + Images (via OCR) + Excel + CSV
+   - Auto column detection (Arabic / English headers)
+   - Auto hall section detection
+   - Analysis summary after parse
+   - Replaces Pages.importsmart
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 20] Unified Import loading…', 'color:#f97316;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 20] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.unified_import = 'استيراد ذكي';
+  I18N.ar.ui_title = 'استيراد الحجوزات (PDF / صور / Excel)';
+  I18N.ar.ui_dropzone = 'اضغط لاختيار ملف أو اسحبه هنا';
+  I18N.ar.ui_supported = 'PDF · PNG · JPG · WEBP · XLSX · XLS · CSV';
+  I18N.ar.ui_reading = 'جاري القراءة…';
+  I18N.ar.ui_ocr = 'جاري التعرف على النص (OCR)…';
+  I18N.ar.ui_excel_loading = 'جاري تحميل مكتبة Excel…';
+  I18N.ar.ui_review = 'مراجعة النتائج';
+  I18N.ar.ui_found = 'تم العثور على';
+  I18N.ar.ui_bookings = 'حجز';
+  I18N.ar.ui_import_all = 'حفظ الكل';
+  I18N.ar.ui_imported = 'تم الاستيراد';
+  I18N.ar.ui_no_data = 'لم يتم التعرف على أي حجز — جرب ملفًا أوضح';
+  I18N.ar.ui_try_again = 'محاولة أخرى';
+  I18N.ar.ui_show_raw = 'عرض النص المستخرج';
+  I18N.ar.ui_hide_raw = 'إخفاء النص';
+  I18N.ar.ui_analysis = 'تحليل الملف';
+  I18N.ar.ui_total = 'إجمالي الحجوزات';
+  I18N.ar.ui_guests = 'إجمالي الأفراد';
+  I18N.ar.ui_per_hall = 'حسب القاعة';
+  I18N.ar.ui_per_event = 'حسب المناسبة';
+  I18N.ar.ui_date_range = 'نطاق التاريخ';
+  I18N.ar.ui_cols_detected = 'الأعمدة المكتشفة';
+
+  I18N.en.unified_import = 'Smart Import';
+  I18N.en.ui_title = 'Import bookings (PDF / Images / Excel)';
+  I18N.en.ui_dropzone = 'Click to choose file or drag it here';
+  I18N.en.ui_supported = 'PDF · PNG · JPG · WEBP · XLSX · XLS · CSV';
+  I18N.en.ui_reading = 'Reading…';
+  I18N.en.ui_ocr = 'Running OCR…';
+  I18N.en.ui_excel_loading = 'Loading Excel library…';
+  I18N.en.ui_review = 'Review Results';
+  I18N.en.ui_found = 'Found';
+  I18N.en.ui_bookings = 'bookings';
+  I18N.en.ui_import_all = 'Save All';
+  I18N.en.ui_imported = 'Imported';
+  I18N.en.ui_no_data = 'No bookings detected — try a clearer file';
+  I18N.en.ui_try_again = 'Try again';
+  I18N.en.ui_show_raw = 'Show raw text';
+  I18N.en.ui_hide_raw = 'Hide raw text';
+  I18N.en.ui_analysis = 'File Analysis';
+  I18N.en.ui_total = 'Total bookings';
+  I18N.en.ui_guests = 'Total guests';
+  I18N.en.ui_per_hall = 'Per hall';
+  I18N.en.ui_per_event = 'Per event';
+  I18N.en.ui_date_range = 'Date range';
+  I18N.en.ui_cols_detected = 'Detected columns';
+
+  /* ---------- state ---------- */
+  var Un = {
+    file: null,
+    fileName: '',
+    fileType: '',
+    rawText: '',
+    parsed: [],
+    busy: false,
+    status: '',
+    showRaw: false,
+    analysis: null
+  };
+  window.__dmUnifiedImport = Un;
+
+  /* ---------- utilities ---------- */
+  function norm(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\u064B-\u0652]/g, '')
+      .replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function toAsciiDigits(s) {
+    return String(s == null ? '' : s)
+      .replace(/[٠-٩]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48); })
+      .replace(/[۰-۹]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x06F0 + 48); });
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function uid2(p) {
+    return (p || 'x') + '_' + Math.random().toString(36).slice(2, 9);
+  }
+
+  /* ---------- date parsing ---------- */
+  function parseDate(input) {
+    if (!input) return null;
+    if (input instanceof Date) {
+      var y = input.getFullYear();
+      var m = input.getMonth() + 1;
+      var d = input.getDate();
+      return y + '-' + pad2(m) + '-' + pad2(d);
+    }
+    var t = toAsciiDigits(String(input)).trim();
+    var m1 = t.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if (m1) {
+      var yy = parseInt(m1[1]), mo = parseInt(m1[2]), dd = parseInt(m1[3]);
+      if (mo >= 1 && mo <= 12 && dd >= 1 && dd <= 31) return yy + '-' + pad2(mo) + '-' + pad2(dd);
+    }
+    var m2 = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m2) {
+      var d2 = parseInt(m2[1]), m2v = parseInt(m2[2]), y2 = parseInt(m2[3]);
+      if (y2 < 100) y2 += y2 < 50 ? 2000 : 1900;
+      if (m2v >= 1 && m2v <= 12 && d2 >= 1 && d2 <= 31) return y2 + '-' + pad2(m2v) + '-' + pad2(d2);
+    }
+    var monthMap = {
+      'يناير': 1, 'فبراير': 2, 'مارس': 3, 'ابريل': 4, 'أبريل': 4, 'مايو': 5, 'يونيو': 6,
+      'يوليو': 7, 'اغسطس': 8, 'أغسطس': 8, 'سبتمبر': 9, 'اكتوبر': 10, 'أكتوبر': 10,
+      'نوفمبر': 11, 'ديسمبر': 12,
+      'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6, 'jul': 7,
+      'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+      'january': 1, 'february': 2, 'march': 3, 'april': 4, 'june': 6, 'july': 7,
+      'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12
+    };
+    var nn = norm(t);
+    for (var key in monthMap) {
+      if (nn.indexOf(norm(key)) >= 0) {
+        var dm = nn.match(/(\d{1,2})/);
+        var ym = nn.match(/(20\d{2}|19\d{2})/);
+        var day = dm ? parseInt(dm[1]) : 1;
+        var year = ym ? parseInt(ym[1]) : new Date().getFullYear();
+        if (day >= 1 && day <= 31) return year + '-' + pad2(monthMap[key]) + '-' + pad2(day);
+      }
+    }
+    return null;
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+  /* ---------- phone parsing ---------- */
+  function parsePhone(text) {
+    var t = toAsciiDigits(text);
+    var m = t.match(/(?:\+?20|0020)?\s*0?1[0125]\s*\d[\s\d]{7,9}/);
+    if (m) {
+      var digits = m[0].replace(/[^\d]/g, '');
+      if (digits.indexOf('0020') === 0) return '0' + digits.slice(4, 14);
+      if (digits.indexOf('20') === 0) return '0' + digits.slice(2, 12);
+      if (digits.charAt(0) === '1' && digits.length === 10) return '0' + digits;
+      return digits.slice(0, 11);
+    }
+    m = t.match(/\d{10,15}/);
+    if (m) return m[0];
+    return '';
+  }
+
+  /* ---------- hall detection ---------- */
+  function detectHall(text) {
+    var n = norm(text);
+    if (!n) return null;
+    if (n.indexOf('قاعه المغلقه') >= 0) return 'closed';
+    if (n.indexOf('مغلقه') >= 0 && n.length < 40) return 'closed';
+    if (n.indexOf('المغلقه') >= 0) return 'closed';
+    if (n.indexOf('قاعه الاوبن') >= 0 || n.indexOf('قاعه الاوبن') >= 0) return 'open';
+    if (n.indexOf('اوبن') >= 0 && n.length < 40) return 'open';
+    if (n.indexOf('الاوبن') >= 0) return 'open';
+    if (n.indexOf('قاعه الصغيره') >= 0 || n.indexOf('الصغيره') >= 0) return 'small';
+    if (n.indexOf('صغيره') >= 0 && n.length < 40) return 'small';
+    if (n.indexOf('كافيه') >= 0 || n.indexOf('كافي') >= 0) return 'cafe';
+    return null;
+  }
+
+  function matchHallId(key) {
+    var halls = (State.data && State.data.halls) || [];
+    for (var i = 0; i < halls.length; i++) {
+      var h = halls[i];
+      var ar = norm(h.name.ar || '');
+      var en = norm(h.name.en || '');
+      if (key === 'closed' && (ar.indexOf('مغلقه') >= 0 || ar.indexOf('مغلقة') >= 0 || en.indexOf('closed') >= 0)) return h.id;
+      if (key === 'open' && (ar.indexOf('اوبن') >= 0 || ar.indexOf('مفتوح') >= 0 || en.indexOf('open') >= 0)) return h.id;
+      if (key === 'small' && (ar.indexOf('صغيره') >= 0 || en.indexOf('small') >= 0)) return h.id;
+      if (key === 'cafe' && (ar.indexOf('كافيه') >= 0 || ar.indexOf('كافي') >= 0 || en.indexOf('cafe') >= 0)) return h.id;
+    }
+    return halls.length ? halls[0].id : '';
+  }
+
+  /* ---------- event / package detection ---------- */
+  function detectEvent(text) {
+    var n = norm(text);
+    if (!n) return null;
+    if (n.indexOf('عشاء') >= 0) return 'Wedding';
+    if (n.indexOf('فرح') >= 0) return 'Wedding';
+    if (n.indexOf('زفاف') >= 0) return 'Wedding';
+    if (n.indexOf('سواريه') >= 0) return 'Engagement';
+    if (n.indexOf('خطوبه') >= 0) return 'Engagement';
+    if (n.indexOf('مطبخ') >= 0) return 'Engagement';
+    if (n.indexOf('حنه') >= 0) return 'Henna';
+    if (n.indexOf('هاي تي') >= 0) return 'Birthday';
+    if (n.indexOf('هاى تى') >= 0) return 'Birthday';
+    if (n.indexOf('عيد ميلاد') >= 0) return 'Birthday';
+    if (n.indexOf('مؤتمر') >= 0 || n.indexOf('اجتماع') >= 0) return 'Corporate';
+    return null;
+  }
+
+  /* ---------- column detection (Excel) ---------- */
+  var COL_KEYS = {
+    date: ['التاريخ', 'تاريخ', 'date', 'day', 'اليوم', 'booking date'],
+    clientName: ['العميل', 'اسم العميل', 'الاسم', 'client', 'customer', 'name', 'guest'],
+    phone: ['الهاتف', 'هاتف', 'تليفون', 'الموبايل', 'phone', 'mobile', 'tel', 'contact'],
+    hall: ['القاعة', 'قاعه', 'hall', 'venue', 'location'],
+    eventType: ['المناسبة', 'مناسبه', 'النوع', 'نوع المناسبة', 'event', 'type', 'occasion'],
+    package: ['الباكدج', 'باكدج', 'الباقة', 'المنيو', 'package', 'menu', 'offer', 'plan'],
+    guestsCount: ['عدد الأفراد', 'عدد الافراد', 'الأفراد', 'الافراد', 'عدد', 'guests', 'count', 'pax', 'number'],
+    cost: ['التكلفة', 'تكلفة', 'السعر', 'سعر', 'cost', 'price', 'amount', 'total', 'fee'],
+    notes: ['ملاحظات', 'الملاحظات', 'notes', 'comment', 'remarks']
+  };
+
+  function detectColumnMap(row) {
+    if (!row || !row.length) return null;
+    var map = {};
+    for (var i = 0; i < row.length; i++) {
+      var cell = String(row[i] == null ? '' : row[i]).trim();
+      if (!cell) continue;
+      var n = norm(cell);
+      for (var key in COL_KEYS) {
+        if (map[key] !== undefined) continue;
+        var words = COL_KEYS[key];
+        for (var w = 0; w < words.length; w++) {
+          var nw = norm(words[w]);
+          if (!nw) continue;
+          if (n === nw || n.indexOf(nw) >= 0) {
+            map[key] = i;
+            break;
+          }
+        }
+      }
+    }
+    return map;
+  }
+
+  /* ---------- Excel parser ---------- */
+  function parseExcelSheet(rows, sheetNameHint) {
+    var bookings = [];
+    var startHall = matchHallId(detectHall(sheetNameHint || '') || 'closed');
+    var currentHallId = startHall;
+    var colMap = null;
+    var detectedCols = null;
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || !row.length) continue;
+      var nonEmpty = row.filter(function (c) { return c !== '' && c !== null && c !== undefined; });
+      if (!nonEmpty.length) continue;
+
+      // Section header (single non-empty cell that matches a hall)
+      if (nonEmpty.length === 1) {
+        var hit = detectHall(String(nonEmpty[0]));
+        if (hit) {
+          currentHallId = matchHallId(hit);
+          colMap = null; // reset cols for next section
+          continue;
+        }
+      }
+
+      // Header row
+      var detected = detectColumnMap(row);
+      if (detected && detected.date !== undefined && detected.clientName !== undefined) {
+        colMap = detected;
+        detectedCols = detected;
+        continue;
+      }
+
+      // Data row
+      if (colMap) {
+        var date = null;
+        if (colMap.date !== undefined) date = parseDate(row[colMap.date]);
+        var clientName = colMap.clientName !== undefined ? String(row[colMap.clientName] || '').trim() : '';
+        var phone = colMap.phone !== undefined ? parsePhone(row[colMap.phone]) : '';
+        var hallId = currentHallId;
+        if (colMap.hall !== undefined) {
+          var hh = String(row[colMap.hall] || '').trim();
+          var dh = detectHall(hh);
+          if (dh) hallId = matchHallId(dh);
+        }
+        var eventType = 'Wedding';
+        if (colMap.eventType !== undefined) {
+          var ev = detectEvent(String(row[colMap.eventType] || ''));
+          if (ev) eventType = ev;
+        }
+        if (colMap.package !== undefined && eventType === 'Wedding') {
+          var ev2 = detectEvent(String(row[colMap.package] || ''));
+          if (ev2) eventType = ev2;
+        }
+        var guestsCount = 0;
+        if (colMap.guestsCount !== undefined) {
+          var gv = toAsciiDigits(String(row[colMap.guestsCount] || '')).replace(/[^\d]/g, '');
+          guestsCount = parseInt(gv) || 0;
+        }
+        var cost = 0;
+        if (colMap.cost !== undefined) {
+          var cv = toAsciiDigits(String(row[colMap.cost] || '')).replace(/[^\d.]/g, '');
+          cost = parseFloat(cv) || 0;
+        }
+        var notes = colMap.notes !== undefined ? String(row[colMap.notes] || '').trim() : '';
+
+        if (!date && !clientName) continue;
+        if (!clientName) continue;
+
+        bookings.push({
+          date: date || todayISO(),
+          clientName: clientName,
+          phone: phone,
+          hallId: hallId,
+          eventType: eventType,
+          guestsCount: guestsCount,
+          cost: cost,
+          startTime: '19:00',
+          endTime: '23:00',
+          notes: notes,
+          confidence: (date && clientName) ? 'high' : 'medium',
+          raw: row.join(' | ').slice(0, 200)
+        });
+      }
+    }
+
+    return { bookings: bookings, cols: detectedCols };
+  }
+
+  function parseExcel(arrayBuffer) {
+    if (!window.XLSX) throw new Error('Excel library not loaded');
+    var wb = window.XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: true });
+    var allBookings = [];
+    var detectedCols = null;
+
+    for (var s = 0; s < wb.SheetNames.length; s++) {
+      var sheetName = wb.SheetNames[s];
+      var ws = wb.Sheets[sheetName];
+      var rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: false });
+      var result = parseExcelSheet(rows, sheetName);
+      allBookings = allBookings.concat(result.bookings);
+      if (result.cols && !detectedCols) detectedCols = result.cols;
+    }
+    return { bookings: allBookings, cols: detectedCols };
+  }
+
+  /* ---------- raw text table parser (PDF / OCR) ---------- */
+  function parseRawText(rawText) {
+    var text = toAsciiDigits(rawText);
+    var lines = text.split(/\r?\n/).map(function (l) {
+      return l.replace(/\s+/g, ' ').trim();
+    }).filter(function (l) { return l.length > 0; });
+
+    var results = [];
+    var currentHallId = matchHallId('closed');
+    var headerSeen = false;
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var hallHit = detectHall(line);
+      if (hallHit && line.length < 60) {
+        currentHallId = matchHallId(hallHit);
+        continue;
+      }
+
+      // Look for date pattern
+      var dateMatch = line.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+      if (!dateMatch) continue;
+
+      var date = parseDate(dateMatch[0]);
+      if (!date) continue;
+
+      var idx = line.indexOf(dateMatch[0]);
+      var after = line.slice(idx + dateMatch[0].length).trim();
+
+      // Count: last number 20-2000
+      var count = 0;
+      var counts = after.match(/\b(\d{2,4})\b/g);
+      if (counts) {
+        for (var ci = counts.length - 1; ci >= 0; ci--) {
+          var cv = parseInt(counts[ci]);
+          if (cv >= 20 && cv <= 2000) { count = cv; break; }
+        }
+      }
+
+      // Remove count and package words to get name
+      var nameArea = after;
+      if (count) nameArea = nameArea.replace(String(count), ' ');
+      nameArea = nameArea
+        .replace(/عشاء\s*\d*/g, ' ')
+        .replace(/سواريه/g, ' ')
+        .replace(/هاي\s*تي/g, ' ')
+        .replace(/هاى\s*تى/g, ' ')
+        .replace(/مطبخ/g, ' ')
+        .replace(/\+/g, ' ')
+        .replace(/\d+/g, ' ')
+        .trim();
+
+      var nameWords = nameArea.split(/\s+/).filter(function (w) {
+        return w.length >= 2 && /[\u0600-\u06FF]/.test(w);
+      });
+      var clientName = nameWords.slice(0, 4).join(' ');
+
+      var eventType = detectEvent(after) || 'Wedding';
+
+      if (!clientName && !count) continue;
+
+      results.push({
+        date: date,
+        clientName: clientName || 'عميل',
+        phone: '',
+        hallId: currentHallId,
+        eventType: eventType,
+        guestsCount: count,
+        cost: 0,
+        startTime: '19:00',
+        endTime: '23:00',
+        notes: '',
+        confidence: clientName ? 'high' : 'medium',
+        raw: line.slice(0, 200)
+      });
+    }
+
+    return results;
+  }
+
+  /* ---------- library loaders ---------- */
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('Failed: ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensurePdfJs() {
+    if (window.pdfjsLib) return;
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+
+  async function ensureTesseract() {
+    if (window.Tesseract) return;
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js');
+  }
+
+  async function ensureXLSX() {
+    if (window.XLSX) return;
+    Un.status = I18N[State.lang].ui_excel_loading;
+    updateStatusUI();
+    await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+  }
+
+  /* ---------- readers ---------- */
+  async function readPdf(file) {
+    await ensurePdfJs();
+    var buf = await file.arrayBuffer();
+    var pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    var text = '';
+    for (var p = 1; p <= pdf.numPages; p++) {
+      var page = await pdf.getPage(p);
+      var content = await page.getTextContent();
+      var pageText = content.items.map(function (it) { return it.str; }).join(' ');
+      text += pageText + '\n';
+    }
+    return text;
+  }
+
+  async function readImage(file) {
+    await ensureTesseract();
+    var result = await window.Tesseract.recognize(file, 'ara+eng', {
+      logger: function (m) {
+        if (m.status === 'recognizing text') {
+          Un.status = I18N[State.lang].ui_ocr + ' ' + Math.round(m.progress * 100) + '%';
+          updateStatusUI();
+        }
+      }
+    });
+    return result.data.text;
+  }
+
+  async function readExcel(file) {
+    await ensureXLSX();
+    var buf = await file.arrayBuffer();
+    return parseExcel(buf);
+  }
+
+  /* ---------- analysis ---------- */
+  function analyze(bookings) {
+    if (!bookings || !bookings.length) return null;
+    var perHall = {};
+    var perEvent = {};
+    var totalGuests = 0;
+    var minDate = null, maxDate = null;
+
+    for (var i = 0; i < bookings.length; i++) {
+      var b = bookings[i];
+      var h = matchHallIdName(b.hallId);
+      perHall[h] = (perHall[h] || 0) + 1;
+      perEvent[b.eventType] = (perEvent[b.eventType] || 0) + 1;
+      totalGuests += b.guestsCount || 0;
+      if (b.date) {
+        if (!minDate || b.date < minDate) minDate = b.date;
+        if (!maxDate || b.date > maxDate) maxDate = b.date;
+      }
+    }
+    return {
+      total: bookings.length,
+      totalGuests: totalGuests,
+      perHall: perHall,
+      perEvent: perEvent,
+      minDate: minDate,
+      maxDate: maxDate
+    };
+  }
+
+  function matchHallIdName(id) {
+    var halls = (State.data && State.data.halls) || [];
+    for (var i = 0; i < halls.length; i++) {
+      if (halls[i].id === id) return halls[i].name[State.lang] || halls[i].name.ar;
+    }
+    return '(بدون قاعة)';
+  }
+
+  /* ---------- process ---------- */
+  async function processFile(file) {
+    if (!file) return;
+    Un.file = file;
+    Un.fileName = file.name;
+    Un.parsed = [];
+    Un.rawText = '';
+    Un.analysis = null;
+    Un.busy = true;
+    Un.status = I18N[State.lang].ui_reading;
+    navigate('importsmart');
+    updateStatusUI();
+
+    try {
+      var name = (file.name || '').toLowerCase();
+      var type = (file.type || '').toLowerCase();
+      var isPdf = type === 'application/pdf' || /\.pdf$/.test(name);
+      var isExcel = /\.(xlsx|xls|csv)$/.test(name) || type.indexOf('spreadsheet') >= 0 || type.indexOf('excel') >= 0 || type === 'text/csv';
+      var isImage = type.indexOf('image/') === 0 || /\.(png|jpg|jpeg|webp|gif|bmp)$/.test(name);
+
+      Un.fileType = isPdf ? 'pdf' : isExcel ? 'excel' : isImage ? 'image' : 'unknown';
+
+      if (isExcel) {
+        var res = await readExcel(file);
+        Un.parsed = res.bookings || [];
+      } else if (isPdf) {
+        Un.rawText = await readPdf(file);
+        Un.parsed = parseRawText(Un.rawText);
+      } else if (isImage) {
+        Un.status = I18N[State.lang].ui_ocr + '…';
+        updateStatusUI();
+        Un.rawText = await readImage(file);
+        Un.parsed = parseRawText(Un.rawText);
+      } else {
+        throw new Error('نوع الملف غير مدعوم');
+      }
+
+      Un.analysis = analyze(Un.parsed);
+      Un.busy = false;
+      Un.status = '';
+      navigate('importsmart');
+      if (typeof showToast === 'function') {
+        var L = I18N[State.lang];
+        showToast(L.ui_found + ' ' + Un.parsed.length + ' ' + L.ui_bookings, Un.parsed.length ? 'success' : 'warn');
+      }
+    } catch (err) {
+      console.error('[Section 20]', err);
+      Un.busy = false;
+      Un.status = '';
+      if (typeof showToast === 'function') showToast('خطأ: ' + (err.message || err), 'error');
+      navigate('importsmart');
+    }
+  }
+
+  function updateStatusUI() {
+    var s = document.getElementById('ui-status');
+    if (s) s.textContent = Un.status || '';
+  }
+
+  /* ---------- render: page ---------- */
+  Pages.importsmart = function (el) {
+    if (Un.busy) {
+      el.innerHTML =
+        '<div class="card" style="max-width:520px;margin:2rem auto;text-align:center;padding:3rem 2rem">' +
+        '<div style="font-size:3rem;margin-bottom:1rem">📄</div>' +
+        '<div style="font-size:1rem;font-weight:700;margin-bottom:.5rem">' + esc(Un.status || I18N[State.lang].ui_reading) + '</div>' +
+        '<div id="ui-status" style="font-size:.8rem;color:var(--text-muted);margin-top:1rem">' + esc(Un.fileName) + '</div>' +
+        '</div>';
+      return;
+    }
+    if (Un.parsed.length > 0) renderReview(el);
+    else renderUpload(el);
+  };
+
+  /* ---------- render: upload ---------- */
+  function renderUpload(el) {
+    var L = I18N[State.lang];
+    el.innerHTML =
+      '<div style="max-width:680px;margin:1rem auto">' +
+      '<div class="card" style="padding:2rem">' +
+        '<div style="text-align:center;margin-bottom:1.5rem">' +
+          '<div style="font-size:3rem;margin-bottom:.5rem">📥</div>' +
+          '<h3 style="margin:0 0 .35rem;font-size:1.15rem">' + esc(L.ui_title) + '</h3>' +
+        '</div>' +
+        '<div id="ui-dropzone" style="border:3px dashed var(--border);border-radius:16px;padding:3rem 1.5rem;text-align:center;cursor:pointer;background:var(--surface-2);transition:all .2s">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">📁</div>' +
+          '<div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">' + esc(L.ui_dropzone) + '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted)">' + esc(L.ui_supported) + '</div>' +
+        '</div>' +
+        '<input type="file" id="ui-file" accept="application/pdf,image/*,.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" style="display:none">' +
+        (Un.rawText && !Un.parsed.length ?
+          '<div style="margin-top:1rem;padding:1rem;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:.85rem;color:#ef4444;text-align:center">⚠️ ' + esc(L.ui_no_data) + '</div>' : '') +
+      '</div>' +
+      '<div class="card" style="margin-top:1rem;background:rgba(124,58,237,.05);border-color:rgba(124,58,237,.2)">' +
+        '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.9">' +
+          '<b style="color:var(--primary)">💡 كيف يعمل؟</b><br>' +
+          '• <b>Excel/CSV</b>: قراءة فورية، مفيش OCR — دقة 100%<br>' +
+          '• <b>PDF</b>: استخراج النص مباشرة<br>' +
+          '• <b>صور</b>: OCR بالعربي (بطيء نسبيًا)<br>' +
+          '• <b>يتعرف تلقائيًا</b> على الأعمدة: التاريخ، العميل، الهاتف، الباكدج، عدد الأفراد<br>' +
+          '• <b>يتعرف على عناوين القاعات</b> من الجداول' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+
+    var dz = document.getElementById('ui-dropzone');
+    var fi = document.getElementById('ui-file');
+    if (dz && fi) {
+      dz.onclick = function () { fi.click(); };
+      fi.onchange = function (e) { if (e.target.files[0]) processFile(e.target.files[0]); };
+      dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; dz.style.background = 'rgba(124,58,237,.08)'; });
+      dz.addEventListener('dragleave', function () { dz.style.borderColor = 'var(--border)'; dz.style.background = 'var(--surface-2)'; });
+      dz.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
+        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+      });
+    }
+  }
+
+  /* ---------- render: review ---------- */
+  function renderReview(el) {
+    var L = I18N[State.lang];
+    var halls = State.data.halls || [];
+    var rows = Un.parsed;
+    var analysis = Un.analysis;
+
+    var rowsHtml = '';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var evOptions = ['Wedding', 'Engagement', 'Henna', 'Birthday', 'Corporate', 'Other'].map(function (ev) {
+        return '<option value="' + ev + '"' + (r.eventType === ev ? ' selected' : '') + '>' + ev + '</option>';
+      }).join('');
+      var hallOptions = halls.map(function (h) {
+        return '<option value="' + h.id + '"' + (r.hallId === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+      }).join('');
+      var confClass = r.confidence === 'high' ? 'green' : r.confidence === 'medium' ? 'yellow' : 'red';
+
+      rowsHtml +=
+        '<tr data-idx="' + i + '">' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><span class="badge-pill badge-' + confClass + '">' + r.confidence + '</span></td>' +
+        '<td><input class="ui-f" data-f="clientName" value="' + esc(r.clientName) + '" style="width:100%;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><input class="ui-f" data-f="phone" value="' + esc(r.phone) + '" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><input class="ui-f" data-f="date" type="date" value="' + esc(r.date) + '" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><select class="ui-f" data-f="hallId" style="width:120px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + hallOptions + '</select></td>' +
+        '<td><select class="ui-f" data-f="eventType" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + evOptions + '</select></td>' +
+        '<td><input class="ui-f" data-f="guestsCount" type="number" value="' + (r.guestsCount || 0) + '" style="width:70px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dmUnifiedDel(' + i + ')" style="color:#ef4444"><i data-lucide="trash-2"></i></button></td>' +
+        '</tr>';
+    }
+
+    // Analysis panel
+    var analysisHtml = '';
+    if (analysis) {
+      var hallRows = Object.keys(analysis.perHall).map(function (k) {
+        return '<div style="display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.8rem"><span>' + esc(k) + '</span><b>' + analysis.perHall[k] + '</b></div>';
+      }).join('');
+      var evRows = Object.keys(analysis.perEvent).map(function (k) {
+        return '<div style="display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.8rem"><span>' + esc(k) + '</span><b>' + analysis.perEvent[k] + '</b></div>';
+      }).join('');
+
+      analysisHtml =
+        '<div class="card" style="margin-bottom:1rem">' +
+          '<div style="font-weight:700;margin-bottom:.75rem"><i data-lucide="bar-chart-3" style="width:16px;height:16px;display:inline;vertical-align:-3px;color:var(--primary)"></i> ' + esc(L.ui_analysis) + '</div>' +
+          '<div class="grid-3" style="margin-bottom:1rem">' +
+            '<div style="padding:.75rem;background:var(--surface-2);border-radius:10px;text-align:center">' +
+              '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:.25rem">' + esc(L.ui_total) + '</div>' +
+              '<div style="font-size:1.35rem;font-weight:800;color:var(--primary)">' + analysis.total + '</div>' +
+            '</div>' +
+            '<div style="padding:.75rem;background:var(--surface-2);border-radius:10px;text-align:center">' +
+              '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:.25rem">' + esc(L.ui_guests) + '</div>' +
+              '<div style="font-size:1.35rem;font-weight:800;color:#f59e0b">' + analysis.totalGuests.toLocaleString() + '</div>' +
+            '</div>' +
+            '<div style="padding:.75rem;background:var(--surface-2);border-radius:10px;text-align:center">' +
+              '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:.25rem">' + esc(L.ui_date_range) + '</div>' +
+              '<div style="font-size:.75rem;font-weight:700">' +
+                (analysis.minDate ? (fmtDate(analysis.minDate) + ' — ' + fmtDate(analysis.maxDate)) : '—') +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="grid-2">' +
+            '<div><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em">' + esc(L.ui_per_hall) + '</div>' + (hallRows || '—') + '</div>' +
+            '<div><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em">' + esc(L.ui_per_event) + '</div>' + (evRows || '—') + '</div>' +
+          '</div>' +
+        '</div>';
+    }
+
+    el.innerHTML =
+      '<div class="card" style="margin-bottom:1rem">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">' +
+          '<b style="font-size:1rem">' + esc(L.ui_review) + '</b>' +
+          '<span class="badge-pill badge-purple">' + esc(L.ui_found) + ' ' + rows.length + ' ' + esc(L.ui_bookings) + '</span>' +
+          '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">' +
+            (Un.rawText ?
+              '<button class="btn btn-ghost btn-sm" onclick="__dmUnifiedToggleRaw()"><i data-lucide="code"></i> ' + esc(Un.showRaw ? L.ui_hide_raw : L.ui_show_raw) + '</button>' : '') +
+            '<button class="btn btn-ghost btn-sm" onclick="__dmUnifiedReset()"><i data-lucide="rotate-ccw"></i> ' + esc(L.ui_try_again) + '</button>' +
+            '<button class="btn btn-primary btn-sm" onclick="__dmUnifiedCommit()"><i data-lucide="save"></i> ' + esc(L.ui_import_all) + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      analysisHtml +
+      (Un.showRaw && Un.rawText ?
+        '<div class="card" style="margin-bottom:1rem"><pre style="background:var(--surface-2);padding:1rem;border-radius:8px;font-size:.7rem;line-height:1.5;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word">' + esc(Un.rawText.slice(0, 4000)) + '</pre></div>' : '') +
+      '<div class="card" style="padding:0;overflow:hidden">' +
+        '<div class="table-wrap" style="border:none;border-radius:0">' +
+          '<table class="data-table" style="min-width:900px">' +
+            '<thead><tr>' +
+              '<th style="width:2rem">#</th>' +
+              '<th>Confidence</th>' +
+              '<th>Client</th>' +
+              '<th>Phone</th>' +
+              '<th>Date</th>' +
+              '<th>Hall</th>' +
+              '<th>Event</th>' +
+              '<th>Guests</th>' +
+              '<th style="width:3rem"></th>' +
+            '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>';
+
+    if (window.lucide) lucide.createIcons();
+
+    el.querySelectorAll('.ui-f').forEach(function (inp) {
+      inp.onchange = function (e) {
+        var tr = e.target.closest('tr[data-idx]');
+        if (!tr) return;
+        var idx = parseInt(tr.dataset.idx);
+        var f = e.target.dataset.f;
+        if (Un.parsed[idx]) {
+          Un.parsed[idx][f] = e.target.type === 'number' ? parseInt(e.target.value) : e.target.value;
+        }
+      };
+    });
+  }
+
+  /* ---------- public handlers ---------- */
+  window.__dmUnifiedToggleRaw = function () {
+    Un.showRaw = !Un.showRaw;
+    navigate('importsmart');
+  };
+
+  window.__dmUnifiedReset = function () {
+    Un.file = null;
+    Un.fileName = '';
+    Un.fileType = '';
+    Un.rawText = '';
+    Un.parsed = [];
+    Un.showRaw = false;
+    Un.busy = false;
+    Un.analysis = null;
+    navigate('importsmart');
+  };
+
+  window.__dmUnifiedDel = function (idx) {
+    Un.parsed.splice(idx, 1);
+    Un.analysis = analyze(Un.parsed);
+    navigate('importsmart');
+  };
+
+  window.__dmUnifiedCommit = function () {
+    if (!Un.parsed.length) return;
+    var added = 0;
+    for (var i = 0; i < Un.parsed.length; i++) {
+      var p = Un.parsed[i];
+      if (!p.clientName && !p.phone) continue;
+      State.data.bookings.push({
+        id: uid2('b'),
+        date: p.date,
+        hallId: p.hallId,
+        clientName: p.clientName || '-',
+        phone: p.phone || '',
+        eventType: p.eventType || 'Wedding',
+        startTime: p.startTime || '19:00',
+        endTime: p.endTime || '23:00',
+        status: 'pending',
+        paymentStatus: 'unpaid',
+        cost: p.cost || 0,
+        guestsCount: p.guestsCount || 0,
+        notes: p.notes || ((State.lang === 'ar' ? 'مستورد من: ' : 'Imported from: ') + Un.fileName)
+      });
+      added++;
+    }
+    try { saveData(); } catch (e) {}
+    try {
+      if (typeof logActivity === 'function') {
+        logActivity('bulk-import', 'booking', null, null, { count: added, file: Un.fileName });
+      }
+    } catch (e) {}
+    if (typeof showToast === 'function') {
+      showToast(I18N[State.lang].ui_imported + ': ' + added + ' ✓', 'success');
+    }
+    Un.file = null;
+    Un.fileName = '';
+    Un.fileType = '';
+    Un.rawText = '';
+    Un.parsed = [];
+    Un.showRaw = false;
+    Un.analysis = null;
+    setTimeout(function () { navigate('bookings'); }, 400);
+  };
+
+  /* ---------- nav registration (ensure exists) ---------- */
+  function ensureNav() {
+    var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (ops && !ops.items.find(function (i) { return i.id === 'importsmart'; })) {
+      var idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+      var at = idx >= 0 ? idx + 1 : ops.items.length;
+      ops.items.splice(at, 0, { id: 'importsmart', icon: 'file-input', label: 'unified_import' });
+    }
+    // Update label to unified
+    if (ops) {
+      for (var i = 0; i < ops.items.length; i++) {
+        if (ops.items[i].id === 'importsmart') { ops.items[i].label = 'unified_import'; ops.items[i].icon = 'file-input'; }
+      }
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    function () {
+      return typeof State !== 'undefined'
+        && typeof Pages !== 'undefined'
+        && typeof navigate === 'function'
+        && typeof NAV_ITEMS !== 'undefined';
+    },
+    function () {
+      ensureNav();
+      console.log('%c[Section 20] ✓ Unified Import ready (PDF + Images + Excel + CSV)', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 20] Try: navigate("importsmart")', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
+
 
 
 /* #########################################################
