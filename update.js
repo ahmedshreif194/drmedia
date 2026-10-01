@@ -6883,183 +6883,81 @@ service cloud.firestore {
 
 })();
 /* =========================================================
-   SECTION 18: Smart Booking Import (PDF + Images)
-   Version: 1.0.0
+   SECTION 18 v2: Smart Import (PDF + Images)
+   Version: 2.0.0 - SIMPLIFIED
    ---------------------------------------------------------
-   - Upload: PDF / PNG / JPG
-   - Extract: PDF text layer OR OCR (Tesseract)
-   - Parse: date, time, client, phone, hall, event type
-   - Review: editable preview before import
-   - Commit: save to State.data.bookings
+   - Reads table with columns: Day | Date | Client | Package | Count
+   - Detects hall headers
+   - Maps packages to event types
    ========================================================= */
 (function () {
   'use strict';
 
-  console.log('%c[Section 18] Smart Import loading…', 'color:#f97316;font-weight:bold');
+  console.log('%c[Section 18] Smart Import v2 loading…', 'color:#f97316;font-weight:bold');
 
   function waitFor(cond, cb, maxTries) {
     maxTries = maxTries || 150;
     let tries = 0;
-    const t = setInterval(() => {
-      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 18] timeout'); return; }
-      if (cond()) { clearInterval(t); cb(); }
+    const t = setInterval(function () {
+      if (++tries > maxTries) {
+        clearInterval(t);
+        console.warn('[Section 18] timeout');
+        return;
+      }
+      if (cond()) {
+        clearInterval(t);
+        cb();
+      }
     }, 100);
   }
 
   /* ---------- i18n ---------- */
-  Object.assign(I18N.ar, {
-    smart_import: 'استيراد ذكي',
-    si_title: 'استيراد الحجوزات بذكاء',
-    si_subtitle: 'ارفع PDF أو صورة — النظام يقرأ التفاصيل تلقائيًا',
-    si_upload: 'اختر ملف',
-    si_dropzone: 'اسحب الملف هنا أو اضغط للاختيار',
-    si_supported: 'PDF · PNG · JPG · JPEG · WEBP',
-    si_reading: 'جاري قراءة الملف…',
-    si_ocr_running: 'جاري التعرف على النص (OCR)… قد يستغرق دقيقة',
-    si_parsing: 'جاري تحليل البيانات…',
-    si_found: 'تم العثور على',
-    si_bookings: 'حجز',
-    si_no_bookings: 'لم يتم التعرف على أي حجز — جرب صورة أوضح',
-    si_review: 'مراجعة النتائج',
-    si_review_hint: 'راجع كل حجز وعدّل ما يلزم قبل الحفظ',
-    si_client: 'العميل',
-    si_phone: 'الهاتف',
-    si_date: 'التاريخ',
-    si_time: 'الوقت',
-    si_hall: 'القاعة',
-    si_event: 'المناسبة',
-    si_cost: 'التكلفة',
-    si_confidence: 'الثقة',
-    si_delete_row: 'حذف',
-    si_add_row: 'إضافة حجز',
-    si_import: 'حفظ الحجوزات',
-    si_import_all: 'حفظ الكل',
-    si_cancel: 'إلغاء',
-    si_imported: 'تم الاستيراد',
-    si_back: 'رجوع',
-    si_raw_text: 'النص المستخرج',
-    si_show_raw: 'عرض النص',
-    si_hide_raw: 'إخفاء النص',
-    si_try_again: 'حاول مرة أخرى',
-    si_extract_text: 'استخراج النص فقط',
-    si_detected_hall: 'قاعة متطابقة',
-    si_detected_event: 'مناسبة متطابقة',
-    si_confidence_high: 'عالية',
-    si_confidence_medium: 'متوسطة',
-    si_confidence_low: 'منخفضة',
-    si_lib_loading: 'جاري تحميل مكتبات القراءة…'
-  });
-  Object.assign(I18N.en, {
-    smart_import: 'Smart Import',
-    si_title: 'Smart Bookings Import',
-    si_subtitle: 'Upload PDF or image — system reads everything automatically',
-    si_upload: 'Choose file',
-    si_dropzone: 'Drag file here or click to browse',
-    si_supported: 'PDF · PNG · JPG · JPEG · WEBP',
-    si_reading: 'Reading file…',
-    si_ocr_running: 'Running OCR… may take a minute',
-    si_parsing: 'Parsing data…',
-    si_found: 'Found',
-    si_bookings: 'bookings',
-    si_no_bookings: 'No bookings detected — try a clearer image',
-    si_review: 'Review Results',
-    si_review_hint: 'Review and edit each booking before saving',
-    si_client: 'Client',
-    si_phone: 'Phone',
-    si_date: 'Date',
-    si_time: 'Time',
-    si_hall: 'Hall',
-    si_event: 'Event',
-    si_cost: 'Cost',
-    si_confidence: 'Confidence',
-    si_delete_row: 'Delete',
-    si_add_row: 'Add Booking',
-    si_import: 'Save Bookings',
-    si_import_all: 'Save All',
-    si_cancel: 'Cancel',
-    si_imported: 'Imported',
-    si_back: 'Back',
-    si_raw_text: 'Extracted Text',
-    si_show_raw: 'Show Text',
-    si_hide_raw: 'Hide Text',
-    si_try_again: 'Try again',
-    si_extract_text: 'Extract text only',
-    si_detected_hall: 'Hall matched',
-    si_detected_event: 'Event matched',
-    si_confidence_high: 'High',
-    si_confidence_medium: 'Medium',
-    si_confidence_low: 'Low',
-    si_lib_loading: 'Loading libraries…'
-  });
+  I18N.ar.smart_import = 'استيراد ذكي';
+  I18N.ar.si_title = 'استيراد الحجوزات من PDF أو صورة';
+  I18N.ar.si_dropzone = 'اضغط لاختيار ملف أو اسحبه هنا';
+  I18N.ar.si_supported = 'PDF · PNG · JPG · WEBP';
+  I18N.ar.si_reading = 'جاري القراءة…';
+  I18N.ar.si_ocr = 'جاري التعرف على النص…';
+  I18N.ar.si_review = 'مراجعة النتائج';
+  I18N.ar.si_found = 'تم العثور على';
+  I18N.ar.si_bookings = 'حجز';
+  I18N.ar.si_import_all = 'حفظ الكل';
+  I18N.ar.si_imported = 'تم الاستيراد';
+  I18N.ar.si_no_data = 'لم يتم التعرف على أي حجز';
+  I18N.ar.si_try_again = 'حاول مرة أخرى';
+  I18N.ar.si_show_raw = 'عرض النص المستخرج';
 
-  /* ---------- libraries ---------- */
-  const LIBS = {
-    pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-    pdfjsWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
-    tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js'
-  };
-  const loaded = { pdfjs: false, tesseract: false };
-
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('Failed to load: ' + src));
-      document.head.appendChild(s);
-    });
-  }
-
-  async function ensurePdfJs() {
-    if (loaded.pdfjs && window.pdfjsLib) return true;
-    await loadScript(LIBS.pdfjs);
-    if (window.pdfjsLib) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS.pdfjsWorker;
-      loaded.pdfjs = true;
-      return true;
-    }
-    return false;
-  }
-
-  async function ensureTesseract() {
-    if (loaded.tesseract && window.Tesseract) return true;
-    await loadScript(LIBS.tesseract);
-    if (window.Tesseract) {
-      loaded.tesseract = true;
-      return true;
-    }
-    return false;
-  }
+  I18N.en.smart_import = 'Smart Import';
+  I18N.en.si_title = 'Import bookings from PDF or image';
+  I18N.en.si_dropzone = 'Click to choose file or drag it here';
+  I18N.en.si_supported = 'PDF · PNG · JPG · WEBP';
+  I18N.en.si_reading = 'Reading…';
+  I18N.en.si_ocr = 'Running OCR…';
+  I18N.en.si_review = 'Review Results';
+  I18N.en.si_found = 'Found';
+  I18N.en.si_bookings = 'bookings';
+  I18N.en.si_import_all = 'Save All';
+  I18N.en.si_imported = 'Imported';
+  I18N.en.si_no_data = 'No bookings detected';
+  I18N.en.si_try_again = 'Try again';
+  I18N.en.si_show_raw = 'Show extracted text';
 
   /* ---------- state ---------- */
-  const Import = {
+  const Imp = {
     file: null,
     fileName: '',
-    fileType: '', // 'pdf' | 'image'
     rawText: '',
-    parsed: [],      // array of parsed booking candidates
-    showRaw: false,
+    parsed: [],
     busy: false,
-    progress: 0,
-    status: ''
+    status: '',
+    showRaw: false
   };
-  window.__dmImport = Import;
-
-  /* ---------- known event types ---------- */
-  const EVENT_KEYWORDS = [
-    { key: 'Wedding', words: ['فرح', 'زفاف', 'زواج', 'عرس', 'كتب كتاب', 'wedding', 'marriage'] },
-    { key: 'Engagement', words: ['خطوبة', 'خطبه', 'engagement', 'engagement party'] },
-    { key: 'Henna', words: ['حنة', 'حناء', 'ليلة حنة', 'henna'] },
-    { key: 'Birthday', words: ['عيد ميلاد', 'ميلاد', 'birthday', 'bday'] },
-    { key: 'Corporate', words: ['مؤتمر', 'اجتماع', 'ندوة', 'conference', 'corporate', 'meeting'] },
-    { key: 'Engagement', words: ['سواريه', 'حفل', 'soiree'] }
-  ];
+  window.__dmImp = Imp;
 
   /* ---------- helpers ---------- */
   function norm(s) {
     return String(s || '')
-      .replace(/[\u064B-\u0652]/g, '') // remove tashkeel
+      .replace(/[\u064B-\u0652]/g, '')
       .replace(/[أإآا]/g, 'ا')
       .replace(/ة/g, 'ه')
       .replace(/ى/g, 'ي')
@@ -7068,716 +6966,440 @@ service cloud.firestore {
       .toLowerCase();
   }
 
-  function normalizeDigits(s) {
-    // Convert Arabic-Indic digits to ASCII
+  function toAsciiDigits(s) {
     return String(s || '')
-      .replace(/[٠-٩]/g, d => String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48))
-      .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 0x06F0 + 48));
+      .replace(/[٠-٩]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48); })
+      .replace(/[۰-۹]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x06F0 + 48); });
+  }
+
+  /* ---------- hall detection ---------- */
+  function detectHall(line) {
+    const n = norm(line);
+    if (n.indexOf('قاعه المغلقه') >= 0) return { key: 'closed', match: 'المغلقة' };
+    if (n.indexOf('قاعه الاوبن') >= 0) return { key: 'open', match: 'الأوبن' };
+    if (n.indexOf('قاعه الاوبن') >= 0) return { key: 'open', match: 'الأوبن' };
+    if (n.indexOf('اوبن') >= 0 && n.length < 40) return { key: 'open', match: 'الأوبن' };
+    if (n.indexOf('مغلقه') >= 0 && n.length < 40) return { key: 'closed', match: 'المغلقة' };
+    if (n.indexOf('قاعه الصغيره') >= 0) return { key: 'small', match: 'الصغيرة' };
+    if (n.indexOf('صغيره') >= 0 && n.length < 40) return { key: 'small', match: 'الصغيرة' };
+    if (n.indexOf('كافيه') >= 0 || n.indexOf('كافي') >= 0) return { key: 'cafe', match: 'الكافيه' };
+    return null;
+  }
+
+  function matchHallId(key) {
+    // Try to find a hall in State.data.halls by keyword
+    const halls = State.data.halls || [];
+    for (let i = 0; i < halls.length; i++) {
+      const h = halls[i];
+      const ar = norm(h.name.ar || '');
+      if (key === 'closed' && (ar.indexOf('مغلقه') >= 0 || ar.indexOf('مغلقة') >= 0)) return h.id;
+      if (key === 'open' && (ar.indexOf('اوبن') >= 0 || ar.indexOf('مفتوح') >= 0)) return h.id;
+      if (key === 'small' && ar.indexOf('صغيره') >= 0) return h.id;
+      if (key === 'cafe' && (ar.indexOf('كافيه') >= 0 || ar.indexOf('كافي') >= 0)) return h.id;
+    }
+    // Fallback: return first hall
+    return halls.length ? halls[0].id : '';
+  }
+
+  /* ---------- package → event type ---------- */
+  function detectEvent(pkgLine) {
+    const n = norm(pkgLine);
+    if (n.indexOf('عشاء') >= 0) return 'Wedding';
+    if (n.indexOf('سواريه') >= 0) return 'Engagement';
+    if (n.indexOf('هاي تي') >= 0) return 'Birthday';
+    if (n.indexOf('هاى تى') >= 0) return 'Birthday';
+    if (n.indexOf('مطبخ') >= 0) return 'Engagement';
+    if (n.indexOf('فرح') >= 0) return 'Wedding';
+    if (n.indexOf('خطوبه') >= 0) return 'Engagement';
+    return 'Wedding';
   }
 
   /* ---------- date parsing ---------- */
-  const MONTHS_AR = {
-    'يناير': 1, 'فبراير': 2, 'مارس': 3, 'أبريل': 4, 'ابريل': 4, 'مايو': 5,
-    'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'اغسطس': 8, 'سبتمبر': 9, 'أكتوبر': 10,
-    'اكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12
-  };
-  const MONTHS_EN = {
-    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
-    apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
-    aug: 8, august: 8, sep: 9, sept: 9, september: 9,
-    oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12
-  };
-
-  function normalizeYear(y) {
-    y = parseInt(y);
-    if (y < 100) y += y < 50 ? 2000 : 1900;
-    return y;
+  function parseDate(text) {
+    const t = toAsciiDigits(text);
+    const m = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (!m) return null;
+    let d = parseInt(m[1]);
+    let mo = parseInt(m[2]);
+    let y = parseInt(m[3]);
+    if (y < 100) y = y < 50 ? 2000 + y : 1900 + y;
+    if (mo < 1 || mo > 12) return null;
+    if (d < 1 || d > 31) return null;
+    const dd = d < 10 ? '0' + d : '' + d;
+    const mm = mo < 10 ? '0' + mo : '' + mo;
+    return y + '-' + mm + '-' + dd;
   }
 
-  function tryParseDate(text) {
-    const t = normalizeDigits(text);
-    const currentYear = new Date().getFullYear();
+  /* ---------- table parser ---------- */
+  function parseTable(rawText) {
+    const text = toAsciiDigits(rawText);
+    const lines = text.split(/\r?\n/).map(function (l) {
+      return l.replace(/\s+/g, ' ').trim();
+    }).filter(function (l) { return l.length > 0; });
 
-    // ISO: yyyy-mm-dd / yyyy/mm/dd
-    let m = t.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
-    if (m) {
-      const y = parseInt(m[1]), mo = parseInt(m[2]), d = parseInt(m[3]);
-      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const results = [];
+    let currentHallKey = null;
+    let currentHallId = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // 1) Check if line is a hall header
+      const hallHit = detectHall(line);
+      if (hallHit) {
+        currentHallKey = hallHit.key;
+        currentHallId = matchHallId(hallHit.key);
+        continue;
       }
+
+      // 2) Look for date in line
+      const dateMatch = line.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+      if (!dateMatch) continue;
+
+      // Found a data row
+      const date = parseDate(line);
+      if (!date) continue;
+
+      // Extract parts around the date
+      const dateStr = dateMatch[0];
+      const idx = line.indexOf(dateStr);
+      const beforeDate = line.slice(0, idx).trim();
+      const afterDate = line.slice(idx + dateStr.length).trim();
+
+      // Count: last number with 2-4 digits
+      let count = 0;
+      const counts = afterDate.match(/\b(\d{2,4})\b/g);
+      if (counts && counts.length > 0) {
+        count = parseInt(counts[counts.length - 1]);
+        if (count < 20 || count > 2000) count = 0;
+      }
+
+      // Client name: Arabic letters sequence in the middle
+      // Remove the count and known keywords
+      let nameArea = afterDate;
+      if (counts && counts.length > 0) {
+        nameArea = nameArea.replace(counts[counts.length - 1], ' ');
+      }
+      // Remove package keywords
+      nameArea = nameArea
+        .replace(/عشاء\s*\d*/g, ' ')
+        .replace(/سواريه/g, ' ')
+        .replace(/هاي\s*تي/g, ' ')
+        .replace(/مطبخ/g, ' ')
+        .replace(/\+/g, ' ')
+        .replace(/\d+/g, ' ')
+        .trim();
+
+      // Extract client name (first 3-4 Arabic words)
+      const nameWords = nameArea.split(/\s+/).filter(function (w) {
+        return w.length >= 2 && /[\u0600-\u06FF]/.test(w);
+      });
+      const clientName = nameWords.slice(0, 4).join(' ');
+
+      // Package → event type
+      const pkgArea = afterDate;
+      const eventType = detectEvent(pkgArea);
+
+      // Skip empty rows
+      if (!clientName && count === 0) continue;
+
+      results.push({
+        date: date,
+        clientName: clientName || 'عميل',
+        phone: '',
+        hallId: currentHallId || matchHallId('closed'),
+        eventType: eventType,
+        guestsCount: count,
+        cost: 0,
+        startTime: '19:00',
+        endTime: '23:00',
+        confidence: clientName ? 'high' : 'medium',
+        raw: line.slice(0, 200)
+      });
     }
 
-    // dd-mm-yyyy or dd/mm/yyyy (assume dd/mm since Arabic context)
-    m = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-    if (m) {
-      const d = parseInt(m[1]), mo = parseInt(m[2]), y = normalizeYear(m[3]);
-      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      }
-    }
-
-    // dd-month-name-yyyy (Arabic or English)
-    const n = norm(t);
-    // e.g. "24 سبتمبر 2026" or "24 september 2026" or "سبتمبر 24 2026"
-    for (const [name, mon] of Object.entries(MONTHS_AR)) {
-      if (n.includes(norm(name))) {
-        const dm = n.match(/(\d{1,2})/);
-        const ym = n.match(/(20\d{2}|19\d{2})/);
-        const day = dm ? parseInt(dm[1]) : 1;
-        const year = ym ? parseInt(ym[1]) : currentYear;
-        if (day >= 1 && day <= 31) {
-          return `${year}-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        }
-      }
-    }
-    for (const [name, mon] of Object.entries(MONTHS_EN)) {
-      if (n.includes(name)) {
-        const dm = n.match(/(\d{1,2})/);
-        const ym = n.match(/(20\d{2}|19\d{2})/);
-        const day = dm ? parseInt(dm[1]) : 1;
-        const year = ym ? parseInt(ym[1]) : currentYear;
-        if (day >= 1 && day <= 31) {
-          return `${year}-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        }
-      }
-    }
-
-    return null;
+    return results;
   }
 
-  /* ---------- time parsing ---------- */
-  function tryParseTimeRange(text) {
-    const t = normalizeDigits(text);
-
-    // "7:00 PM - 11:00 PM" / "19:00 - 23:00" / "7-11 مساءً"
-    const timeRegex = /(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm|ص|م)?/g;
-
-    // Find all time-like patterns
-    const matches = [];
-    let m;
-    while ((m = timeRegex.exec(t)) !== null) {
-      let h = parseInt(m[1]);
-      const min = m[2] ? parseInt(m[2]) : 0;
-      const meridiem = m[3];
-      if (h > 23) continue;
-      if (min > 59) continue;
-
-      // Adjust AM/PM
-      if (meridiem) {
-        const isPM = /pm|م$/i.test(meridiem);
-        if (isPM && h < 12) h += 12;
-        if (!isPM && h === 12) h = 0;
-      } else {
-        // Heuristic: events usually happen in the evening → 5-11 → assume PM
-        if (h >= 5 && h <= 11) h += 12;
+  /* ---------- libraries ---------- */
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      if (document.querySelector('script[src="' + src + '"]')) {
+        resolve();
+        return;
       }
-      matches.push({ h, min, raw: m[0] });
-    }
-
-    if (matches.length >= 2) {
-      // Take first two times
-      const start = matches[0];
-      const end = matches[1];
-      return {
-        start: `${String(start.h).padStart(2, '0')}:${String(start.min).padStart(2, '0')}`,
-        end: `${String(end.h).padStart(2, '0')}:${String(end.min).padStart(2, '0')}`
-      };
-    }
-    if (matches.length === 1) {
-      // Only one time → assume 4 hours
-      const start = matches[0];
-      const endH = (start.h + 4) % 24;
-      return {
-        start: `${String(start.h).padStart(2, '0')}:${String(start.min).padStart(2, '0')}`,
-        end: `${String(endH).padStart(2, '0')}:${String(start.min).padStart(2, '0')}`
-      };
-    }
-    return null;
-  }
-
-  /* ---------- phone parsing ---------- */
-  function tryParsePhone(text) {
-    const t = normalizeDigits(text);
-    // Egyptian mobile: 01[0125]xxxxxxxx
-    let m = t.match(/(?:\+?20|0020)?\s*0?1[0125]\s*\d[\s\d]{7,9}/);
-    if (m) {
-      const digits = m[0].replace(/[^\d]/g, '');
-      // Normalize to 01xxxxxxxxx
-      if (digits.startsWith('20')) return '0' + digits.slice(2, 12);
-      if (digits.startsWith('0020')) return '0' + digits.slice(4, 14);
-      if (digits.startsWith('1') && digits.length === 10) return '0' + digits;
-      return digits.slice(0, 11);
-    }
-    // Landline or other: 10+ digits
-    m = t.match(/\d{10,15}/);
-    if (m) return m[0];
-    return null;
-  }
-
-  /* ---------- hall matching ---------- */
-  function matchHall(text) {
-    const n = norm(text);
-    for (const h of State.data.halls) {
-      const arName = norm(h.name.ar || '');
-      const enName = norm(h.name.en || '');
-      const code = (h.code || '').toLowerCase();
-      if (arName && n.includes(arName)) return { hall: h, confidence: 'high' };
-      if (enName && n.includes(enName)) return { hall: h, confidence: 'high' };
-      if (code && n.includes(code)) return { hall: h, confidence: 'medium' };
-    }
-    // Fuzzy: try short names
-    // E.g., "المغلقة" matches "القاعة المغلقة"
-    for (const h of State.data.halls) {
-      const arName = norm(h.name.ar || '');
-      const words = arName.split(/\s+/).filter(w => w.length >= 3);
-      for (const w of words) {
-        if (w !== 'قاعه' && w !== 'قاعه' && n.includes(w)) {
-          return { hall: h, confidence: 'medium' };
-        }
-      }
-    }
-    return null;
-  }
-
-  /* ---------- event matching ---------- */
-  function matchEvent(text) {
-    const n = norm(text);
-    for (const ev of EVENT_KEYWORDS) {
-      for (const w of ev.words) {
-        if (n.includes(norm(w))) {
-          return { key: ev.key, confidence: 'high' };
-        }
-      }
-    }
-    return null;
-  }
-
-  /* ---------- smart parser ---------- */
-  function smartParse(rawText) {
-    // Strategy:
-    // 1. Split by lines
-    // 2. Group lines into "records": each record starts with a line containing a date
-    // 3. For each record, extract fields
-    const lines = rawText
-      .split(/[\r\n]+/)
-      .map(l => l.replace(/\s+/g, ' ').trim())
-      .filter(l => l.length > 0);
-
-    // Find indices of lines with dates
-    const dateLineIdx = [];
-    lines.forEach((line, idx) => {
-      const d = tryParseDate(line);
-      if (d) dateLineIdx.push({ idx, date: d });
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('Failed: ' + src)); };
+      document.head.appendChild(s);
     });
-
-    // If no dates found in individual lines, try full text
-    if (dateLineIdx.length === 0) {
-      const fullText = lines.join(' ');
-      const date = tryParseDate(fullText);
-      if (date) {
-        return [extractFromBlock(fullText, date)];
-      }
-      return [];
-    }
-
-    // Group lines: each block starts at a date line and continues until next date line
-    const records = [];
-    for (let i = 0; i < dateLineIdx.length; i++) {
-      const start = dateLineIdx[i].idx;
-      const end = i + 1 < dateLineIdx.length ? dateLineIdx[i + 1].idx : lines.length;
-      const block = lines.slice(start, end).join(' ');
-      const rec = extractFromBlock(block, dateLineIdx[i].date);
-      records.push(rec);
-    }
-
-    return records;
   }
 
-  function extractFromBlock(block, date) {
-    const text = normalizeDigits(block);
-
-    const timeRange = tryParseTimeRange(text);
-    const phone = tryParsePhone(text);
-    const hallMatch = matchHall(text);
-    const eventMatch = matchEvent(text);
-
-    // Extract client name: try patterns
-    // Common: "العميل: X", "اسم العميل X", "Mr. X", "Client: X"
-    let clientName = '';
-    const clientPatterns = [
-      /(?:العميل|الاسم|اسم العميل|client|name)\s*[:：\-]\s*([^\n,،;؛]+)/i,
-      /(?:الأستاذ|أ\.|Mr\.?|Eng\.?|د\.)\s*([^\n,،;؛]+)/i
-    ];
-    for (const p of clientPatterns) {
-      const m = text.match(p);
-      if (m && m[1]) {
-        clientName = m[1].trim().split(/\s+/).slice(0, 5).join(' ');
-        break;
-      }
-    }
-
-    // If no name yet, try to find a capitalized Arabic name (word not in keywords)
-    if (!clientName) {
-      // Remove known fields from block and see what remains
-      let remaining = text;
-      if (date) remaining = remaining.replace(/\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4}/g, '');
-      if (timeRange) {
-        remaining = remaining.replace(/\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm|ص|م)?/g, '');
-      }
-      if (phone) remaining = remaining.replace(phone, '').replace(/\D/g, '');
-      // Remove hall names
-      for (const h of State.data.halls) {
-        remaining = remaining.replace(new RegExp(h.name.ar, 'g'), '');
-        remaining = remaining.replace(new RegExp(h.name.en, 'gi'), '');
-      }
-      // Remove event keywords
-      for (const ev of EVENT_KEYWORDS) {
-        for (const w of ev.words) {
-          remaining = remaining.replace(new RegExp(w, 'gi'), '');
-        }
-      }
-      // Clean up
-      remaining = remaining.replace(/[:\-،,؛;]+/g, ' ').trim();
-
-      // Get first 2-4 words that look like a name
-      const words = remaining.split(/\s+/).filter(w =>
-        w.length >= 2 &&
-        !/^\d+$/.test(w) &&
-        !['في', 'على', 'مع', 'من', 'الى', 'إلى', 'قاعة', 'قاعه', 'يوم', 'الساعة', 'ساعة'].includes(w)
-      );
-      if (words.length >= 1 && words.length <= 5) {
-        clientName = words.slice(0, 3).join(' ');
-      }
-    }
-
-    // Confidence scoring
-    let confScore = 0;
-    if (date) confScore += 30;
-    if (timeRange) confScore += 20;
-    if (phone) confScore += 20;
-    if (hallMatch) confScore += 20;
-    if (eventMatch) confScore += 10;
-
-    let confidence = 'low';
-    if (confScore >= 70) confidence = 'high';
-    else if (confScore >= 40) confidence = 'medium';
-
-    return {
-      clientName: clientName || '',
-      phone: phone || '',
-      date: date || todayISO(),
-      startTime: timeRange ? timeRange.start : '19:00',
-      endTime: timeRange ? timeRange.end : '23:00',
-      hallId: hallMatch ? hallMatch.hall.id : (State.data.halls[0]?.id || ''),
-      eventType: eventMatch ? eventMatch.key : 'Wedding',
-      cost: hallMatch ? (hallMatch.hall.cost || 0) : 0,
-      confidence,
-      confScore,
-      raw: block.slice(0, 200)
-    };
+  async function ensurePdfJs() {
+    if (window.pdfjsLib) return;
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
 
-  /* ---------- file readers ---------- */
-  async function readPdf(file, onProgress) {
+  async function ensureTesseract() {
+    if (window.Tesseract) return;
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js');
+  }
+
+  /* ---------- read PDF ---------- */
+  async function readPdf(file) {
     await ensurePdfJs();
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    let text = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      const pageText = content.items.map(it => it.str).join(' ');
-      fullText += pageText + '\n';
-      if (onProgress) onProgress(i, pdf.numPages);
+      const pageText = content.items.map(function (it) { return it.str; }).join(' ');
+      text += pageText + '\n';
     }
-    return fullText;
+    return text;
   }
 
+  /* ---------- read image ---------- */
   async function readImage(file) {
     await ensureTesseract();
-    const result = await window.Tesseract.recognize(
-      file,
-      'ara+eng',
-      { logger: (m) => { if (m.status === 'recognizing text') Import.progress = Math.round(m.progress * 100); } }
-    );
+    const result = await window.Tesseract.recognize(file, 'ara+eng', {
+      logger: function (m) {
+        if (m.status === 'recognizing text') {
+          Imp.status = I18N[State.lang].si_ocr + ' ' + Math.round(m.progress * 100) + '%';
+          updateProgressUI();
+        }
+      }
+    });
     return result.data.text;
   }
 
-  /* ---------- main pipeline ---------- */
+  /* ---------- update progress UI ---------- */
+  function updateProgressUI() {
+    const s = document.getElementById('si-status');
+    if (s) s.textContent = Imp.status || '';
+  }
+
+  /* ---------- process file ---------- */
   async function processFile(file) {
     if (!file) return;
-
-    Import.file = file;
-    Import.fileName = file.name;
-    Import.busy = true;
-    Import.progress = 0;
-    Import.status = t('si_reading');
-    Import.parsed = [];
-    Import.rawText = '';
-
-    if (typeof navigate === 'function') navigate('importsmart');
+    Imp.file = file;
+    Imp.fileName = file.name;
+    Imp.busy = true;
+    Imp.parsed = [];
+    Imp.rawText = '';
+    Imp.status = I18N[State.lang].si_reading;
+    navigate('importsmart');
 
     try {
-      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-      Import.fileType = isPdf ? 'pdf' : 'image';
-
       let text = '';
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
       if (isPdf) {
-        Import.status = t('si_reading');
-        text = await readPdf(file, (p, total) => {
-          Import.progress = Math.round((p / total) * 100);
-          updateProgressUI();
-        });
+        text = await readPdf(file);
       } else {
-        Import.status = t('si_ocr_running');
+        Imp.status = I18N[State.lang].si_ocr + '…';
         updateProgressUI();
         text = await readImage(file);
       }
-
-      Import.rawText = text;
-
-      Import.status = t('si_parsing');
-      updateProgressUI();
-
-      // Small delay to let UI update
-      await new Promise(r => setTimeout(r, 300));
-
-      const parsed = smartParse(text);
-      Import.parsed = parsed;
-
-      Import.busy = false;
-      Import.progress = 100;
-      Import.status = '';
-
-      if (typeof navigate === 'function') navigate('importsmart');
+      Imp.rawText = text;
+      Imp.parsed = parseTable(text);
+      Imp.busy = false;
+      Imp.status = '';
+      navigate('importsmart');
       if (typeof showToast === 'function') {
         showToast(
-          `${t('si_found')} ${parsed.length} ${t('si_bookings')}`,
-          parsed.length ? 'success' : 'warn'
+          I18N[State.lang].si_found + ' ' + Imp.parsed.length + ' ' + I18N[State.lang].si_bookings,
+          Imp.parsed.length ? 'success' : 'warn'
         );
       }
     } catch (err) {
-      console.error('[Section 18] Process failed:', err);
-      Import.busy = false;
-      Import.status = '';
-      if (typeof showToast === 'function') showToast('Import failed: ' + err.message, 'error');
-      if (typeof navigate === 'function') navigate('importsmart');
+      console.error('[Section 18]', err);
+      Imp.busy = false;
+      Imp.status = '';
+      if (typeof showToast === 'function') showToast('Failed: ' + err.message, 'error');
+      navigate('importsmart');
     }
   }
 
-  function updateProgressUI() {
-    const bar = document.getElementById('si-progress-bar');
-    const label = document.getElementById('si-progress-label');
-    const status = document.getElementById('si-progress-status');
-    if (bar) bar.style.width = (Import.progress || 0) + '%';
-    if (label) label.textContent = (Import.progress || 0) + '%';
-    if (status) status.textContent = Import.status || '';
+  /* ---------- escape helpers ---------- */
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
   }
 
-  /* ---------- register page ---------- */
+  /* ---------- render page ---------- */
   Pages.importsmart = function (el) {
-    if (Import.busy) {
-      el.innerHTML = `
-        <div class="card" style="max-width:640px;margin:2rem auto;text-align:center;padding:3rem 2rem">
-          <div style="font-size:3rem;margin-bottom:1rem">📄</div>
-          <h3 style="margin:0 0 .5rem">${t('si_reading')}</h3>
-          <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 1.5rem" id="si-progress-status">${Import.status || ''}</p>
-          <div style="height:8px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-bottom:.5rem">
-            <div id="si-progress-bar" style="height:100%;width:${Import.progress}%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:999px;transition:width .3s"></div>
-          </div>
-          <div style="font-size:.75rem;color:var(--text-muted)">
-            <span id="si-progress-label">${Import.progress}%</span>
-          </div>
-        </div>
-      `;
+    if (Imp.busy) {
+      el.innerHTML = '<div class="card" style="max-width:520px;margin:2rem auto;text-align:center;padding:3rem 2rem">' +
+        '<div style="font-size:3rem;margin-bottom:1rem">📄</div>' +
+        '<div style="font-size:1rem;font-weight:700;margin-bottom:.5rem">' + esc(Imp.status || I18N[State.lang].si_reading) + '</div>' +
+        '<div id="si-status" style="font-size:.8rem;color:var(--text-muted);margin-top:1rem">' + esc(Imp.fileName) + '</div>' +
+        '</div>';
       return;
     }
 
-    // Show review or upload
-    if (Import.parsed && Import.parsed.length > 0) {
+    if (Imp.parsed.length > 0) {
       renderReview(el);
     } else {
       renderUpload(el);
     }
   };
 
-  /* ---------- upload UI ---------- */
+  /* ---------- upload ---------- */
   function renderUpload(el) {
-    el.innerHTML = `
-      <div style="max-width:720px;margin:1rem auto">
-        <div class="card" style="padding:2rem">
-          <div style="text-align:center;margin-bottom:1.5rem">
-            <div style="width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#f97316,#f59e0b);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto .75rem">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-            </div>
-            <h3 style="margin:0 0 .35rem;font-size:1.15rem">${t('si_title')}</h3>
-            <p style="color:var(--text-muted);font-size:.85rem;margin:0">${t('si_subtitle')}</p>
-          </div>
+    const L = I18N[State.lang];
+    el.innerHTML = '<div style="max-width:640px;margin:1rem auto">' +
+      '<div class="card" style="padding:2rem">' +
+        '<div style="text-align:center;margin-bottom:1.5rem">' +
+          '<div style="font-size:3rem;margin-bottom:.5rem">📤</div>' +
+          '<h3 style="margin:0 0 .35rem;font-size:1.15rem">' + esc(L.si_title) + '</h3>' +
+        '</div>' +
+        '<div id="si-dropzone" style="border:3px dashed var(--border);border-radius:16px;padding:3rem 1.5rem;text-align:center;cursor:pointer;background:var(--surface-2);transition:all .2s">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">📁</div>' +
+          '<div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">' + esc(L.si_dropzone) + '</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted)">' + esc(L.si_supported) + '</div>' +
+        '</div>' +
+        '<input type="file" id="si-file" accept="application/pdf,image/*" style="display:none">' +
+        (Imp.rawText && !Imp.parsed.length ?
+          '<div style="margin-top:1rem;padding:1rem;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:.85rem;color:#ef4444;text-align:center">⚠️ ' + esc(L.si_no_data) + '</div>' : '') +
+      '</div>' +
+    '</div>';
 
-          <div id="si-dropzone" style="border:3px dashed var(--border);border-radius:16px;padding:3rem 1.5rem;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface-2)">
-            <div style="font-size:2.5rem;margin-bottom:.5rem">📤</div>
-            <div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">${t('si_dropzone')}</div>
-            <div style="font-size:.75rem;color:var(--text-muted)">${t('si_supported')}</div>
-          </div>
-
-          <input type="file" id="si-file-input" accept="application/pdf,image/*" style="display:none">
-
-          <div style="margin-top:1.5rem;padding:1rem;background:rgba(124,58,237,.05);border:1px solid rgba(124,58,237,.2);border-radius:10px">
-            <div style="font-size:.78rem;color:var(--text-muted);line-height:1.7">
-              <b style="color:var(--primary)">💡 ${State.lang === 'ar' ? 'كيف يعمل؟' : 'How it works?'}</b><br>
-              ${State.lang === 'ar'
-                ? '١. ارفع ملف PDF أو صورة (screenshot / صورة واتساب)<br>٢. النظام يقرأ النص تلقائيًا (OCR)<br>٣. يتعرف على: التاريخ، الوقت، العميل، الهاتف، القاعة، المناسبة<br>٤. راجع النتائج قبل الحفظ'
-                : '1. Upload PDF or image (screenshot / WhatsApp)<br>2. System reads text automatically (OCR)<br>3. Detects: date, time, client, phone, hall, event<br>4. Review results before saving'}
-            </div>
-          </div>
-
-          ${Import.rawText && !Import.parsed.length ? `
-            <div style="margin-top:1rem;padding:1rem;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:.8rem;color:#ef4444">
-              ⚠️ ${t('si_no_bookings')}
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-
-    if (window.lucide) lucide.createIcons();
-
-    const dropzone = document.getElementById('si-dropzone');
-    const fileInput = document.getElementById('si-file-input');
-
-    if (dropzone && fileInput) {
-      dropzone.onclick = () => fileInput.click();
-      fileInput.onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) processFile(file);
+    const dz = document.getElementById('si-dropzone');
+    const fi = document.getElementById('si-file');
+    if (dz && fi) {
+      dz.onclick = function () { fi.click(); };
+      fi.onchange = function (e) {
+        if (e.target.files[0]) processFile(e.target.files[0]);
       };
-
-      ['dragenter', 'dragover'].forEach(ev => {
-        dropzone.addEventListener(ev, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropzone.style.borderColor = 'var(--primary)';
-          dropzone.style.background = 'rgba(124,58,237,.08)';
-        });
+      dz.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--primary)';
+        dz.style.background = 'rgba(124,58,237,.08)';
       });
-      ['dragleave', 'drop'].forEach(ev => {
-        dropzone.addEventListener(ev, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropzone.style.borderColor = 'var(--border)';
-          dropzone.style.background = 'var(--surface-2)';
-        });
+      dz.addEventListener('dragleave', function () {
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
       });
-      dropzone.addEventListener('drop', (e) => {
-        const file = e.dataTransfer.files[0];
-        if (file) processFile(file);
+      dz.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
+        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
       });
     }
   }
 
-  /* ---------- review UI ---------- */
+  /* ---------- review ---------- */
   function renderReview(el) {
-    const parsed = Import.parsed;
-    const halls = State.data.halls;
+    const L = I18N[State.lang];
+    const halls = State.data.halls || [];
+    const rows = Imp.parsed;
 
-    el.innerHTML = `
-      <div class="card" style="margin-bottom:1rem">
-        <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:center">
-          <div style="display:flex;align-items:center;gap:.5rem">
-            <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f97316,#f59e0b);color:#fff;display:flex;align-items:center;justify-content:center">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            </div>
-            <div>
-              <div style="font-weight:800;font-size:1rem">${t('si_review')}</div>
-              <div style="font-size:.75rem;color:var(--text-muted)">${t('si_found')} ${parsed.length} ${t('si_bookings')}</div>
-            </div>
-          </div>
-          <div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="__dmImportToggleRaw()">
-              <i data-lucide="code"></i> ${Import.showRaw ? t('si_hide_raw') : t('si_show_raw')}
-            </button>
-            <button class="btn btn-ghost btn-sm" onclick="__dmImportReset()">
-              <i data-lucide="rotate-ccw"></i> ${t('si_try_again')}
-            </button>
-            <button class="btn btn-primary btn-sm" onclick="__dmImportCommit()">
-              <i data-lucide="save"></i> ${t('si_import_all')} (${parsed.length})
-            </button>
-          </div>
-        </div>
+    let rowsHtml = '';
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const evOptions = ['Wedding', 'Engagement', 'Henna', 'Birthday', 'Corporate', 'Other']
+        .map(function (ev) {
+          return '<option value="' + ev + '"' + (r.eventType === ev ? ' selected' : '') + '>' + ev + '</option>';
+        }).join('');
+      const hallOptions = halls.map(function (h) {
+        return '<option value="' + h.id + '"' + (r.hallId === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+      }).join('');
+      const confClass = r.confidence === 'high' ? 'green' : r.confidence === 'medium' ? 'yellow' : 'red';
 
-        <div style="margin-top:1rem;padding:.65rem .85rem;background:rgba(124,58,237,.06);border-inline-start:3px solid var(--primary);border-radius:6px;font-size:.78rem;color:var(--text-muted)">
-          📄 ${Import.fileName} · ${Import.fileType.toUpperCase()} · ${t('si_review_hint')}
-        </div>
-      </div>
+      rowsHtml += '<tr data-idx="' + i + '">' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><span class="badge-pill badge-' + confClass + '">' + r.confidence + '</span></td>' +
+        '<td><input class="si-f" data-f="clientName" value="' + esc(r.clientName) + '" style="width:100%;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit"></td>' +
+        '<td><input class="si-f" data-f="phone" value="' + esc(r.phone) + '" style="width:100px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit"></td>' +
+        '<td><input class="si-f" data-f="date" type="date" value="' + esc(r.date) + '" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit"></td>' +
+        '<td><select class="si-f" data-f="hallId" style="width:120px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit">' + hallOptions + '</select></td>' +
+        '<td><select class="si-f" data-f="eventType" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit">' + evOptions + '</select></td>' +
+        '<td><input class="si-f" data-f="guestsCount" type="number" value="' + (r.guestsCount || 0) + '" style="width:70px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit"></td>' +
+        '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dmImpDel(' + i + ')" style="color:#ef4444"><i data-lucide="trash-2"></i></button></td>' +
+      '</tr>';
+    }
 
-      ${Import.showRaw ? `
-        <div class="card" style="margin-bottom:1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-            <h4 style="margin:0;font-size:.9rem"><i data-lucide="code" style="width:14px;height:14px;display:inline;vertical-align:-2px"></i> ${t('si_raw_text')}</h4>
-            <span style="font-size:.7rem;color:var(--text-muted)">${Import.rawText.length} chars</span>
-          </div>
-          <pre style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:1rem;font-size:.75rem;line-height:1.6;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-word">${escapeHtml(Import.rawText.slice(0, 5000))}${Import.rawText.length > 5000 ? '\n\n… (' + (Import.rawText.length - 5000) + ' more chars)' : ''}</pre>
-        </div>
-      ` : ''}
-
-      <div class="card" style="padding:0;overflow:hidden">
-        <div class="table-wrap" style="border:none;border-radius:0">
-          <table class="data-table" style="min-width:900px">
-            <thead>
-              <tr>
-                <th style="width:2rem">#</th>
-                <th>${t('si_confidence')}</th>
-                <th>${t('si_client')}</th>
-                <th>${t('si_phone')}</th>
-                <th>${t('si_date')}</th>
-                <th>${t('si_time')}</th>
-                <th>${t('si_hall')}</th>
-                <th>${t('si_event')}</th>
-                <th>${t('si_cost')}</th>
-                <th style="width:3rem"></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${parsed.map((p, i) => `
-                <tr data-idx="${i}">
-                  <td style="color:var(--text-muted);font-weight:700">${i + 1}</td>
-                  <td>
-                    <span class="badge-pill badge-${p.confidence === 'high' ? 'green' : p.confidence === 'medium' ? 'yellow' : 'red'}" title="${t('si_confidence_' + p.confidence)}">
-                      ${p.confScore}%
-                    </span>
-                  </td>
-                  <td><input class="si-inp" data-field="clientName" value="${escapeAttr(p.clientName)}" style="width:100%;padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.8rem"></td>
-                  <td><input class="si-inp" data-field="phone" value="${escapeAttr(p.phone)}" style="width:110px;padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.8rem"></td>
-                  <td><input class="si-inp" data-field="date" type="date" value="${p.date}" style="padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.8rem"></td>
-                  <td>
-                    <div style="display:flex;gap:.25rem;align-items:center">
-                      <input class="si-inp" data-field="startTime" type="time" value="${p.startTime}" style="padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.75rem">
-                      <span style="color:var(--text-muted);font-size:.7rem">→</span>
-                      <input class="si-inp" data-field="endTime" type="time" value="${p.endTime}" style="padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.75rem">
-                    </div>
-                  </td>
-                  <td>
-                    <select class="si-inp" data-field="hallId" style="width:130px;padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.78rem">
-                      ${halls.map(h => `<option value="${h.id}" ${p.hallId === h.id ? 'selected' : ''}>${h.name[State.lang] || h.name.ar}</option>`).join('')}
-                    </select>
-                  </td>
-                  <td>
-                    <select class="si-inp" data-field="eventType" style="width:120px;padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.78rem">
-                      ${['Wedding', 'Engagement', 'Henna', 'Birthday', 'Corporate', 'Other'].map(ev => `<option value="${ev}" ${p.eventType === ev ? 'selected' : ''}>${ev}</option>`).join('')}
-                    </select>
-                  </td>
-                  <td><input class="si-inp" data-field="cost" type="number" value="${p.cost || 0}" style="width:90px;padding:.4rem .5rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;font-family:inherit;color:var(--text);font-size:.8rem"></td>
-                  <td>
-                    <button onclick="__dmImportDeleteRow(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;padding:.35rem;border-radius:6px" title="${t('si_delete_row')}">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <div style="padding:1rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
-          <button class="btn btn-ghost btn-sm" onclick="__dmImportAddRow()">
-            <i data-lucide="plus"></i> ${t('si_add_row')}
-          </button>
-          <div style="font-size:.78rem;color:var(--text-muted)">
-            💡 ${State.lang === 'ar' ? 'عدّل أي حقل قبل الحفظ' : 'Edit any field before saving'}
-          </div>
-        </div>
-      </div>
-    `;
+    el.innerHTML = '<div class="card" style="margin-bottom:1rem">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">' +
+        '<b style="font-size:1rem">' + esc(L.si_review) + '</b>' +
+        '<span class="badge-pill badge-purple">' + L.si_found + ' ' + rows.length + ' ' + L.si_bookings + '</span>' +
+        '<div style="margin-inline-start:auto;display:flex;gap:.5rem">' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmImpToggleRaw()">' + esc(L.si_show_raw) + '</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmImpReset()"><i data-lucide="rotate-ccw"></i> ' + esc(L.si_try_again) + '</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="__dmImpCommit()"><i data-lucide="save"></i> ' + esc(L.si_import_all) + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    (Imp.showRaw ?
+      '<div class="card" style="margin-bottom:1rem"><pre style="background:var(--surface-2);padding:1rem;border-radius:8px;font-size:.7rem;line-height:1.5;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-word">' + esc(Imp.rawText.slice(0, 4000)) + '</pre></div>'
+      : '') +
+    '<div class="card" style="padding:0;overflow:hidden">' +
+      '<div class="table-wrap" style="border:none;border-radius:0">' +
+        '<table class="data-table" style="min-width:900px">' +
+          '<thead><tr>' +
+            '<th style="width:2rem">#</th>' +
+            '<th>Confidence</th>' +
+            '<th>Client</th>' +
+            '<th>Phone</th>' +
+            '<th>Date</th>' +
+            '<th>Hall</th>' +
+            '<th>Event</th>' +
+            '<th>Guests</th>' +
+            '<th style="width:3rem"></th>' +
+          '</tr></thead>' +
+          '<tbody>' + rowsHtml + '</tbody>' +
+        '</table>' +
+      '</div>' +
+    '</div>';
 
     if (window.lucide) lucide.createIcons();
 
-    // Attach change listeners to persist edits into Import.parsed
-    el.querySelectorAll('.si-inp').forEach(inp => {
-      inp.onchange = (e) => {
+    el.querySelectorAll('.si-f').forEach(function (inp) {
+      inp.onchange = function (e) {
         const tr = e.target.closest('tr[data-idx]');
         if (!tr) return;
-        const idx = +tr.dataset.idx;
-        const field = e.target.dataset.field;
-        if (Import.parsed[idx]) {
-          Import.parsed[idx][field] = e.target.type === 'number' ? +e.target.value : e.target.value;
+        const idx = parseInt(tr.dataset.idx);
+        const f = e.target.dataset.f;
+        if (Imp.parsed[idx]) {
+          Imp.parsed[idx][f] = e.target.type === 'number' ? parseInt(e.target.value) : e.target.value;
         }
       };
     });
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
-  function escapeAttr(s) {
-    return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
   /* ---------- public handlers ---------- */
-  window.__dmImportToggleRaw = function () {
-    Import.showRaw = !Import.showRaw;
+  window.__dmImpToggleRaw = function () {
+    Imp.showRaw = !Imp.showRaw;
     navigate('importsmart');
   };
 
-  window.__dmImportReset = function () {
-    Import.file = null;
-    Import.fileName = '';
-    Import.fileType = '';
-    Import.rawText = '';
-    Import.parsed = [];
-    Import.showRaw = false;
-    Import.busy = false;
-    Import.progress = 0;
-    Import.status = '';
+  window.__dmImpReset = function () {
+    Imp.file = null;
+    Imp.fileName = '';
+    Imp.rawText = '';
+    Imp.parsed = [];
+    Imp.showRaw = false;
+    Imp.busy = false;
     navigate('importsmart');
   };
 
-  window.__dmImportDeleteRow = function (idx) {
-    Import.parsed.splice(idx, 1);
+  window.__dmImpDel = function (idx) {
+    Imp.parsed.splice(idx, 1);
     navigate('importsmart');
   };
 
-  window.__dmImportAddRow = function () {
-    Import.parsed.push({
-      clientName: '',
-      phone: '',
-      date: todayISO(),
-      startTime: '19:00',
-      endTime: '23:00',
-      hallId: State.data.halls[0]?.id || '',
-      eventType: 'Wedding',
-      cost: 0,
-      confidence: 'low',
-      confScore: 0,
-      raw: ''
-    });
-    navigate('importsmart');
-  };
-
-  window.__dmImportCommit = function () {
-    if (!Import.parsed.length) {
-      if (typeof showToast === 'function') showToast(t('si_no_bookings'), 'warn');
-      return;
-    }
-
-    if (typeof confirmDialog === 'function') {
-      confirmDialog(
-        State.lang === 'ar'
-          ? `سيتم إضافة ${Import.parsed.length} حجز لقاعدة البيانات. متابعة؟`
-          : `${Import.parsed.length} bookings will be added. Continue?`,
-        doCommit
-      );
-    } else {
-      doCommit();
-    }
-  };
-
-  function doCommit() {
+  window.__dmImpCommit = function () {
+    if (!Imp.parsed.length) return;
     let added = 0;
-    const imported = [];
-
-    Import.parsed.forEach(p => {
-      if (!p.clientName && !p.phone) return; // skip empty
-      const newBooking = {
+    for (let i = 0; i < Imp.parsed.length; i++) {
+      const p = Imp.parsed[i];
+      if (!p.clientName && !p.phone) continue;
+      State.data.bookings.push({
         id: uid('b'),
         date: p.date,
         hallId: p.hallId,
@@ -7788,69 +7410,53 @@ service cloud.firestore {
         endTime: p.endTime || '23:00',
         status: 'pending',
         paymentStatus: 'unpaid',
-        cost: +p.cost || 0,
-        notes: (State.lang === 'ar' ? 'مستورد من: ' : 'Imported from: ') + Import.fileName
-      };
-      State.data.bookings.push(newBooking);
-      imported.push(newBooking);
+        cost: p.cost || 0,
+        guestsCount: p.guestsCount || 0,
+        notes: 'مستورد من: ' + Imp.fileName
+      });
       added++;
-    });
-
-    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
-
+    }
+    try { saveData(); } catch (e) {}
     try {
       if (typeof logActivity === 'function') {
-        logActivity('bulk-import', 'booking', null, null, {
-          count: added,
-          file: Import.fileName
-        });
+        logActivity('bulk-import', 'booking', null, null, { count: added, file: Imp.fileName });
       }
     } catch (e) {}
-
-    try {
-      if (typeof showToast === 'function') {
-        showToast(`${t('si_imported')}: ${added} ✓`, 'success');
-      }
-    } catch (e) {}
-
-    // Reset after successful import
-    Import.file = null;
-    Import.fileName = '';
-    Import.fileType = '';
-    Import.rawText = '';
-    Import.parsed = [];
-    Import.showRaw = false;
-
-    // Navigate to bookings
-    setTimeout(() => {
-      if (typeof navigate === 'function') navigate('bookings');
-    }, 400);
-  }
+    showToast(I18N[State.lang].si_imported + ': ' + added + ' ✓', 'success');
+    Imp.file = null;
+    Imp.fileName = '';
+    Imp.rawText = '';
+    Imp.parsed = [];
+    Imp.showRaw = false;
+    setTimeout(function () { navigate('bookings'); }, 400);
+  };
 
   /* ---------- register nav ---------- */
   function registerNav() {
-    const ops = NAV_ITEMS.find(g => g.section === 'operations');
-    if (ops && !ops.items.find(i => i.id === 'importsmart')) {
-      const bkIdx = ops.items.findIndex(i => i.id === 'bookings');
-      const insertAt = bkIdx >= 0 ? bkIdx + 1 : ops.items.length;
-      ops.items.splice(insertAt, 0, { id: 'importsmart', icon: 'file-input', label: 'smart_import' });
+    const ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (ops && !ops.items.find(function (i) { return i.id === 'importsmart'; })) {
+      const idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+      const at = idx >= 0 ? idx + 1 : ops.items.length;
+      ops.items.splice(at, 0, { id: 'importsmart', icon: 'file-input', label: 'smart_import' });
     }
     try { renderSidebar(); } catch (e) {}
   }
 
+  /* ---------- boot ---------- */
   waitFor(
-    () => typeof State !== 'undefined'
-        && typeof Pages !== 'undefined'
-        && typeof navigate === 'function',
+    function () {
+      return typeof State !== 'undefined' &&
+        typeof Pages !== 'undefined' &&
+        typeof navigate === 'function' &&
+        typeof NAV_ITEMS !== 'undefined';
+    },
     function () {
       registerNav();
-      console.log('%c[Section 18] ✓ Smart Booking Import ready', 'color:#10b981;font-weight:bold');
-      console.log('%c[Section 18] Try: navigate("importsmart")', 'color:#06b6d4;font-style:italic');
+      console.log('%c[Section 18] ✓ Smart Import v2 ready', 'color:#10b981;font-weight:bold');
     }
   );
 
 })();
-
 
 
 /* #########################################################
