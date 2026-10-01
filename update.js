@@ -7457,6 +7457,664 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 19: Bulk Selection & Actions
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Checkboxes on every table row
+   - Select all / none
+   - Floating action bar (delete / edit / export / print)
+   - Works on: employees, bookings, clients, halls,
+     equipment, advances, deductions, bonuses, leaves
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 19] Bulk Selection loading…', 'color:#8b5cf6;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    let tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) {
+        clearInterval(t);
+        console.warn('[Section 19] timeout');
+        return;
+      }
+      if (cond()) {
+        clearInterval(t);
+        cb();
+      }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.bulk_selected = 'محدد';
+  I18N.ar.bulk_delete_confirm = 'هل أنت متأكد من حذف العناصر المحددة؟';
+  I18N.ar.bulk_edit = 'تعديل جماعي';
+  I18N.ar.bulk_edit_hint = 'سيتم تعديل العناصر المحددة';
+  I18N.ar.bulk_no_changes = 'لم تختر أي تغيير';
+  I18N.ar.bulk_apply = 'تطبيق';
+  I18N.ar.bulk_leave_empty = 'اتركه فارغًا للتخطي';
+  I18N.ar.bulk_no_change = 'بدون تغيير';
+  I18N.ar.bulk_deleted = 'تم حذف';
+  I18N.ar.bulk_updated = 'تم تعديل';
+
+  I18N.en.bulk_selected = 'selected';
+  I18N.en.bulk_delete_confirm = 'Delete all selected items?';
+  I18N.en.bulk_edit = 'Bulk Edit';
+  I18N.en.bulk_edit_hint = 'Selected items will be updated';
+  I18N.en.bulk_no_changes = 'No changes selected';
+  I18N.en.bulk_apply = 'Apply';
+  I18N.en.bulk_leave_empty = 'Leave empty to skip';
+  I18N.en.bulk_no_change = 'No change';
+  I18N.en.bulk_deleted = 'Deleted';
+  I18N.en.bulk_updated = 'Updated';
+
+  /* ---------- state ---------- */
+  const Bulk = {
+    selected: new Set(),
+    page: ''
+  };
+  window.__dmBulk = Bulk;
+
+  /* ---------- pages where checkboxes make sense ---------- */
+  const SUPPORTED_PAGES = {
+    employees: true,
+    bookings: true,
+    clients: true,
+    halls: true,
+    equipment: true,
+    advances: true,
+    deductions: true,
+    bonuses: true,
+    leaves: true
+  };
+
+  /* ---------- extract row ID from buttons ---------- */
+  const EDIT_PATTERNS = {
+    employees: /editEmployee\('([^']+)'\)/,
+    bookings: /editBooking\('([^']+)'\)/,
+    clients: /editClient\('([^']+)'\)/,
+    halls: /editHall\('([^']+)'\)/,
+    equipment: /editEquipment\('([^']+)'\)/,
+    advances: /openFinanceModal\('[^']+',\s*'([^']+)'\)/,
+    deductions: /openFinanceModal\('[^']+',\s*'([^']+)'\)/,
+    bonuses: /openFinanceModal\('[^']+',\s*'([^']+)'\)/,
+    leaves: /__dmLeave(?:Approve|Reject|Delete)\('([^']+)'\)/
+  };
+
+  function extractRowId(tr, page) {
+    const pattern = EDIT_PATTERNS[page];
+    if (!pattern) return null;
+    const buttons = tr.querySelectorAll('button[onclick]');
+    for (let i = 0; i < buttons.length; i++) {
+      const oc = buttons[i].getAttribute('onclick') || '';
+      const m = oc.match(pattern);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  /* ---------- inject checkboxes ---------- */
+  function injectCheckboxes() {
+    const page = State.page;
+    if (!SUPPORTED_PAGES[page]) {
+      removeBar();
+      return;
+    }
+    Bulk.page = page;
+
+    const tables = document.querySelectorAll('.data-table');
+    for (let t = 0; t < tables.length; t++) {
+      const table = tables[t];
+      const thead = table.querySelector('thead tr');
+      const tbody = table.querySelector('tbody');
+      if (!thead || !tbody) continue;
+
+      // 1) Header checkbox
+      if (!thead.querySelector('.dm-bulk-th')) {
+        const th = document.createElement('th');
+        th.className = 'dm-bulk-th';
+        th.style.cssText = 'width:40px;padding:.5rem .4rem';
+        th.innerHTML = '<input type="checkbox" class="dm-bulk-select-all" style="accent-color:var(--primary);cursor:pointer;width:16px;height:16px;vertical-align:middle">';
+        thead.insertBefore(th, thead.firstChild);
+      }
+
+      // 2) Body checkboxes
+      const rows = tbody.querySelectorAll('tr');
+      for (let r = 0; r < rows.length; r++) {
+        const tr = rows[r];
+        if (tr.querySelector('.dm-bulk-td')) continue;
+
+        const id = extractRowId(tr, page);
+        if (!id) continue;
+
+        tr.dataset.dmRowId = id;
+
+        const td = document.createElement('td');
+        td.className = 'dm-bulk-td';
+        td.style.cssText = 'width:40px;padding:.5rem .4rem';
+        const checked = Bulk.selected.has(id) ? ' checked' : '';
+        td.innerHTML = '<input type="checkbox" class="dm-bulk-checkbox" data-id="' + id + '"' + checked + ' style="accent-color:var(--primary);cursor:pointer;width:16px;height:16px;vertical-align:middle">';
+        tr.insertBefore(td, tr.firstChild);
+      }
+    }
+
+    // 3) Bind handlers
+    document.querySelectorAll('.dm-bulk-checkbox').forEach(function (cb) {
+      if (cb.dataset.dmBound === '1') return;
+      cb.dataset.dmBound = '1';
+      cb.onchange = function (e) {
+        const id = e.target.dataset.id;
+        if (e.target.checked) Bulk.selected.add(id);
+        else Bulk.selected.delete(id);
+        updateBar();
+        updateSelectAllState();
+      };
+    });
+
+    document.querySelectorAll('.dm-bulk-select-all').forEach(function (sa) {
+      if (sa.dataset.dmBound === '1') return;
+      sa.dataset.dmBound = '1';
+      sa.onchange = function (e) {
+        const table = sa.closest('table');
+        if (!table) return;
+        table.querySelectorAll('.dm-bulk-checkbox').forEach(function (cb) {
+          cb.checked = e.target.checked;
+          const id = cb.dataset.id;
+          if (e.target.checked) Bulk.selected.add(id);
+          else Bulk.selected.delete(id);
+        });
+        updateBar();
+      };
+    });
+
+    // 4) Update select-all reflect
+    updateSelectAllState();
+    updateBar();
+  }
+
+  function updateSelectAllState() {
+    const tables = document.querySelectorAll('.data-table');
+    tables.forEach(function (table) {
+      const sa = table.querySelector('.dm-bulk-select-all');
+      if (!sa) return;
+      const cbs = table.querySelectorAll('.dm-bulk-checkbox');
+      if (!cbs.length) return;
+      let total = 0, checked = 0;
+      cbs.forEach(function (cb) { total++; if (cb.checked) checked++; });
+      sa.checked = total > 0 && checked === total;
+      sa.indeterminate = checked > 0 && checked < total;
+    });
+  }
+
+  /* ---------- floating action bar ---------- */
+  function removeBar() {
+    const bar = document.getElementById('dm-bulk-bar');
+    if (bar) bar.remove();
+  }
+
+  function updateBar() {
+    const count = Bulk.selected.size;
+    if (count === 0) {
+      removeBar();
+      return;
+    }
+
+    let bar = document.getElementById('dm-bulk-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'dm-bulk-bar';
+      bar.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:.55rem .85rem;box-shadow:0 20px 40px -10px rgba(0,0,0,.35);display:flex;align-items:center;gap:.5rem;z-index:8600;animation:dmBulkIn .25s cubic-bezier(.2,.9,.3,1.3)';
+      document.body.appendChild(bar);
+
+      if (!document.getElementById('dm-bulk-styles')) {
+        const s = document.createElement('style');
+        s.id = 'dm-bulk-styles';
+        s.textContent =
+          '@keyframes dmBulkIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}' +
+          '.dm-bulk-btn{width:36px;height:36px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0}' +
+          '.dm-bulk-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary);transform:translateY(-1px)}' +
+          '.dm-bulk-btn.dm-bulk-danger:hover{background:#ef4444;border-color:#ef4444}' +
+          '.dm-bulk-btn svg{width:16px;height:16px}' +
+          '@media (max-width:640px){#dm-bulk-bar{left:1rem;right:1rem;transform:none;justify-content:space-between}.dm-bulk-btn{width:34px;height:34px}}';
+        document.head.appendChild(s);
+      }
+    }
+
+    const L = I18N[State.lang] || I18N.ar;
+    bar.innerHTML =
+      '<div style="display:flex;align-items:center;gap:.5rem;padding-inline-end:.5rem">' +
+        '<span style="background:var(--primary);color:#fff;border-radius:50%;min-width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;padding:0 .35rem">' + count + '</span>' +
+        '<span style="font-weight:700;font-size:.85rem;color:var(--text)">' + L.bulk_selected + '</span>' +
+      '</div>' +
+      '<div style="width:1px;height:24px;background:var(--border)"></div>' +
+      '<button class="dm-bulk-btn" data-action="edit" title="' + L.bulk_edit + '">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>' +
+      '</button>' +
+      '<button class="dm-bulk-btn" data-action="export" title="Export">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>' +
+      '</button>' +
+      '<button class="dm-bulk-btn" data-action="print" title="Print">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>' +
+      '</button>' +
+      '<button class="dm-bulk-btn dm-bulk-danger" data-action="delete" title="Delete">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+      '</button>' +
+      '<button class="dm-bulk-btn" data-action="clear" title="Clear">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>' +
+      '</button>';
+
+    bar.querySelectorAll('.dm-bulk-btn').forEach(function (btn) {
+      btn.onclick = function () { handleAction(btn.dataset.action); };
+    });
+  }
+
+  /* ---------- handle actions ---------- */
+  function handleAction(action) {
+    const ids = Array.from(Bulk.selected);
+    if (!ids.length) return;
+    const page = Bulk.page || State.page;
+
+    if (action === 'clear') {
+      Bulk.selected.clear();
+      document.querySelectorAll('.dm-bulk-checkbox').forEach(function (cb) { cb.checked = false; });
+      document.querySelectorAll('.dm-bulk-select-all').forEach(function (sa) { sa.checked = false; sa.indeterminate = false; });
+      removeBar();
+      return;
+    }
+    if (action === 'delete') return askDelete(ids, page);
+    if (action === 'export') return exportSelected(ids, page);
+    if (action === 'print') return printSelected(ids, page);
+    if (action === 'edit') return openBulkEdit(ids, page);
+  }
+
+  /* ---------- delete ---------- */
+  function askDelete(ids, page) {
+    const L = I18N[State.lang] || I18N.ar;
+    if (typeof confirmDialog === 'function') {
+      confirmDialog(L.bulk_delete_confirm + ' (' + ids.length + ')', function () {
+        doBulkDelete(ids, page);
+      });
+    } else if (confirm(L.bulk_delete_confirm + ' (' + ids.length + ')')) {
+      doBulkDelete(ids, page);
+    }
+  }
+
+  function doBulkDelete(ids, page) {
+    const idSet = new Set(ids);
+    let count = 0;
+    const now = new Date().toISOString();
+    const user = (State.user && State.user.name) || 'system';
+
+    if (page === 'employees') {
+      const toTrash = State.data.employees.filter(function (e) { return idSet.has(e.id); });
+      toTrash.forEach(function (e) {
+        State.data.trash.push({ id: uid('trash'), type: 'employee', data: e, deletedAt: now, deletedBy: user });
+      });
+      State.data.employees = State.data.employees.filter(function (e) { return !idSet.has(e.id); });
+      count = toTrash.length;
+    } else if (page === 'bookings') {
+      const toTrash = State.data.bookings.filter(function (e) { return idSet.has(e.id); });
+      toTrash.forEach(function (e) {
+        State.data.trash.push({ id: uid('trash'), type: 'booking', data: e, deletedAt: now, deletedBy: user });
+      });
+      State.data.bookings = State.data.bookings.filter(function (e) { return !idSet.has(e.id); });
+      count = toTrash.length;
+    } else if (page === 'clients') {
+      const toTrash = State.data.clients.filter(function (e) { return idSet.has(e.id); });
+      toTrash.forEach(function (e) {
+        State.data.trash.push({ id: uid('trash'), type: 'client', data: e, deletedAt: now, deletedBy: user });
+      });
+      State.data.clients = State.data.clients.filter(function (e) { return !idSet.has(e.id); });
+      count = toTrash.length;
+    } else if (page === 'halls') {
+      const toTrash = State.data.halls.filter(function (e) { return idSet.has(e.id); });
+      toTrash.forEach(function (e) {
+        State.data.trash.push({ id: uid('trash'), type: 'hall', data: e, deletedAt: now, deletedBy: user });
+      });
+      State.data.halls = State.data.halls.filter(function (e) { return !idSet.has(e.id); });
+      count = toTrash.length;
+    } else if (page === 'equipment') {
+      const toTrash = State.data.equipment.filter(function (e) { return idSet.has(e.id); });
+      toTrash.forEach(function (e) {
+        State.data.trash.push({ id: uid('trash'), type: 'equipment', data: e, deletedAt: now, deletedBy: user });
+      });
+      State.data.equipment = State.data.equipment.filter(function (e) { return !idSet.has(e.id); });
+      count = toTrash.length;
+    } else if (page === 'advances') {
+      State.data.advances = State.data.advances.filter(function (e) { return !idSet.has(e.id); });
+      count = ids.length;
+    } else if (page === 'deductions') {
+      State.data.deductions = State.data.deductions.filter(function (e) { return !idSet.has(e.id); });
+      count = ids.length;
+    } else if (page === 'bonuses') {
+      State.data.bonuses = State.data.bonuses.filter(function (e) { return !idSet.has(e.id); });
+      count = ids.length;
+    } else if (page === 'leaves') {
+      State.data.leaves = State.data.leaves.filter(function (e) { return !idSet.has(e.id); });
+      count = ids.length;
+    }
+
+    if (count) {
+      try { saveData(); } catch (e) {}
+      try {
+        if (typeof logActivity === 'function') {
+          logActivity('bulk-delete', page, null, null, { count: count });
+        }
+      } catch (e) {}
+      if (typeof showToast === 'function') {
+        var L = I18N[State.lang] || I18N.ar;
+        showToast(L.bulk_deleted + ' ' + count, 'success');
+      }
+    }
+
+    Bulk.selected.clear();
+    removeBar();
+    setTimeout(function () { navigate(page); }, 200);
+  }
+
+  /* ---------- export ---------- */
+  function exportSelected(ids, page) {
+    const idSet = new Set(ids);
+    let headers = [];
+    let rows = [];
+
+    if (page === 'employees') {
+      headers = ['Code', 'Name', 'Role', 'Phone', 'Day Rate', 'Status'];
+      rows = State.data.employees.filter(function (e) { return idSet.has(e.id); }).map(function (e) {
+        return [e.code, e.name, e.role, e.phone, e.dayRate, e.status];
+      });
+    } else if (page === 'bookings') {
+      headers = ['ID', 'Date', 'Hall', 'Client', 'Phone', 'Event', 'Start', 'End', 'Cost', 'Status'];
+      rows = State.data.bookings.filter(function (e) { return idSet.has(e.id); }).map(function (b) {
+        const h = State.data.halls.find(function (x) { return x.id === b.hallId; });
+        return [b.id, b.date, h ? (h.name.ar || h.name.en) : '-', b.clientName, b.phone, b.eventType, b.startTime, b.endTime, b.cost, b.status];
+      });
+    } else if (page === 'clients') {
+      headers = ['Name', 'Phone', 'Email', 'Address'];
+      rows = State.data.clients.filter(function (e) { return idSet.has(e.id); }).map(function (c) {
+        return [c.name, c.phone, c.email, c.address];
+      });
+    } else if (page === 'equipment') {
+      headers = ['Code', 'Name', 'Category', 'Serial', 'Quantity', 'Status'];
+      rows = State.data.equipment.filter(function (e) { return idSet.has(e.id); }).map(function (e) {
+        return [e.code, e.name, e.category, e.serial, e.quantity, e.status];
+      });
+    } else if (page === 'halls') {
+      headers = ['Code', 'Name', 'Type', 'Status'];
+      rows = State.data.halls.filter(function (e) { return idSet.has(e.id); }).map(function (h) {
+        return [h.code, (h.name.ar || h.name.en), h.type, h.status];
+      });
+    } else if (page === 'advances' || page === 'deductions' || page === 'bonuses') {
+      headers = ['Employee', 'Amount', 'Date', 'Reason'];
+      rows = (State.data[page] || []).filter(function (e) { return idSet.has(e.id); }).map(function (x) {
+        const emp = State.data.employees.find(function (e) { return e.id === x.employeeId; });
+        return [emp ? emp.name : '-', x.amount, x.date, x.reason];
+      });
+    } else if (page === 'leaves') {
+      headers = ['Employee', 'Type', 'From', 'To', 'Status'];
+      rows = (State.data.leaves || []).filter(function (e) { return idSet.has(e.id); }).map(function (l) {
+        const emp = State.data.employees.find(function (e) { return e.id === l.employeeId; });
+        return [emp ? emp.name : '-', l.type, l.fromDate, l.toDate, l.status];
+      });
+    } else {
+      headers = ['ID'];
+      rows = ids.map(function (id) { return [id]; });
+    }
+
+    const csv = [headers].concat(rows).map(function (r) {
+      return r.map(function (x) { return '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"'; }).join(',');
+    }).join('\n');
+
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = page + '-selected-' + todayISO() + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    if (typeof showToast === 'function') showToast('Exported ✓', 'success');
+  }
+
+  /* ---------- print ---------- */
+  function printSelected(ids, page) {
+    const idSet = new Set(ids);
+    const ar = State.lang === 'ar';
+    const title = ar ? 'عناصر مختارة' : 'Selected Items';
+    let tableHtml = '';
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    if (page === 'employees') {
+      const items = State.data.employees.filter(function (e) { return idSet.has(e.id); });
+      tableHtml = '<table><thead><tr><th>Code</th><th>Name</th><th>Role</th><th>Phone</th><th>Day Rate</th></tr></thead><tbody>' +
+        items.map(function (e) {
+          return '<tr><td>' + esc(e.code) + '</td><td>' + esc(e.name) + '</td><td>' + esc(e.role) + '</td><td>' + esc(e.phone) + '</td><td>' + esc(e.dayRate) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    } else if (page === 'bookings') {
+      const items = State.data.bookings.filter(function (e) { return idSet.has(e.id); });
+      tableHtml = '<table><thead><tr><th>Date</th><th>Hall</th><th>Client</th><th>Event</th><th>Time</th><th>Cost</th></tr></thead><tbody>' +
+        items.map(function (b) {
+          const h = State.data.halls.find(function (x) { return x.id === b.hallId; });
+          return '<tr><td>' + fmtDate(b.date) + '</td><td>' + esc(h ? (h.name.ar || h.name.en) : '-') + '</td><td>' + esc(b.clientName) + '</td><td>' + esc(b.eventType) + '</td><td>' + esc(b.startTime) + '-' + esc(b.endTime) + '</td><td>' + esc(b.cost) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    } else {
+      tableHtml = '<table><thead><tr><th>ID</th></tr></thead><tbody>' +
+        ids.map(function (id) { return '<tr><td>' + esc(id) + '</td></tr>'; }).join('') +
+        '</tbody></table>';
+    }
+
+    const w = window.open('', '_blank', 'width=900,height=800');
+    if (!w) {
+      if (typeof showToast === 'function') showToast('Please allow popups', 'warn');
+      return;
+    }
+
+    const styles = 'body{font-family:Cairo,Inter,sans-serif;padding:2rem;direction:' + (ar ? 'rtl' : 'ltr') + ';color:#0f172a}'
+      + 'table{width:100%;border-collapse:collapse;font-size:.85rem}'
+      + 'th,td{padding:.5rem;border-bottom:1px solid #e5e7eb;text-align:' + (ar ? 'right' : 'left') + '}'
+      + 'th{background:#f3f4f6;font-weight:700}'
+      + 'h1{color:#7c3aed;font-size:1.3rem}'
+      + '.meta{color:#64748b;font-size:.75rem;margin-bottom:1rem}'
+      + '@media print{body{padding:0}}';
+
+    w.document.write('<!DOCTYPE html><html lang="' + State.lang + '" dir="' + (ar ? 'rtl' : 'ltr') + '"><head><meta charset="UTF-8"><title>' + title + '</title><style>' + styles + '</style></head><body>'
+      + '<h1>Dr Media Pro — ' + title + '</h1>'
+      + '<div class="meta">' + new Date().toLocaleString() + ' · ' + ids.length + ' items</div>'
+      + tableHtml
+      + '<scr' + 'ipt>setTimeout(function(){window.print()},300);</scr' + 'ipt>'
+      + '</body></html>');
+    w.document.close();
+  }
+
+  /* ---------- bulk edit ---------- */
+  function getEditableFields(page) {
+    const L = I18N[State.lang] || I18N.ar;
+    const ar = State.lang === 'ar';
+
+    if (page === 'employees') {
+      return [
+        { key: 'role', label: ar ? 'الوظيفة' : 'Role', type: 'select', options: ['Director', 'Photographer', 'Crane', 'Supervisor', 'Assistant'] },
+        { key: 'status', label: ar ? 'الحالة' : 'Status', type: 'select', options: ['active', 'inactive'] },
+        { key: 'dayRate', label: ar ? 'سعر اليوم' : 'Day Rate', type: 'number' }
+      ];
+    }
+    if (page === 'bookings') {
+      return [
+        { key: 'status', label: ar ? 'الحالة' : 'Status', type: 'select', options: ['pending', 'confirmed', 'completed', 'cancelled'] },
+        { key: 'paymentStatus', label: ar ? 'حالة الدفع' : 'Payment', type: 'select', options: ['unpaid', 'partial', 'paid'] },
+        { key: 'eventType', label: ar ? 'نوع المناسبة' : 'Event', type: 'select', options: ['Wedding', 'Engagement', 'Birthday', 'Corporate', 'Other'] }
+      ];
+    }
+    if (page === 'equipment') {
+      return [
+        { key: 'status', label: ar ? 'الحالة' : 'Status', type: 'select', options: ['available', 'assigned', 'maintenance', 'lost', 'damaged'] },
+        { key: 'location', label: ar ? 'الموقع' : 'Location', type: 'text' }
+      ];
+    }
+    return null;
+  }
+
+  function openBulkEdit(ids, page) {
+    const L = I18N[State.lang] || I18N.ar;
+    const fields = getEditableFields(page);
+
+    if (!fields) {
+      if (typeof showToast === 'function') showToast(
+        State.lang === 'ar' ? 'التعديل الجماعي غير متاح لهذه الصفحة' : 'Bulk edit not available for this page',
+        'warn'
+      );
+      return;
+    }
+
+    if (typeof openModal !== 'function') return;
+
+    let bodyHtml = '<div style="display:flex;flex-direction:column;gap:1rem">';
+    bodyHtml += '<div style="padding:.75rem;background:rgba(124,58,237,.08);border-radius:10px;font-size:.85rem;color:var(--primary)">'
+      + '<b>' + ids.length + '</b> ' + (State.lang === 'ar' ? 'عنصر' : 'items') + ' — ' + L.bulk_edit_hint
+      + '</div>';
+
+    fields.forEach(function (f) {
+      bodyHtml += '<div class="field"><label>' + f.label + '</label>';
+      if (f.type === 'select') {
+        bodyHtml += '<select id="dm-bulk-f-' + f.key + '">'
+          + '<option value="">— ' + L.bulk_no_change + ' —</option>'
+          + f.options.map(function (o) { return '<option value="' + o + '">' + o + '</option>'; }).join('')
+          + '</select>';
+      } else if (f.type === 'number') {
+        bodyHtml += '<input type="number" id="dm-bulk-f-' + f.key + '" placeholder="' + L.bulk_leave_empty + '">';
+      } else {
+        bodyHtml += '<input type="text" id="dm-bulk-f-' + f.key + '" placeholder="' + L.bulk_leave_empty + '">';
+      }
+      bodyHtml += '</div>';
+    });
+    bodyHtml += '</div>';
+
+    openModal({
+      title: '✏️ ' + L.bulk_edit,
+      body: bodyHtml,
+      footer: '<button class="btn btn-ghost" onclick="closeModal()">' + (State.lang === 'ar' ? 'إلغاء' : 'Cancel') + '</button>'
+        + '<button class="btn btn-primary" onclick="__dmBulkApplyEdit()">' + L.bulk_apply + '</button>'
+    });
+
+    window.__dmBulkEditCtx = { ids: ids, page: page, fields: fields };
+  }
+
+  window.__dmBulkApplyEdit = function () {
+    const ctx = window.__dmBulkEditCtx;
+    if (!ctx) return;
+    const L = I18N[State.lang] || I18N.ar;
+    const changes = {};
+
+    ctx.fields.forEach(function (f) {
+      const el = document.getElementById('dm-bulk-f-' + f.key);
+      if (!el) return;
+      const v = el.value.trim();
+      if (v === '') return;
+      changes[f.key] = f.type === 'number' ? parseFloat(v) : v;
+    });
+
+    if (!Object.keys(changes).length) {
+      if (typeof showToast === 'function') showToast(L.bulk_no_changes, 'warn');
+      return;
+    }
+
+    const idSet = new Set(ctx.ids);
+    let count = 0;
+
+    if (ctx.page === 'employees') {
+      State.data.employees.forEach(function (e) {
+        if (idSet.has(e.id)) {
+          Object.keys(changes).forEach(function (k) { e[k] = changes[k]; });
+          if (changes.role) e.roles = [changes.role];
+          count++;
+        }
+      });
+    } else if (ctx.page === 'bookings') {
+      State.data.bookings.forEach(function (b) {
+        if (idSet.has(b.id)) {
+          Object.keys(changes).forEach(function (k) { b[k] = changes[k]; });
+          count++;
+        }
+      });
+    } else if (ctx.page === 'equipment') {
+      State.data.equipment.forEach(function (e) {
+        if (idSet.has(e.id)) {
+          Object.keys(changes).forEach(function (k) { e[k] = changes[k]; });
+          count++;
+        }
+      });
+    }
+
+    try { saveData(); } catch (e) {}
+    try {
+      if (typeof logActivity === 'function') {
+        logActivity('bulk-edit', ctx.page, null, null, { count: count, changes: changes });
+      }
+    } catch (e) {}
+
+    if (typeof showToast === 'function') showToast(L.bulk_updated + ' ' + count, 'success');
+    if (typeof closeModal === 'function') closeModal();
+
+    Bulk.selected.clear();
+    removeBar();
+    setTimeout(function () { navigate(ctx.page); }, 300);
+  };
+
+  /* ---------- observers + hooks ---------- */
+  function hookNavigate() {
+    if (typeof window.navigate !== 'function') return;
+    const orig = window.navigate;
+    window.navigate = function () {
+      // Clear selection when page changes
+      const newPage = arguments[0];
+      if (newPage && newPage !== Bulk.page) {
+        Bulk.selected.clear();
+        removeBar();
+      }
+      const r = orig.apply(this, arguments);
+      setTimeout(function () { injectCheckboxes(); }, 280);
+      return r;
+    };
+  }
+
+  function watchContentMutations() {
+    const target = document.getElementById('content');
+    if (!target) return;
+    const obs = new MutationObserver(function () {
+      clearTimeout(window.__dmBulkObsT);
+      window.__dmBulkObsT = setTimeout(function () {
+        injectCheckboxes();
+      }, 200);
+    });
+    obs.observe(target, { childList: true, subtree: true });
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    function () {
+      return typeof State !== 'undefined'
+        && typeof Pages !== 'undefined'
+        && typeof navigate === 'function'
+        && document.getElementById('content');
+    },
+    function () {
+      hookNavigate();
+      watchContentMutations();
+      injectCheckboxes();
+      console.log('%c[Section 19] ✓ Bulk Selection ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 19] Select rows → floating bar appears', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
 
 
 /* #########################################################
