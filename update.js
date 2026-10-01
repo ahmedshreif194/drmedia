@@ -10777,6 +10777,665 @@ service cloud.firestore {
   window.__dmInjectSuperNav = injectSuperAdminNav;
 
 })();
+/* =========================================================
+   SECTION 25: Subscription Enforcement
+   Version: 1.0.0
+   - Blocks access when subscription expired
+   - Grace period (3 days read-only)
+   - Renewal modal
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 25] Subscription Enforcement loading…', 'color:#ef4444;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 25] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.sub_expired_title = 'انتهى الاشتراك';
+  I18N.ar.sub_expired_msg = 'انتهت صلاحية اشتراكك. جدد الآن للاستمرار في استخدام النظام.';
+  I18N.ar.sub_grace_title = 'فترة سماح';
+  I18N.ar.sub_grace_msg = 'انتهى اشتراكك — أنت في فترة سماح 3 أيام (قراءة فقط). جدد الآن.';
+  I18N.ar.sub_renew_now = 'تجديد الاشتراك';
+  I18N.ar.sub_contact = 'تواصل معنا';
+  I18N.ar.sub_logout = 'خروج';
+  I18N.ar.sub_days_expired = 'أيام منذ الانتهاء';
+
+  I18N.en.sub_expired_title = 'Subscription Expired';
+  I18N.en.sub_expired_msg = 'Your subscription has ended. Renew now to continue using the system.';
+  I18N.en.sub_grace_title = 'Grace Period';
+  I18N.en.sub_grace_msg = 'Subscription ended — 3-day grace period (read-only). Renew now.';
+  I18N.en.sub_renew_now = 'Renew Subscription';
+  I18N.en.sub_contact = 'Contact Us';
+  I18N.en.sub_logout = 'Logout';
+  I18N.en.sub_days_expired = 'days since expiry';
+
+  /* ---------- config ---------- */
+  var GRACE_DAYS = 3;
+
+  /* ---------- state ---------- */
+  var Enf = {
+    blocked: false,
+    readOnly: false,
+    overlay: null,
+    checkInterval: null
+  };
+  window.__dmEnforcement = Enf;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- check subscription ---------- */
+  function checkSubscription() {
+    if (typeof window.__dmSaaS === 'undefined') return 'unknown';
+    var SaaS = window.__dmSaaS;
+    if (!SaaS.ready || !SaaS.subscription) return 'unknown';
+    if (SaaS.isSuperAdmin) return 'super_admin';
+
+    var sub = SaaS.subscription;
+    var now = Date.now();
+    var expiresAt = sub.expiresAt || 0;
+    var daysSinceExpiry = Math.floor((now - expiresAt) / 86400000);
+
+    if (now < expiresAt) return 'active';                     // ✅ valid
+    if (daysSinceExpiry < GRACE_DAYS) return 'grace';         // 🟡 read-only
+    return 'expired';                                          // 🔴 blocked
+  }
+
+  /* ---------- apply enforcement ---------- */
+  function applyEnforcement() {
+    var status = checkSubscription();
+    console.log('[Section 25] Subscription status:', status);
+
+    if (status === 'super_admin' || status === 'unknown') {
+      removeOverlay();
+      Enf.blocked = false;
+      Enf.readOnly = false;
+      return;
+    }
+
+    if (status === 'expired') {
+      Enf.blocked = true;
+      Enf.readOnly = true;
+      showOverlay('expired');
+    } else if (status === 'grace') {
+      Enf.blocked = false;
+      Enf.readOnly = true;
+      showGraceBanner();
+    } else {
+      removeOverlay();
+      removeGraceBanner();
+      Enf.blocked = false;
+      Enf.readOnly = false;
+    }
+  }
+
+  /* ---------- overlay (expired) ---------- */
+  function showOverlay(type) {
+    if (document.getElementById('dm-enf-overlay')) return;
+    var L = I18N[State.lang] || I18N.ar;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'dm-enf-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:linear-gradient(135deg,rgba(15,10,31,.95),rgba(30,27,58,.95));backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;padding:1rem';
+
+    overlay.innerHTML =
+      '<div style="max-width:520px;width:100%;background:var(--surface);border-radius:20px;padding:2.5rem 2rem;text-align:center;box-shadow:0 40px 80px -20px rgba(0,0,0,.6);border:1px solid var(--border)">' +
+        '<div style="width:80px;height:80px;border-radius:24px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:2.5rem;box-shadow:0 20px 40px -10px rgba(239,68,68,.5)">🔒</div>' +
+        '<h2 style="margin:0 0 .5rem;font-size:1.35rem;font-weight:800">' + esc(L.sub_expired_title) + '</h2>' +
+        '<p style="color:var(--text-muted);font-size:.9rem;line-height:1.7;margin:0 0 1.5rem">' + esc(L.sub_expired_msg) + '</p>' +
+        '<div style="display:flex;gap:.5rem;flex-direction:column">' +
+          '<button id="dm-enf-renew" style="width:100%;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit;box-shadow:0 10px 25px -8px #7c3aed">💳 ' + esc(L.sub_renew_now) + '</button>' +
+          '<button id="dm-enf-contact" style="width:100%;padding:.85rem;border-radius:12px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-weight:600;font-size:.85rem;cursor:pointer;font-family:inherit">✉️ ' + esc(L.sub_contact) + '</button>' +
+          '<button id="dm-enf-logout" style="width:100%;padding:.75rem;border-radius:12px;background:transparent;color:var(--text-muted);border:none;font-weight:600;font-size:.8rem;cursor:pointer;font-family:inherit">🚪 ' + esc(L.sub_logout) + '</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#dm-enf-renew').onclick = function () {
+      if (typeof window.__dmShowPlans === 'function') window.__dmShowPlans();
+      else if (typeof window.__dmSaaSUpgrade === 'function') window.__dmSaaSUpgrade('pro');
+    };
+    overlay.querySelector('#dm-enf-contact').onclick = function () {
+      var email = 'support@drmedia.pro';
+      var subject = encodeURIComponent('تجديد الاشتراك - ' + (SaaS.company ? SaaS.company.name : ''));
+      window.open('mailto:' + email + '?subject=' + subject, '_blank');
+    };
+    overlay.querySelector('#dm-enf-logout').onclick = function () {
+      if (typeof window.logout === 'function') window.logout();
+    };
+
+    // Block interactions
+    document.body.style.overflow = 'hidden';
+  }
+
+  function removeOverlay() {
+    var o = document.getElementById('dm-enf-overlay');
+    if (o) o.remove();
+    document.body.style.overflow = '';
+  }
+
+  /* ---------- grace banner ---------- */
+  function showGraceBanner() {
+    if (document.getElementById('dm-grace-banner')) return;
+    var L = I18N[State.lang] || I18N.ar;
+
+    var banner = document.createElement('div');
+    banner.id = 'dm-grace-banner';
+    banner.style.cssText = 'padding:.6rem 1.25rem;background:linear-gradient(90deg,#f59e0b,#d97706);color:#fff;font-size:.82rem;font-weight:600;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;position:relative;z-index:100';
+
+    banner.innerHTML =
+      '<span>⚠️ ' + esc(L.sub_grace_title) + ' — ' + esc(L.sub_grace_msg) + '</span>' +
+      '<button id="dm-grace-renew" style="margin-inline-start:auto;background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:.35rem .85rem;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.75rem">' +
+        esc(L.sub_renew_now) +
+      '</button>';
+
+    var main = document.getElementById('main');
+    var topbar = document.getElementById('topbar');
+    if (main && topbar) {
+      var existingSub = document.getElementById('dm-sub-banner');
+      if (existingSub) existingSub.remove();
+      topbar.parentNode.insertBefore(banner, topbar.nextSibling);
+    }
+
+    banner.querySelector('#dm-grace-renew').onclick = function () {
+      if (typeof window.__dmShowPlans === 'function') window.__dmShowPlans();
+    };
+  }
+
+  function removeGraceBanner() {
+    var b = document.getElementById('dm-grace-banner');
+    if (b) b.remove();
+  }
+
+  /* ---------- hook saveData — block writes when read-only ---------- */
+  function hookSaveData() {
+    if (typeof window.saveData !== 'function') return;
+    if (window.saveData.__dm25Hooked) return;
+
+    var orig = window.saveData;
+    window.saveData = function () {
+      if (Enf.readOnly) {
+        if (typeof showToast === 'function') {
+          showToast(
+            State.lang === 'ar' ? '⚠️ اشتراكك انتهى — قراءة فقط' : '⚠️ Subscription expired — read-only',
+            'warn'
+          );
+        }
+        return false;
+      }
+      return orig.apply(this, arguments);
+    };
+    window.saveData.__dm25Hooked = true;
+    console.log('[Section 25] saveData hooked (read-only block)');
+  }
+
+  /* ---------- periodic check ---------- */
+  function startPeriodicCheck() {
+    if (Enf.checkInterval) clearInterval(Enf.checkInterval);
+    Enf.checkInterval = setInterval(function () {
+      applyEnforcement();
+    }, 60 * 1000); // every minute
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    function () {
+      return typeof window.__dmSaaS !== 'undefined'
+        && window.__dmSaaS.ready;
+    },
+    function () {
+      hookSaveData();
+      applyEnforcement();
+      startPeriodicCheck();
+      console.log('%c[Section 25] ✓ Enforcement ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+  // Expose
+  window.__dmCheckSub = checkSubscription;
+  window.__dmApplyEnforcement = applyEnforcement;
+
+})();
+/* =========================================================
+   SECTION 26: Onboarding Wizard
+   Version: 1.0.0
+   - 4-step wizard shown after signup
+   - Step 1: Company info
+   - Step 2: Add employees
+   - Step 3: Review halls
+   - Step 4: First booking
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 26] Onboarding Wizard loading…', 'color:#10b981;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 26] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.onb_welcome = 'مرحبًا بك في Dr Media Pro';
+  I18N.ar.onb_subtitle = '5 دقائق ونكون جاهزين — يلا نبدأ';
+  I18N.ar.onb_step = 'خطوة';
+  I18N.ar.onb_of = 'من';
+  I18N.ar.onb_next = 'التالي';
+  I18N.ar.onb_back = 'رجوع';
+  I18N.ar.onb_finish = 'ابدأ الاستخدام';
+  I18N.ar.onb_skip = 'تخطي الجولة';
+  I18N.ar.onb_s1_title = 'بيانات الشركة';
+  I18N.ar.onb_s1_desc = 'خلي النظام يعرف شركتك';
+  I18N.ar.onb_s2_title = 'أضف فريقك';
+  I18N.ar.onb_s2_desc = 'المخرجين، المصورين، الكرين — الكل';
+  I18N.ar.onb_s3_title = 'القاعات';
+  I18N.ar.onb_s3_desc = 'راجع القاعات الافتراضية — عدّلها لاحقًا';
+  I18N.ar.onb_s4_title = 'جاهز!';
+  I18N.ar.onb_s4_desc = 'ممكن تبدأ أول حجز الآن';
+  I18N.ar.onb_add_employee = 'إضافة موظف';
+  I18N.ar.onb_name = 'الاسم';
+  I18N.ar.onb_role = 'الوظيفة';
+  I18N.ar.onb_phone = 'الهاتف';
+  I18N.ar.onb_day_rate = 'سعر اليوم';
+  I18N.ar.onb_skip_step = 'تخطي الخطوة';
+
+  I18N.en.onb_welcome = 'Welcome to Dr Media Pro';
+  I18N.en.onb_subtitle = '5 minutes to get started';
+  I18N.en.onb_step = 'Step';
+  I18N.en.onb_of = 'of';
+  I18N.en.onb_next = 'Next';
+  I18N.en.onb_back = 'Back';
+  I18N.en.onb_finish = 'Start using';
+  I18N.en.onb_skip = 'Skip tour';
+  I18N.en.onb_s1_title = 'Company Info';
+  I18N.en.onb_s1_desc = 'Let the system know your company';
+  I18N.en.onb_s2_title = 'Add your team';
+  I18N.en.onb_s2_desc = 'Directors, photographers, crane — everyone';
+  I18N.en.onb_s3_title = 'Halls';
+  I18N.en.onb_s3_desc = 'Review default halls — edit them later';
+  I18N.en.onb_s4_title = 'Ready!';
+  I18N.en.onb_s4_desc = 'You can start your first booking now';
+  I18N.en.onb_add_employee = 'Add Employee';
+  I18N.en.onb_name = 'Name';
+  I18N.en.onb_role = 'Role';
+  I18N.en.onb_phone = 'Phone';
+  I18N.en.onb_day_rate = 'Day Rate';
+  I18N.en.onb_skip_step = 'Skip step';
+
+  var ONBOARDING_KEY = 'drmedia_onboarding_done_v1';
+
+  /* ---------- state ---------- */
+  var Onb = {
+    step: 1,
+    totalSteps: 4,
+    active: false,
+    overlay: null
+  };
+  window.__dmOnboarding = Onb;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- detect new user ---------- */
+  function isNewUser() {
+    // New user = just registered, has trial, empty bookings
+    if (localStorage.getItem(ONBOARDING_KEY) === '1') return false;
+    if (typeof window.__dmSaaS === 'undefined' || !window.__dmSaaS.subscription) return false;
+    if (window.__dmSaaS.subscription.planId !== 'trial') return false;
+    // Check if company is empty (few bookings)
+    var bCount = (State.data.bookings || []).length;
+    if (bCount > 3) {
+      localStorage.setItem(ONBOARDING_KEY, '1');
+      return false;
+    }
+    return true;
+  }
+
+  /* ---------- show wizard ---------- */
+  function showWizard() {
+    if (Onb.active) return;
+    Onb.active = true;
+    Onb.step = 1;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'dm-onb-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999998;background:linear-gradient(135deg,#0f0a1f 0%,#1e1b3a 100%);display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto';
+    document.body.appendChild(overlay);
+    Onb.overlay = overlay;
+
+    renderStep();
+  }
+
+  function renderStep() {
+    if (!Onb.overlay) return;
+    var L = I18N[State.lang] || I18N.ar;
+
+    var steps = [1, 2, 3, 4];
+    var progressBar = steps.map(function (s) {
+      var active = s <= Onb.step;
+      return '<div style="flex:1;height:4px;border-radius:2px;background:' + (active ? '#7c3aed' : 'rgba(255,255,255,.1)') + ';transition:background .3s"></div>';
+    }).join('');
+
+    var content = '';
+    if (Onb.step === 1) content = renderStep1();
+    else if (Onb.step === 2) content = renderStep2();
+    else if (Onb.step === 3) content = renderStep3();
+    else if (Onb.step === 4) content = renderStep4();
+
+    Onb.overlay.innerHTML =
+      '<div style="max-width:640px;width:100%;margin:auto">' +
+        '<div style="text-align:center;margin-bottom:1.5rem">' +
+          '<div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#7c3aed,#f59e0b);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.75rem;margin:0 auto 1rem;box-shadow:0 20px 40px -10px rgba(124,58,237,.5)">D</div>' +
+          '<h2 style="color:#fff;margin:0 0 .25rem;font-size:1.35rem;font-weight:800">' + esc(L.onb_welcome) + '</h2>' +
+          '<p style="color:#94a3b8;font-size:.85rem;margin:0">' + esc(L.onb_subtitle) + '</p>' +
+        '</div>' +
+
+        '<div style="display:flex;gap:.35rem;margin-bottom:1.5rem">' + progressBar + '</div>' +
+
+        '<div style="background:rgba(21,16,36,.85);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:1.75rem">' +
+          '<div style="color:#94a3b8;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.35rem">' +
+            esc(L.onb_step) + ' ' + Onb.step + ' ' + esc(L.onb_of) + ' ' + Onb.totalSteps +
+          '</div>' +
+          content +
+        '</div>' +
+
+        '<div style="display:flex;gap:.5rem;margin-top:1.25rem;justify-content:space-between;align-items:center;flex-wrap:wrap">' +
+          '<button id="dm-onb-skip" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;font-family:inherit;font-size:.8rem;padding:.5rem">' + esc(L.onb_skip) + '</button>' +
+          '<div style="display:flex;gap:.5rem">' +
+            (Onb.step > 1 ? '<button id="dm-onb-back" style="padding:.75rem 1.25rem;border-radius:10px;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.15);font-weight:600;cursor:pointer;font-family:inherit;font-size:.85rem">' + esc(L.onb_back) + '</button>' : '') +
+            '<button id="dm-onb-next" style="padding:.75rem 1.5rem;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.9rem;box-shadow:0 10px 25px -8px #7c3aed">' +
+              (Onb.step === Onb.totalSteps ? '🎉 ' + esc(L.onb_finish) : esc(L.onb_next) + ' →') +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    bindStepEvents();
+  }
+
+  /* ---------- step 1: company ---------- */
+  function renderStep1() {
+    var L = I18N[State.lang] || I18N.ar;
+    var settings = State.data.settings || {};
+    var company = (window.__dmSaaS && window.__dmSaaS.company) || {};
+
+    return '' +
+      '<h3 style="color:#fff;margin:0 0 .35rem;font-size:1.15rem">' + esc(L.onb_s1_title) + '</h3>' +
+      '<p style="color:#94a3b8;font-size:.8rem;margin:0 0 1.25rem">' + esc(L.onb_s1_desc) + '</p>' +
+
+      '<div style="display:flex;flex-direction:column;gap:.85rem">' +
+        '<div>' +
+          '<label style="display:block;color:#cbd5e1;font-size:.75rem;font-weight:600;margin-bottom:.35rem">' + esc(L.onb_name) + ' ' + (State.lang === 'ar' ? '(الشركة)' : '(Company)') + '</label>' +
+          '<input id="dm-onb-company" type="text" value="' + esc(company.name || settings.companyName || '') + '" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.9rem;outline:none">' +
+        '</div>' +
+        '<div>' +
+          '<label style="display:block;color:#cbd5e1;font-size:.75rem;font-weight:600;margin-bottom:.35rem">' + (State.lang === 'ar' ? 'رقم الهاتف' : 'Phone') + '</label>' +
+          '<input id="dm-onb-phone" type="tel" value="' + esc(settings.phone || company.phone || '') + '" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.9rem;outline:none">' +
+        '</div>' +
+        '<div>' +
+          '<label style="display:block;color:#cbd5e1;font-size:.75rem;font-weight:600;margin-bottom:.35rem">' + (State.lang === 'ar' ? 'العنوان' : 'Address') + '</label>' +
+          '<input id="dm-onb-address" type="text" value="' + esc(settings.address || '') + '" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.9rem;outline:none">' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ---------- step 2: employees ---------- */
+  function renderStep2() {
+    var L = I18N[State.lang] || I18N.ar;
+    var roles = ['Director', 'Photographer', 'Crane'];
+
+    return '' +
+      '<h3 style="color:#fff;margin:0 0 .35rem;font-size:1.15rem">' + esc(L.onb_s2_title) + '</h3>' +
+      '<p style="color:#94a3b8;font-size:.8rem;margin:0 0 1rem">' + esc(L.onb_s2_desc) + '</p>' +
+
+      '<div style="display:flex;flex-direction:column;gap:.5rem;max-height:280px;overflow-y:auto;padding-inline-end:.35rem" id="dm-onb-emp-list">' +
+        '<div style="padding:.65rem;background:rgba(124,58,237,.08);border:1px dashed rgba(124,58,237,.4);border-radius:10px;color:#a78bfa;font-size:.78rem;text-align:center" id="dm-onb-emp-empty">' +
+          (State.lang === 'ar' ? 'مفيش موظفين بعد — أضف أول واحد' : 'No employees yet — add the first one') +
+        '</div>' +
+      '</div>' +
+
+      '<button id="dm-onb-add-emp" style="width:100%;margin-top:.85rem;padding:.75rem;border-radius:10px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#6ee7b7;font-weight:700;cursor:pointer;font-family:inherit;font-size:.85rem">' +
+        '+ ' + esc(L.onb_add_employee) +
+      '</button>';
+  }
+
+  /* ---------- step 3: halls ---------- */
+  function renderStep3() {
+    var L = I18N[State.lang] || I18N.ar;
+    var halls = State.data.halls || [];
+
+    return '' +
+      '<h3 style="color:#fff;margin:0 0 .35rem;font-size:1.15rem">' + esc(L.onb_s3_title) + '</h3>' +
+      '<p style="color:#94a3b8;font-size:.8rem;margin:0 0 1rem">' + esc(L.onb_s3_desc) + '</p>' +
+
+      '<div style="display:flex;flex-direction:column;gap:.5rem">' +
+        (halls.length ? halls.map(function (h) {
+          var total = (h.requirements || []).reduce(function (s, r) { return s + (r.count || 0); }, 0);
+          return '<div style="padding:.75rem;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:.5rem">' +
+            '<div>' +
+              '<div style="color:#fff;font-weight:700;font-size:.9rem">' + esc(h.name[State.lang] || h.name.ar) + '</div>' +
+              '<div style="color:#94a3b8;font-size:.72rem;margin-top:.15rem">' +
+                (h.requirements || []).map(function (r) { return r.role + ' × ' + r.count; }).join(' · ') +
+              '</div>' +
+            '</div>' +
+            '<div style="background:rgba(124,58,237,.15);color:#a78bfa;font-weight:700;font-size:.72rem;padding:.25rem .6rem;border-radius:8px">' + total + ' 👥</div>' +
+          '</div>';
+        }).join('') :
+        '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.8rem">' + (State.lang === 'ar' ? 'مفيش قاعات' : 'No halls') + '</div>') +
+      '</div>';
+  }
+
+  /* ---------- step 4: done ---------- */
+  function renderStep4() {
+    var L = I18N[State.lang] || I18N.ar;
+    var empCount = (State.data.employees || []).length;
+    var hallCount = (State.data.halls || []).length;
+
+    return '' +
+      '<div style="text-align:center;padding:.5rem 0">' +
+        '<div style="font-size:3.5rem;margin-bottom:.75rem">🎉</div>' +
+        '<h3 style="color:#fff;margin:0 0 .35rem;font-size:1.35rem">' + esc(L.onb_s4_title) + '</h3>' +
+        '<p style="color:#94a3b8;font-size:.85rem;margin:0 0 1.5rem">' + esc(L.onb_s4_desc) + '</p>' +
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;text-align:center">' +
+          '<div style="padding:.85rem;background:rgba(16,185,129,.1);border-radius:10px">' +
+            '<div style="font-size:1.5rem;font-weight:800;color:#10b981">' + empCount + '</div>' +
+            '<div style="font-size:.72rem;color:#94a3b8;margin-top:.15rem">' + (State.lang === 'ar' ? 'موظف' : 'Employees') + '</div>' +
+          '</div>' +
+          '<div style="padding:.85rem;background:rgba(124,58,237,.1);border-radius:10px">' +
+            '<div style="font-size:1.5rem;font-weight:800;color:#a78bfa">' + hallCount + '</div>' +
+            '<div style="font-size:.72rem;color:#94a3b8;margin-top:.15rem">' + (State.lang === 'ar' ? 'قاعة' : 'Halls') + '</div>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="margin-top:1.25rem;padding:.85rem;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);border-radius:10px;font-size:.78rem;color:#93c5fd;text-align:start;line-height:1.7">' +
+          '<b>💡 ' + (State.lang === 'ar' ? 'نصيحة سريعة' : 'Quick tip') + ':</b> ' +
+          (State.lang === 'ar'
+            ? 'ابدأ بإضافة أول حجز من صفحة "الحجوزات"، وبعدها اعمل التوزيع من صفحة "التوزيع اليومي".'
+            : 'Add your first booking from "Bookings" page, then distribute from "Daily Distribution".') +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ---------- bind step events ---------- */
+  function bindStepEvents() {
+    var L = I18N[State.lang] || I18N.ar;
+    var nextBtn = document.getElementById('dm-onb-next');
+    var backBtn = document.getElementById('dm-onb-back');
+    var skipBtn = document.getElementById('dm-onb-skip');
+    var addEmpBtn = document.getElementById('dm-onb-add-emp');
+
+    if (nextBtn) nextBtn.onclick = function () {
+      saveStepData();
+      if (Onb.step < Onb.totalSteps) {
+        Onb.step++;
+        renderStep();
+      } else {
+        finish();
+      }
+    };
+
+    if (backBtn) backBtn.onclick = function () {
+      if (Onb.step > 1) { Onb.step--; renderStep(); }
+    };
+
+    if (skipBtn) skipBtn.onclick = function () { finish(); };
+
+    if (addEmpBtn) addEmpBtn.onclick = function () {
+      showAddEmployeeForm();
+    };
+  }
+
+  /* ---------- save step data ---------- */
+  function saveStepData() {
+    if (Onb.step === 1) {
+      var companyEl = document.getElementById('dm-onb-company');
+      var phoneEl = document.getElementById('dm-onb-phone');
+      var addressEl = document.getElementById('dm-onb-address');
+
+      if (companyEl && companyEl.value.trim()) {
+        State.data.settings.companyName = companyEl.value.trim();
+        if (window.__dmSaaS && window.__dmSaaS.company) {
+          window.__dmSaaS.company.name = companyEl.value.trim();
+        }
+      }
+      if (phoneEl) State.data.settings.phone = phoneEl.value.trim();
+      if (addressEl) State.data.settings.address = addressEl.value.trim();
+
+      try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    }
+  }
+
+  /* ---------- add employee form ---------- */
+  function showAddEmployeeForm() {
+    var L = I18N[State.lang] || I18N.ar;
+    var list = document.getElementById('dm-onb-emp-list');
+    var empty = document.getElementById('dm-onb-emp-empty');
+    if (empty) empty.remove();
+
+    var form = document.createElement('div');
+    form.style.cssText = 'padding:.75rem;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:10px;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.5rem';
+    form.innerHTML =
+      '<input placeholder="' + esc(L.onb_name) + '" class="onb-inp" data-f="name" style="padding:.6rem;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.85rem;outline:none">' +
+      '<select class="onb-inp" data-f="role" style="padding:.6rem;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.85rem;outline:none">' +
+        '<option value="Director">Director</option>' +
+        '<option value="Photographer" selected>Photographer</option>' +
+        '<option value="Crane">Crane</option>' +
+        '<option value="Supervisor">Supervisor</option>' +
+        '<option value="Assistant">Assistant</option>' +
+      '</select>' +
+      '<input placeholder="' + esc(L.onb_phone) + '" class="onb-inp" data-f="phone" style="padding:.6rem;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.85rem;outline:none">' +
+      '<input placeholder="' + esc(L.onb_day_rate) + '" type="number" class="onb-inp" data-f="dayRate" value="200" style="padding:.6rem;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-family:inherit;font-size:.85rem;outline:none">' +
+      '<div style="display:flex;gap:.35rem">' +
+        '<button class="onb-save" style="flex:1;padding:.55rem;border-radius:8px;background:#10b981;color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.8rem">✓ Save</button>' +
+        '<button class="onb-cancel" style="padding:.55rem .85rem;border-radius:8px;background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,.15);cursor:pointer;font-family:inherit;font-size:.8rem">✕</button>' +
+      '</div>';
+
+    list.appendChild(form);
+
+    form.querySelector('.onb-cancel').onclick = function () { form.remove(); };
+
+    form.querySelector('.onb-save').onclick = function () {
+      var data = {};
+      form.querySelectorAll('.onb-inp').forEach(function (inp) {
+        data[inp.dataset.f] = inp.value.trim();
+      });
+      if (!data.name) {
+        if (typeof showToast === 'function') showToast(L.onb_name + '?', 'error');
+        return;
+      }
+
+      var emp = {
+        id: 'emp_' + Math.random().toString(36).slice(2, 9),
+        code: 'E' + String((State.data.employees || []).length + 1).padStart(3, '0'),
+        name: data.name,
+        role: data.role || 'Photographer',
+        roles: [data.role || 'Photographer'],
+        phone: data.phone || '',
+        dayRate: parseInt(data.dayRate) || 200,
+        salary: 0,
+        hireDate: todayISO(),
+        status: 'active',
+        notes: ''
+      };
+
+      State.data.employees.push(emp);
+      try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+
+      // Add to list
+      var item = document.createElement('div');
+      item.style.cssText = 'padding:.55rem .75rem;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:10px;display:flex;justify-content:space-between;align-items:center';
+      item.innerHTML =
+        '<div><b style="color:#fff;font-size:.85rem">' + esc(emp.name) + '</b>' +
+        '<div style="color:#94a3b8;font-size:.7rem;margin-top:.1rem">' + esc(emp.role) + ' · ' + esc(emp.phone || '—') + '</div></div>' +
+        '<div style="color:#6ee7b7;font-weight:700;font-size:.75rem">✓</div>';
+
+      form.remove();
+      list.appendChild(item);
+
+      if (typeof showToast === 'function') {
+        showToast(State.lang === 'ar' ? 'تم إضافة ' + emp.name : 'Added ' + emp.name, 'success');
+      }
+    };
+  }
+
+  /* ---------- finish ---------- */
+  function finish() {
+    try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (e) {}
+    if (Onb.overlay) { Onb.overlay.remove(); Onb.overlay = null; }
+    Onb.active = false;
+    if (typeof navigate === 'function') navigate('dashboard');
+    if (typeof showToast === 'function') {
+      showToast(State.lang === 'ar' ? '🎉 أهلاً بك في Dr Media Pro' : '🎉 Welcome to Dr Media Pro', 'success');
+    }
+  }
+
+  /* ---------- boot ---------- */
+  function checkAndShow() {
+    if (isNewUser()) {
+      setTimeout(showWizard, 1200);
+    }
+  }
+
+  waitFor(
+    function () {
+      return typeof window.__dmSaaS !== 'undefined'
+        && window.__dmSaaS.ready
+        && typeof State !== 'undefined';
+    },
+    function () {
+      setTimeout(checkAndShow, 800);
+      console.log('%c[Section 26] ✓ Onboarding ready', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+  // Expose
+  window.__dmStartOnboarding = showWizard;
+  window.__dmResetOnboarding = function () {
+    try { localStorage.removeItem(ONBOARDING_KEY); } catch (e) {}
+    showWizard();
+  };
+
+})();
 
 
 
