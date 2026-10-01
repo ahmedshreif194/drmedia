@@ -12270,6 +12270,287 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 29: Super Admin Exemption
+   Version: 1.0.0
+   - Super Admin = unlimited subscription (no expiry)
+   - Hides subscription banners for super admin
+   - Shows "Super Admin" badge on subscription page
+   - Overrides enforcement to always bypass super admin
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 29] Super Admin Exemption loading…', 'color:#f59e0b;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 29] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function isSuperAdmin() {
+    return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin);
+  }
+
+  /* =========================================================
+     1. HIDE SUBSCRIPTION BANNER FOR SUPER ADMIN
+     ========================================================= */
+  function hideSubBannerForSuperAdmin() {
+    if (!isSuperAdmin()) return;
+
+    // Remove the subscription banner (green/red bar from Section 23)
+    var subBanner = document.getElementById('dm-sub-banner');
+    if (subBanner) subBanner.remove();
+
+    // Remove grace banner (from Section 25)
+    var graceBanner = document.getElementById('dm-grace-banner');
+    if (graceBanner) graceBanner.remove();
+
+    // Remove enforcement overlay if any
+    var enfOverlay = document.getElementById('dm-enf-overlay');
+    if (enfOverlay) enfOverlay.remove();
+  }
+
+  /* =========================================================
+     2. ADD SUPER ADMIN BADGE IN TOPBAR
+     ========================================================= */
+  function addSuperAdminTopBadge() {
+    if (!isSuperAdmin()) return;
+    if (document.getElementById('dm-super-badge')) return;
+
+    var topbar = document.getElementById('topbar');
+    if (!topbar) return;
+
+    var badge = document.createElement('div');
+    badge.id = 'dm-super-badge';
+    badge.style.cssText = 'display:flex;align-items:center;gap:.35rem;padding:.35rem .7rem;border-radius:8px;background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:1px solid rgba(245,158,11,.4);color:#f59e0b;font-size:.7rem;font-weight:800;margin-inline-end:.35rem;letter-spacing:.03em';
+    badge.innerHTML = '👑 SUPER ADMIN · ∞';
+
+    var notifBtn = document.getElementById('notif-btn');
+    if (notifBtn && notifBtn.parentNode) {
+      notifBtn.parentNode.insertBefore(badge, notifBtn);
+    } else {
+      topbar.appendChild(badge);
+    }
+  }
+
+  /* =========================================================
+     3. OVERRIDE "MY SUBSCRIPTION" PAGE FOR SUPER ADMIN
+     ========================================================= */
+  function overrideMySubPage() {
+    if (!Pages.mysub) return;
+
+    var orig = Pages.mysub;
+    Pages.mysub = function (el) {
+      if (!isSuperAdmin()) {
+        return orig.apply(this, arguments);
+      }
+
+      // Super Admin view — unlimited, no upgrade prompts
+      var L = I18N[State.lang] || I18N.ar;
+      var ar = State.lang === 'ar';
+
+      el.innerHTML =
+        '<div style="max-width:960px;margin:0 auto">' +
+
+          '<div class="card" style="background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.03));border:2px solid rgba(245,158,11,.4);padding:2rem">' +
+            '<div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">' +
+              '<div style="width:88px;height:88px;border-radius:24px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;display:flex;align-items:center;justify-content:center;font-size:2.75rem;box-shadow:0 20px 40px -10px rgba(245,158,11,.5)">👑</div>' +
+              '<div style="flex:1;min-width:200px">' +
+                '<div style="font-size:.72rem;color:#f59e0b;text-transform:uppercase;letter-spacing:.1em;font-weight:800">' + (ar ? 'الوضع الحالي' : 'Current Mode') + '</div>' +
+                '<div style="font-size:2rem;font-weight:800;color:var(--text);line-height:1.1;margin:.25rem 0">' + (ar ? 'مدير عام' : 'Super Administrator') + '</div>' +
+                '<div style="font-size:.9rem;color:var(--text-muted);line-height:1.6">' +
+                  (ar ? 'وصول كامل غير محدود — بدون قيود اشتراك' : 'Full unlimited access — no subscription limits') +
+                '</div>' +
+              '</div>' +
+              '<div style="text-align:end">' +
+                '<span class="badge-pill" style="background:rgba(16,185,129,.15);color:#10b981;padding:.5rem 1rem;font-size:.85rem;font-weight:800">' +
+                  '∞ ' + (ar ? 'غير محدود' : 'Unlimited') +
+                '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          '<div class="grid-2" style="margin-top:1.5rem">' +
+
+            '<div class="card">' +
+              '<h4 style="margin:0 0 1rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">' +
+                '<i data-lucide="star" style="width:16px;height:16px;color:#f59e0b"></i>' +
+                (ar ? 'مميزات المدير العام' : 'Super Admin Privileges') +
+              '</h4>' +
+              '<div style="display:flex;flex-direction:column;gap:.65rem;font-size:.85rem">' +
+                privRow('♾️', ar ? 'موظفين غير محدودين' : 'Unlimited employees') +
+                privRow('📅', ar ? 'حجوزات غير محدودة' : 'Unlimited bookings') +
+                privRow('🏛', ar ? 'قاعات غير محدودة' : 'Unlimited halls') +
+                privRow('👥', ar ? 'مستخدمين غير محدودين' : 'Unlimited users') +
+                privRow('⚡', ar ? 'لوحة إدارة جميع الشركات' : 'Manage all companies') +
+                privRow('🎁', ar ? 'تفعيل اشتراكات العملاء يدويًا' : 'Manually activate customer subscriptions') +
+              '</div>' +
+            '</div>' +
+
+            '<div class="card">' +
+              '<h4 style="margin:0 0 1rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">' +
+                '<i data-lucide="zap" style="width:16px;height:16px;color:#7c3aed"></i>' +
+                (ar ? 'أوامر سريعة' : 'Quick Actions') +
+              '</h4>' +
+              '<div style="display:flex;flex-direction:column;gap:.5rem">' +
+                '<button class="btn btn-primary btn-sm" onclick="__dmSuperAdmin()">' +
+                  '⚡ ' + (ar ? 'لوحة المدير العام' : 'Super Admin Panel') +
+                '</button>' +
+                '<button class="btn btn-ghost btn-sm" onclick="__dmViewPendingPayments()">' +
+                  '💰 ' + (ar ? 'طلبات الدفع المعلقة' : 'Pending Payments') +
+                '</button>' +
+                '<button class="btn btn-ghost btn-sm" onclick="__dmShowPlans()">' +
+                  '💎 ' + (ar ? 'عرض الباقات (للمراجعة)' : 'View Plans (for reference)') +
+                '</button>' +
+              '</div>' +
+              '<div style="margin-top:1rem;padding:.75rem;background:rgba(59,130,246,.08);border-inline-start:3px solid #3b82f6;border-radius:8px;font-size:.72rem;color:var(--text-muted);line-height:1.6">' +
+                '💡 ' + (ar ? 'كمدير عام، مفيش اشتراك ينتهي عليك. لكن تقدر تجرب تدفع كعميل من حساب تاني.' : 'As Super Admin, you have no subscription expiry. Test payment from a different account.') +
+              '</div>' +
+            '</div>' +
+
+          '</div>' +
+
+        '</div>';
+
+      if (window.lucide) lucide.createIcons();
+    };
+
+    function privRow(icon, label) {
+      return '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .75rem;background:var(--surface-2);border-radius:8px">' +
+        '<span>' + icon + '</span>' +
+        '<span style="flex:1">' + esc(label) + '</span>' +
+        '<span style="color:#10b981;font-weight:700">✓</span>' +
+      '</div>';
+    }
+
+    console.log('[Section 29] ✓ My Subscription overridden for Super Admin');
+  }
+
+  /* =========================================================
+     4. OVERRIDE ENFORCEMENT CHECK
+     ========================================================= */
+  function overrideEnforcement() {
+    // Wrap __dmCheckSub to always return active for super admin
+    if (typeof window.__dmCheckSub === 'function') {
+      var orig = window.__dmCheckSub;
+      window.__dmCheckSub = function () {
+        if (isSuperAdmin()) return 'active';
+        return orig.apply(this, arguments);
+      };
+    }
+
+    // Wrap applyEnforcement
+    if (typeof window.__dmApplyEnforcement === 'function') {
+      var origApply = window.__dmApplyEnforcement;
+      window.__dmApplyEnforcement = function () {
+        if (isSuperAdmin()) {
+          var enfOverlay = document.getElementById('dm-enf-overlay');
+          if (enfOverlay) enfOverlay.remove();
+          var graceBanner = document.getElementById('dm-grace-banner');
+          if (graceBanner) graceBanner.remove();
+          return;
+        }
+        return origApply.apply(this, arguments);
+      };
+    }
+  }
+
+  /* =========================================================
+     5. OVERRIDE SETTINGS SUBSCRIPTION SECTION FOR SUPER ADMIN
+     ========================================================= */
+  function fixSettingsSubSection() {
+    var check = setInterval(function () {
+      var sec = document.querySelector('[data-dm-sub-section]');
+      if (!sec) return;
+      if (sec.__dm29Fixed) return;
+      if (!isSuperAdmin()) { sec.__dm29Fixed = true; return; }
+
+      sec.__dm29Fixed = true;
+      var ar = State.lang === 'ar';
+      var L = I18N[State.lang] || I18N.ar;
+
+      sec.innerHTML =
+        '<h4 style="margin-top:0;font-size:.95rem">' +
+          '<i data-lucide="crown" style="width:16px;height:16px;display:inline;color:#f59e0b"></i> ' +
+          (ar ? 'الاشتراك' : 'Subscription') +
+        '</h4>' +
+        '<div style="margin-top:.85rem;padding:.85rem;background:linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.3);border-radius:10px">' +
+          '<div style="display:flex;align-items:center;gap:.5rem">' +
+            '<span style="font-size:1.25rem">👑</span>' +
+            '<div style="flex:1">' +
+              '<div style="font-weight:800;font-size:.9rem;color:#f59e0b">' + (ar ? 'مدير عام' : 'Super Admin') + '</div>' +
+              '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.15rem">' + (ar ? 'وصول غير محدود' : 'Unlimited access') + '</div>' +
+            '</div>' +
+            '<span class="badge-pill badge-green">∞</span>' +
+          '</div>' +
+        '</div>' +
+        '<button class="btn btn-primary btn-sm" style="margin-top:.85rem;width:100%" onclick="__dmSuperAdmin()">' +
+          '⚡ ' + (ar ? 'لوحة المدير العام' : 'Super Admin Panel') +
+        '</button>';
+
+      if (window.lucide) lucide.createIcons();
+    }, 1000);
+    setTimeout(function () { clearInterval(check); }, 30000);
+  }
+
+  /* =========================================================
+     6. WATCH FOR BANNERS — hide as soon as they appear
+     ========================================================= */
+  function watchForBanners() {
+    setInterval(function () {
+      if (!isSuperAdmin()) return;
+      var sub = document.getElementById('dm-sub-banner');
+      if (sub) sub.remove();
+      var grace = document.getElementById('dm-grace-banner');
+      if (grace) grace.remove();
+      var enf = document.getElementById('dm-enf-overlay');
+      if (enf) enf.remove();
+    }, 1500);
+  }
+
+  /* =========================================================
+     7. BOOT
+     ========================================================= */
+  function init() {
+    hideSubBannerForSuperAdmin();
+    addSuperAdminTopBadge();
+    overrideMySubPage();
+    overrideEnforcement();
+    fixSettingsSubSection();
+    watchForBanners();
+
+    console.log('%c[Section 29] ✓ Super Admin exemption active', 'color:#10b981;font-weight:bold');
+  }
+
+  waitFor(
+    function () {
+      return typeof window.__dmSaaS !== 'undefined'
+        && window.__dmSaaS.ready
+        && typeof Pages !== 'undefined';
+    },
+    function () {
+      init();
+      // Retry after a moment in case things load late
+      setTimeout(init, 1500);
+      setTimeout(init, 4000);
+    }
+  );
+
+  // Expose for manual
+  window.__dmFixSuperAdminBanner = hideSubBannerForSuperAdmin;
+
+})();
 
 
 
