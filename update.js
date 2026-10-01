@@ -11436,6 +11436,504 @@ service cloud.firestore {
   };
 
 })();
+/* =========================================================
+   SECTION 27 (v2): Client-Side Payment — No Cloud Functions
+   Version: 2.0.0
+   ---------------------------------------------------------
+   - Mock payment flow (works now)
+   - Manual activation by Super Admin
+   - Ready to swap in Paymob iframe later
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 27 v2] Payment (Client-Side) loading…', 'color:#10b981;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 27] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.pay_title = 'ترقية الاشتراك';
+  I18N.ar.pay_choose_method = 'اختار طريقة الدفع';
+  I18N.ar.pay_bank_transfer = 'تحويل بنكي';
+  I18N.ar.pay_instapay = 'InstaPay';
+  I18N.ar.pay_vodafone = 'فودافون كاش';
+  I18N.ar.pay_paymob = 'بطاقة (Paymob)';
+  I18N.ar.pay_coming_soon = 'قريبًا';
+  I18N.ar.pay_i_paid = 'تم الدفع — تفعيل الاشتراك';
+  I18N.ar.pay_activated = 'تم تفعيل الاشتراك 🎉';
+  I18N.ar.pay_amount = 'المبلغ';
+  I18N.ar.pay_instructions = 'أرسل المبلغ على:';
+  I18N.ar.pay_then_click = 'بعد التحويل، اضغط الزر تحت وهنفعل الاشتراك خلال دقائق';
+  I18N.ar.pay_already_active = 'اشتراكك نشط بالفعل';
+  I18N.ar.pay_admin_activation = 'تفعيل فوري (Super Admin فقط)';
+  I18N.ar.pay_activate_now = 'تفعيل الآن';
+  I18N.ar.pay_choose_plan = 'اختار الباقة';
+
+  I18N.en.pay_title = 'Upgrade Subscription';
+  I18N.en.pay_choose_method = 'Choose payment method';
+  I18N.en.pay_bank_transfer = 'Bank Transfer';
+  I18N.en.pay_instapay = 'InstaPay';
+  I18N.en.pay_vodafone = 'Vodafone Cash';
+  I18N.en.pay_paymob = 'Card (Paymob)';
+  I18N.en.pay_coming_soon = 'Coming soon';
+  I18N.en.pay_i_paid = 'I paid — Activate';
+  I18N.en.pay_activated = 'Subscription activated 🎉';
+  I18N.en.pay_amount = 'Amount';
+  I18N.en.pay_instructions = 'Send payment to:';
+  I18N.en.pay_then_click = 'After transfer, click below and we will activate within minutes';
+  I18N.en.pay_already_active = 'Your subscription is already active';
+  I18N.en.pay_admin_activation = 'Instant activate (Super Admin only)';
+  I18N.en.pay_activate_now = 'Activate now';
+  I18N.en.pay_choose_plan = 'Choose plan';
+
+  /* ---------- payment config (عدّلها بمعلوماتك) ---------- */
+  var PAYMENT_INFO = {
+    bankName: 'البنك الأهلي المصري',
+    bankAccount: '1234 5678 9012 3456',
+    accountName: 'Dr Media Pro',
+    instapay: 'payments@drmedia.pro',
+    vodafone: '01012345678',
+    supportEmail: 'support@drmedia.pro',
+    supportPhone: '+20 100 000 0000'
+  };
+
+  /* ---------- state ---------- */
+  var Pay = {
+    active: false,
+    planId: null,
+    modal: null
+  };
+  window.__dmPay = Pay;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* =========================================================
+     OVERRIDE UPGRADE — called from plans modal
+     ========================================================= */
+  window.__dmSaaSUpgrade = function (planId) {
+    if (typeof closeModal === 'function') closeModal();
+    setTimeout(function () {
+      openPaymentModal(planId);
+    }, 200);
+  };
+
+  /* =========================================================
+     PAYMENT MODAL
+     ========================================================= */
+  function openPaymentModal(planId) {
+    var L = I18N[State.lang] || I18N.ar;
+    var plan = (window.__dmPlans || {})[planId];
+    if (!plan) { if (typeof showToast === 'function') showToast('Plan not found', 'error'); return; }
+    if (plan.price <= 0) { if (typeof showToast === 'function') showToast('Contact us for this plan', 'info'); return; }
+
+    Pay.active = true;
+    Pay.planId = planId;
+
+    // Remove existing
+    var existing = document.getElementById('dm-pay-modal');
+    if (existing) existing.remove();
+
+    var isSuperAdmin = window.__dmSaaS && window.__dmSaaS.isSuperAdmin;
+    var isSaaSReady = window.__dmSaaS && window.__dmSaaS.ready;
+
+    if (!isSaaSReady) {
+      if (typeof showToast === 'function') showToast('Please sign in first', 'error');
+      return;
+    }
+
+    var modal = document.createElement('div');
+    modal.id = 'dm-pay-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto';
+
+    modal.innerHTML =
+      '<div style="max-width:560px;width:100%;background:var(--surface);border-radius:20px;overflow:hidden;border:1px solid var(--border);box-shadow:0 40px 80px -20px rgba(0,0,0,.6);max-height:95vh;display:flex;flex-direction:column">' +
+
+        /* Header */
+        '<div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(16,185,129,.08));display:flex;justify-content:space-between;align-items:center">' +
+          '<div>' +
+            '<div style="font-weight:800;font-size:1.05rem">💳 ' + esc(L.pay_title) + '</div>' +
+            '<div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">' + esc(plan.name) + ' · ' + plan.price + ' EGP / ' + (State.lang === 'ar' ? 'شهر' : 'mo') + '</div>' +
+          '</div>' +
+          '<button id="dm-pay-close" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:.4rem;border-radius:8px;font-size:1.2rem;line-height:1">✕</button>' +
+        '</div>' +
+
+        /* Body */
+        '<div style="padding:1.5rem;overflow-y:auto;flex:1">' +
+
+          (isSuperAdmin ? renderSuperAdminBlock(plan, planId) : '') +
+
+          /* Payment methods */
+          '<div style="margin-bottom:1rem">' +
+            '<div style="font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">' +
+              esc(L.pay_choose_method) +
+            '</div>' +
+
+            renderMethod('bank', '🏦', L.pay_bank_transfer, plan, PAYMENT_INFO.bankName + '\n' + PAYMENT_INFO.bankAccount + '\n' + PAYMENT_INFO.accountName) +
+            renderMethod('instapay', '⚡', L.pay_instapay, plan, PAYMENT_INFO.instapay) +
+            renderMethod('vodafone', '📱', L.pay_vodafone, plan, PAYMENT_INFO.vodafone) +
+            renderMethod('paymob', '💳', L.pay_paymob, plan, null, true /* disabled */) +
+          '</div>' +
+
+          /* Contact info */
+          '<div style="margin-top:1.25rem;padding:.75rem 1rem;background:rgba(59,130,246,.08);border-inline-start:3px solid #3b82f6;border-radius:8px;font-size:.78rem;color:var(--text-muted);line-height:1.7">' +
+            '📞 ' + (State.lang === 'ar' ? 'بعد الدفع، تواصل معنا:' : 'After payment, contact us:') + '<br>' +
+            '<b style="color:var(--text)">' + esc(PAYMENT_INFO.supportEmail) + '</b><br>' +
+            '<b style="color:var(--text)">' + esc(PAYMENT_INFO.supportPhone) + '</b>' +
+          '</div>' +
+
+        '</div>' +
+
+        /* Footer */
+        '<div style="padding:1rem 1.5rem;border-top:1px solid var(--border);display:flex;gap:.5rem;justify-content:flex-end;background:var(--surface)">' +
+          '<button id="dm-pay-done" class="btn btn-ghost" style="padding:.7rem 1.25rem">' +
+            (State.lang === 'ar' ? 'إغلاق' : 'Close') +
+          '</button>' +
+          '<button id="dm-pay-i-paid" class="btn btn-primary" style="padding:.7rem 1.25rem">' +
+            '✓ ' + esc(L.pay_i_paid) +
+          '</button>' +
+        '</div>' +
+
+      '</div>';
+
+    document.body.appendChild(modal);
+    Pay.modal = modal;
+
+    /* Bind */
+    modal.querySelector('#dm-pay-close').onclick = closePaymentModal;
+    modal.querySelector('#dm-pay-done').onclick = closePaymentModal;
+
+    modal.querySelector('#dm-pay-i-paid').onclick = function () {
+      handlePaidNotification(planId, plan);
+    };
+
+    /* Super admin activate */
+    var activateBtn = modal.querySelector('#dm-activate-now');
+    if (activateBtn) {
+      activateBtn.onclick = function () {
+        activateSubscription(planId, plan);
+      };
+    }
+
+    /* Copy account number */
+    modal.querySelectorAll('.dm-copy-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        var text = btn.dataset.copy;
+        copyToClipboard(text);
+        btn.textContent = '✓';
+        setTimeout(function () { btn.textContent = '📋'; }, 1500);
+      };
+    });
+  }
+
+  /* ---------- render single payment method ---------- */
+  function renderMethod(id, icon, label, plan, value, disabled) {
+    var ar = State.lang === 'ar';
+    var arrow = ar ? '◀' : '▶';
+    return '' +
+      '<div style="padding:.85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;margin-bottom:.5rem;display:flex;align-items:flex-start;gap:.75rem;' + (disabled ? 'opacity:.5;' : '') + '">' +
+        '<div style="width:40px;height:40px;border-radius:10px;background:' + (disabled ? 'rgba(100,116,139,.15)' : 'rgba(124,58,237,.12)') + ';color:' + (disabled ? '#94a3b8' : '#7c3aed') + ';display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex-shrink:0">' + icon + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:700;font-size:.9rem;color:var(--text);margin-bottom:.15rem">' + esc(label) + (disabled ? ' <span style="font-size:.65rem;background:var(--surface);padding:.1rem .4rem;border-radius:4px;color:var(--text-muted)">' + esc((I18N[State.lang] || I18N.ar).pay_coming_soon) + '</span>' : '') + '</div>' +
+          (value && !disabled ?
+            '<div style="font-size:.75rem;color:var(--text-muted);white-space:pre-line;line-height:1.5;margin-bottom:.35rem">' + esc(value) + '</div>' +
+            '<button class="dm-copy-btn" data-copy="' + esc(value) + '" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.25rem .55rem;font-size:.7rem;cursor:pointer;font-family:inherit;color:var(--text-muted)">📋 ' + (ar ? 'نسخ' : 'Copy') + '</button>'
+            : '') +
+        '</div>' +
+      '</div>';
+  }
+
+  /* ---------- super admin instant activation ---------- */
+  function renderSuperAdminBlock(plan, planId) {
+    var L = I18N[State.lang] || I18N.ar;
+    return '' +
+      '<div style="padding:1rem;background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(124,58,237,.08));border:2px dashed rgba(245,158,11,.4);border-radius:12px;margin-bottom:1.25rem">' +
+        '<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.65rem">' +
+          '<span style="font-size:1.2rem">⚡</span>' +
+          '<div style="font-weight:800;font-size:.85rem;color:#f59e0b">' + esc(L.pay_admin_activation) + '</div>' +
+        '</div>' +
+        '<button id="dm-activate-now" style="width:100%;padding:.75rem;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.85rem">' +
+          '✓ ' + esc(L.pay_activate_now) + ' — ' + esc(plan.name) +
+        '</button>' +
+      '</div>';
+  }
+
+  /* ---------- close ---------- */
+  function closePaymentModal() {
+    var m = document.getElementById('dm-pay-modal');
+    if (m) m.remove();
+    Pay.active = false;
+    Pay.planId = null;
+    Pay.modal = null;
+  }
+
+  /* =========================================================
+     ACTIVATE SUBSCRIPTION (write directly to Firestore)
+     ========================================================= */
+  async function activateSubscription(planId, plan) {
+    if (!window.__dmSaaS || !window.__dmSaaS.profile || !window.__dmSaaS.profile.companyId) {
+      if (typeof showToast === 'function') showToast('No company found', 'error');
+      return;
+    }
+
+    var fsMod = window.DrMediaFB.modules.fsMod;
+    var companyId = window.__dmSaaS.profile.companyId;
+
+    try {
+      var now = Date.now();
+      var expiresAt = now + (plan.durationDays * 86400000);
+
+      // Update subscription doc
+      var subRef = fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId);
+      await fsMod.setDoc(subRef, {
+        companyId: companyId,
+        planId: planId,
+        status: 'active',
+        startedAt: now,
+        expiresAt: expiresAt,
+        lastPaymentMode: 'manual',
+        lastPaymentAt: now,
+        activatedBy: window.__dmSaaS.user ? window.__dmSaaS.user.uid : 'system',
+        updatedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+
+      // Also log in payment_orders for history
+      var orderRef = fsMod.doc(window.DrMediaFB.db, 'payment_orders', 'MANUAL_' + now);
+      await fsMod.setDoc(orderRef, {
+        orderId: 'MANUAL_' + now,
+        companyId: companyId,
+        planId: planId,
+        amount: plan.price,
+        status: 'success',
+        mode: 'manual',
+        activatedBy: window.__dmSaaS.user ? window.__dmSaaS.user.uid : 'system',
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      // Refresh SaaS data
+      window.__dmSaaS.subscription = {
+        companyId: companyId,
+        planId: planId,
+        status: 'active',
+        startedAt: now,
+        expiresAt: expiresAt
+      };
+
+      if (typeof showToast === 'function') {
+        showToast((I18N[State.lang] || I18N.ar).pay_activated + ' ✓', 'success');
+      }
+
+      // Close modal and reload
+      closePaymentModal();
+      setTimeout(function () {
+        if (typeof window.__dmApplyEnforcement === 'function') window.__dmApplyEnforcement();
+        window.location.reload();
+      }, 900);
+
+    } catch (err) {
+      console.error('[Section 27] activation failed:', err);
+      if (typeof showToast === 'function') {
+        showToast((State.lang === 'ar' ? 'فشل التفعيل: ' : 'Activation failed: ') + err.message, 'error');
+      }
+    }
+  }
+
+  /* =========================================================
+     USER CLICKED "I PAID" — send notification to admin
+     ========================================================= */
+  async function handlePaidNotification(planId, plan) {
+    if (!window.__dmSaaS || !window.__dmSaaS.profile) return;
+
+    var fsMod = window.DrMediaFB.modules.fsMod;
+    var companyId = window.__dmSaaS.profile.companyId;
+    var userEmail = window.__dmSaaS.user ? window.__dmSaaS.user.email : 'unknown';
+    var userName = window.__dmSaaS.profile.name || 'User';
+    var companyName = window.__dmSaaS.company ? window.__dmSaaS.company.name : 'Unknown';
+
+    var L = I18N[State.lang] || I18N.ar;
+
+    if (typeof showToast === 'function') {
+      showToast(State.lang === 'ar' ? 'جاري الإرسال…' : 'Sending…', 'info');
+    }
+
+    try {
+      var now = Date.now();
+      var orderRef = fsMod.doc(window.DrMediaFB.db, 'payment_orders', 'PENDING_' + now);
+      await fsMod.setDoc(orderRef, {
+        orderId: 'PENDING_' + now,
+        companyId: companyId,
+        companyName: companyName,
+        planId: planId,
+        amount: plan.price,
+        status: 'pending_verification',
+        mode: 'manual-transfer',
+        userName: userName,
+        userEmail: userEmail,
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      // Also add to super admin notifications
+      try {
+        var notifRef = fsMod.doc(window.DrMediaFB.db, 'super_admin', 'notifications');
+        var notifSnap = await fsMod.getDoc(notifRef);
+        var notifications = notifSnap.exists() ? (notifSnap.data().items || []) : [];
+        notifications.unshift({
+          id: 'n_' + now,
+          type: 'payment',
+          title: 'طلب ترقية جديد',
+          body: companyName + ' (' + userName + ') — باقة ' + plan.name + ' — ' + plan.price + ' EGP',
+          companyId: companyId,
+          planId: planId,
+          amount: plan.price,
+          email: userEmail,
+          createdAt: now,
+          read: false
+        });
+        await fsMod.setDoc(notifRef, { items: notifications.slice(0, 100) }, { merge: true });
+      } catch (e) {
+        console.warn('[Section 27] notification save failed', e);
+      }
+
+      if (typeof showToast === 'function') {
+        showToast(
+          State.lang === 'ar'
+            ? '✓ تم إرسال الطلب — هيتم التفعيل خلال دقائق'
+            : '✓ Request sent — will be activated soon',
+          'success'
+        );
+      }
+      closePaymentModal();
+
+    } catch (err) {
+      console.error('[Section 27] failed:', err);
+      if (typeof showToast === 'function') {
+        showToast((State.lang === 'ar' ? 'فشل: ' : 'Failed: ') + err.message, 'error');
+      }
+    }
+  }
+
+  /* ---------- clipboard helper ---------- */
+  function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      if (typeof showToast === 'function') {
+        showToast(State.lang === 'ar' ? 'تم النسخ ✓' : 'Copied ✓', 'success');
+      }
+    } catch (e) {}
+  }
+
+  /* =========================================================
+     SUPER ADMIN — view pending payments
+     ========================================================= */
+  window.__dmViewPendingPayments = async function () {
+    if (!window.__dmSaaS || !window.__dmSaaS.isSuperAdmin) {
+      if (typeof showToast === 'function') showToast('Super Admin only', 'error');
+      return;
+    }
+
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var snap = await fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'payment_orders'));
+      var orders = [];
+      snap.forEach(function (d) { orders.push(d.data()); });
+      orders.sort(function (a, b) { return (b.createdAt && b.createdAt.seconds || 0) - (a.createdAt && a.createdAt.seconds || 0); });
+
+      var pending = orders.filter(function (o) { return o.status === 'pending_verification'; });
+
+      var rows = pending.map(function (o) {
+        return '<tr>' +
+          '<td><b>' + esc(o.companyName || o.companyId) + '</b></td>' +
+          '<td>' + esc(o.userName || '') + '<br><span style="font-size:.7rem;color:var(--text-muted)">' + esc(o.userEmail || '') + '</span></td>' +
+          '<td><span class="badge-pill badge-purple">' + esc(o.planId) + '</span></td>' +
+          '<td><b>' + (o.amount || 0) + ' EGP</b></td>' +
+          '<td>' +
+            '<button onclick="__dmApprovePayment(\'' + o.companyId + '\',\'' + o.planId + '\')" class="btn btn-success btn-sm">✓ Approve</button> ' +
+            '<button onclick="__dmRejectPayment(\'' + o.orderId + '\')" class="btn btn-danger btn-sm">✕ Reject</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+
+      if (typeof openModal === 'function') {
+        openModal({
+          title: '💰 Pending Payments (' + pending.length + ')',
+          size: 'xl',
+          body: pending.length ?
+            '<div class="table-wrap"><table class="data-table"><thead><tr><th>Company</th><th>User</th><th>Plan</th><th>Amount</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
+            '<div class="empty-state"><p>No pending payments</p></div>'
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      if (typeof showToast === 'function') showToast('Failed to load: ' + err.message, 'error');
+    }
+  };
+
+  window.__dmApprovePayment = async function (companyId, planId) {
+    var plan = (window.__dmPlans || {})[planId];
+    if (!plan) return;
+    var fsMod = window.DrMediaFB.modules.fsMod;
+    var now = Date.now();
+    await fsMod.setDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId), {
+      companyId: companyId,
+      planId: planId,
+      status: 'active',
+      startedAt: now,
+      expiresAt: now + (plan.durationDays * 86400000),
+      activatedBy: window.__dmSaaS.user.uid,
+      updatedAt: fsMod.serverTimestamp()
+    }, { merge: true });
+    if (typeof showToast === 'function') showToast('Approved ✓', 'success');
+    if (typeof closeModal === 'function') closeModal();
+    window.__dmViewPendingPayments();
+  };
+
+  window.__dmRejectPayment = async function (orderId) {
+    var fsMod = window.DrMediaFB.modules.fsMod;
+    await fsMod.updateDoc(fsMod.doc(window.DrMediaFB.db, 'payment_orders', orderId), {
+      status: 'rejected',
+      rejectedAt: fsMod.serverTimestamp(),
+      rejectedBy: window.__dmSaaS.user.uid
+    });
+    if (typeof showToast === 'function') showToast('Rejected', 'info');
+    if (typeof closeModal === 'function') closeModal();
+    window.__dmViewPendingPayments();
+  };
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  waitFor(
+    function () {
+      return typeof window.__dmSaaS !== 'undefined'
+        && typeof window.__dmPlans !== 'undefined'
+        && typeof window.DrMediaFB !== 'undefined';
+    },
+    function () {
+      console.log('%c[Section 27 v2] ✓ Client-side payment ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 27 v2] Super Admin: __dmViewPendingPayments()', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
 
 
 
