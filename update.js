@@ -12551,6 +12551,701 @@ service cloud.firestore {
   window.__dmFixSuperAdminBanner = hideSubBannerForSuperAdmin;
 
 })();
+/* =========================================================
+   SECTION 30: Complete SaaS Enhancements
+   Version: 1.0.0
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 30] SaaS Complete loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 30] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function isSuperAdmin() {
+    return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin);
+  }
+
+  function isLoggedIn() {
+    return !!(window.__dmSaaS && window.__dmSaaS.user && window.__dmSaaS.ready);
+  }
+
+  /* =========================================================
+     1. COPYRIGHT FOOTER
+     ========================================================= */
+  var COPYRIGHT = {
+    company: 'Dr Media Pro',
+    developer: 'أحمد شريف',
+    phone: '01002670948',
+    year: '2026'
+  };
+
+  function addCopyrightFooter() {
+    // Login screen footer
+    var loginCard = document.querySelector('.login-card');
+    if (loginCard && !loginCard.querySelector('.dm-copyright')) {
+      var loginFoot = document.createElement('div');
+      loginFoot.className = 'dm-copyright';
+      loginFoot.style.cssText = 'margin-top:1.5rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,.08);text-align:center;font-size:.7rem;color:#94a3b8;line-height:1.7';
+      loginFoot.innerHTML =
+        '© ' + COPYRIGHT.year + ' <b style="color:#a78bfa">' + esc(COPYRIGHT.company) + '</b> — جميع الحقوق محفوظة<br>' +
+        '<span style="opacity:.75">تصميم وتطوير: ' + esc(COPYRIGHT.developer) + ' · ' + esc(COPYRIGHT.phone) + '</span>';
+      loginCard.appendChild(loginFoot);
+    }
+
+    // App footer (bottom of content)
+    var content = document.getElementById('content');
+    if (content && !document.querySelector('.dm-app-copyright')) {
+      var appFoot = document.createElement('div');
+      appFoot.className = 'dm-app-copyright';
+      appFoot.style.cssText = 'margin-top:3rem;padding:1.25rem;text-align:center;font-size:.72rem;color:var(--text-muted);border-top:1px solid var(--border);line-height:1.8';
+      appFoot.innerHTML =
+        '© ' + COPYRIGHT.year + ' <b style="color:var(--primary)">' + esc(COPYRIGHT.company) + '</b> — جميع الحقوق محفوظة<br>' +
+        '<span style="opacity:.7">تصميم وتطوير: ' + esc(COPYRIGHT.developer) + ' · ' + esc(COPYRIGHT.phone) + '</span>';
+      content.appendChild(appFoot);
+    }
+  }
+
+  /* =========================================================
+     2. FORCE LOGIN — NO AUTO-LOGIN
+     ========================================================= */
+  function disableAutoLogin() {
+    // 1. Disable localStorage session restore
+    try {
+      var session = localStorage.getItem('drmedia_pro_session');
+      if (session) {
+        localStorage.removeItem('drmedia_pro_session');
+        console.log('[Section 30] Cleared auto-login session');
+      }
+    } catch (e) {}
+
+    // 2. Override restoreSession to always return false
+    try {
+      window.restoreSession = function () { return false; };
+    } catch (e) {}
+
+    // 3. Set Firebase Auth persistence to SESSION (only current tab)
+    try {
+      var fb = window.DrMediaFB;
+      if (fb && fb.auth && fb.modules && fb.modules.authMod) {
+        var authMod = fb.modules.authMod;
+        if (authMod.setPersistence && authMod.browserSessionPersistence) {
+          authMod.setPersistence(fb.auth, authMod.browserSessionPersistence)
+            .then(function () {
+              console.log('[Section 30] ✓ Firebase persistence = SESSION');
+            })
+            .catch(function (e) { console.warn('[Section 30] persistence failed:', e); });
+        }
+      }
+    } catch (e) {}
+
+    // 4. Sign out if page was reloaded (fresh session check)
+    // Actually don't sign out existing sessions to avoid breaking flow
+    // But we won't auto-restore them
+  }
+
+  function forceLoginOnLoad() {
+    // If on login screen but session exists in State.user, clear it
+    if (!isLoggedIn()) return;
+    // We're on the app; if the user refreshed the page, we want them to see login
+    // But if they're actively using the app, don't interrupt
+    // Only force logout if page was freshly loaded (not a session within a tab)
+    var wasLoaded = sessionStorage.getItem('dm_app_loaded');
+    if (!wasLoaded) {
+      sessionStorage.setItem('dm_app_loaded', '1');
+      // First load of this tab → force logout
+      try {
+        var fb = window.DrMediaFB;
+        if (fb && fb.auth && fb.modules && fb.modules.authMod) {
+          fb.modules.authMod.signOut(fb.auth).then(function () {
+            console.log('[Section 30] Signed out on fresh load');
+            window.location.reload();
+          });
+        }
+      } catch (e) {}
+    }
+  }
+
+  /* =========================================================
+     3. HIDE INTERNAL PAGES FOR NON-SUPER-ADMIN
+     ========================================================= */
+  var INTERNAL_PAGES = ['counters'];
+
+  function hideInternalNavItems() {
+    if (isSuperAdmin()) return;
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+
+    INTERNAL_PAGES.forEach(function (pageId) {
+      var link = nav.querySelector('[data-page="' + pageId + '"]');
+      if (link) link.remove();
+    });
+  }
+
+  function blockInternalPages() {
+    if (isSuperAdmin()) return;
+    INTERNAL_PAGES.forEach(function (pageId) {
+      if (Pages[pageId]) {
+        var orig = Pages[pageId];
+        Pages[pageId] = function (el) {
+          el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem">' +
+            '<i data-lucide="lock"></i>' +
+            '<p>' + (State.lang === 'ar' ? 'هذه الصفحة غير متاحة' : 'This page is not available') + '</p>' +
+          '</div>';
+          if (window.lucide) lucide.createIcons();
+        };
+      }
+    });
+  }
+
+  /* =========================================================
+     4. TRIAL = 1 DAY + AUTO-CLEANUP
+     ========================================================= */
+  function changeTrialDuration() {
+    if (window.__dmPlans && window.__dmPlans.trial) {
+      window.__dmPlans.trial.durationDays = 1;
+      console.log('[Section 30] ✓ Trial = 1 day');
+    }
+  }
+
+  // Auto-cleanup: when trial expired > 1 day ago, delete company data
+  async function cleanupExpiredTrials() {
+    if (!isLoggedIn()) return;
+    if (isSuperAdmin()) return;
+
+    var SaaS = window.__dmSaaS;
+    if (!SaaS.subscription || !SaaS.profile) return;
+    if (SaaS.subscription.planId !== 'trial') return;
+
+    var expiresAt = SaaS.subscription.expiresAt || 0;
+    var daysSinceExpiry = Math.floor((Date.now() - expiresAt) / 86400000);
+
+    // Trial expired more than 1 day ago
+    if (daysSinceExpiry >= 1) {
+      console.log('[Section 30] Trial expired > 1 day — cleaning up');
+      showCleanupNotice();
+    }
+  }
+
+  function showCleanupNotice() {
+    var overlay = document.createElement('div');
+    overlay.id = 'dm-cleanup-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:linear-gradient(135deg,#0f0a1f 0%,#1e1b3a 100%);display:flex;align-items:center;justify-content:center;padding:1rem;text-align:center';
+
+    overlay.innerHTML =
+      '<div style="max-width:480px;background:rgba(21,16,36,.9);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:2.5rem 2rem;backdrop-filter:blur(20px)">' +
+        '<div style="font-size:3.5rem;margin-bottom:1rem">⏰</div>' +
+        '<h2 style="color:#fff;margin:0 0 .75rem;font-size:1.35rem;font-weight:800">' +
+          (State.lang === 'ar' ? 'انتهت تجربتك المجانية' : 'Your trial has ended') +
+        '</h2>' +
+        '<p style="color:#94a3b8;font-size:.9rem;line-height:1.7;margin:0 0 1.5rem">' +
+          (State.lang === 'ar'
+            ? 'تم إيقاف حسابك التجريبي. بياناتك محفوظة لمدة 24 ساعة، وبعدها سيتم حذفها تلقائيًا. للاحتفاظ بها، اشترك الآن.'
+            : 'Your trial has ended. Your data is preserved for 24 hours, then deleted automatically. Subscribe now to keep it.') +
+        '</p>' +
+        '<div style="display:flex;gap:.5rem;flex-direction:column">' +
+          '<button id="dm-cleanup-subscribe" style="width:100%;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit;box-shadow:0 10px 25px -8px #7c3aed">' +
+            '💎 ' + (State.lang === 'ar' ? 'اشترك الآن' : 'Subscribe Now') +
+          '</button>' +
+          '<button id="dm-cleanup-logout" style="width:100%;padding:.75rem;border-radius:12px;background:transparent;color:#94a3b8;border:none;font-weight:600;font-size:.85rem;cursor:pointer;font-family:inherit">' +
+            (State.lang === 'ar' ? 'تسجيل خروج' : 'Logout') +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#dm-cleanup-subscribe').onclick = function () {
+      overlay.remove();
+      if (typeof window.__dmShowPlans === 'function') window.__dmShowPlans();
+    };
+
+    overlay.querySelector('#dm-cleanup-logout').onclick = async function () {
+      try {
+        var fb = window.DrMediaFB;
+        if (fb && fb.auth && fb.modules && fb.modules.authMod) {
+          await fb.modules.authMod.signOut(fb.auth);
+        }
+      } catch (e) {}
+      window.location.reload();
+    };
+  }
+
+  // Actual auto-delete (called by super admin or scheduled)
+  window.__dmDeleteExpiredTrialData = async function (companyId) {
+    if (!isSuperAdmin()) return false;
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      // Delete company data
+      await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'companies', companyId, 'app', 'main'));
+      await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'companies', companyId));
+      await fsMod.deleteDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId));
+      console.log('[Section 30] Deleted trial data for', companyId);
+      return true;
+    } catch (e) {
+      console.error('[Section 30] delete failed:', e);
+      return false;
+    }
+  };
+
+  /* =========================================================
+     5. SUPER ADMIN — SUBSCRIBERS TRACKING PANEL
+     ========================================================= */
+  window.__dmShowSubscribers = async function () {
+    if (!isSuperAdmin()) {
+      if (typeof showToast === 'function') showToast('Super Admin only', 'error');
+      return;
+    }
+
+    var el = document.getElementById('content');
+    if (!el) return;
+
+    // Register page
+    Pages.subscribers = async function (container) {
+      container.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+      try {
+        var fsMod = window.DrMediaFB.modules.fsMod;
+
+        // Load companies + subscriptions + users in parallel
+        var [comps, subs] = await Promise.all([
+          fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'companies')),
+          fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'subscriptions'))
+        ]);
+
+        var subMap = {};
+        subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+        var companies = [];
+        comps.forEach(function (d) {
+          var c = d.data();
+          var sub = subMap[c.id] || {};
+          var plan = (window.__dmPlans || {})[sub.planId] || { name: 'Trial', price: 0 };
+          var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - Date.now()) / 86400000)) : 0;
+          var expired = days <= 0;
+
+          companies.push({
+            id: c.id,
+            name: c.name || '—',
+            ownerEmail: c.ownerEmail || '—',
+            phone: c.phone || '—',
+            planId: sub.planId || 'trial',
+            planName: plan.name,
+            price: plan.price || 0,
+            days: days,
+            expired: expired,
+            status: sub.status || 'unknown',
+            createdAt: c.createdAt,
+            expiresAt: sub.expiresAt
+          });
+        });
+
+        // Sort: expired first, then by days
+        companies.sort(function (a, b) {
+          if (a.expired !== b.expired) return a.expired ? 1 : -1;
+          return a.days - b.days;
+        });
+
+        // Stats
+        var total = companies.length;
+        var active = companies.filter(function (c) { return !c.expired; }).length;
+        var expired = companies.filter(function (c) { return c.expired; }).length;
+        var trials = companies.filter(function (c) { return c.planId === 'trial' && !c.expired; }).length;
+        var mrr = companies.reduce(function (sum, c) {
+          return sum + (!c.expired && c.planId !== 'trial' ? c.price : 0);
+        }, 0);
+
+        // Filter
+        var filter = State.filters.subFilter || 'all';
+        var filtered = companies.filter(function (c) {
+          if (filter === 'all') return true;
+          if (filter === 'active') return !c.expired;
+          if (filter === 'expired') return c.expired;
+          if (filter === 'trial') return c.planId === 'trial';
+          if (filter === 'paid') return c.planId !== 'trial' && !c.expired;
+          return true;
+        });
+
+        // Rows
+        var rows = filtered.map(function (c) {
+          var statusColor = c.expired ? 'red' : (c.days <= 3 ? 'yellow' : 'green');
+          var statusText = c.expired ? 'Expired' : (c.planId === 'trial' ? 'Trial' : 'Active');
+
+          return '<tr>' +
+            '<td><div style="font-weight:700">' + esc(c.name) + '</div><div style="font-size:.7rem;color:var(--text-muted);margin-top:.15rem">' + esc(c.id) + '</div></td>' +
+            '<td><div>' + esc(c.ownerEmail) + '</div><div style="font-size:.7rem;color:var(--text-muted)">' + esc(c.phone) + '</div></td>' +
+            '<td><span class="badge-pill badge-purple">' + esc(c.planName) + '</span></td>' +
+            '<td><b>' + (c.price || 0) + '</b> EGP</td>' +
+            '<td><b style="color:' + (c.expired ? '#ef4444' : '#10b981') + '">' + c.days + '</b></td>' +
+            '<td><span class="badge-pill badge-' + statusColor + '">' + statusText + '</span></td>' +
+            '<td>' +
+              '<div style="display:flex;gap:.25rem">' +
+                '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmViewSubCompany(\'' + c.id + '\')" title="View"><i data-lucide="eye"></i></button>' +
+                '<button class="btn btn-success btn-icon btn-sm" onclick="__dmExtendSub(\'' + c.id + '\')" title="Extend"><i data-lucide="calendar-plus"></i></button>' +
+                '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmChangeSubPlan(\'' + c.id + '\')" title="Change Plan" style="color:#7c3aed"><i data-lucide="trending-up"></i></button>' +
+                '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dmDeleteSub(\'' + c.id + '\',\'' + esc(c.name) + '\')" title="Delete" style="color:#ef4444"><i data-lucide="trash-2"></i></button>' +
+              '</div>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+
+        container.innerHTML =
+          '<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;align-items:center">' +
+            '<i data-lucide="users" style="width:22px;height:22px;color:#f59e0b"></i>' +
+            '<span style="font-weight:800;font-size:1.05rem">متابعة المشتركين</span>' +
+            '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">' +
+              '<button class="btn btn-ghost btn-sm" onclick="__dmExportSubscribers()"><i data-lucide="download"></i> تصدير</button>' +
+              '<button class="btn btn-primary btn-sm" onclick="__dmRefreshSubscribers()"><i data-lucide="refresh-cw"></i> تحديث</button>' +
+            '</div>' +
+          '</div>' +
+
+          '<div class="grid-stats" style="margin-bottom:1rem">' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(124,58,237,.1);color:#7c3aed"><i data-lucide="building-2"></i></div><div class="stat-body"><div class="label">إجمالي المشتركين</div><div class="value">' + total + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i data-lucide="check-circle"></i></div><div class="stat-body"><div class="label">نشط</div><div class="value">' + active + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(239,68,68,.1);color:#ef4444"><i data-lucide="alert-circle"></i></div><div class="stat-body"><div class="label">منتهي</div><div class="value">' + expired + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(245,158,11,.1);color:#f59e0b"><i data-lucide="gift"></i></div><div class="stat-body"><div class="label">تجارب</div><div class="value">' + trials + '</div></div></div>' +
+            '<div class="stat-card"><div class="stat-icon" style="background:rgba(6,182,212,.1);color:#06b6d4"><i data-lucide="dollar-sign"></i></div><div class="stat-body"><div class="label">MRR</div><div class="value">' + mrr.toLocaleString() + ' EGP</div></div></div>' +
+          '</div>' +
+
+          '<div class="tabs" style="margin-bottom:1rem">' +
+            '<div class="tab ' + (filter === 'all' ? 'active' : '') + '" onclick="__dmSubFilter(\'all\')">الكل (' + total + ')</div>' +
+            '<div class="tab ' + (filter === 'active' ? 'active' : '') + '" onclick="__dmSubFilter(\'active\')">نشط</div>' +
+            '<div class="tab ' + (filter === 'trial' ? 'active' : '') + '" onclick="__dmSubFilter(\'trial\')">تجارب</div>' +
+            '<div class="tab ' + (filter === 'paid' ? 'active' : '') + '" onclick="__dmSubFilter(\'paid\')">مدفوع</div>' +
+            '<div class="tab ' + (filter === 'expired' ? 'active' : '') + '" onclick="__dmSubFilter(\'expired\')">منتهي</div>' +
+          '</div>' +
+
+          '<div class="card" style="padding:0;overflow:hidden">' +
+            '<div class="table-wrap" style="border:none;border-radius:0">' +
+              '<table class="data-table">' +
+                '<thead><tr>' +
+                  '<th>الشركة</th>' +
+                  '<th>المالك</th>' +
+                  '<th>الباقة</th>' +
+                  '<th>السعر</th>' +
+                  '<th>الأيام</th>' +
+                  '<th>الحالة</th>' +
+                  '<th>إجراءات</th>' +
+                '</tr></thead>' +
+                '<tbody>' + (rows || '<tr><td colspan="7"><div class="empty-state"><i data-lucide="inbox"></i><p>لا يوجد مشتركين بعد</p></div></td></tr>') + '</tbody>' +
+              '</table>' +
+            '</div>' +
+          '</div>';
+
+        if (window.lucide) lucide.createIcons();
+
+      } catch (err) {
+        console.error('[Section 30] subscribers load failed:', err);
+        container.innerHTML = '<div class="empty-state"><i data-lucide="alert-triangle"></i><p>فشل التحميل: ' + esc(err.message) + '</p></div>';
+        if (window.lucide) lucide.createIcons();
+      }
+    };
+
+    // Register nav item (Super Admin only)
+    var sys = NAV_ITEMS.find(function (g) { return g.section === 'system'; });
+    if (sys && !sys.items.find(function (i) { return i.id === 'subscribers'; })) {
+      var settingsIdx = sys.items.findIndex(function (i) { return i.id === 'settings'; });
+      var at = settingsIdx >= 0 ? settingsIdx : sys.items.length;
+      sys.items.splice(at, 0, { id: 'subscribers', icon: 'users', label: 'متابعة المشتركين' });
+    }
+
+    try { renderSidebar(); } catch (e) {}
+    if (typeof navigate === 'function') navigate('subscribers');
+  };
+
+  /* ---------- Super Admin Actions ---------- */
+  window.__dmSubFilter = function (filter) {
+    State.filters.subFilter = filter;
+    if (typeof navigate === 'function') navigate('subscribers');
+  };
+
+  window.__dmRefreshSubscribers = function () {
+    if (typeof navigate === 'function') navigate('subscribers');
+  };
+
+  window.__dmViewSubCompany = async function (companyId) {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var snap = await fsMod.getDoc(fsMod.doc(window.DrMediaFB.db, 'companies', companyId));
+      if (!snap.exists()) { showToast('Not found', 'error'); return; }
+      var c = snap.data();
+
+      var subSnap = await fsMod.getDoc(fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId));
+      var sub = subSnap.exists() ? subSnap.data() : {};
+
+      openModal({
+        title: '🏢 ' + c.name,
+        size: 'lg',
+        body: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:.85rem">' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">COMPANY ID</b><div style="margin-top:.2rem">' + esc(c.id) + '</div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">NAME</b><div style="margin-top:.2rem">' + esc(c.name) + '</div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">OWNER EMAIL</b><div style="margin-top:.2rem">' + esc(c.ownerEmail || '—') + '</div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">PHONE</b><div style="margin-top:.2rem">' + esc(c.phone || '—') + '</div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">PLAN</b><div style="margin-top:.2rem"><span class="badge-pill badge-purple">' + esc(sub.planId || 'trial') + '</span></div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">STATUS</b><div style="margin-top:.2rem">' + esc(sub.status || '—') + '</div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">EXPIRES</b><div style="margin-top:.2rem">' + (sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString() : '—') + '</div></div>' +
+          '<div><b style="color:var(--text-muted);font-size:.7rem">CREATED</b><div style="margin-top:.2rem">' + (c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : '—') + '</div></div>' +
+        '</div>'
+      });
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmExtendSub = async function (companyId) {
+    var days = prompt('كم يوم تريد إضافته؟', '30');
+    if (!days) return;
+    days = parseInt(days);
+    if (!days || days <= 0) return;
+
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var subRef = fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId);
+      var snap = await fsMod.getDoc(subRef);
+      var current = snap.exists() ? snap.data() : {};
+      var currentExpiry = current.expiresAt || Date.now();
+      var newExpiry = Math.max(currentExpiry, Date.now()) + (days * 86400000);
+
+      await fsMod.setDoc(subRef, {
+        companyId: companyId,
+        status: 'active',
+        expiresAt: newExpiry,
+        extendedBy: window.__dmSaaS.user.uid,
+        extendedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+
+      showToast('✓ تم تمديد الاشتراك ' + days + ' يوم', 'success');
+      navigate('subscribers');
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  };
+
+  window.__dmChangeSubPlan = function (companyId) {
+    var plans = window.__dmPlans || {};
+    var options = Object.keys(plans).map(function (k) {
+      return k + ' (' + plans[k].price + ' EGP)';
+    }).join('\n');
+    var chosen = prompt('اختر الباقة:\n' + options, 'pro');
+    if (!chosen || !plans[chosen]) return;
+
+    (async function () {
+      try {
+        var fsMod = window.DrMediaFB.modules.fsMod;
+        var plan = plans[chosen];
+        var subRef = fsMod.doc(window.DrMediaFB.db, 'subscriptions', companyId);
+        await fsMod.setDoc(subRef, {
+          companyId: companyId,
+          planId: chosen,
+          status: 'active',
+          startedAt: Date.now(),
+          expiresAt: Date.now() + (plan.durationDays * 86400000),
+          changedBy: window.__dmSaaS.user.uid,
+          updatedAt: fsMod.serverTimestamp()
+        }, { merge: true });
+        showToast('✓ تم التغيير إلى ' + plan.name, 'success');
+        navigate('subscribers');
+      } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+      }
+    })();
+  };
+
+  window.__dmDeleteSub = function (companyId, companyName) {
+    if (!confirm('⚠️ حذف نهائي لشركة "' + companyName + '"؟\n\nسيتم حذف كل البيانات ولا يمكن استرجاعها!')) return;
+    if (!confirm('تأكيد أخير: أنت متأكد 100%؟')) return;
+
+    (async function () {
+      var ok = await window.__dmDeleteExpiredTrialData(companyId);
+      if (ok) {
+        showToast('✓ تم الحذف', 'success');
+        navigate('subscribers');
+      } else {
+        showToast('فشل الحذف', 'error');
+      }
+    })();
+  };
+
+  window.__dmExportSubscribers = async function () {
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var [comps, subs] = await Promise.all([
+        fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'companies')),
+        fsMod.getDocs(fsMod.collection(window.DrMediaFB.db, 'subscriptions'))
+      ]);
+
+      var subMap = {};
+      subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+      var rows = [['Company ID', 'Name', 'Owner Email', 'Phone', 'Plan', 'Days Left', 'Status']];
+      comps.forEach(function (d) {
+        var c = d.data();
+        var sub = subMap[c.id] || {};
+        var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - Date.now()) / 86400000)) : 0;
+        rows.push([
+          c.id,
+          c.name || '',
+          c.ownerEmail || '',
+          c.phone || '',
+          sub.planId || 'trial',
+          days,
+          sub.status || 'unknown'
+        ]);
+      });
+
+      var csv = rows.map(function (r) {
+        return r.map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(',');
+      }).join('\n');
+
+      var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'subscribers-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('✓ تم التصدير', 'success');
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  };
+
+  /* ---------- Add nav item on super admin login ---------- */
+  function ensureSuperAdminNav() {
+    if (!isSuperAdmin()) return;
+    var sys = NAV_ITEMS.find(function (g) { return g.section === 'system'; });
+    if (sys && !sys.items.find(function (i) { return i.id === 'subscribers'; })) {
+      var settingsIdx = sys.items.findIndex(function (i) { return i.id === 'settings'; });
+      var at = settingsIdx >= 0 ? settingsIdx : sys.items.length;
+      sys.items.splice(at, 0, { id: 'subscribers', icon: 'users', label: 'متابعة المشتركين' });
+    }
+
+    // Add to Super Admin section
+    var nav = document.getElementById('sidebar-nav');
+    if (nav && !nav.querySelector('[data-page="subscribers"]')) {
+      var superSection = document.getElementById('dm-super-nav');
+      if (superSection) {
+        var link = document.createElement('a');
+        link.className = 'nav-item';
+        link.setAttribute('data-page', 'subscribers');
+        link.style.cssText = 'cursor:pointer;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);color:#7c3aed';
+        link.innerHTML = '<i data-lucide="users" style="color:#7c3aed"></i><span style="color:#7c3aed;font-weight:700">متابعة المشتركين</span>';
+        link.onclick = function (e) {
+          e.preventDefault();
+          window.__dmShowSubscribers();
+        };
+        superSection.appendChild(link);
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  }
+
+  /* =========================================================
+     6. LOAD LIMITED FEATURES BASED ON PLAN
+     ========================================================= */
+  // (Can be extended later — basic structure)
+
+  /* =========================================================
+     7. HOOK NAVIGATE — enforce plan
+     ========================================================= */
+  function hookNavigateForPlan() {
+    if (typeof window.navigate !== 'function') return;
+    if (window.navigate.__dm30Hooked) return;
+    var orig = window.navigate;
+    window.navigate = function (page) {
+      // Hide internal pages for non-super-admin
+      if (!isSuperAdmin() && INTERNAL_PAGES.indexOf(page) >= 0) {
+        if (typeof showToast === 'function') showToast('غير متاح', 'error');
+        return;
+      }
+      return orig.apply(this, arguments);
+    };
+    window.navigate.__dm30Hooked = true;
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function boot() {
+    addCopyrightFooter();
+    changeTrialDuration();
+    hideInternalNavItems();
+    blockInternalPages();
+    ensureSuperAdminNav();
+    hookNavigateForPlan();
+  }
+
+  waitFor(
+    function () {
+      return typeof State !== 'undefined' && typeof Pages !== 'undefined';
+    },
+    function () {
+      boot();
+
+      // On login ready
+      waitFor(
+        function () { return isLoggedIn(); },
+        function () {
+          boot();
+          cleanupExpiredTrials();
+          ensureSuperAdminNav();
+
+          // Watch for banners for super admin
+          if (isSuperAdmin()) {
+            setInterval(function () {
+              var sub = document.getElementById('dm-sub-banner');
+              if (sub) sub.remove();
+              var grace = document.getElementById('dm-grace-banner');
+              if (grace) grace.remove();
+              var enf = document.getElementById('dm-enf-overlay');
+              if (enf) enf.remove();
+            }, 1500);
+          }
+        }
+      );
+
+      // Login screen also needs copyright
+      setInterval(addCopyrightFooter, 3000);
+
+      console.log('%c[Section 30] ✓ Complete SaaS ready', 'color:#10b981;font-weight:bold;font-size:13px');
+      console.log('%c[Section 30] Commands:', 'color:#06b6d4;font-style:italic');
+      console.log('  __dmShowSubscribers()  — متابعة المشتركين');
+      console.log('  __dmDeleteExpiredTrialData(companyId)  — حذف شركة');
+    }
+  );
+
+  // Handle fresh page loads — force login
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      // Clear auto-login session on fresh load
+      try {
+        var marker = sessionStorage.getItem('dm_page_loaded');
+        if (!marker) {
+          sessionStorage.setItem('dm_page_loaded', '1');
+          localStorage.removeItem('drmedia_pro_session');
+        }
+      } catch (e) {}
+    }, 500);
+  });
+
+  window.__dmResetPageLoadFlag = function () {
+    try { sessionStorage.removeItem('dm_page_loaded'); } catch (e) {}
+  };
+
+})();
 
 
 
