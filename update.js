@@ -8116,25 +8116,24 @@ service cloud.firestore {
 
 })();
 /* =========================================================
-   SECTION 20: Unified Booking Import
-   Version: 1.0.0
+   SECTION 21: Import v3 (Table-aware + Hall grouping)
+   Version: 3.0.0
    ---------------------------------------------------------
-   - PDF + Images (via OCR) + Excel + CSV
-   - Auto column detection (Arabic / English headers)
-   - Auto hall section detection
-   - Analysis summary after parse
-   - Replaces Pages.importsmart
+   - Better OCR settings (tables)
+   - Robust parser for the exact table format
+   - Review UI grouped by hall
+   - Debug panel showing raw OCR text
    ========================================================= */
 (function () {
   'use strict';
 
-  console.log('%c[Section 20] Unified Import loading…', 'color:#f97316;font-weight:bold');
+  console.log('%c[Section 21] Import v3 loading…', 'color:#f97316;font-weight:bold');
 
   function waitFor(cond, cb, maxTries) {
     maxTries = maxTries || 150;
     var tries = 0;
     var t = setInterval(function () {
-      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 20] timeout'); return; }
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 21] timeout'); return; }
       if (cond()) { clearInterval(t); cb(); }
     }, 100);
   }
@@ -8146,23 +8145,28 @@ service cloud.firestore {
   I18N.ar.ui_supported = 'PDF · PNG · JPG · WEBP · XLSX · XLS · CSV';
   I18N.ar.ui_reading = 'جاري القراءة…';
   I18N.ar.ui_ocr = 'جاري التعرف على النص (OCR)…';
-  I18N.ar.ui_excel_loading = 'جاري تحميل مكتبة Excel…';
+  I18N.ar.ui_excel_loading = 'تحميل مكتبة Excel…';
   I18N.ar.ui_review = 'مراجعة النتائج';
   I18N.ar.ui_found = 'تم العثور على';
   I18N.ar.ui_bookings = 'حجز';
   I18N.ar.ui_import_all = 'حفظ الكل';
   I18N.ar.ui_imported = 'تم الاستيراد';
-  I18N.ar.ui_no_data = 'لم يتم التعرف على أي حجز — جرب ملفًا أوضح';
+  I18N.ar.ui_no_data = 'لم يتم التعرف على أي حجز';
   I18N.ar.ui_try_again = 'محاولة أخرى';
   I18N.ar.ui_show_raw = 'عرض النص المستخرج';
   I18N.ar.ui_hide_raw = 'إخفاء النص';
+  I18N.ar.ui_paste = 'لصق نص يدويًا';
+  I18N.ar.ui_paste_title = 'الصق نص الجدول';
+  I18N.ar.ui_paste_hint = 'انسخ النص من صورة (بـ OCR خارجي) أو اكتبه يدويًا';
+  I18N.ar.ui_parse = 'تحليل النص';
+  I18N.ar.ui_debug = 'معاينة نص الـ OCR';
   I18N.ar.ui_analysis = 'تحليل الملف';
   I18N.ar.ui_total = 'إجمالي الحجوزات';
   I18N.ar.ui_guests = 'إجمالي الأفراد';
   I18N.ar.ui_per_hall = 'حسب القاعة';
-  I18N.ar.ui_per_event = 'حسب المناسبة';
   I18N.ar.ui_date_range = 'نطاق التاريخ';
-  I18N.ar.ui_cols_detected = 'الأعمدة المكتشفة';
+  I18N.ar.ui_all_halls = 'كل القاعات';
+  I18N.ar.ui_hall_section = 'القاعة';
 
   I18N.en.unified_import = 'Smart Import';
   I18N.en.ui_title = 'Import bookings (PDF / Images / Excel)';
@@ -8176,17 +8180,22 @@ service cloud.firestore {
   I18N.en.ui_bookings = 'bookings';
   I18N.en.ui_import_all = 'Save All';
   I18N.en.ui_imported = 'Imported';
-  I18N.en.ui_no_data = 'No bookings detected — try a clearer file';
+  I18N.en.ui_no_data = 'No bookings detected';
   I18N.en.ui_try_again = 'Try again';
   I18N.en.ui_show_raw = 'Show raw text';
   I18N.en.ui_hide_raw = 'Hide raw text';
+  I18N.en.ui_paste = 'Paste text manually';
+  I18N.en.ui_paste_title = 'Paste table text';
+  I18N.en.ui_paste_hint = 'Copy text from OCR or type manually';
+  I18N.en.ui_parse = 'Parse text';
+  I18N.en.ui_debug = 'OCR debug';
   I18N.en.ui_analysis = 'File Analysis';
   I18N.en.ui_total = 'Total bookings';
   I18N.en.ui_guests = 'Total guests';
   I18N.en.ui_per_hall = 'Per hall';
-  I18N.en.ui_per_event = 'Per event';
   I18N.en.ui_date_range = 'Date range';
-  I18N.en.ui_cols_detected = 'Detected columns';
+  I18N.en.ui_all_halls = 'All halls';
+  I18N.en.ui_hall_section = 'Hall';
 
   /* ---------- state ---------- */
   var Un = {
@@ -8198,9 +8207,10 @@ service cloud.firestore {
     busy: false,
     status: '',
     showRaw: false,
-    analysis: null
+    analysis: null,
+    activeHallId: 'all'
   };
-  window.__dmUnifiedImport = Un;
+  window.__dmImportV3 = Un;
 
   /* ---------- utilities ---------- */
   function norm(s) {
@@ -8226,18 +8236,14 @@ service cloud.firestore {
     });
   }
 
-  function uid2(p) {
-    return (p || 'x') + '_' + Math.random().toString(36).slice(2, 9);
-  }
+  function uid2(p) { return (p || 'x') + '_' + Math.random().toString(36).slice(2, 9); }
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
-  /* ---------- date parsing ---------- */
+  /* ---------- date ---------- */
   function parseDate(input) {
     if (!input) return null;
     if (input instanceof Date) {
-      var y = input.getFullYear();
-      var m = input.getMonth() + 1;
-      var d = input.getDate();
-      return y + '-' + pad2(m) + '-' + pad2(d);
+      return input.getFullYear() + '-' + pad2(input.getMonth() + 1) + '-' + pad2(input.getDate());
     }
     var t = toAsciiDigits(String(input)).trim();
     var m1 = t.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
@@ -8252,104 +8258,248 @@ service cloud.firestore {
       if (m2v >= 1 && m2v <= 12 && d2 >= 1 && d2 <= 31) return y2 + '-' + pad2(m2v) + '-' + pad2(d2);
     }
     var monthMap = {
-      'يناير': 1, 'فبراير': 2, 'مارس': 3, 'ابريل': 4, 'أبريل': 4, 'مايو': 5, 'يونيو': 6,
-      'يوليو': 7, 'اغسطس': 8, 'أغسطس': 8, 'سبتمبر': 9, 'اكتوبر': 10, 'أكتوبر': 10,
-      'نوفمبر': 11, 'ديسمبر': 12,
+      'يناير': 1, 'فبراير': 2, 'مارس': 3, 'ابريل': 4, 'مايو': 5, 'يونيو': 6,
+      'يوليو': 7, 'اغسطس': 8, 'سبتمبر': 9, 'اكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12,
       'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6, 'jul': 7,
-      'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
-      'january': 1, 'february': 2, 'march': 3, 'april': 4, 'june': 6, 'july': 7,
-      'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12
+      'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
     };
     var nn = norm(t);
-    for (var key in monthMap) {
-      if (nn.indexOf(norm(key)) >= 0) {
+    for (var k in monthMap) {
+      if (nn.indexOf(norm(k)) >= 0) {
         var dm = nn.match(/(\d{1,2})/);
         var ym = nn.match(/(20\d{2}|19\d{2})/);
         var day = dm ? parseInt(dm[1]) : 1;
         var year = ym ? parseInt(ym[1]) : new Date().getFullYear();
-        if (day >= 1 && day <= 31) return year + '-' + pad2(monthMap[key]) + '-' + pad2(day);
+        if (day >= 1 && day <= 31) return year + '-' + pad2(monthMap[k]) + '-' + pad2(day);
       }
     }
     return null;
   }
 
-  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
-
-  /* ---------- phone parsing ---------- */
+  /* ---------- phones ---------- */
   function parsePhone(text) {
     var t = toAsciiDigits(text);
     var m = t.match(/(?:\+?20|0020)?\s*0?1[0125]\s*\d[\s\d]{7,9}/);
     if (m) {
-      var digits = m[0].replace(/[^\d]/g, '');
-      if (digits.indexOf('0020') === 0) return '0' + digits.slice(4, 14);
-      if (digits.indexOf('20') === 0) return '0' + digits.slice(2, 12);
-      if (digits.charAt(0) === '1' && digits.length === 10) return '0' + digits;
-      return digits.slice(0, 11);
+      var d = m[0].replace(/[^\d]/g, '');
+      if (d.indexOf('0020') === 0) return '0' + d.slice(4, 14);
+      if (d.indexOf('20') === 0) return '0' + d.slice(2, 12);
+      if (d.charAt(0) === '1' && d.length === 10) return '0' + d;
+      return d.slice(0, 11);
     }
-    m = t.match(/\d{10,15}/);
-    if (m) return m[0];
     return '';
   }
 
   /* ---------- hall detection ---------- */
-  function detectHall(text) {
+  var HALL_KEYWORDS = [
+    { key: 'closed', words: ['المغلقه', 'المغلقة', 'قاعه المغلقه', 'مغلقه'], ids: ['مغلقه', 'مغلقة', 'closed'] },
+    { key: 'open', words: ['الاوبن', 'الأوبن', 'اوبن', 'قاعه الاوبن', 'قاعه الاوبن'], ids: ['اوبن', 'مفتوح', 'open'] },
+    { key: 'small', words: ['الصغيره', 'الصغيرة', 'قاعه الصغيره', 'صغيره'], ids: ['صغيره', 'small'] },
+    { key: 'cafe', words: ['الكافيه', 'الكافي', 'كافيه', 'كافي'], ids: ['كافيه', 'كافي', 'cafe'] }
+  ];
+
+  function detectHallKey(text) {
     var n = norm(text);
     if (!n) return null;
-    if (n.indexOf('قاعه المغلقه') >= 0) return 'closed';
-    if (n.indexOf('مغلقه') >= 0 && n.length < 40) return 'closed';
-    if (n.indexOf('المغلقه') >= 0) return 'closed';
-    if (n.indexOf('قاعه الاوبن') >= 0 || n.indexOf('قاعه الاوبن') >= 0) return 'open';
-    if (n.indexOf('اوبن') >= 0 && n.length < 40) return 'open';
-    if (n.indexOf('الاوبن') >= 0) return 'open';
-    if (n.indexOf('قاعه الصغيره') >= 0 || n.indexOf('الصغيره') >= 0) return 'small';
-    if (n.indexOf('صغيره') >= 0 && n.length < 40) return 'small';
-    if (n.indexOf('كافيه') >= 0 || n.indexOf('كافي') >= 0) return 'cafe';
+    for (var i = 0; i < HALL_KEYWORDS.length; i++) {
+      var hk = HALL_KEYWORDS[i];
+      for (var j = 0; j < hk.words.length; j++) {
+        if (n.indexOf(norm(hk.words[j])) >= 0) return hk;
+      }
+    }
     return null;
   }
 
-  function matchHallId(key) {
+  function matchHallIdByKey(key) {
     var halls = (State.data && State.data.halls) || [];
+    var hk = HALL_KEYWORDS.find(function (x) { return x.key === key; });
+    if (!hk) return halls.length ? halls[0].id : '';
     for (var i = 0; i < halls.length; i++) {
       var h = halls[i];
       var ar = norm(h.name.ar || '');
       var en = norm(h.name.en || '');
-      if (key === 'closed' && (ar.indexOf('مغلقه') >= 0 || ar.indexOf('مغلقة') >= 0 || en.indexOf('closed') >= 0)) return h.id;
-      if (key === 'open' && (ar.indexOf('اوبن') >= 0 || ar.indexOf('مفتوح') >= 0 || en.indexOf('open') >= 0)) return h.id;
-      if (key === 'small' && (ar.indexOf('صغيره') >= 0 || en.indexOf('small') >= 0)) return h.id;
-      if (key === 'cafe' && (ar.indexOf('كافيه') >= 0 || ar.indexOf('كافي') >= 0 || en.indexOf('cafe') >= 0)) return h.id;
+      var code = norm(h.code || '');
+      for (var j = 0; j < hk.ids.length; j++) {
+        var needle = norm(hk.ids[j]);
+        if (ar.indexOf(needle) >= 0 || en.indexOf(needle) >= 0 || code === needle) return h.id;
+      }
     }
     return halls.length ? halls[0].id : '';
   }
 
-  /* ---------- event / package detection ---------- */
+  /* ---------- event detection ---------- */
+  var EVENT_RULES = [
+    { key: 'Wedding', words: ['عشاء', 'فرح', 'زفاف', 'زواج'] },
+    { key: 'Engagement', words: ['سواريه', 'خطوبه', 'خطوبة', 'مطبخ'] },
+    { key: 'Henna', words: ['حنه', 'حنة', 'حناء'] },
+    { key: 'Birthday', words: ['هاي تي', 'هاى تى', 'عيد ميلاد'] },
+    { key: 'Corporate', words: ['مؤتمر', 'اجتماع', 'ندوه'] }
+  ];
+
   function detectEvent(text) {
     var n = norm(text);
     if (!n) return null;
-    if (n.indexOf('عشاء') >= 0) return 'Wedding';
-    if (n.indexOf('فرح') >= 0) return 'Wedding';
-    if (n.indexOf('زفاف') >= 0) return 'Wedding';
-    if (n.indexOf('سواريه') >= 0) return 'Engagement';
-    if (n.indexOf('خطوبه') >= 0) return 'Engagement';
-    if (n.indexOf('مطبخ') >= 0) return 'Engagement';
-    if (n.indexOf('حنه') >= 0) return 'Henna';
-    if (n.indexOf('هاي تي') >= 0) return 'Birthday';
-    if (n.indexOf('هاى تى') >= 0) return 'Birthday';
-    if (n.indexOf('عيد ميلاد') >= 0) return 'Birthday';
-    if (n.indexOf('مؤتمر') >= 0 || n.indexOf('اجتماع') >= 0) return 'Corporate';
+    for (var i = 0; i < EVENT_RULES.length; i++) {
+      var r = EVENT_RULES[i];
+      for (var j = 0; j < r.words.length; j++) {
+        if (n.indexOf(norm(r.words[j])) >= 0) return r.key;
+      }
+    }
     return null;
   }
 
-  /* ---------- column detection (Excel) ---------- */
+  /* ---------- DAY NAMES ---------- */
+  var DAY_NAMES = ['الخميس', 'الجمعه', 'الجمعة', 'السبت', 'الاحد', 'الأحد', 'الاثنين', 'الإثنين', 'الثلاثاء', 'الاربعاء', 'الأربعاء'];
+
+  /* =========================================================
+     PARSER — line-based, robust for the exact table format
+     ========================================================= */
+  function extractFromLine(line, currentHallId) {
+    var original = line;
+    var working = ' ' + toAsciiDigits(line) + ' ';
+
+    // 1. DATE
+    var dateMatch = working.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (!dateMatch) return null;
+    var date = parseDate(dateMatch[0]);
+    if (!date) return null;
+    working = working.replace(dateMatch[0], ' ');
+
+    // 2. DAY NAME
+    var dayName = '';
+    for (var di = 0; di < DAY_NAMES.length; di++) {
+      var d = DAY_NAMES[di];
+      if (working.indexOf(d) >= 0) {
+        dayName = d;
+        working = working.replace(new RegExp(d, 'g'), ' ');
+        break;
+      }
+    }
+
+    // 3. PACKAGE (عشاء / سواريه / هاي تي / مطبخ) — remove it and adjacent digit
+    var pkgType = '';
+    var pkgKeywords = ['عشاء', 'سواريه', 'سوارية', 'هاي تي', 'هاى تى', 'هاي تى', 'مطبخ', 'عشا', 'سواريه'];
+    for (var pi = 0; pi < pkgKeywords.length; pi++) {
+      var p = pkgKeywords[pi];
+      var idx = working.indexOf(p);
+      if (idx >= 0) {
+        pkgType = p;
+        var after = working.substring(idx + p.length);
+        var afterTrim = after.replace(/^\s*\d+\s*/, ''); // remove optional trailing number
+        working = working.substring(0, idx) + ' ' + afterTrim;
+        break;
+      }
+    }
+
+    // 4. COUNT (last number >= 100 and <= 2000)
+    var nums = working.match(/\b\d+\b/g) || [];
+    var count = 0;
+    for (var ni = 0; ni < nums.length; ni++) {
+      var v = parseInt(nums[ni]);
+      if (v >= 100 && v <= 2000) {
+        if (v > count) count = v;
+      }
+    }
+    if (count > 0) {
+      working = working.replace(new RegExp('\\b' + count + '\\b'), ' ');
+    }
+
+    // 5. CLIENT NAME — remaining Arabic words
+    var words = working.split(/\s+/).filter(function (w) {
+      return w.length >= 2 && /[\u0600-\u06FF]/.test(w);
+    });
+    // Filter out noise words
+    var stopWords = ['شهر', 'اكتوبر', 'نوفمبر', 'سبتمبر', 'ديسمبر', 'يناير', 'فبراير', 'مارس', 'ابريل', 'مايو', 'يونيو', 'يوليو', 'اغسطس'];
+    words = words.filter(function (w) { return stopWords.indexOf(norm(w)) < 0; });
+    var clientName = words.slice(0, 5).join(' ').trim();
+
+    // 6. EVENT from package + line
+    var eventType = detectEvent(pkgType + ' ' + working) || 'Wedding';
+
+    if (!clientName && count === 0) return null;
+
+    return {
+      date: date,
+      dayName: dayName,
+      clientName: clientName || 'عميل',
+      phone: '',
+      hallId: currentHallId,
+      eventType: eventType,
+      packageType: pkgType,
+      guestsCount: count,
+      cost: 0,
+      startTime: '19:00',
+      endTime: '23:00',
+      notes: '',
+      confidence: (clientName && date) ? 'high' : 'medium',
+      raw: original.slice(0, 200)
+    };
+  }
+
+  /* ---------- main text parser ---------- */
+  function parseRawText(rawText) {
+    if (!rawText) return [];
+    var text = toAsciiDigits(rawText);
+    var lines = text.split(/\r?\n/).map(function (l) {
+      return l.replace(/[ \t]+/g, ' ').trim();
+    }).filter(function (l) { return l.length > 0; });
+
+    var results = [];
+    var currentHallId = matchHallIdByKey('closed');
+    var currentHallKey = 'closed';
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      // Skip if line is a column header
+      if (/اليوم|التاريخ|اسم العميل|الباكدج|عدد الافراد|عدد الأفراد/.test(line) && !/\d{1,2}[\/\-.]\d{1,2}/.test(line)) {
+        continue;
+      }
+
+      // Section header detection
+      var hallHit = detectHallKey(line);
+      if (hallHit && line.length < 60) {
+        currentHallKey = hallHit.key;
+        currentHallId = matchHallIdByKey(hallHit.key);
+        continue;
+      }
+
+      // Try extract a booking from the line
+      var rec = extractFromLine(line, currentHallId);
+      if (rec) results.push(rec);
+    }
+
+    // Deduplicate consecutive identical
+    var filtered = [];
+    for (var k = 0; k < results.length; k++) {
+      var r = results[k];
+      if (filtered.length) {
+        var prev = filtered[filtered.length - 1];
+        if (prev.date === r.date && prev.clientName === r.clientName) continue;
+      }
+      filtered.push(r);
+    }
+
+    return filtered;
+  }
+
+  window.__dmParseText = function (text) {
+    var parsed = parseRawText(text);
+    console.log('Parsed:', parsed);
+    return parsed;
+  };
+
+  /* ---------- Excel parser ---------- */
   var COL_KEYS = {
-    date: ['التاريخ', 'تاريخ', 'date', 'day', 'اليوم', 'booking date'],
+    date: ['التاريخ', 'تاريخ', 'date', 'day', 'booking date'],
     clientName: ['العميل', 'اسم العميل', 'الاسم', 'client', 'customer', 'name', 'guest'],
-    phone: ['الهاتف', 'هاتف', 'تليفون', 'الموبايل', 'phone', 'mobile', 'tel', 'contact'],
-    hall: ['القاعة', 'قاعه', 'hall', 'venue', 'location'],
-    eventType: ['المناسبة', 'مناسبه', 'النوع', 'نوع المناسبة', 'event', 'type', 'occasion'],
-    package: ['الباكدج', 'باكدج', 'الباقة', 'المنيو', 'package', 'menu', 'offer', 'plan'],
-    guestsCount: ['عدد الأفراد', 'عدد الافراد', 'الأفراد', 'الافراد', 'عدد', 'guests', 'count', 'pax', 'number'],
-    cost: ['التكلفة', 'تكلفة', 'السعر', 'سعر', 'cost', 'price', 'amount', 'total', 'fee'],
-    notes: ['ملاحظات', 'الملاحظات', 'notes', 'comment', 'remarks']
+    phone: ['الهاتف', 'هاتف', 'تليفون', 'الموبايل', 'phone', 'mobile', 'tel'],
+    hall: ['القاعة', 'قاعه', 'hall', 'venue'],
+    eventType: ['المناسبة', 'مناسبه', 'النوع', 'event', 'type'],
+    package: ['الباكدج', 'باكدج', 'الباقة', 'package', 'menu'],
+    guestsCount: ['عدد الأفراد', 'عدد الافراد', 'الأفراد', 'الافراد', 'عدد', 'guests', 'count', 'pax'],
+    cost: ['التكلفة', 'تكلفة', 'السعر', 'cost', 'price', 'amount'],
+    notes: ['ملاحظات', 'notes', 'comment']
   };
 
   function detectColumnMap(row) {
@@ -8365,21 +8515,17 @@ service cloud.firestore {
         for (var w = 0; w < words.length; w++) {
           var nw = norm(words[w]);
           if (!nw) continue;
-          if (n === nw || n.indexOf(nw) >= 0) {
-            map[key] = i;
-            break;
-          }
+          if (n === nw || n.indexOf(nw) >= 0) { map[key] = i; break; }
         }
       }
     }
     return map;
   }
 
-  /* ---------- Excel parser ---------- */
   function parseExcelSheet(rows, sheetNameHint) {
     var bookings = [];
-    var startHall = matchHallId(detectHall(sheetNameHint || '') || 'closed');
-    var currentHallId = startHall;
+    var initialHallKey = detectHallKey(sheetNameHint || '');
+    var currentHallId = initialHallKey ? matchHallIdByKey(initialHallKey.key) : matchHallIdByKey('closed');
     var colMap = null;
     var detectedCols = null;
 
@@ -8389,14 +8535,10 @@ service cloud.firestore {
       var nonEmpty = row.filter(function (c) { return c !== '' && c !== null && c !== undefined; });
       if (!nonEmpty.length) continue;
 
-      // Section header (single non-empty cell that matches a hall)
+      // Section header (single cell)
       if (nonEmpty.length === 1) {
-        var hit = detectHall(String(nonEmpty[0]));
-        if (hit) {
-          currentHallId = matchHallId(hit);
-          colMap = null; // reset cols for next section
-          continue;
-        }
+        var hit = detectHallKey(String(nonEmpty[0]));
+        if (hit) { currentHallId = matchHallIdByKey(hit.key); colMap = null; continue; }
       }
 
       // Header row
@@ -8409,22 +8551,21 @@ service cloud.firestore {
 
       // Data row
       if (colMap) {
-        var date = null;
-        if (colMap.date !== undefined) date = parseDate(row[colMap.date]);
+        var date = colMap.date !== undefined ? parseDate(row[colMap.date]) : null;
         var clientName = colMap.clientName !== undefined ? String(row[colMap.clientName] || '').trim() : '';
         var phone = colMap.phone !== undefined ? parsePhone(row[colMap.phone]) : '';
         var hallId = currentHallId;
         if (colMap.hall !== undefined) {
           var hh = String(row[colMap.hall] || '').trim();
-          var dh = detectHall(hh);
-          if (dh) hallId = matchHallId(dh);
+          var dh = detectHallKey(hh);
+          if (dh) hallId = matchHallIdByKey(dh.key);
         }
         var eventType = 'Wedding';
         if (colMap.eventType !== undefined) {
           var ev = detectEvent(String(row[colMap.eventType] || ''));
           if (ev) eventType = ev;
         }
-        if (colMap.package !== undefined && eventType === 'Wedding') {
+        if (colMap.package !== undefined) {
           var ev2 = detectEvent(String(row[colMap.package] || ''));
           if (ev2) eventType = ev2;
         }
@@ -8459,105 +8600,23 @@ service cloud.firestore {
         });
       }
     }
-
     return { bookings: bookings, cols: detectedCols };
   }
 
   function parseExcel(arrayBuffer) {
     if (!window.XLSX) throw new Error('Excel library not loaded');
     var wb = window.XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellDates: true });
-    var allBookings = [];
-    var detectedCols = null;
-
+    var all = [];
+    var cols = null;
     for (var s = 0; s < wb.SheetNames.length; s++) {
       var sheetName = wb.SheetNames[s];
       var ws = wb.Sheets[sheetName];
       var rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: false });
-      var result = parseExcelSheet(rows, sheetName);
-      allBookings = allBookings.concat(result.bookings);
-      if (result.cols && !detectedCols) detectedCols = result.cols;
+      var res = parseExcelSheet(rows, sheetName);
+      all = all.concat(res.bookings);
+      if (res.cols && !cols) cols = res.cols;
     }
-    return { bookings: allBookings, cols: detectedCols };
-  }
-
-  /* ---------- raw text table parser (PDF / OCR) ---------- */
-  function parseRawText(rawText) {
-    var text = toAsciiDigits(rawText);
-    var lines = text.split(/\r?\n/).map(function (l) {
-      return l.replace(/\s+/g, ' ').trim();
-    }).filter(function (l) { return l.length > 0; });
-
-    var results = [];
-    var currentHallId = matchHallId('closed');
-    var headerSeen = false;
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var hallHit = detectHall(line);
-      if (hallHit && line.length < 60) {
-        currentHallId = matchHallId(hallHit);
-        continue;
-      }
-
-      // Look for date pattern
-      var dateMatch = line.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-      if (!dateMatch) continue;
-
-      var date = parseDate(dateMatch[0]);
-      if (!date) continue;
-
-      var idx = line.indexOf(dateMatch[0]);
-      var after = line.slice(idx + dateMatch[0].length).trim();
-
-      // Count: last number 20-2000
-      var count = 0;
-      var counts = after.match(/\b(\d{2,4})\b/g);
-      if (counts) {
-        for (var ci = counts.length - 1; ci >= 0; ci--) {
-          var cv = parseInt(counts[ci]);
-          if (cv >= 20 && cv <= 2000) { count = cv; break; }
-        }
-      }
-
-      // Remove count and package words to get name
-      var nameArea = after;
-      if (count) nameArea = nameArea.replace(String(count), ' ');
-      nameArea = nameArea
-        .replace(/عشاء\s*\d*/g, ' ')
-        .replace(/سواريه/g, ' ')
-        .replace(/هاي\s*تي/g, ' ')
-        .replace(/هاى\s*تى/g, ' ')
-        .replace(/مطبخ/g, ' ')
-        .replace(/\+/g, ' ')
-        .replace(/\d+/g, ' ')
-        .trim();
-
-      var nameWords = nameArea.split(/\s+/).filter(function (w) {
-        return w.length >= 2 && /[\u0600-\u06FF]/.test(w);
-      });
-      var clientName = nameWords.slice(0, 4).join(' ');
-
-      var eventType = detectEvent(after) || 'Wedding';
-
-      if (!clientName && !count) continue;
-
-      results.push({
-        date: date,
-        clientName: clientName || 'عميل',
-        phone: '',
-        hallId: currentHallId,
-        eventType: eventType,
-        guestsCount: count,
-        cost: 0,
-        startTime: '19:00',
-        endTime: '23:00',
-        notes: '',
-        confidence: clientName ? 'high' : 'medium',
-        raw: line.slice(0, 200)
-      });
-    }
-
-    return results;
+    return { bookings: all, cols: cols };
   }
 
   /* ---------- library loaders ---------- */
@@ -8571,18 +8630,15 @@ service cloud.firestore {
       document.head.appendChild(s);
     });
   }
-
   async function ensurePdfJs() {
     if (window.pdfjsLib) return;
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
-
   async function ensureTesseract() {
     if (window.Tesseract) return;
     await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js');
   }
-
   async function ensureXLSX() {
     if (window.XLSX) return;
     Un.status = I18N[State.lang].ui_excel_loading;
@@ -8599,7 +8655,7 @@ service cloud.firestore {
     for (var p = 1; p <= pdf.numPages; p++) {
       var page = await pdf.getPage(p);
       var content = await page.getTextContent();
-      var pageText = content.items.map(function (it) { return it.str; }).join(' ');
+      var pageText = content.items.map(function (it) { return it.str; }).join('\n');
       text += pageText + '\n';
     }
     return text;
@@ -8607,13 +8663,16 @@ service cloud.firestore {
 
   async function readImage(file) {
     await ensureTesseract();
+    // Better OCR for tables
     var result = await window.Tesseract.recognize(file, 'ara+eng', {
       logger: function (m) {
         if (m.status === 'recognizing text') {
           Un.status = I18N[State.lang].ui_ocr + ' ' + Math.round(m.progress * 100) + '%';
           updateStatusUI();
         }
-      }
+      },
+      tessedit_pageseg_mode: '6', // Uniform block
+      preserve_interword_spaces: '1'
     });
     return result.data.text;
   }
@@ -8634,8 +8693,8 @@ service cloud.firestore {
 
     for (var i = 0; i < bookings.length; i++) {
       var b = bookings[i];
-      var h = matchHallIdName(b.hallId);
-      perHall[h] = (perHall[h] || 0) + 1;
+      var hName = matchHallIdName(b.hallId);
+      perHall[hName] = (perHall[hName] || 0) + 1;
       perEvent[b.eventType] = (perEvent[b.eventType] || 0) + 1;
       totalGuests += b.guestsCount || 0;
       if (b.date) {
@@ -8643,14 +8702,7 @@ service cloud.firestore {
         if (!maxDate || b.date > maxDate) maxDate = b.date;
       }
     }
-    return {
-      total: bookings.length,
-      totalGuests: totalGuests,
-      perHall: perHall,
-      perEvent: perEvent,
-      minDate: minDate,
-      maxDate: maxDate
-    };
+    return { total: bookings.length, totalGuests: totalGuests, perHall: perHall, perEvent: perEvent, minDate: minDate, maxDate: maxDate };
   }
 
   function matchHallIdName(id) {
@@ -8661,7 +8713,7 @@ service cloud.firestore {
     return '(بدون قاعة)';
   }
 
-  /* ---------- process ---------- */
+  /* ---------- process file ---------- */
   async function processFile(file) {
     if (!file) return;
     Un.file = file;
@@ -8671,6 +8723,7 @@ service cloud.firestore {
     Un.analysis = null;
     Un.busy = true;
     Un.status = I18N[State.lang].ui_reading;
+    Un.activeHallId = 'all';
     navigate('importsmart');
     updateStatusUI();
 
@@ -8707,7 +8760,7 @@ service cloud.firestore {
         showToast(L.ui_found + ' ' + Un.parsed.length + ' ' + L.ui_bookings, Un.parsed.length ? 'success' : 'warn');
       }
     } catch (err) {
-      console.error('[Section 20]', err);
+      console.error('[Section 21]', err);
       Un.busy = false;
       Un.status = '';
       if (typeof showToast === 'function') showToast('خطأ: ' + (err.message || err), 'error');
@@ -8720,7 +8773,9 @@ service cloud.firestore {
     if (s) s.textContent = Un.status || '';
   }
 
-  /* ---------- render: page ---------- */
+  /* =========================================================
+     RENDER
+     ========================================================= */
   Pages.importsmart = function (el) {
     if (Un.busy) {
       el.innerHTML =
@@ -8735,7 +8790,6 @@ service cloud.firestore {
     else renderUpload(el);
   };
 
-  /* ---------- render: upload ---------- */
   function renderUpload(el) {
     var L = I18N[State.lang];
     el.innerHTML =
@@ -8750,18 +8804,19 @@ service cloud.firestore {
           '<div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">' + esc(L.ui_dropzone) + '</div>' +
           '<div style="font-size:.75rem;color:var(--text-muted)">' + esc(L.ui_supported) + '</div>' +
         '</div>' +
-        '<input type="file" id="ui-file" accept="application/pdf,image/*,.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" style="display:none">' +
+        '<input type="file" id="ui-file" accept="application/pdf,image/*,.xlsx,.xls,.csv" style="display:none">' +
+        '<div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center">' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmPasteText()"><i data-lucide="clipboard-paste"></i> ' + esc(L.ui_paste) + '</button>' +
+        '</div>' +
         (Un.rawText && !Un.parsed.length ?
           '<div style="margin-top:1rem;padding:1rem;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:.85rem;color:#ef4444;text-align:center">⚠️ ' + esc(L.ui_no_data) + '</div>' : '') +
       '</div>' +
       '<div class="card" style="margin-top:1rem;background:rgba(124,58,237,.05);border-color:rgba(124,58,237,.2)">' +
         '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.9">' +
-          '<b style="color:var(--primary)">💡 كيف يعمل؟</b><br>' +
-          '• <b>Excel/CSV</b>: قراءة فورية، مفيش OCR — دقة 100%<br>' +
-          '• <b>PDF</b>: استخراج النص مباشرة<br>' +
-          '• <b>صور</b>: OCR بالعربي (بطيء نسبيًا)<br>' +
-          '• <b>يتعرف تلقائيًا</b> على الأعمدة: التاريخ، العميل، الهاتف، الباكدج، عدد الأفراد<br>' +
-          '• <b>يتعرف على عناوين القاعات</b> من الجداول' +
+          '<b style="color:var(--primary)">💡 الأفضل:</b><br>' +
+          '• <b>Excel / CSV</b>: أسرع وأدق 100%<br>' +
+          '• <b>PDF</b>: لو النص مكتوب مش ممسوح ضوئيًا<br>' +
+          '• <b>صور</b>: ممكن OCR يغلط — استخدم "لصق نص يدويًا" لو مش دقيق' +
         '</div>' +
       '</div>' +
       '</div>';
@@ -8780,41 +8835,34 @@ service cloud.firestore {
         if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
       });
     }
+    if (window.lucide) lucide.createIcons();
   }
 
-  /* ---------- render: review ---------- */
+  /* ---------- review with HALL GROUPING ---------- */
   function renderReview(el) {
     var L = I18N[State.lang];
     var halls = State.data.halls || [];
     var rows = Un.parsed;
     var analysis = Un.analysis;
 
-    var rowsHtml = '';
+    // Group by hall
+    var grouped = {};
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      var evOptions = ['Wedding', 'Engagement', 'Henna', 'Birthday', 'Corporate', 'Other'].map(function (ev) {
-        return '<option value="' + ev + '"' + (r.eventType === ev ? ' selected' : '') + '>' + ev + '</option>';
-      }).join('');
-      var hallOptions = halls.map(function (h) {
-        return '<option value="' + h.id + '"' + (r.hallId === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
-      }).join('');
-      var confClass = r.confidence === 'high' ? 'green' : r.confidence === 'medium' ? 'yellow' : 'red';
-
-      rowsHtml +=
-        '<tr data-idx="' + i + '">' +
-        '<td>' + (i + 1) + '</td>' +
-        '<td><span class="badge-pill badge-' + confClass + '">' + r.confidence + '</span></td>' +
-        '<td><input class="ui-f" data-f="clientName" value="' + esc(r.clientName) + '" style="width:100%;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
-        '<td><input class="ui-f" data-f="phone" value="' + esc(r.phone) + '" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
-        '<td><input class="ui-f" data-f="date" type="date" value="' + esc(r.date) + '" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
-        '<td><select class="ui-f" data-f="hallId" style="width:120px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + hallOptions + '</select></td>' +
-        '<td><select class="ui-f" data-f="eventType" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + evOptions + '</select></td>' +
-        '<td><input class="ui-f" data-f="guestsCount" type="number" value="' + (r.guestsCount || 0) + '" style="width:70px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
-        '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dmUnifiedDel(' + i + ')" style="color:#ef4444"><i data-lucide="trash-2"></i></button></td>' +
-        '</tr>';
+      var hid = r.hallId || 'unknown';
+      grouped[hid] = grouped[hid] || [];
+      grouped[hid].push({ row: r, globalIdx: i });
     }
 
-    // Analysis panel
+    var hallIds = Object.keys(grouped);
+
+    // Active filter
+    var activeHallId = Un.activeHallId || 'all';
+    var visibleGroups = activeHallId === 'all'
+      ? hallIds.map(function (hid) { return { hallId: hid, items: grouped[hid] }; })
+      : (grouped[activeHallId] ? [{ hallId: activeHallId, items: grouped[activeHallId] }] : []);
+
+    // Analysis
     var analysisHtml = '';
     if (analysis) {
       var hallRows = Object.keys(analysis.perHall).map(function (k) {
@@ -8844,8 +8892,67 @@ service cloud.firestore {
             '</div>' +
           '</div>' +
           '<div class="grid-2">' +
-            '<div><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em">' + esc(L.ui_per_hall) + '</div>' + (hallRows || '—') + '</div>' +
-            '<div><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em">' + esc(L.ui_per_event) + '</div>' + (evRows || '—') + '</div>' +
+            '<div><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase">' + esc(L.ui_per_hall) + '</div>' + (hallRows || '—') + '</div>' +
+            '<div><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase">' + esc(L.ui_per_event) + '</div>' + (evRows || '—') + '</div>' +
+          '</div>' +
+        '</div>';
+    }
+
+    // Hall filter buttons
+    var filterBtns = '<button class="btn ' + (activeHallId === 'all' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmSetActiveHall(\'all\')">' + esc(L.ui_all_halls) + ' (' + rows.length + ')</button>';
+    for (var hi = 0; hi < hallIds.length; hi++) {
+      var hid = hallIds[hi];
+      var hName = matchHallIdName(hid);
+      var active = activeHallId === hid ? 'btn-primary' : 'btn-ghost';
+      filterBtns += '<button class="btn ' + active + ' btn-sm" onclick="__dmSetActiveHall(\'' + hid + '\')">' + esc(hName) + ' (' + grouped[hid].length + ')</button>';
+    }
+
+    // Build sections per hall
+    var sectionsHtml = '';
+    for (var gi = 0; gi < visibleGroups.length; gi++) {
+      var grp = visibleGroups[gi];
+      var hallName = matchHallIdName(grp.hallId);
+      var groupRows = '';
+
+      for (var ii = 0; ii < grp.items.length; ii++) {
+        var item = grp.items[ii];
+        var r = item.row;
+        var idx = item.globalIdx;
+        var evOptions = ['Wedding', 'Engagement', 'Henna', 'Birthday', 'Corporate', 'Other'].map(function (ev) {
+          return '<option value="' + ev + '"' + (r.eventType === ev ? ' selected' : '') + '>' + ev + '</option>';
+        }).join('');
+        var hallOptions = halls.map(function (h) {
+          return '<option value="' + h.id + '"' + (r.hallId === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+        }).join('');
+        var confClass = r.confidence === 'high' ? 'green' : r.confidence === 'medium' ? 'yellow' : 'red';
+
+        groupRows +=
+          '<tr data-idx="' + idx + '">' +
+            '<td style="width:2.2rem"><b>' + (idx + 1) + '</b></td>' +
+            '<td><span class="badge-pill badge-' + confClass + '">' + r.confidence + '</span></td>' +
+            '<td><input class="ui-f" data-f="clientName" value="' + esc(r.clientName) + '" style="width:100%;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+            '<td><input class="ui-f" data-f="phone" value="' + esc(r.phone) + '" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+            '<td><input class="ui-f" data-f="date" type="date" value="' + esc(r.date) + '" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+            '<td><select class="ui-f" data-f="hallId" style="width:120px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + hallOptions + '</select></td>' +
+            '<td><select class="ui-f" data-f="eventType" style="width:110px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + evOptions + '</select></td>' +
+            '<td><input class="ui-f" data-f="guestsCount" type="number" value="' + (r.guestsCount || 0) + '" style="width:70px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+            '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dmUnifiedDel(' + idx + ')" style="color:#ef4444"><i data-lucide="trash-2"></i></button></td>' +
+          '</tr>';
+      }
+
+      sectionsHtml +=
+        '<div class="card" style="margin-bottom:1rem;padding:0;overflow:hidden">' +
+          '<div style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;padding:.75rem 1.25rem;display:flex;justify-content:space-between;align-items:center">' +
+            '<div style="font-weight:800;font-size:.95rem">🏛 ' + esc(hallName) + '</div>' +
+            '<div style="font-size:.78rem;opacity:.95">' + grp.items.length + ' ' + esc(L.ui_bookings) + '</div>' +
+          '</div>' +
+          '<div class="table-wrap" style="border:none;border-radius:0">' +
+            '<table class="data-table" style="min-width:900px">' +
+              '<thead><tr>' +
+                '<th>#</th><th>Conf</th><th>Client</th><th>Phone</th><th>Date</th><th>Hall</th><th>Event</th><th>Guests</th><th></th>' +
+              '</tr></thead>' +
+              '<tbody>' + groupRows + '</tbody>' +
+            '</table>' +
           '</div>' +
         '</div>';
     }
@@ -8862,28 +8969,12 @@ service cloud.firestore {
             '<button class="btn btn-primary btn-sm" onclick="__dmUnifiedCommit()"><i data-lucide="save"></i> ' + esc(L.ui_import_all) + '</button>' +
           '</div>' +
         '</div>' +
+        '<div style="margin-top:.75rem;display:flex;gap:.35rem;flex-wrap:wrap">' + filterBtns + '</div>' +
       '</div>' +
       analysisHtml +
       (Un.showRaw && Un.rawText ?
-        '<div class="card" style="margin-bottom:1rem"><pre style="background:var(--surface-2);padding:1rem;border-radius:8px;font-size:.7rem;line-height:1.5;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word">' + esc(Un.rawText.slice(0, 4000)) + '</pre></div>' : '') +
-      '<div class="card" style="padding:0;overflow:hidden">' +
-        '<div class="table-wrap" style="border:none;border-radius:0">' +
-          '<table class="data-table" style="min-width:900px">' +
-            '<thead><tr>' +
-              '<th style="width:2rem">#</th>' +
-              '<th>Confidence</th>' +
-              '<th>Client</th>' +
-              '<th>Phone</th>' +
-              '<th>Date</th>' +
-              '<th>Hall</th>' +
-              '<th>Event</th>' +
-              '<th>Guests</th>' +
-              '<th style="width:3rem"></th>' +
-            '</tr></thead>' +
-            '<tbody>' + rowsHtml + '</tbody>' +
-          '</table>' +
-        '</div>' +
-      '</div>';
+        '<div class="card" style="margin-bottom:1rem"><div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;text-transform:uppercase">' + esc(L.ui_debug) + '</div><pre style="background:var(--surface-2);padding:1rem;border-radius:8px;font-size:.7rem;line-height:1.5;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word">' + esc(Un.rawText.slice(0, 5000)) + '</pre></div>' : '') +
+      sectionsHtml;
 
     if (window.lucide) lucide.createIcons();
 
@@ -8901,20 +8992,20 @@ service cloud.firestore {
   }
 
   /* ---------- public handlers ---------- */
+  window.__dmSetActiveHall = function (hid) {
+    Un.activeHallId = hid;
+    navigate('importsmart');
+  };
+
   window.__dmUnifiedToggleRaw = function () {
     Un.showRaw = !Un.showRaw;
     navigate('importsmart');
   };
 
   window.__dmUnifiedReset = function () {
-    Un.file = null;
-    Un.fileName = '';
-    Un.fileType = '';
-    Un.rawText = '';
-    Un.parsed = [];
-    Un.showRaw = false;
-    Un.busy = false;
-    Un.analysis = null;
+    Un.file = null; Un.fileName = ''; Un.fileType = ''; Un.rawText = '';
+    Un.parsed = []; Un.showRaw = false; Un.busy = false; Un.analysis = null;
+    Un.activeHallId = 'all';
     navigate('importsmart');
   };
 
@@ -8948,36 +9039,61 @@ service cloud.firestore {
       added++;
     }
     try { saveData(); } catch (e) {}
-    try {
-      if (typeof logActivity === 'function') {
-        logActivity('bulk-import', 'booking', null, null, { count: added, file: Un.fileName });
-      }
-    } catch (e) {}
-    if (typeof showToast === 'function') {
-      showToast(I18N[State.lang].ui_imported + ': ' + added + ' ✓', 'success');
-    }
-    Un.file = null;
-    Un.fileName = '';
-    Un.fileType = '';
-    Un.rawText = '';
-    Un.parsed = [];
-    Un.showRaw = false;
-    Un.analysis = null;
+    try { if (typeof logActivity === 'function') logActivity('bulk-import', 'booking', null, null, { count: added, file: Un.fileName }); } catch (e) {}
+    if (typeof showToast === 'function') showToast(I18N[State.lang].ui_imported + ': ' + added + ' ✓', 'success');
+    Un.file = null; Un.fileName = ''; Un.fileType = ''; Un.rawText = '';
+    Un.parsed = []; Un.showRaw = false; Un.analysis = null;
+    Un.activeHallId = 'all';
     setTimeout(function () { navigate('bookings'); }, 400);
   };
 
-  /* ---------- nav registration (ensure exists) ---------- */
+  /* ---------- paste text modal ---------- */
+  window.__dmPasteText = function () {
+    if (typeof openModal !== 'function') return;
+    var L = I18N[State.lang];
+    openModal({
+      title: L.ui_paste_title,
+      size: 'lg',
+      body:
+        '<div style="margin-bottom:.75rem;font-size:.8rem;color:var(--text-muted)">' + esc(L.ui_paste_hint) + '</div>' +
+        '<textarea id="ui-paste-area" rows="14" style="width:100%;padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-family:inherit;font-size:.85rem;line-height:1.5;resize:vertical" placeholder="الصق هنا..."></textarea>',
+      footer:
+        '<button class="btn btn-ghost" onclick="closeModal()">' + (State.lang === 'ar' ? 'إلغاء' : 'Cancel') + '</button>' +
+        '<button class="btn btn-primary" onclick="__dmParsePasted()">' + esc(L.ui_parse) + '</button>'
+    });
+  };
+
+  window.__dmParsePasted = function () {
+    var ta = document.getElementById('ui-paste-area');
+    if (!ta || !ta.value.trim()) {
+      if (typeof showToast === 'function') showToast('لا يوجد نص', 'warn');
+      return;
+    }
+    Un.rawText = ta.value;
+    Un.fileName = 'نص يدوي';
+    Un.fileType = 'text';
+    Un.parsed = parseRawText(ta.value);
+    Un.analysis = analyze(Un.parsed);
+    Un.activeHallId = 'all';
+    if (typeof closeModal === 'function') closeModal();
+    navigate('importsmart');
+    if (typeof showToast === 'function') {
+      showToast(I18N[State.lang].ui_found + ' ' + Un.parsed.length + ' ' + I18N[State.lang].ui_bookings, Un.parsed.length ? 'success' : 'warn');
+    }
+  };
+
+  /* ---------- nav registration ---------- */
   function ensureNav() {
     var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
-    if (ops && !ops.items.find(function (i) { return i.id === 'importsmart'; })) {
-      var idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
-      var at = idx >= 0 ? idx + 1 : ops.items.length;
-      ops.items.splice(at, 0, { id: 'importsmart', icon: 'file-input', label: 'unified_import' });
-    }
-    // Update label to unified
     if (ops) {
-      for (var i = 0; i < ops.items.length; i++) {
-        if (ops.items[i].id === 'importsmart') { ops.items[i].label = 'unified_import'; ops.items[i].icon = 'file-input'; }
+      var ex = ops.items.find(function (i) { return i.id === 'importsmart'; });
+      if (!ex) {
+        var idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+        var at = idx >= 0 ? idx + 1 : ops.items.length;
+        ops.items.splice(at, 0, { id: 'importsmart', icon: 'file-input', label: 'unified_import' });
+      } else {
+        ex.icon = 'file-input';
+        ex.label = 'unified_import';
       }
     }
     try { renderSidebar(); } catch (e) {}
@@ -8986,15 +9102,12 @@ service cloud.firestore {
   /* ---------- boot ---------- */
   waitFor(
     function () {
-      return typeof State !== 'undefined'
-        && typeof Pages !== 'undefined'
-        && typeof navigate === 'function'
-        && typeof NAV_ITEMS !== 'undefined';
+      return typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function' && typeof NAV_ITEMS !== 'undefined';
     },
     function () {
       ensureNav();
-      console.log('%c[Section 20] ✓ Unified Import ready (PDF + Images + Excel + CSV)', 'color:#10b981;font-weight:bold');
-      console.log('%c[Section 20] Try: navigate("importsmart")', 'color:#06b6d4;font-style:italic');
+      console.log('%c[Section 21] ✓ Import v3 ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 21] Tip: use "Paste text manually" if OCR fails', 'color:#06b6d4;font-style:italic');
     }
   );
 
