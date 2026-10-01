@@ -13247,161 +13247,190 @@ service cloud.firestore {
 
 })();
 /* =========================================================
-   SECTION 31: Force Login — Kill Auto-Login
-   Version: 1.0.0
+   SECTION 32: Login Flow Master Control
+   Version: 1.0.0 (REPLACES Section 31)
    ---------------------------------------------------------
-   - Forces Firebase Auth to SESSION persistence
-   - Signs out any restored session on fresh page load
-   - Uses sessionStorage flag (cleared when tab closes)
+   - ONE source of truth for login flow
+   - No auto-reload loops
+   - No repeated signouts
+   - Uses sessionStorage flag: cleared when tab closes
    ========================================================= */
 (function () {
   'use strict';
 
-  console.log('%c[Section 31] Force Login loading…', 'color:#ef4444;font-weight:bold');
-
-  var TAB_FLAG = 'dm_tab_active_session';
+  console.log('%c[Section 32] Login Flow Master loading…', 'color:#ef4444;font-weight:bold;font-size:14px');
 
   /* =========================================================
-     1. RUN IMMEDIATELY — Before Firebase restores session
+     FLAGS
      ========================================================= */
-  // Clear any stale session marker from previous page loads
-  // (sessionStorage clears when tab closes, but not on refresh)
-  var hasTabSession = false;
-  try {
-    hasTabSession = sessionStorage.getItem(TAB_FLAG) === '1';
-  } catch (e) {}
+  var ACTIVE_KEY = 'dm_session_active_v2';
+  var INITED_KEY = 'dm_flow_inited_v2';
 
-  // If no active tab session, clear Firebase's localStorage cache
-  if (!hasTabSession) {
-    try {
-      // Firebase Auth stores keys starting with firebase:authUser
-      Object.keys(localStorage).forEach(function (key) {
-        if (key.indexOf('firebase:authUser') === 0 ||
-            key.indexOf('firebase:persistence') === 0 ||
-            key === 'drmedia_pro_session') {
-          localStorage.removeItem(key);
-        }
-      });
-      console.log('[Section 31] Cleared Firebase auth cache');
-    } catch (e) {}
+  function hasActive() {
+    try { return sessionStorage.getItem(ACTIVE_KEY) === '1'; } catch (e) { return false; }
+  }
+  function setActive() {
+    try { sessionStorage.setItem(ACTIVE_KEY, '1'); } catch (e) {}
+  }
+  function clearActive() {
+    try { sessionStorage.removeItem(ACTIVE_KEY); } catch (e) {}
+  }
+  function markInited() {
+    try { sessionStorage.setItem(INITED_KEY, '1'); } catch (e) {}
+  }
+  function wasInited() {
+    try { return sessionStorage.getItem(INITED_KEY) === '1'; } catch (e) { return false; }
   }
 
   /* =========================================================
-     2. WAIT FOR FIREBASE — set persistence + handle current user
+     1. PRE-LOAD CLEANUP
+     ========================================================= */
+  // Clear stale Firebase auth cache if no active tab session
+  if (!hasActive()) {
+    try {
+      Object.keys(localStorage).forEach(function (key) {
+        if (key.indexOf('firebase:authUser') === 0 ||
+            key.indexOf('firebase:persistence') === 0) {
+          localStorage.removeItem(key);
+        }
+      });
+      localStorage.removeItem('drmedia_pro_session');
+      console.log('[Section 32] Cleared stale session cache');
+    } catch (e) {}
+  }
+
+  // Kill Section 30's aggressive reload logic
+  try {
+    sessionStorage.setItem('dm_app_loaded', '1');
+    sessionStorage.setItem('dm_page_loaded', '1');
+  } catch (e) {}
+
+  /* =========================================================
+     2. PREVENT ALL AUTO-RELOADS
+     ========================================================= */
+  var reloadCount = 0;
+  var origReload = window.location.reload;
+  try {
+    window.location.reload = function () {
+      reloadCount++;
+      if (reloadCount > 3) {
+        console.warn('[Section 32] BLOCKED reload #' + reloadCount);
+        return;
+      }
+      console.log('[Section 32] reload #' + reloadCount);
+      return origReload.apply(window.location, arguments);
+    };
+  } catch (e) {}
+
+  /* =========================================================
+     3. WAIT FOR FIREBASE
      ========================================================= */
   function waitFor(cond, cb, maxTries) {
     maxTries = maxTries || 200;
     var tries = 0;
     var t = setInterval(function () {
-      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 31] timeout'); return; }
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 32] timeout'); return; }
       if (cond()) { clearInterval(t); cb(); }
     }, 100);
   }
 
   waitFor(
     function () {
-      return window.DrMediaFB && window.DrMediaFB.auth && window.DrMediaFB.modules;
+      return window.DrMediaFB && window.DrMediaFB.auth && window.DrMediaFB.modules
+        && window.DrMediaFB.modules.authMod;
     },
     async function () {
       var fb = window.DrMediaFB;
       var authMod = fb.modules.authMod;
 
-      // 1. Set persistence to SESSION (before any user signs in)
+      /* ----- 1. Set SESSION persistence ----- */
       try {
         if (authMod.setPersistence && authMod.browserSessionPersistence) {
           await authMod.setPersistence(fb.auth, authMod.browserSessionPersistence);
-          console.log('[Section 31] ✓ Firebase persistence = SESSION');
+          console.log('[Section 32] ✓ Persistence = SESSION');
         }
       } catch (e) {
-        console.warn('[Section 31] persistence failed:', e);
+        console.warn('[Section 32] persistence failed:', e);
       }
 
-      // 2. If there's a current user but no active tab session → sign out
+      /* ----- 2. Handle current user ----- */
       var currentUser = fb.auth.currentUser;
-      if (currentUser && !hasTabSession) {
-        console.log('[Section 31] Found stale session — signing out…');
+
+      if (currentUser && !hasActive() && !wasInited()) {
+        // Fresh page load with a stored session — sign out silently
+        console.log('[Section 32] Stale session — signing out (no reload)');
         try {
           await authMod.signOut(fb.auth);
-          console.log('[Section 31] ✓ Signed out');
-          // Force back to login
-          setTimeout(function () {
-            var loginScreen = document.getElementById('login-screen');
-            var appScreen = document.getElementById('app');
-            if (loginScreen) loginScreen.classList.remove('hidden');
-            if (appScreen) appScreen.classList.add('hidden');
-            if (typeof window.__dmSaaS !== 'undefined') {
-              window.__dmSaaS.ready = false;
-              window.__dmSaaS.user = null;
-            }
-          }, 100);
-        } catch (e) {
-          console.warn('[Section 31] signOut failed:', e);
-        }
+        } catch (e) { console.warn(e); }
+
+        // Switch UI to login without reload
+        switchToLoginScreen();
+      } else if (currentUser && hasActive()) {
+        // Active tab session — let it through
+        console.log('[Section 32] Active session — proceeding');
+      } else if (!currentUser) {
+        // No user — ensure login screen visible
+        switchToLoginScreen();
       }
 
-      // 3. Mark this tab as active once the user logs in
-      hookLogin();
+      markInited();
 
-      console.log('%c[Section 31] ✓ Auto-login disabled', 'color:#10b981;font-weight:bold');
+      /* ----- 3. Watch auth changes ----- */
+      if (authMod.onAuthStateChanged) {
+        authMod.onAuthStateChanged(fb.auth, function (user) {
+          if (user) {
+            setActive();
+            console.log('[Section 32] ✓ Session marked active');
+          } else {
+            clearActive();
+            console.log('[Section 32] Session cleared');
+          }
+        });
+      }
+
+      /* ----- 4. Watch login buttons ----- */
+      document.addEventListener('click', function (e) {
+        var t = e.target;
+        if (t && (t.id === 'saas-login-btn' || t.id === 'saas-register-btn')) {
+          setActive();
+        }
+      }, true);
+
+      /* ----- 5. Override logout ----- */
+      if (typeof window.logout === 'function' && !window.logout.__dm32) {
+        var origLogout = window.logout;
+        window.logout = function () {
+          clearActive();
+          return origLogout.apply(this, arguments);
+        };
+        window.logout.__dm32 = true;
+      }
+
+      console.log('%c[Section 32] ✓ Login flow controlled', 'color:#10b981;font-weight:bold');
     }
   );
 
   /* =========================================================
-     3. HOOK LOGIN SUCCESS — mark tab as active session
+     4. SAFE UI SWITCH (no reload)
      ========================================================= */
-  function hookLogin() {
-    // Hook the SaaS form's doLogin indirectly via onAuthStateChanged
-    var fb = window.DrMediaFB;
-    if (!fb || !fb.modules) return;
-    var authMod = fb.modules.authMod;
-
-    if (authMod.onAuthStateChanged) {
-      authMod.onAuthStateChanged(fb.auth, function (user) {
-        if (user) {
-          // User just logged in → mark tab as active
-          try { sessionStorage.setItem(TAB_FLAG, '1'); } catch (e) {}
-          console.log('[Section 31] ✓ Tab session marked active');
-        } else {
-          // User signed out → clear marker
-          try { sessionStorage.removeItem(TAB_FLAG); } catch (e) {}
-        }
-      });
+  function switchToLoginScreen() {
+    var loginScreen = document.getElementById('login-screen');
+    var appScreen = document.getElementById('app');
+    if (loginScreen) {
+      loginScreen.classList.remove('hidden');
+      loginScreen.style.display = '';
     }
-
-    // Also hook logout to clear the flag
-    if (typeof window.logout === 'function' && !window.logout.__dm31Hooked) {
-      var origLogout = window.logout;
-      window.logout = function () {
-        try { sessionStorage.removeItem(TAB_FLAG); } catch (e) {}
-        return origLogout.apply(this, arguments);
-      };
-      window.logout.__dm31Hooked = true;
+    if (appScreen) {
+      appScreen.classList.add('hidden');
+    }
+    if (window.__dmSaaS) {
+      window.__dmSaaS.ready = false;
+      window.__dmSaaS.user = null;
     }
   }
 
   /* =========================================================
-     4. ALSO — hook the login buttons to set the flag
-     ========================================================= */
-  function hookLoginButtons() {
-    // The login button "saas-login-btn" and register "saas-register-btn"
-    document.addEventListener('click', function (e) {
-      var t = e.target;
-      if (t && (t.id === 'saas-login-btn' || t.id === 'saas-register-btn')) {
-        // Set flag pre-emptively — if login fails, it doesn't matter
-        try { sessionStorage.setItem(TAB_FLAG, '1'); } catch (e) {}
-      }
-    }, true);
-  }
-
-  // Start button hook immediately
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', hookLoginButtons);
-  } else {
-    hookLoginButtons();
-  }
-
-  /* =========================================================
-     5. EXPOSE MANUAL COMMANDS
+     5. MANUAL COMMANDS
      ========================================================= */
   window.__dmForceLogin = async function () {
     try {
@@ -13409,16 +13438,25 @@ service cloud.firestore {
       if (fb && fb.auth && fb.modules && fb.modules.authMod) {
         await fb.modules.authMod.signOut(fb.auth);
       }
-      try { sessionStorage.removeItem(TAB_FLAG); } catch (e) {}
-      try { localStorage.removeItem('drmedia_pro_session'); } catch (e) {}
-      console.log('[Section 31] Forced logout');
-      setTimeout(function () { window.location.reload(); }, 500);
-    } catch (e) {
-      console.error('[Section 31] forceLogin failed:', e);
-    }
+    } catch (e) {}
+    clearActive();
+    try { localStorage.removeItem('drmedia_pro_session'); } catch (e) {}
+    switchToLoginScreen();
+    console.log('[Section 32] Forced login screen');
   };
 
-  window.__dmForceLogin();
+  window.__dmSessionStatus = function () {
+    var s = {
+      activeFlag: hasActive(),
+      initedFlag: wasInited(),
+      firebaseUser: window.DrMediaFB && window.DrMediaFB.auth ? (window.DrMediaFB.auth.currentUser ? window.DrMediaFB.auth.currentUser.email : 'none') : 'fb-not-ready',
+      saasReady: window.__dmSaaS ? window.__dmSaaS.ready : false,
+      saasUser: window.__dmSaaS && window.__dmSaaS.user ? window.__dmSaaS.user.email : 'none',
+      reloadCount: reloadCount
+    };
+    console.table(s);
+    return s;
+  };
 
 })();
 
