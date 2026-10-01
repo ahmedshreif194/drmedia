@@ -11934,6 +11934,342 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 28: Subscription Page
+   Version: 1.0.0
+   - Dedicated "My Subscription" page in sidebar
+   - Shows current plan, expiry, days left
+   - "Upgrade" button opens payment modal
+   - Payment history
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 28] Subscription Page loading…', 'color:#10b981;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 28] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.my_sub_page = 'اشتراكي';
+  I18N.ar.sub_current_plan = 'باقتك الحالية';
+  I18N.ar.sub_expires_on = 'تنتهي في';
+  I18N.ar.sub_status = 'الحالة';
+  I18N.ar.sub_upgrade_btn = 'ترقية الباقة';
+  I18N.ar.sub_renew_btn = 'تجديد';
+  I18N.ar.sub_history = 'سجل المدفوعات';
+  I18N.ar.sub_no_history = 'لا يوجد سجل بعد';
+  I18N.ar.sub_active = 'نشط';
+  I18N.ar.sub_trialing = 'تجربة';
+  I18N.ar.sub_expired_status = 'منتهي';
+  I18N.ar.sub_grace = 'فترة سماح';
+  I18N.ar.sub_plan_features = 'مميزات الباقة';
+  I18N.ar.sub_manage = 'إدارة الاشتراك';
+
+  I18N.en.my_sub_page = 'My Subscription';
+  I18N.en.sub_current_plan = 'Current Plan';
+  I18N.en.sub_expires_on = 'Expires on';
+  I18N.en.sub_status = 'Status';
+  I18N.en.sub_upgrade_btn = 'Upgrade Plan';
+  I18N.en.sub_renew_btn = 'Renew';
+  I18N.en.sub_history = 'Payment History';
+  I18N.en.sub_no_history = 'No history yet';
+  I18N.en.sub_active = 'Active';
+  I18N.en.sub_trialing = 'Trial';
+  I18N.en.sub_expired_status = 'Expired';
+  I18N.en.sub_grace = 'Grace period';
+  I18N.en.sub_plan_features = 'Plan Features';
+  I18N.en.sub_manage = 'Manage Subscription';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function fmtDate(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts);
+    try {
+      return d.toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) {
+      return d.toLocaleDateString();
+    }
+  }
+
+  function daysLeft(ts) {
+    if (!ts) return 0;
+    return Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
+  }
+
+  /* =========================================================
+     PAGE: My Subscription
+     ========================================================= */
+  Pages.mysub = function (el) {
+    if (!window.__dmSaaS || !window.__dmSaaS.ready) {
+      el.innerHTML = '<div class="empty-state" style="padding:3rem 1rem"><i data-lucide="lock"></i><p>' +
+        (State.lang === 'ar' ? 'سجل دخول أول' : 'Please login first') + '</p></div>';
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    var L = I18N[State.lang] || I18N.ar;
+    var SaaS = window.__dmSaaS;
+    var sub = SaaS.subscription || { planId: 'trial', status: 'trialing', expiresAt: 0 };
+    var plan = (window.__dmPlans || {})[sub.planId] || { name: 'Trial', price: 0, limits: {} };
+
+    var days = daysLeft(sub.expiresAt);
+    var isActive = sub.expiresAt > Date.now();
+    var statusText = isActive ? (sub.planId === 'trial' ? L.sub_trialing : L.sub_active) : L.sub_expired_status;
+    var statusColor = isActive ? (sub.planId === 'trial' ? '#f59e0b' : '#10b981') : '#ef4444';
+
+    // Status icon
+    var statusIcon = isActive ? (sub.planId === 'trial' ? '⏱' : '✓') : '🚫';
+
+    el.innerHTML =
+      '<div style="max-width:960px;margin:0 auto">' +
+
+        /* Hero Card */
+        '<div class="card" style="margin-bottom:1.5rem;background:linear-gradient(135deg,' + statusColor + '15,' + statusColor + '05);border:2px solid ' + statusColor + '40;padding:1.75rem">' +
+          '<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">' +
+            '<div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,' + statusColor + ',' + statusColor + 'cc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:2rem;box-shadow:0 15px 30px -10px ' + statusColor + '80">' +
+              statusIcon +
+            '</div>' +
+            '<div style="flex:1;min-width:200px">' +
+              '<div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">' + esc(L.sub_current_plan) + '</div>' +
+              '<div style="font-size:1.75rem;font-weight:800;color:var(--text);line-height:1.1;margin:.25rem 0">' + esc(plan.name) + '</div>' +
+              '<div style="font-size:.85rem;color:var(--text-muted)">' +
+                (plan.price > 0 ? plan.price + ' EGP / ' + (State.lang === 'ar' ? 'شهر' : 'mo') : (State.lang === 'ar' ? 'مجاني' : 'Free')) +
+              '</div>' +
+            '</div>' +
+            '<div style="text-align:end">' +
+              '<span class="badge-pill" style="background:' + statusColor + '20;color:' + statusColor + ';padding:.4rem .9rem;font-size:.75rem">' +
+                '● ' + esc(statusText) +
+              '</span>' +
+              (isActive ?
+                '<div style="margin-top:.5rem;font-size:.75rem;color:var(--text-muted)">' +
+                  '<b style="color:' + statusColor + '">' + days + '</b> ' + (State.lang === 'ar' ? 'يوم متبقي' : 'days left') +
+                '</div>'
+                : '') +
+            '</div>' +
+          '</div>' +
+
+          (sub.expiresAt ?
+            '<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border);display:flex;gap:1rem;flex-wrap:wrap;font-size:.85rem">' +
+              '<div><span style="color:var(--text-muted)">' + esc(L.sub_expires_on) + ':</span> <b>' + esc(fmtDate(sub.expiresAt)) + '</b></div>' +
+              (sub.startedAt ? '<div><span style="color:var(--text-muted)">' + (State.lang === 'ar' ? 'بدأ في' : 'Started on') + ':</span> <b>' + esc(fmtDate(sub.startedAt)) + '</b></div>' : '') +
+            '</div>' : '') +
+
+          '<div style="margin-top:1.25rem;display:flex;gap:.5rem;flex-wrap:wrap">' +
+            '<button class="btn btn-primary" id="dm-sub-upgrade-main" style="padding:.75rem 1.5rem">' +
+              '💎 ' + esc(isActive ? L.sub_upgrade_btn : L.sub_renew_btn) +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+
+        /* Features Card */
+        '<div class="grid-2" style="margin-bottom:1.5rem">' +
+          '<div class="card">' +
+            '<h4 style="margin:0 0 1rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">' +
+              '<i data-lucide="list-checks" style="width:16px;height:16px;color:var(--primary)"></i>' +
+              esc(L.sub_plan_features) +
+            '</h4>' +
+            (plan.limits ?
+              '<div style="display:flex;flex-direction:column;gap:.65rem;font-size:.85rem">' +
+                featureRow('👥', State.lang === 'ar' ? 'عدد الموظفين' : 'Employees', plan.limits.employees) +
+                featureRow('📅', State.lang === 'ar' ? 'عدد الحجوزات/شهر' : 'Bookings/month', plan.limits.bookings) +
+                featureRow('🏛', State.lang === 'ar' ? 'عدد القاعات' : 'Halls', plan.limits.halls) +
+                featureRow('👤', State.lang === 'ar' ? 'عدد المستخدمين' : 'Users', plan.limits.users) +
+              '</div>'
+              : '') +
+          '</div>' +
+          '<div class="card">' +
+            '<h4 style="margin:0 0 1rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">' +
+              '<i data-lucide="clock" style="width:16px;height:16px;color:var(--primary)"></i>' +
+              esc(L.sub_history) +
+            '</h4>' +
+            '<div id="dm-sub-history-list" style="font-size:.85rem">' +
+              '<div style="color:var(--text-muted);text-align:center;padding:1rem">' + esc(L.sub_no_history) + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+
+      '</div>';
+
+    if (window.lucide) lucide.createIcons();
+
+    /* Bind upgrade button */
+    var upBtn = document.getElementById('dm-sub-upgrade-main');
+    if (upBtn) {
+      upBtn.onclick = function () {
+        if (typeof window.__dmShowPlans === 'function') window.__dmShowPlans();
+      };
+    }
+
+    /* Load payment history */
+    loadPaymentHistory();
+  };
+
+  function featureRow(icon, label, value) {
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:.55rem .75rem;background:var(--surface-2);border-radius:8px">' +
+      '<span>' + icon + ' ' + esc(label) + '</span>' +
+      '<b style="color:var(--primary)">' + (value >= 99999 ? '∞' : esc(value)) + '</b>' +
+    '</div>';
+  }
+
+  async function loadPaymentHistory() {
+    var listEl = document.getElementById('dm-sub-history-list');
+    if (!listEl) return;
+    var L = I18N[State.lang] || I18N.ar;
+
+    try {
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var companyId = window.__dmSaaS.profile.companyId;
+      var q = fsMod.query(
+        fsMod.collection(window.DrMediaFB.db, 'payment_orders'),
+        fsMod.where('companyId', '==', companyId)
+      );
+      var snap = await fsMod.getDocs(q);
+      var orders = [];
+      snap.forEach(function (d) {
+        var o = d.data();
+        if (o.status === 'success') orders.push(o);
+      });
+
+      if (!orders.length) {
+        listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:1rem">' + esc(L.sub_no_history) + '</div>';
+        return;
+      }
+
+      orders.sort(function (a, b) {
+        return (b.createdAt && b.createdAt.seconds || b.lastPaymentAt || 0) - (a.createdAt && a.createdAt.seconds || a.lastPaymentAt || 0);
+      });
+
+      listEl.innerHTML = orders.slice(0, 8).map(function (o) {
+        var date = o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : Date.now();
+        return '<div style="display:flex;justify-content:space-between;padding:.55rem 0;border-bottom:1px solid var(--border)">' +
+          '<div>' +
+            '<div style="font-weight:600">' + esc(o.planId || '—') + '</div>' +
+            '<div style="font-size:.7rem;color:var(--text-muted)">' + esc(fmtDate(date)) + ' · ' + esc(o.mode || 'manual') + '</div>' +
+          '</div>' +
+          '<div style="text-align:end">' +
+            '<div style="font-weight:700;color:#10b981">' + (o.amount || 0) + ' EGP</div>' +
+            '<div style="font-size:.7rem;color:#10b981">✓</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+    } catch (err) {
+      console.warn('[Section 28] history load failed', err);
+      listEl.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:1rem;font-size:.75rem">Failed to load</div>';
+    }
+  }
+
+  /* =========================================================
+     ADD NAV ITEM
+     ========================================================= */
+  function registerNav() {
+    var sys = NAV_ITEMS.find(function (g) { return g.section === 'system'; });
+    if (sys && !sys.items.find(function (i) { return i.id === 'mysub'; })) {
+      var settingsIdx = sys.items.findIndex(function (i) { return i.id === 'settings'; });
+      var at = settingsIdx >= 0 ? settingsIdx : sys.items.length;
+      sys.items.splice(at, 0, { id: 'mysub', icon: 'credit-card', label: 'my_sub_page' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* =========================================================
+     ADD SETTINGS SECTION
+     ========================================================= */
+  function hookSettings() {
+    if (!Pages.settings) return;
+    if (Pages.settings.__dm28Hooked) return;
+    var orig = Pages.settings;
+    Pages.settings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(function () {
+        var grid = el.querySelector('.grid-2');
+        if (!grid || grid.querySelector('[data-dm-sub-section]')) return;
+
+        var wrap = document.createElement('div');
+        wrap.setAttribute('data-dm-sub-section', '1');
+        var L = I18N[State.lang] || I18N.ar;
+        var SaaS = window.__dmSaaS;
+        var sub = SaaS.subscription || { planId: 'trial', expiresAt: 0 };
+        var plan = (window.__dmPlans || {})[sub.planId] || { name: 'Trial' };
+        var days = Math.max(0, Math.ceil((sub.expiresAt - Date.now()) / 86400000));
+
+        wrap.className = 'card';
+        wrap.innerHTML =
+          '<h4 style="margin-top:0;font-size:.95rem">' +
+            '<i data-lucide="credit-card" style="width:16px;height:16px;display:inline;color:#7c3aed"></i> ' +
+            esc(L.sub_manage) +
+          '</h4>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:.85rem;padding:.65rem;background:var(--surface-2);border-radius:10px">' +
+            '<span style="font-weight:700">' + esc(plan.name) + '</span>' +
+            '<span style="font-size:.75rem;color:var(--text-muted)">' + (days > 0 ? days + ' ' + (State.lang === 'ar' ? 'يوم متبقي' : 'days left') : L.sub_expired_status) + '</span>' +
+          '</div>' +
+          '<button id="dm-set-upgrade" class="btn btn-primary btn-sm" style="margin-top:.85rem;width:100%">' +
+            '💎 ' + esc(L.sub_upgrade_btn) +
+          '</button>' +
+          '<button id="dm-set-view" class="btn btn-ghost btn-sm" style="margin-top:.5rem;width:100%">' +
+            '📄 ' + esc(L.my_sub_page) +
+          '</button>';
+        grid.appendChild(wrap);
+        if (window.lucide) lucide.createIcons();
+
+        wrap.querySelector('#dm-set-upgrade').onclick = function () {
+          if (typeof window.__dmShowPlans === 'function') window.__dmShowPlans();
+        };
+        wrap.querySelector('#dm-set-view').onclick = function () {
+          if (typeof navigate === 'function') navigate('mysub');
+        };
+      }, 150);
+    };
+    Pages.settings.__dm28Hooked = true;
+  }
+
+  /* =========================================================
+     HOOK THE BANNER UPGRADE BUTTON — ensure it works
+     ========================================================= */
+  function fixBannerButton() {
+    // Re-inject if missing
+    setInterval(function () {
+      var btn = document.getElementById('dm-sub-upgrade');
+      if (btn && !btn.__dm28Fixed) {
+        btn.__dm28Fixed = true;
+        btn.onclick = function () {
+          if (typeof window.__dmShowPlans === 'function') window.__dmShowPlans();
+        };
+      }
+    }, 2000);
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof NAV_ITEMS !== 'undefined'
+        && typeof window.__dmSaaS !== 'undefined';
+    },
+    function () {
+      registerNav();
+      hookSettings();
+      fixBannerButton();
+      console.log('%c[Section 28] ✓ Subscription page ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 28] Try: navigate("mysub")', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+})();
 
 
 
