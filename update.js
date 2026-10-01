@@ -10658,6 +10658,125 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 24: Super Admin Nav Fix
+   Version: 1.0.0
+   ---------------------------------------------------------
+   Fixes: Super Admin nav being wiped by renderSidebar()
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 24] Super Admin Nav Fix loading…', 'color:#f59e0b;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 24] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- inject super admin nav ---------- */
+  function injectSuperAdminNav() {
+    if (typeof window.__dmSaaS === 'undefined') return;
+    var SaaS = window.__dmSaaS;
+    if (!SaaS || !SaaS.isSuperAdmin) return;
+
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+
+    // Already injected?
+    if (document.getElementById('dm-super-nav')) return;
+
+    var section = document.createElement('div');
+    section.id = 'dm-super-nav';
+    section.innerHTML =
+      '<div class="nav-section" style="color:#f59e0b;opacity:1;letter-spacing:.1em">⚡ SUPER ADMIN</div>' +
+      '<a class="nav-item" data-page="superadmin" style="cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#f59e0b">' +
+        '<i data-lucide="crown" style="color:#f59e0b"></i>' +
+        '<span style="color:#f59e0b;font-weight:700">لوحة المدير العام</span>' +
+      '</a>';
+
+    nav.appendChild(section);
+
+    // Bind click
+    var link = section.querySelector('.nav-item');
+    if (link) {
+      link.onclick = function (e) {
+        e.preventDefault();
+        if (typeof window.__dmSuperAdmin === 'function') window.__dmSuperAdmin();
+      };
+    }
+
+    if (window.lucide) {
+      try { lucide.createIcons(); } catch (e) {}
+    }
+  }
+
+  /* ---------- hook renderSidebar ---------- */
+  function hookRenderSidebar() {
+    if (typeof window.renderSidebar !== 'function') {
+      console.warn('[Section 24] renderSidebar not found');
+      return;
+    }
+    if (window.renderSidebar.__dmHooked) return;
+
+    var orig = window.renderSidebar;
+    window.renderSidebar = function () {
+      var result = orig.apply(this, arguments);
+      // Always inject after render
+      try { injectSuperAdminNav(); } catch (e) { console.warn('[Section 24]', e); }
+      return result;
+    };
+    window.renderSidebar.__dmHooked = true;
+    console.log('%c[Section 24] ✓ renderSidebar hooked', 'color:#10b981;font-weight:bold');
+  }
+
+  /* ---------- also watch DOM mutations as a fallback ---------- */
+  function watchSidebar() {
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+    var obs = new MutationObserver(function () {
+      // Debounce
+      clearTimeout(window.__dm24T);
+      window.__dm24T = setTimeout(function () {
+        if (typeof window.__dmSaaS !== 'undefined' && window.__dmSaaS.isSuperAdmin) {
+          injectSuperAdminNav();
+        }
+      }, 150);
+    });
+    obs.observe(nav, { childList: true });
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    function () {
+      return typeof window.__dmSaaS !== 'undefined'
+        && typeof window.renderSidebar === 'function'
+        && document.getElementById('sidebar-nav');
+    },
+    function () {
+      hookRenderSidebar();
+      watchSidebar();
+
+      // Try immediately (in case sidebar already rendered)
+      injectSuperAdminNav();
+
+      // Also retry after 1s and 3s (in case session restores late)
+      setTimeout(injectSuperAdminNav, 1000);
+      setTimeout(injectSuperAdminNav, 3000);
+
+      console.log('%c[Section 24] ✓ Ready', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 24] Try: __dmSuperAdmin()', 'color:#06b6d4;font-style:italic');
+    }
+  );
+
+  // Expose for manual trigger
+  window.__dmInjectSuperNav = injectSuperAdminNav;
+
+})();
 
 
 
