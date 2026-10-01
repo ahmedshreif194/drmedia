@@ -9112,6 +9112,564 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 22: Settings Enhancements
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Factory Reset with automatic backup download
+   - Screen lock with PIN (idle timeout)
+   - Live clock in topbar
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 22] Settings+ loading…', 'color:#0ea5e9;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 150;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 22] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- i18n ---------- */
+  I18N.ar.reset_title = 'إعادة ضبط المصنع';
+  I18N.ar.reset_desc = 'يمسح كل البيانات ويعيد النظام لحالته الأولى';
+  I18N.ar.reset_download_first = 'يتم تنزيل نسخة احتياطية تلقائيًا قبل المسح';
+  I18N.ar.reset_btn = 'ضبط المصنع';
+  I18N.ar.reset_backup_done = 'تم تنزيل النسخة الاحتياطية';
+  I18N.ar.reset_confirm1 = 'سيتم مسح كل البيانات نهائيًا وإرجاع النظام لحالته الأولى. متأكد؟';
+  I18N.ar.reset_confirm2 = 'هذه آخر فرصة — هل تريد المتابعة حقًا؟';
+  I18N.ar.reset_type_word = 'اكتب كلمة "مسح" للتأكيد';
+  I18N.ar.reset_word = 'مسح';
+  I18N.ar.reset_done = 'تم ضبط المصنع بنجاح';
+  I18N.ar.reset_wrong_word = 'الكلمة غير صحيحة';
+
+  I18N.ar.lock_title = 'قفل الشاشة';
+  I18N.ar.lock_enable = 'تفعيل القفل التلقائي';
+  I18N.ar.lock_pin = 'الرقم السري';
+  I18N.ar.lock_pin_hint = '4 أرقام على الأقل';
+  I18N.ar.lock_timeout = 'مدة الخمول قبل القفل (دقائق)';
+  I18N.ar.lock_now = 'قفل الآن';
+  I18N.ar.lock_unlock = 'فتح';
+  I18N.ar.lock_enter_pin = 'أدخل الرقم السري';
+  I18N.ar.lock_wrong_pin = 'رقم سري غير صحيح';
+  I18N.ar.lock_set_first = 'لم يتم تعيين رقم سري بعد — عيّنه من الإعدادات';
+  I18N.ar.lock_pin_saved = 'تم حفظ الرقم السري';
+  I18N.ar.lock_pin_short = 'الرقم السري قصير جدًا';
+  I18N.ar.lock_enabled = 'تم تفعيل القفل';
+  I18N.ar.lock_disabled = 'تم تعطيل القفل';
+
+  I18N.en.reset_title = 'Factory Reset';
+  I18N.en.reset_desc = 'Wipes all data and restores initial state';
+  I18N.en.reset_download_first = 'A backup will download automatically before wiping';
+  I18N.en.reset_btn = 'Factory Reset';
+  I18N.en.reset_backup_done = 'Backup downloaded';
+  I18N.en.reset_confirm1 = 'All data will be permanently deleted. Are you sure?';
+  I18N.en.reset_confirm2 = 'This is your last chance — continue?';
+  I18N.en.reset_type_word = 'Type the word "RESET" to confirm';
+  I18N.en.reset_word = 'RESET';
+  I18N.en.reset_done = 'Factory reset completed';
+  I18N.en.reset_wrong_word = 'Wrong word';
+
+  I18N.en.lock_title = 'Screen Lock';
+  I18N.en.lock_enable = 'Enable auto-lock';
+  I18N.en.lock_pin = 'PIN';
+  I18N.en.lock_pin_hint = 'At least 4 digits';
+  I18N.en.lock_timeout = 'Idle minutes before lock';
+  I18N.en.lock_now = 'Lock now';
+  I18N.en.lock_unlock = 'Unlock';
+  I18N.en.lock_enter_pin = 'Enter PIN';
+  I18N.en.lock_wrong_pin = 'Incorrect PIN';
+  I18N.en.lock_set_first = 'No PIN set yet — set one in Settings';
+  I18N.en.lock_pin_saved = 'PIN saved';
+  I18N.en.lock_pin_short = 'PIN too short';
+  I18N.en.lock_enabled = 'Lock enabled';
+  I18N.en.lock_disabled = 'Lock disabled';
+
+  /* ---------- keys ---------- */
+  var K_PIN = 'drmedia_lock_pin_v1';
+  var K_ENABLED = 'drmedia_lock_enabled_v1';
+  var K_TIMEOUT = 'drmedia_lock_timeout_v1';
+
+  /* ---------- lock state ---------- */
+  var Lock = {
+    pin: localStorage.getItem(K_PIN) || '',
+    enabled: localStorage.getItem(K_ENABLED) === '1',
+    timeoutMin: parseInt(localStorage.getItem(K_TIMEOUT)) || 5,
+    idleTimer: null,
+    locked: false,
+    lastActivity: Date.now()
+  };
+  window.__dmLock = Lock;
+
+  /* =========================================================
+     1. LIVE CLOCK IN TOPBAR
+     ========================================================= */
+  var clockState = { timer: null };
+
+  function injectClock() {
+    var topbar = document.getElementById('topbar');
+    if (!topbar) return;
+    if (document.getElementById('dm-clock')) return;
+
+    var el = document.createElement('div');
+    el.id = 'dm-clock';
+    el.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;padding:.35rem .75rem;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);margin-inline-end:.35rem;min-width:120px;line-height:1.15;user-select:none';
+    el.innerHTML = '<div id="dm-clock-time" style="font-weight:800;font-size:.85rem;color:var(--text);font-variant-numeric:tabular-nums">--:--:--</div>' +
+                   '<div id="dm-clock-date" style="font-size:.65rem;color:var(--text-muted)">—</div>';
+
+    var notifBtn = document.getElementById('notif-btn');
+    if (notifBtn && notifBtn.parentNode) {
+      notifBtn.parentNode.insertBefore(el, notifBtn);
+    } else {
+      topbar.appendChild(el);
+    }
+
+    updateClock();
+    if (clockState.timer) clearInterval(clockState.timer);
+    clockState.timer = setInterval(updateClock, 1000);
+  }
+
+  function updateClock() {
+    var tEl = document.getElementById('dm-clock-time');
+    var dEl = document.getElementById('dm-clock-date');
+    if (!tEl || !dEl) return;
+    var now = new Date();
+    var hh = pad2(now.getHours());
+    var mm = pad2(now.getMinutes());
+    var ss = pad2(now.getSeconds());
+    tEl.textContent = hh + ':' + mm + ':' + ss;
+    try {
+      var loc = State.lang === 'ar' ? 'ar-EG' : 'en-GB';
+      dEl.textContent = now.toLocaleDateString(loc, { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    } catch (e) {
+      dEl.textContent = now.toLocaleDateString();
+    }
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+  /* =========================================================
+     2. LOCK — PIN + IDLE
+     ========================================================= */
+  function saveLockPrefs() {
+    try {
+      if (Lock.pin) localStorage.setItem(K_PIN, Lock.pin); else localStorage.removeItem(K_PIN);
+      localStorage.setItem(K_ENABLED, Lock.enabled ? '1' : '0');
+      localStorage.setItem(K_TIMEOUT, String(Lock.timeoutMin));
+    } catch (e) {}
+  }
+
+  function resetIdleTimer() {
+    Lock.lastActivity = Date.now();
+    if (Lock.idleTimer) clearTimeout(Lock.idleTimer);
+    if (!Lock.enabled || !Lock.pin || Lock.locked) return;
+    Lock.idleTimer = setTimeout(function () {
+      lockScreen();
+    }, Lock.timeoutMin * 60 * 1000);
+  }
+
+  function attachActivityListeners() {
+    ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(function (ev) {
+      document.addEventListener(ev, resetIdleTimer, { passive: true });
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') resetIdleTimer();
+    });
+  }
+
+  function lockScreen() {
+    if (Lock.locked) return;
+    if (!Lock.pin) {
+      if (typeof showToast === 'function') showToast(I18N[State.lang].lock_set_first, 'warn');
+      return;
+    }
+    Lock.locked = true;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'dm-lock-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#0f0a1f 0%,#1e1b3a 100%);display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(20px)';
+    overlay.innerHTML =
+      '<div style="max-width:360px;width:100%;text-align:center">' +
+        '<div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#7c3aed,#f59e0b);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.75rem;margin:0 auto 1.25rem;box-shadow:0 20px 40px -10px rgba(124,58,237,.5)">' +
+          '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' +
+        '</div>' +
+        '<div style="color:#fff;font-size:1.1rem;font-weight:700;margin-bottom:.35rem">' + esc(I18N[State.lang].lock_enter_pin) + '</div>' +
+        '<div style="color:#94a3b8;font-size:.8rem;margin-bottom:1.5rem">Dr Media Pro</div>' +
+        '<input id="dm-lock-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" style="width:100%;padding:1rem;text-align:center;font-size:1.5rem;letter-spacing:.5em;border-radius:14px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#fff;outline:none;font-family:inherit" placeholder="• • • •">' +
+        '<div id="dm-lock-msg" style="color:#ef4444;font-size:.8rem;margin-top:.75rem;min-height:1.2em"></div>' +
+        '<button id="dm-lock-btn" style="width:100%;margin-top:1rem;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;font-size:1rem;cursor:pointer;font-family:inherit">' +
+          esc(I18N[State.lang].lock_unlock) +
+        '</button>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+
+    var input = document.getElementById('dm-lock-pin');
+    var btn = document.getElementById('dm-lock-btn');
+    var msg = document.getElementById('dm-lock-msg');
+
+    function tryUnlock() {
+      var val = (input.value || '').trim();
+      if (val === Lock.pin) {
+        closeLock();
+      } else {
+        msg.textContent = I18N[State.lang].lock_wrong_pin;
+        input.value = '';
+        input.focus();
+        if (navigator.vibrate) try { navigator.vibrate(120); } catch (e) {}
+      }
+    }
+
+    if (input) { input.focus(); input.addEventListener('keydown', function (e) { if (e.key === 'Enter') tryUnlock(); }); }
+    if (btn) btn.onclick = tryUnlock;
+  }
+
+  function closeLock() {
+    var overlay = document.getElementById('dm-lock-overlay');
+    if (overlay) overlay.remove();
+    Lock.locked = false;
+    resetIdleTimer();
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  window.__dmLockNow = function () {
+    if (!Lock.pin) {
+      if (typeof showToast === 'function') showToast(I18N[State.lang].lock_set_first, 'warn');
+      return;
+    }
+    lockScreen();
+  };
+
+  /* =========================================================
+     3. FACTORY RESET
+     ========================================================= */
+  function downloadBackup(reason) {
+    try {
+      var data = JSON.stringify(State.data, null, 2);
+      var blob = new Blob([data], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.href = url;
+      a.download = 'drmedia-backup-' + stamp + (reason ? '-' + reason : '') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 500);
+      return true;
+    } catch (e) {
+      console.error('[Section 22] backup failed', e);
+      return false;
+    }
+  }
+
+  window.__dmFactoryReset = function () {
+    var L = I18N[State.lang] || I18N.ar;
+
+    if (typeof confirmDialog !== 'function') {
+      if (!confirm(L.reset_confirm1)) return;
+      doResetStep2();
+      return;
+    }
+
+    // Step 1: download backup immediately
+    var ok = downloadBackup('auto');
+    if (ok && typeof showToast === 'function') showToast(L.reset_backup_done + ' ✓', 'success');
+
+    // Step 2: first confirm
+    setTimeout(function () {
+      confirmDialog(L.reset_confirm1, function () {
+        doResetStep2();
+      });
+    }, 400);
+  };
+
+  function doResetStep2() {
+    var L = I18N[State.lang] || I18N.ar;
+    setTimeout(function () {
+      confirmDialog(L.reset_confirm2, function () {
+        showResetWordModal();
+      });
+    }, 200);
+  }
+
+  function showResetWordModal() {
+    var L = I18N[State.lang] || I18N.ar;
+    if (typeof openModal !== 'function') return;
+    var word = L.reset_word;
+
+    openModal({
+      title: '⚠️ ' + esc(L.reset_title),
+      size: 'sm',
+      body:
+        '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:.75rem">' + esc(L.reset_type_word) + '</div>' +
+        '<div style="font-size:1rem;font-weight:800;color:#ef4444;text-align:center;padding:.75rem;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;margin-bottom:.75rem;letter-spacing:.15em">' +
+          esc(word) +
+        '</div>' +
+        '<input id="dm-reset-word" type="text" autocomplete="off" style="width:100%;padding:.75rem;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-family:inherit;text-align:center;letter-spacing:.1em;font-size:1rem" placeholder="...">',
+      footer:
+        '<button class="btn btn-ghost" onclick="closeModal()">' + (State.lang === 'ar' ? 'إلغاء' : 'Cancel') + '</button>' +
+        '<button class="btn btn-danger" onclick="__dmConfirmResetWord()">' + esc(L.reset_btn) + '</button>'
+    });
+
+    setTimeout(function () {
+      var inp = document.getElementById('dm-reset-word');
+      if (inp) {
+        inp.focus();
+        inp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') window.__dmConfirmResetWord();
+        });
+      }
+    }, 150);
+  }
+
+  window.__dmConfirmResetWord = function () {
+    var L = I18N[State.lang] || I18N.ar;
+    var inp = document.getElementById('dm-reset-word');
+    var entered = (inp ? inp.value : '').trim();
+    var expected = L.reset_word;
+
+    if (entered !== expected) {
+      if (typeof showToast === 'function') showToast(L.reset_wrong_word, 'error');
+      return;
+    }
+
+    if (typeof closeModal === 'function') closeModal();
+    performReset();
+  };
+
+  function performReset() {
+    var L = I18N[State.lang] || I18N.ar;
+
+    try {
+      // Remove all app storage but keep PIN prefs
+      var keepPin = Lock.pin;
+      var keepEnabled = Lock.enabled ? '1' : '0';
+      var keepTimeout = String(Lock.timeoutMin);
+
+      localStorage.clear();
+
+      if (keepPin) localStorage.setItem(K_PIN, keepPin);
+      localStorage.setItem(K_ENABLED, keepEnabled);
+      localStorage.setItem(K_TIMEOUT, keepTimeout);
+
+      // Reset in-memory state
+      if (typeof State !== 'undefined') {
+        State.user = null;
+        if (typeof seedData === 'function') {
+          var seeded = seedData();
+          State.data = seeded;
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded)); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.error('[Section 22] reset failed', e);
+    }
+
+    if (typeof showToast === 'function') showToast(L.reset_done + ' ✓', 'success');
+
+    // Reload after short delay to apply
+    setTimeout(function () {
+      location.reload();
+    }, 900);
+  }
+
+  /* =========================================================
+     4. SETTINGS UI INJECTION
+     ========================================================= */
+  function renderLockSection(container) {
+    var L = I18N[State.lang] || I18N.ar;
+    var sec = document.createElement('div');
+    sec.className = 'card';
+    sec.setAttribute('data-dm-lock-section', '1');
+
+    sec.innerHTML =
+      '<h4 style="margin-top:0;font-size:.95rem">' +
+        '<i data-lucide="lock" style="width:16px;height:16px;display:inline;color:#7c3aed"></i> ' +
+        esc(L.lock_title) +
+      '</h4>' +
+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:.85rem">' +
+        '<span style="font-size:.85rem">' + esc(L.lock_enable) + '</span>' +
+        '<label class="switch"><input type="checkbox" id="dm-lock-enabled"' + (Lock.enabled ? ' checked' : '') + '><span class="slider"></span></label>' +
+      '</div>' +
+
+      '<div class="field" style="margin-top:.85rem">' +
+        '<label>' + esc(L.lock_pin) + '</label>' +
+        '<input type="password" id="dm-lock-pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="' + esc(L.lock_pin_hint) + '" value="' + esc(Lock.pin ? '••••' : '') + '" autocomplete="new-password">' +
+      '</div>' +
+
+      '<div class="field" style="margin-top:.85rem">' +
+        '<label>' + esc(L.lock_timeout) + '</label>' +
+        '<input type="number" id="dm-lock-timeout-input" min="1" max="120" value="' + Lock.timeoutMin + '">' +
+      '</div>' +
+
+      '<div style="display:flex;gap:.5rem;margin-top:.85rem;flex-wrap:wrap">' +
+        '<button class="btn btn-primary btn-sm" id="dm-lock-save">' + (State.lang === 'ar' ? 'حفظ' : 'Save') + '</button>' +
+        '<button class="btn btn-ghost btn-sm" id="dm-lock-now-btn">' +
+          '<i data-lucide="lock"></i> ' + esc(L.lock_now) +
+        '</button>' +
+      '</div>';
+
+    container.appendChild(sec);
+    if (window.lucide) lucide.createIcons();
+
+    // Bind
+    var enabledEl = sec.querySelector('#dm-lock-enabled');
+    var pinEl = sec.querySelector('#dm-lock-pin-input');
+    var timeoutEl = sec.querySelector('#dm-lock-timeout-input');
+    var saveBtn = sec.querySelector('#dm-lock-save');
+    var nowBtn = sec.querySelector('#dm-lock-now-btn');
+
+    if (enabledEl) {
+      enabledEl.onchange = function (e) {
+        Lock.enabled = e.target.checked;
+        if (Lock.enabled && !Lock.pin) {
+          if (typeof showToast === 'function') showToast(L.lock_set_first, 'warn');
+        }
+        saveLockPrefs();
+        resetIdleTimer();
+      };
+    }
+
+    if (saveBtn) {
+      saveBtn.onclick = function () {
+        var newPin = (pinEl.value || '').trim();
+        // If it's the placeholder dots, ignore
+        if (newPin === '••••') newPin = Lock.pin;
+        if (newPin && newPin.length < 4) {
+          if (typeof showToast === 'function') showToast(L.lock_pin_short, 'error');
+          return;
+        }
+        Lock.pin = newPin;
+        Lock.timeoutMin = Math.max(1, parseInt(timeoutEl.value) || 5);
+        saveLockPrefs();
+        if (typeof showToast === 'function') showToast(L.lock_pin_saved + ' ✓', 'success');
+        resetIdleTimer();
+      };
+    }
+
+    if (nowBtn) nowBtn.onclick = function () { window.__dmLockNow(); };
+  }
+
+  function renderResetSection(container) {
+    var L = I18N[State.lang] || I18N.ar;
+    var sec = document.createElement('div');
+    sec.className = 'card';
+    sec.style.borderColor = 'rgba(239,68,68,.4)';
+    sec.setAttribute('data-dm-reset-section', '1');
+
+    sec.innerHTML =
+      '<h4 style="margin-top:0;font-size:.95rem;color:#ef4444">' +
+        '<i data-lucide="alert-triangle" style="width:16px;height:16px;display:inline"></i> ' +
+        esc(L.reset_title) +
+      '</h4>' +
+      '<p style="font-size:.8rem;color:var(--text-muted);margin:.5rem 0 .35rem">' + esc(L.reset_desc) + '</p>' +
+      '<p style="font-size:.75rem;color:#10b981;margin:0 0 .85rem">' +
+        '<i data-lucide="shield-check" style="width:12px;height:12px;display:inline;vertical-align:-2px"></i> ' +
+        esc(L.reset_download_first) +
+      '</p>' +
+      '<button class="btn btn-danger btn-sm" id="dm-reset-btn">' +
+        '<i data-lucide="refresh-ccw"></i> ' + esc(L.reset_btn) +
+      '</button>';
+
+    container.appendChild(sec);
+    if (window.lucide) lucide.createIcons();
+
+    var btn = sec.querySelector('#dm-reset-btn');
+    if (btn) btn.onclick = function () { window.__dmFactoryReset(); };
+  }
+
+  function hookSettingsPage() {
+    if (!Pages.settings) return;
+    var orig = Pages.settings;
+    Pages.settings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(function () {
+        var grid = el.querySelector('.grid-2');
+        if (!grid) return;
+
+        if (!grid.querySelector('[data-dm-lock-section]')) {
+          var wrap1 = document.createElement('div');
+          grid.appendChild(wrap1);
+          renderLockSection(wrap1);
+        }
+        if (!grid.querySelector('[data-dm-reset-section]')) {
+          var wrap2 = document.createElement('div');
+          grid.appendChild(wrap2);
+          renderResetSection(wrap2);
+        }
+      }, 150);
+    };
+  }
+
+  /* =========================================================
+     5. LOCK BUTTON IN TOPBAR
+     ========================================================= */
+  function injectLockBtn() {
+    var topbar = document.getElementById('topbar');
+    if (!topbar) return;
+    if (document.getElementById('dm-lock-topbtn')) return;
+
+    var btn = document.createElement('button');
+    btn.className = 'topbar-btn';
+    btn.id = 'dm-lock-topbtn';
+    btn.title = (I18N[State.lang] || I18N.ar).lock_now;
+    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+    btn.onclick = function () { window.__dmLockNow(); };
+
+    var notifBtn = document.getElementById('notif-btn');
+    if (notifBtn && notifBtn.parentNode) {
+      notifBtn.parentNode.insertBefore(btn, notifBtn);
+    } else {
+      topbar.appendChild(btn);
+    }
+  }
+
+  /* =========================================================
+     6. BOOT
+     ========================================================= */
+  waitFor(
+    function () {
+      return typeof State !== 'undefined'
+        && typeof Pages !== 'undefined'
+        && typeof navigate === 'function'
+        && document.getElementById('topbar');
+    },
+    function () {
+      // 1. Clock
+      injectClock();
+
+      // 2. Lock button
+      injectLockBtn();
+
+      // 3. Lock listeners
+      attachActivityListeners();
+      resetIdleTimer();
+
+      // 4. Hook settings page
+      hookSettingsPage();
+
+      console.log('%c[Section 22] ✓ Settings+ ready (Clock + Lock + Reset)', 'color:#10b981;font-weight:bold');
+      console.log('%c[Section 22] Commands:', 'color:#06b6d4;font-style:italic');
+      console.log('  __dmLockNow()         — قفل الشاشة الآن');
+      console.log('  __dmFactoryReset()    — ضبط المصنع');
+      console.log('  __dmLock.enabled      — حالة القفل');
+    }
+  );
+
+})();
 
 
 
