@@ -13459,6 +13459,131 @@ service cloud.firestore {
   };
 
 })();
+/* =========================================================
+   SECTION 33: Remove Legacy Firebase Auth Section
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Hides Section 14's "Firebase Auth" card from Settings
+   - Prevents accidental activation
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 33] Cleaning legacy Auth section…', 'color:#ef4444;font-weight:bold');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 33] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  /* ---------- remove the legacy auth section from settings ---------- */
+  function removeLegacyAuthSection() {
+    // Section 14 adds cards with specific text
+    var grid = document.querySelector('.grid-2');
+    if (!grid) return;
+
+    // Find all cards that mention "مصادقة Firebase" or "Firebase Auth"
+    var cards = grid.querySelectorAll('.card');
+    var removed = 0;
+    cards.forEach(function (card) {
+      var text = card.textContent || '';
+      // Look for the specific Section 14 markers
+      if (text.indexOf('مصادقة Firebase') >= 0 ||
+          text.indexOf('تفعيل Firebase Auth') >= 0 ||
+          text.indexOf('ترحيل المستخدمين') >= 0 ||
+          text.indexOf('Firestore Security Rules') >= 0 && text.indexOf('كلمة المرور المؤقتة') >= 0) {
+        card.remove();
+        removed++;
+      }
+    });
+
+    if (removed > 0) {
+      console.log('[Section 33] ✓ Removed ' + removed + ' legacy auth card(s)');
+    }
+  }
+
+  /* ---------- also block the "migrate" button if it still exists ---------- */
+  function blockMigrateButton() {
+    // Intercept clicks on any button that says "ترحيل" or "Migrate"
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var text = (btn.textContent || '').trim();
+      if (text.indexOf('ترحيل') >= 0 ||
+          text.indexOf('Migrate') >= 0 ||
+          text.indexOf('تفعيل Firebase Auth') >= 0 ||
+          text.indexOf('Enable Firebase Auth') >= 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (typeof showToast === 'function') {
+          showToast(
+            State.lang === 'ar'
+              ? 'هذه الميزة معطّلة — النظام يستخدم Firebase Auth الجديد'
+              : 'This feature is disabled — system uses new Firebase Auth',
+            'warn'
+          );
+        }
+        return false;
+      }
+    }, true); // capture phase to intercept before anything else
+  }
+
+  /* ---------- hook Pages.settings ---------- */
+  function hookSettings() {
+    if (!Pages || !Pages.settings) return;
+    if (Pages.settings.__dm33Hooked) return;
+
+    var orig = Pages.settings;
+    Pages.settings = function (el) {
+      orig.apply(this, arguments);
+      setTimeout(function () {
+        removeLegacyAuthSection();
+      }, 150);
+      setTimeout(function () {
+        removeLegacyAuthSection();
+      }, 500);
+    };
+    Pages.settings.__dm33Hooked = true;
+    console.log('[Section 33] ✓ Settings hooked');
+  }
+
+  /* ---------- also watch DOM changes as backup ---------- */
+  function watchSettings() {
+    var target = document.getElementById('content');
+    if (!target) return;
+    var obs = new MutationObserver(function () {
+      clearTimeout(window.__dm33T);
+      window.__dm33T = setTimeout(removeLegacyAuthSection, 200);
+    });
+    obs.observe(target, { childList: true, subtree: true });
+  }
+
+  /* ---------- boot ---------- */
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof State !== 'undefined'
+        && document.getElementById('content');
+    },
+    function () {
+      hookSettings();
+      watchSettings();
+      blockMigrateButton();
+      removeLegacyAuthSection();
+
+      console.log('%c[Section 33] ✓ Legacy Auth section removed', 'color:#10b981;font-weight:bold');
+    }
+  );
+
+  // Expose for manual trigger
+  window.__dmRemoveLegacyAuth = removeLegacyAuthSection;
+
+})();
 
 
 
