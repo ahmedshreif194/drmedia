@@ -11498,10 +11498,10 @@ service cloud.firestore {
     bankName: 'البنك الأهلي المصري',
     bankAccount: '1234 5678 9012 3456',
     accountName: 'Dr Media Pro',
-    instapay: 'payments@drmedia.pro',
-    vodafone: '01012345678',
+    instapay: 'ahmedshreif94@instapay',
+    vodafone: '01002670948',
     supportEmail: 'support@drmedia.pro',
-    supportPhone: '+20 100 000 0000'
+    supportPhone: '+201002670948'
   };
 
   /* ---------- state ---------- */
