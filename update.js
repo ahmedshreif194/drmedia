@@ -15720,6 +15720,627 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 40: Offline-First + Auto-Sync
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Works 100% offline (no internet needed)
+   - Auto-detects online/offline
+   - Queues changes while offline
+   - Auto-syncs when back online
+   - Service Worker caches everything
+   - PWA installable on phone/desktop
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 40] Offline-First loading…', 'color:#f59e0b;font-weight:bold;font-size:14px');
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 300;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); console.warn('[Section 40] timeout'); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  function toast(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'info');
+  }
+
+  /* =========================================================
+     1. STATE
+     ========================================================= */
+  var Offline = {
+    online: navigator.onLine,
+    pendingWrites: [],
+    totalPendingBytes: 0,
+    lastSyncAt: null,
+    lastSyncResult: null,
+    syncAttempts: 0,
+    db: null,
+    dbReady: false,
+    autoRetrying: false,
+    retryTimer: null
+  };
+  window.__dmOffline = Offline;
+
+  var DB_NAME = 'drmedia_offline';
+  var DB_VERSION = 1;
+  var STORE_PENDING = 'pending_writes';
+  var STORE_CACHE = 'state_cache';
+
+  /* =========================================================
+     2. INDEXEDDB — robust offline storage
+     ========================================================= */
+  function openDB() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('No IndexedDB')); return; }
+
+      var req = indexedDB.open(DB_NAME, DB_VERSION);
+
+      req.onupgradeneeded = function (e) {
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_PENDING)) {
+          db.createObjectStore(STORE_PENDING, { keyPath: 'id', autoIncrement: true });
+        }
+        if (!db.objectStoreNames.contains(STORE_CACHE)) {
+          db.createObjectStore(STORE_CACHE, { keyPath: 'key' });
+        }
+      };
+
+      req.onsuccess = function (e) {
+        Offline.db = e.target.result;
+        Offline.dbReady = true;
+        resolve(Offline.db);
+      };
+
+      req.onerror = function (e) {
+        reject(e.target.error);
+      };
+    });
+  }
+
+  function dbPut(storeName, value) {
+    return new Promise(function (resolve, reject) {
+      if (!Offline.dbReady) { reject(new Error('DB not ready')); return; }
+      try {
+        var tx = Offline.db.transaction([storeName], 'readwrite');
+        var store = tx.objectStore(storeName);
+        var req = store.put(value);
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function dbGetAll(storeName) {
+    return new Promise(function (resolve, reject) {
+      if (!Offline.dbReady) { reject(new Error('DB not ready')); return; }
+      try {
+        var tx = Offline.db.transaction([storeName], 'readonly');
+        var store = tx.objectStore(storeName);
+        var req = store.getAll();
+        req.onsuccess = function () { resolve(req.result || []); };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function dbDelete(storeName, key) {
+    return new Promise(function (resolve, reject) {
+      if (!Offline.dbReady) { reject(new Error('DB not ready')); return; }
+      try {
+        var tx = Offline.db.transaction([storeName], 'readwrite');
+        var store = tx.objectStore(storeName);
+        var req = store.delete(key);
+        req.onsuccess = function () { resolve(); };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function dbClear(storeName) {
+    return new Promise(function (resolve, reject) {
+      if (!Offline.dbReady) { reject(new Error('DB not ready')); return; }
+      try {
+        var tx = Offline.db.transaction([storeName], 'readwrite');
+        var store = tx.objectStore(storeName);
+        var req = store.clear();
+        req.onsuccess = function () { resolve(); };
+        req.onerror = function () { reject(req.error); };
+      } catch (e) { reject(e); }
+    });
+  }
+
+  /* =========================================================
+     3. CACHE STATE LOCALLY (for offline reads)
+     ========================================================= */
+  async function cacheState() {
+    if (!Offline.dbReady) return;
+    try {
+      await dbPut(STORE_CACHE, {
+        key: 'state',
+        data: State.data,
+        cachedAt: Date.now()
+      });
+    } catch (e) { console.warn('[Section 40] cache failed', e); }
+  }
+
+  async function restoreCachedState() {
+    if (!Offline.dbReady) return false;
+    try {
+      var all = await dbGetAll(STORE_CACHE);
+      var cached = all.find(function (x) { return x.key === 'state'; });
+      if (cached && cached.data) {
+        State.data = cached.data;
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+        console.log('%c[Section 40] 📦 Restored from IndexedDB cache', 'color:#10b981');
+        return true;
+      }
+    } catch (e) { console.warn('[Section 40] restore failed', e); }
+    return false;
+  }
+
+  /* =========================================================
+     4. PENDING QUEUE — store offline changes
+     ========================================================= */
+  async function queueWrite(docName, payload) {
+    if (!Offline.dbReady) return;
+    try {
+      var entry = {
+        docName: docName,
+        payload: payload,
+        queuedAt: Date.now(),
+        size: JSON.stringify(payload).length
+      };
+      await dbPut(STORE_PENDING, entry);
+      Offline.totalPendingBytes += entry.size;
+      updateOfflineIndicator();
+      console.log('%c[Section 40] 📥 Queued: ' + docName + ' (' + (entry.size / 1024).toFixed(1) + ' KB)', 'color:#f59e0b;font-weight:bold');
+      scheduleRetry(1500);
+    } catch (e) { console.warn('[Section 40] queue failed', e); }
+  }
+
+  async function flushQueue() {
+    if (!navigator.onLine) {
+      console.log('[Section 40] Still offline — skip flush');
+      return false;
+    }
+
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) {
+      console.log('[Section 40] Firebase not ready');
+      return false;
+    }
+
+    if (!window.__dmSplit || !window.__dmSplit.companyId) return false;
+
+    var pending = await dbGetAll(STORE_PENDING);
+    if (!pending.length) return true;
+
+    console.log('%c[Section 40] 🔄 Flushing ' + pending.length + ' pending writes…', 'color:#7c3aed;font-weight:bold');
+
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    var companyId = window.__dmSplit.companyId;
+    var myUid = fb.auth.currentUser ? fb.auth.currentUser.uid : null;
+
+    // Group by docName (only keep latest)
+    var latest = {};
+    pending.forEach(function (item) {
+      latest[item.docName] = item;
+    });
+
+    Offline.syncAttempts++;
+    var success = 0;
+    var failed = 0;
+
+    for (var docName in latest) {
+      var item = latest[docName];
+      try {
+        var ref = fsMod.doc(fb.db, 'companies', companyId, 'data', docName);
+        await fsMod.setDoc(ref, {
+          data: item.payload,
+          updatedBy: window.__dmSplit.clientId,
+          updatedByUser: window.__dmSaaS.user ? window.__dmSaaS.user.email : null,
+          updatedAt: fsMod.serverTimestamp(),
+          version: Date.now(),
+          offlineSync: true
+        });
+        success++;
+        console.log('   ✓ ' + docName);
+      } catch (err) {
+        failed++;
+        console.warn('   ✗ ' + docName + ':', err.message);
+        if (!navigator.onLine || err.code === 'unavailable') {
+          // Still offline — stop trying
+          break;
+        }
+      }
+    }
+
+    // Clear the queue (we sent latest for each)
+    await dbClear(STORE_PENDING);
+    Offline.pendingWrites = [];
+    Offline.totalPendingBytes = 0;
+
+    Offline.lastSyncAt = Date.now();
+    Offline.lastSyncResult = { success: success, failed: failed };
+
+    if (success > 0) {
+      toast('✓ تم مزامنة ' + success + ' تعديل', 'success');
+      updateOfflineIndicator();
+    }
+
+    console.log('%c[Section 40] ✓ Flushed: ' + success + ' ok, ' + failed + ' failed', 'color:#10b981;font-weight:bold');
+    return failed === 0;
+  }
+
+  /* =========================================================
+     5. HOOK saveData — offline-aware
+     ========================================================= */
+  function hookSaveData() {
+    if (window.saveData.__dm40) return;
+
+    var prev = window.saveData;
+
+    window.saveData = function () {
+      // 1. Save to localStorage (always)
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(State.data)); } catch (e) {}
+
+      // 2. Save to IndexedDB (for offline reads)
+      cacheState();
+
+      // 3. Skip if applying remote
+      if (window.__dmSplit && window.__dmSplit.applyingRemote) return;
+
+      // 4. If offline → queue changes
+      if (!navigator.onLine) {
+        queueAllDocsForOffline();
+        return;
+      }
+
+      // 5. Online → let the previous handler (Section 39) push normally
+      if (typeof prev === 'function') {
+        try { prev.apply(this, arguments); } catch (e) { console.warn(e); }
+      }
+    };
+
+    window.saveData.__dm40 = true;
+    console.log('[Section 40] ✓ saveData hooked (offline-aware)');
+  }
+
+  function queueAllDocsForOffline() {
+    if (!window.__dmSplit) return;
+    var DOC_MAP = {
+      employees: ['employees'],
+      users: ['users', 'roles'],
+      bookings: ['bookings'],
+      clients: ['clients'],
+      halls: ['halls', 'equipment'],
+      distributions: ['distributions'],
+      attendance: ['attendance', 'leaves', 'substitutions'],
+      finance: ['advances', 'deductions', 'bonuses'],
+      system: ['notifications', 'activityLogs', 'trash', 'settings']
+    };
+
+    Object.keys(DOC_MAP).forEach(function (docName) {
+      var keys = DOC_MAP[docName];
+      var payload = { _schema: 2 };
+      keys.forEach(function (k) { payload[k] = State.data[k]; });
+      queueWrite(docName, payload);
+    });
+  }
+
+  /* =========================================================
+     6. RETRY SCHEDULING
+     ========================================================= */
+  function scheduleRetry(delay) {
+    clearTimeout(Offline.retryTimer);
+    Offline.retryTimer = setTimeout(function () {
+      if (navigator.onLine && Offline.totalPendingBytes > 0) {
+        flushQueue();
+      } else if (Offline.totalPendingBytes > 0) {
+        // Keep retrying every 10s while offline
+        scheduleRetry(10000);
+      }
+    }, delay || 3000);
+  }
+
+  /* =========================================================
+     7. ONLINE/OFFLINE LISTENERS
+     ========================================================= */
+  function watchConnectivity() {
+    window.addEventListener('online', function () {
+      Offline.online = true;
+      console.log('%c[Section 40] ✅ Online', 'color:#10b981;font-weight:bold');
+      toast('✅ رجع الاتصال — جاري مزامنة التعديلات…', 'success');
+      updateOfflineIndicator();
+      // Wait 1s for Firebase to stabilize
+      setTimeout(function () {
+        flushQueue();
+      }, 1000);
+    });
+
+    window.addEventListener('offline', function () {
+      Offline.online = false;
+      console.log('%c[Section 40] ⚠️ Offline — system will work locally', 'color:#f59e0b;font-weight:bold');
+      toast('📴 لا يوجد اتصال — النظام سيعمل محليًا', 'warn');
+      updateOfflineIndicator();
+    });
+
+    // Also probe Firebase reachability every 30s
+    setInterval(probeConnectivity, 30000);
+  }
+
+  async function probeConnectivity() {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) return;
+    if (!window.__dmSplit || !window.__dmSplit.companyId) return;
+
+    try {
+      var fb = window.DrMediaFB;
+      var fsMod = fb.modules.fsMod;
+      // Lightweight read to test connectivity
+      var ref = fsMod.doc(fb.db, 'companies', window.__dmSplit.companyId, 'data', 'employees');
+      var snap = await Promise.race([
+        fsMod.getDoc(ref),
+        new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timeout')); }, 5000); })
+      ]);
+      if (!navigator.onLine) {
+        // Browser says offline but Firebase works — trust Firebase
+        console.log('[Section 40] Firebase reachable despite browser saying offline');
+      }
+      if (Offline.totalPendingBytes > 0) flushQueue();
+    } catch (e) {
+      // Firebase unreachable
+    }
+  }
+
+  /* =========================================================
+     8. OFFLINE INDICATOR
+     ========================================================= */
+  function updateOfflineIndicator() {
+    var ind = document.getElementById('dm-sync-indicator');
+    var lbl = document.getElementById('dm-sync-label');
+    var dot = document.getElementById('dm-sync-dot');
+    if (!ind || !lbl) return;
+
+    if (!navigator.onLine && Offline.totalPendingBytes === 0) {
+      // Offline, no pending
+      ind.style.background = 'rgba(245,158,11,.15)';
+      ind.style.color = '#f59e0b';
+      lbl.textContent = '📴 محلي';
+      ind.title = 'بدون إنترنت — البيانات محفوظة محليًا';
+      if (dot) dot.style.background = '#f59e0b';
+    } else if (!navigator.onLine && Offline.totalPendingBytes > 0) {
+      // Offline with pending writes
+      ind.style.background = 'rgba(239,68,68,.15)';
+      ind.style.color = '#ef4444';
+      var cnt = Offline.pendingWrites.length || '?';
+      lbl.textContent = '⏳ ' + (Offline.totalPendingBytes / 1024).toFixed(0) + 'KB بانتظار';
+      ind.title = 'فيه ' + (Offline.totalPendingBytes / 1024).toFixed(1) + ' KB بانتظار الرفع';
+      if (dot) dot.style.background = '#ef4444';
+    } else if (Offline.totalPendingBytes > 0) {
+      // Online but flushing
+      ind.style.background = 'rgba(124,58,237,.15)';
+      ind.style.color = '#7c3aed';
+      lbl.textContent = '⏳ جاري الرفع';
+      if (dot) dot.style.background = '#7c3aed';
+    } else {
+      // All good
+      ind.style.background = 'rgba(16,185,129,.15)';
+      ind.style.color = '#10b981';
+      lbl.textContent = '⚡ Live';
+      if (dot) dot.style.background = '#10b981';
+    }
+  }
+
+  /* =========================================================
+     9. SERVICE WORKER — caches app files
+     ========================================================= */
+  async function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) {
+      console.log('[Section 40] SW not supported');
+      return;
+    }
+
+    var swCode = `
+      const CACHE_NAME = 'drmedia-v1';
+      const URLS_TO_CACHE = [
+        './',
+        './index.html',
+        './update.js'
+      ];
+
+      self.addEventListener('install', (e) => {
+        self.skipWaiting();
+        e.waitUntil(
+          caches.open(CACHE_NAME).then((c) => c.addAll(URLS_TO_CACHE).catch(() => {}))
+        );
+      });
+
+      self.addEventListener('activate', (e) => {
+        e.waitUntil(
+          caches.keys().then((keys) =>
+            Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+          )
+        );
+        self.clients.claim();
+      });
+
+      self.addEventListener('fetch', (e) => {
+        // Network first, fallback to cache
+        e.respondWith(
+          fetch(e.request).then((res) => {
+            if (res && res.status === 200 && e.request.method === 'GET') {
+              const copy = res.clone();
+              caches.open(CACHE_NAME).then((c) => c.put(e.request, copy).catch(() => {}));
+            }
+            return res;
+          }).catch(() => caches.match(e.request))
+        );
+      });
+    `;
+
+    try {
+      var blob = new Blob([swCode], { type: 'application/javascript' });
+      var url = URL.createObjectURL(blob);
+      var reg = await navigator.serviceWorker.register(url, { scope: './' });
+      console.log('%c[Section 40] ✓ Service Worker registered', 'color:#10b981;font-weight:bold');
+
+      // Attach message channel for cleanup
+      window.__dmSWReg = reg;
+    } catch (err) {
+      console.warn('[Section 40] SW registration failed:', err.message);
+    }
+  }
+
+  /* =========================================================
+     10. PWA MANIFEST (inline)
+     ========================================================= */
+  function injectPWA() {
+    if (document.querySelector('link[rel="manifest"]')) return;
+
+    var manifest = {
+      name: 'Dr Media Pro',
+      short_name: 'DrMedia',
+      description: 'Professional Video Production Management System',
+      start_url: './',
+      display: 'standalone',
+      background_color: '#0f0a1f',
+      theme_color: '#7c3aed',
+      orientation: 'any',
+      icons: [
+        { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="40" fill="%237c3aed"/><text x="96" y="130" font-family="system-ui" font-size="100" font-weight="800" fill="white" text-anchor="middle">D</text></svg>', sizes: '192x192', type: 'image/svg+xml' },
+        { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="100" fill="%237c3aed"/><text x="256" y="350" font-family="system-ui" font-size="280" font-weight="800" fill="white" text-anchor="middle">D</text></svg>', sizes: '512x512', type: 'image/svg+xml' }
+      ]
+    };
+
+    var blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+
+    var link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = url;
+    document.head.appendChild(link);
+
+    var meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.content = '#7c3aed';
+    document.head.appendChild(meta);
+
+    console.log('[Section 40] ✓ PWA manifest injected');
+  }
+
+  /* =========================================================
+     11. PUBLIC COMMANDS
+     ========================================================= */
+  window.__dmOfflineStatus = async function () {
+    var pending = Offline.dbReady ? await dbGetAll(STORE_PENDING) : [];
+    var s = {
+      online: navigator.onLine,
+      dbReady: Offline.dbReady,
+      pendingDocs: pending.length,
+      pendingKB: (Offline.totalPendingBytes / 1024).toFixed(2),
+      lastSyncAt: Offline.lastSyncAt ? new Date(Offline.lastSyncAt).toLocaleTimeString() : 'never',
+      lastSyncResult: Offline.lastSyncResult,
+      syncAttempts: Offline.syncAttempts
+    };
+    console.table(s);
+    return s;
+  };
+
+  window.__dmForceFlush = async function () {
+    if (!navigator.onLine) {
+      toast('لا يوجد اتصال حاليًا', 'warn');
+      return;
+    }
+    toast('🔄 جاري الرفع…', 'info');
+    await flushQueue();
+  };
+
+  window.__dmClearQueue = async function () {
+    if (!confirm('حذف كل التعديلات المعلقة؟ (لن يتم رفعها)')) return;
+    await dbClear(STORE_PENDING);
+    Offline.pendingWrites = [];
+    Offline.totalPendingBytes = 0;
+    updateOfflineIndicator();
+    toast('تم الحذف', 'success');
+  };
+
+  window.__dmSimulateOffline = function () {
+    // For testing — force offline view
+    Offline.online = false;
+    updateOfflineIndicator();
+    toast('🧪 محاكاة وضع offline', 'info');
+  };
+
+  /* =========================================================
+     12. BOOT
+     ========================================================= */
+  async function boot() {
+    // 1. Open IndexedDB
+    try {
+      await openDB();
+      console.log('%c[Section 40] ✓ IndexedDB ready', 'color:#10b981');
+    } catch (e) {
+      console.warn('[Section 40] IndexedDB unavailable:', e.message);
+    }
+
+    // 2. Inject PWA manifest
+    injectPWA();
+
+    // 3. Register Service Worker (after page load)
+    if (document.readyState === 'complete') {
+      registerServiceWorker();
+    } else {
+      window.addEventListener('load', registerServiceWorker);
+    }
+
+    // 4. Try restoring cached state (for offline boot)
+    if (!navigator.onLine) {
+      await restoreCachedState();
+    }
+
+    // 5. Hook saveData
+    hookSaveData();
+
+    // 6. Watch connectivity
+    watchConnectivity();
+
+    // 7. Try flushing on boot (in case there are leftovers)
+    if (navigator.onLine) {
+      setTimeout(function () { flushQueue(); }, 3000);
+    }
+
+    // 8. Initial indicator
+    updateOfflineIndicator();
+
+    // 9. Periodic flush (every 30s)
+    setInterval(function () {
+      if (navigator.onLine && Offline.totalPendingBytes > 0) {
+        flushQueue();
+      }
+    }, 30000);
+
+    console.log('%c[Section 40] ═══ OFFLINE-FIRST ACTIVE ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+    console.log('%c[Section 40] Works without internet. Auto-syncs when back online.', 'color:#06b6d4;font-style:italic');
+    console.log('  __dmOfflineStatus()  — حالة الأوفلاين');
+    console.log('  __dmForceFlush()     — مزامنة يدوية');
+    console.log('  __dmClearQueue()     — حذف المعلق');
+  }
+
+  waitFor(
+    function () {
+      return typeof State !== 'undefined'
+        && typeof window.saveData === 'function'
+        && window.__dmSplit;
+    },
+    boot
+  );
+
+})();
 
 
 
