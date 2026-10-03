@@ -16854,7 +16854,7 @@ service cloud.firestore {
      CONFIG
      ========================================================= */
   var GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
-  var VISION_MODEL = 'llama-3.2-90b-vision-preview';
+  var VISION_MODEL = 'qwen/qwen3.8-27b';
   var TEXT_MODEL = 'llama-3.3-70b-versatile';
   var KEY_STORAGE = 'dm_groq_key';
 
