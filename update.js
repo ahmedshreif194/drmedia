@@ -17798,6 +17798,132 @@ ${halls}
   boot();
 
 })();
+/* =========================================================
+   SECTION 46: Gemini Key Simple Fix
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Reads key from localStorage automatically
+   - Patches Section 42's fetch to inject the key
+   - Accepts both AIzaSy... and AQ.Ab... formats
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 46] Simple Key Fix loading…', 'color:#10b981;font-weight:bold');
+
+  var KEY_STORAGE = 'dm_gemini_api_key';
+
+  function getKey() {
+    try { return (localStorage.getItem(KEY_STORAGE) || '').trim(); } catch (e) { return ''; }
+  }
+
+  /* =========================================================
+     PATCH FETCH — inject key into Gemini URLs
+     ========================================================= */
+  var origFetch = window.fetch;
+
+  window.fetch = function (url, options) {
+    var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
+
+    // Only touch Gemini API calls
+    if (urlStr.indexOf('generativelanguage.googleapis.com') >= 0) {
+      var key = getKey();
+
+      if (!key) {
+        console.error('[Section 46] ❌ No key in localStorage. Set it first:');
+        console.error("  localStorage.setItem('dm_gemini_api_key', 'YOUR_KEY')");
+        return Promise.reject(new Error('Gemini key missing'));
+      }
+
+      // Replace or add key
+      if (urlStr.match(/[?&]key=[^&]*/)) {
+        urlStr = urlStr.replace(/key=[^&]*/, 'key=' + encodeURIComponent(key));
+      } else {
+        urlStr += (urlStr.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      }
+
+      console.log('%c[Section 46] 📡 Gemini call → key: ' + key.substring(0, 12) + '… (' + key.length + ' chars)', 'color:#10b981');
+    }
+
+    return origFetch(urlStr, options);
+  };
+
+  /* =========================================================
+     PUBLIC COMMANDS
+     ========================================================= */
+  window.__dmSetKey = function (k) {
+    k = (k || '').trim().replace(/\s+/g, '');
+    if (!k) { console.error('❌ Empty key'); return; }
+    if (k.indexOf('AIza') !== 0 && k.indexOf('AQ.') !== 0) {
+      console.error('❌ Key must start with AIza or AQ.');
+      return;
+    }
+    localStorage.setItem(KEY_STORAGE, k);
+    console.log('✓ Key saved (' + k.length + ' chars):', k.substring(0, 12) + '…');
+  };
+
+  window.__dmTestKey = async function () {
+    var key = getKey();
+    if (!key) {
+      console.error('❌ No key. Use __dmSetKey("YOUR_KEY")');
+      return false;
+    }
+    console.log('Testing key:', key.substring(0, 12) + '…');
+
+    try {
+      var res = await origFetch(
+        'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key)
+      );
+      if (res.ok) {
+        var d = await res.json();
+        var models = (d.models || []).filter(function (m) {
+          return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0;
+        });
+        console.log('%c✅ API works!', 'color:#10b981;font-weight:bold;font-size:14px');
+        console.log('Available models:');
+        models.slice(0, 10).forEach(function (m) {
+          console.log('  → ' + m.name.replace('models/', ''));
+        });
+        return true;
+      } else {
+        var err = await res.text();
+        console.error('%c❌ Error ' + res.status + ':', 'color:#ef4444;font-weight:bold', err.substring(0, 200));
+        return false;
+      }
+    } catch (e) {
+      console.error('❌ Failed:', e.message);
+      return false;
+    }
+  };
+
+  window.__dmShowKey = function () {
+    var k = getKey();
+    if (!k) {
+      console.log('No key set');
+      return;
+    }
+    console.table({
+      length: k.length,
+      format: k.indexOf('AIza') === 0 ? 'AIzaSy (legacy)' : (k.indexOf('AQ.') === 0 ? 'AQ.Ab (new)' : 'unknown'),
+      prefix: k.substring(0, 12),
+      suffix: k.substring(k.length - 6)
+    });
+  };
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  var k = getKey();
+  if (k) {
+    console.log('%c[Section 46] ✓ Ready — Key detected (' + k.length + ' chars)', 'color:#10b981;font-weight:bold');
+  } else {
+    console.log('%c[Section 46] ⚠ No key — run: __dmSetKey("YOUR_KEY")', 'color:#f59e0b;font-weight:bold');
+  }
+  console.log('  __dmTestKey()      — اختبار المفتاح');
+  console.log('  __dmShowKey()      — عرض المفتاح');
+  console.log('  __dmSetKey("...")  — تعيين مفتاح جديد');
+
+})();
 
 
 
