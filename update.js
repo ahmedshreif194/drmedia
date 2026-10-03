@@ -16999,7 +16999,7 @@ service cloud.firestore {
       var res = await groqRequest(GROQ_CHAT_URL, {
         model: VISION_MODEL,
         temperature: 0.1,
-        max_tokens: 8000,
+        max_tokens: 800,
         response_format: { type: 'json_object' },
         messages: [{
           role: 'user',
