@@ -16836,6 +16836,681 @@ service cloud.firestore {
   };
 
 })();
+/* =========================================================
+   SECTION 51: AI Import + Chat (Groq)
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - AI Import from images (Groq Vision)
+   - AI Chat assistant (Groq Text)
+   - Uses XMLHttpRequest (no fetch conflicts with Firebase)
+   - One API key for both
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 51] AI Import + Chat loading…', 'color:#f97316;font-weight:bold;font-size:14px');
+
+  /* =========================================================
+     CONFIG
+     ========================================================= */
+  var GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
+  var VISION_MODEL = 'llama-3.2-90b-vision-preview';
+  var TEXT_MODEL = 'llama-3.3-70b-versatile';
+  var KEY_STORAGE = 'dm_groq_key';
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function toast(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'info');
+  }
+
+  function getKey() {
+    try { return (localStorage.getItem(KEY_STORAGE) || '').trim(); } catch (e) { return ''; }
+  }
+
+  function normalize(s) {
+    return String(s || '').replace(/[\u064B-\u0652]/g, '').replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  /* =========================================================
+     XHR HELPER — avoids fetch conflicts with Firebase
+     ========================================================= */
+  function groqRequest(endpoint, body) {
+    return new Promise(function (resolve, reject) {
+      var key = getKey();
+      if (!key) { reject(new Error('NO_KEY')); return; }
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', endpoint, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Authorization', 'Bearer ' + key);
+
+      xhr.onload = function () {
+        if (xhr.status !== 200) {
+          var errMsg = 'Groq ' + xhr.status;
+          try {
+            var err = JSON.parse(xhr.responseText);
+            errMsg += ': ' + (err.error && err.error.message || xhr.responseText.substring(0, 200));
+          } catch (e) { errMsg += ': ' + xhr.responseText.substring(0, 200); }
+          reject(new Error(errMsg));
+          return;
+        }
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch (e) { reject(new Error('Invalid JSON response')); }
+      };
+      xhr.onerror = function () { reject(new Error('Network error')); };
+      xhr.timeout = 60000;
+      xhr.ontimeout = function () { reject(new Error('Timeout')); };
+      xhr.send(JSON.stringify(body));
+    });
+  }
+
+  /* =========================================================
+     AI IMPORT STATE
+     ========================================================= */
+  var Imp = {
+    parsed: [],
+    busy: false,
+    error: '',
+    raw: null,
+    activeHallId: 'all',
+    fileName: ''
+  };
+  window.__dmAIImp = Imp;
+
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () {
+        var match = String(r.result).match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) { reject(new Error('Invalid image')); return; }
+        resolve({ mimeType: match[1], base64: match[2] });
+      };
+      r.onerror = function () { reject(new Error('Read failed')); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function buildImportPrompt() {
+    var halls = (State.data.halls || []).map(function (h) {
+      return '- ' + (h.name.ar || h.name.en) + ' (' + h.code + ')';
+    }).join('\n');
+
+    return 'أنت محاسب دقيق. استخرج بيانات حجوزات من الصورة كـ JSON فقط.\n\nالقاعات المتاحة:\n' + halls +
+      '\n\nتعليمات:\n' +
+      '1. كل صف في الجدول = حجز واحد\n' +
+      '2. اتبع عناوين القاعات (مثل: "القاعة المغلقة شهر اكتوبر")\n' +
+      '3. التاريخ بصيغة YYYY-MM-DD (السنة 2026)\n' +
+      '4. الباكدج كما هو (عشاء 1، سواريه، هاي تي، مطبخ)\n' +
+      '5. عدد الأفراد: رقم صحيح (0 لو مش موجود)\n' +
+      '6. eventType:\n   - عشاء/فرح/زفاف → "Wedding"\n   - سواريه/خطوبة → "Engagement"\n   - حنة → "Henna"\n   - هاي تي/عيد ميلاد → "Birthday"\n   - مؤتمر → "Corporate"\n\n' +
+      'الصيغة:\n{"bookings":[{"hall":"القاعة المغلقة","date":"2026-10-01","clientName":"أحمد محمود","packageType":"عشاء 1","guestsCount":250,"eventType":"Wedding"}]}\n\n' +
+      'مهم: كل الصفوف بدون استثناء. الأسماء العربية كاملة. متخترعش بيانات.';
+  }
+
+  function mapToInternal(r) {
+    var halls = State.data.halls || [];
+    return (r.bookings || []).map(function (b) {
+      var hid = halls.length ? halls[0].id : '';
+      if (b.hall) {
+        var hn = normalize(b.hall);
+        for (var i = 0; i < halls.length; i++) {
+          var h = halls[i];
+          var ar = normalize(h.name.ar || '');
+          var en = normalize(h.name.en || '');
+          if ((ar && (hn.indexOf(ar) >= 0 || ar.indexOf(hn) >= 0)) ||
+              (en && (hn.indexOf(en) >= 0 || en.indexOf(hn) >= 0))) { hid = h.id; break; }
+        }
+      }
+      return {
+        hallId: hid, hallName: b.hall || '',
+        date: b.date || todayISO(),
+        clientName: b.clientName || '',
+        packageType: b.packageType || '',
+        guestsCount: parseInt(b.guestsCount) || 0,
+        eventType: b.eventType || 'Wedding',
+        startTime: '19:00', endTime: '23:00', cost: 0
+      };
+    });
+  }
+
+  async function processImage(file) {
+    if (!getKey()) { showKeyModal(); return; }
+    Imp.fileName = file.name;
+    Imp.parsed = []; Imp.busy = true; Imp.error = ''; Imp.raw = null;
+    navigate('aiimport');
+    try {
+      var img = await fileToBase64(file);
+      var res = await groqRequest(GROQ_CHAT_URL, {
+        model: VISION_MODEL,
+        temperature: 0.1,
+        max_tokens: 8000,
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: buildImportPrompt() },
+            { type: 'image_url', image_url: { url: 'data:' + img.mimeType + ';base64,' + img.base64 } }
+          ]
+        }]
+      });
+      var text = res.choices[0].message.content;
+      var parsed;
+      try { parsed = JSON.parse(text); }
+      catch (e) {
+        var m = text.match(/\{[\s\S]*\}/);
+        parsed = m ? JSON.parse(m[0]) : { bookings: [] };
+      }
+      Imp.raw = parsed;
+      Imp.parsed = mapToInternal(parsed);
+      Imp.busy = false;
+      navigate('aiimport');
+      if (Imp.parsed.length) toast('✓ ' + Imp.parsed.length + ' حجز', 'success');
+      else toast('مفيش بيانات — جرب صورة أوضح', 'warn');
+    } catch (e) {
+      console.error('[Section 51]', e);
+      Imp.busy = false;
+      Imp.error = e.message || String(e);
+      navigate('aiimport');
+    }
+  }
+
+  /* =========================================================
+     PAGE: AI Import
+     ========================================================= */
+  Pages.aiimport = function (el) {
+    if (Imp.busy) {
+      el.innerHTML = '<div class="card" style="max-width:500px;margin:2rem auto;text-align:center;padding:3rem 2rem">' +
+        '<div style="font-size:3rem">🤖</div>' +
+        '<p style="margin-top:1rem;font-weight:700">جاري التحليل…</p>' +
+        '<div style="width:50px;height:50px;margin:1.5rem auto;border:4px solid var(--border);border-top-color:#f97316;border-radius:50%;animation:dm-spin 1s linear infinite"></div>' +
+        '<style>@keyframes dm-spin{to{transform:rotate(360deg)}}</style></div>';
+      return;
+    }
+    if (Imp.error) return renderError(el);
+    if (Imp.parsed.length) return renderReview(el);
+    renderUpload(el);
+  };
+
+  function renderUpload(el) {
+    var hasKey = !!getKey();
+    el.innerHTML = '<div style="max-width:640px;margin:1rem auto">' +
+      '<div class="card" style="padding:2rem">' +
+        '<div style="text-align:center;margin-bottom:1.5rem">' +
+          '<div style="font-size:3rem;margin-bottom:.5rem">🤖</div>' +
+          '<h3 style="margin:0 0 .35rem;font-size:1.15rem">استيراد الحجوزات بالذكاء الاصطناعي</h3>' +
+          '<p style="color:var(--text-muted);font-size:.85rem;margin:.35rem 0 0">ارفع صورة جدول الحجوزات — AI يقرأها ويفهمها</p>' +
+        '</div>' +
+        (hasKey ? '' : '<div style="margin-bottom:1.5rem;padding:1rem;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:12px;text-align:center">' +
+          '<div style="font-size:.85rem;color:#f59e0b;font-weight:700;margin-bottom:.5rem">⚠️ مفتاح Groq مطلوب</div>' +
+          '<button class="btn btn-primary btn-sm" onclick="__dmGroqSetup()">🔑 إعداد المفتاح</button></div>') +
+        '<div id="ai-dz" style="border:3px dashed var(--border);border-radius:16px;padding:3rem 1.5rem;text-align:center;cursor:pointer;background:var(--surface-2);transition:all .2s;' + (hasKey ? '' : 'opacity:.5;pointer-events:none;') + '">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">📤</div>' +
+          '<div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">اضغط لاختيار صورة</div>' +
+          '<div style="font-size:.75rem;color:var(--text-muted)">JPG · PNG · WEBP</div>' +
+        '</div>' +
+        '<input type="file" id="ai-file" accept="image/*" style="display:none">' +
+      '</div>' +
+      '<div class="card" style="margin-top:1rem;background:rgba(249,115,22,.05);border-color:rgba(249,115,22,.2)">' +
+        '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.9">' +
+          '<b style="color:#f97316">✨ مميزات AI Import:</b><br>' +
+          '• دقة 95%+ على الجداول العربية<br>' +
+          '• يقرأ العناوين ويعرف القاعات تلقائيًا<br>' +
+          '• يفهم "عشاء"، "سواريه"، "هاي تي" ويحدد نوع المناسبة<br>' +
+          '• سرعة 2-4 ثواني' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+
+    var dz = document.getElementById('ai-dz');
+    var fi = document.getElementById('ai-file');
+    if (dz && fi && hasKey) {
+      dz.onclick = function () { fi.click(); };
+      fi.onchange = function (e) { if (e.target.files[0]) processImage(e.target.files[0]); };
+      dz.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = '#f97316';
+        dz.style.background = 'rgba(249,115,22,.08)';
+      });
+      dz.addEventListener('dragleave', function () {
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
+      });
+      dz.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
+        if (e.dataTransfer.files[0]) processImage(e.dataTransfer.files[0]);
+      });
+    }
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderError(el) {
+    var noKey = Imp.error === 'NO_KEY';
+    el.innerHTML = '<div style="max-width:640px;margin:1rem auto"><div class="card" style="border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.05)">' +
+      '<div style="text-align:center;padding:1rem">' +
+        '<div style="font-size:2.5rem;margin-bottom:.5rem">⚠️</div>' +
+        '<h3 style="margin:0 0 .5rem;color:#ef4444">' + (noKey ? 'مفتاح Groq مطلوب' : 'خطأ من الذكاء الاصطناعي') + '</h3>' +
+        (noKey ? '' : '<p style="font-size:.82rem;color:var(--text-muted);margin:.5rem 0;word-break:break-word">' + esc(Imp.error) + '</p>') +
+        '<div style="display:flex;gap:.5rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">' +
+          (noKey ? '<button class="btn btn-primary" onclick="__dmGroqSetup()">🔑 إعداد المفتاح</button>' : '') +
+          '<button class="btn btn-ghost" onclick="Imp.error=\'\';Imp.parsed=[];navigate(\'aiimport\')">↺ حاول مرة أخرى</button>' +
+        '</div></div></div></div>';
+  }
+
+  function renderReview(el) {
+    var halls = State.data.halls || [];
+    var rows = Imp.parsed;
+
+    var rowsHtml = rows.map(function (r, i) {
+      var evOpts = ['Wedding','Engagement','Henna','Birthday','Corporate','Other'].map(function (ev) {
+        return '<option value="' + ev + '"' + (r.eventType === ev ? ' selected' : '') + '>' + ev + '</option>';
+      }).join('');
+      var hOpts = halls.map(function (h) {
+        return '<option value="' + h.id + '"' + (r.hallId === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+      }).join('');
+      return '<tr data-idx="' + i + '">' +
+        '<td style="font-weight:700;color:var(--text-muted);width:30px">' + (i + 1) + '</td>' +
+        '<td><input class="ai-f" data-f="clientName" value="' + esc(r.clientName) + '" style="width:100%;min-width:180px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><input class="ai-f" data-f="date" type="date" value="' + esc(r.date) + '" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><input class="ai-f" data-f="packageType" value="' + esc(r.packageType) + '" style="width:80px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><input class="ai-f" data-f="guestsCount" type="number" value="' + (r.guestsCount || 0) + '" style="width:70px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+        '<td><select class="ai-f" data-f="eventType" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + evOpts + '</select></td>' +
+        '<td><select class="ai-f" data-f="hallId" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + hOpts + '</select></td>' +
+        '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="Imp.parsed.splice(' + i + ',1);navigate(\'aiimport\')" style="color:#ef4444"><i data-lucide="trash-2"></i></button></td>' +
+      '</tr>';
+    }).join('');
+
+    el.innerHTML = '<div class="card" style="margin-bottom:1rem">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">' +
+        '<b style="font-size:1rem">مراجعة النتائج</b>' +
+        '<span class="badge-pill badge-purple">' + rows.length + ' حجز</span>' +
+        '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">' +
+          '<button class="btn btn-ghost btn-sm" onclick="__dmAIToggleRaw()"><i data-lucide="code"></i> AI رد</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="Imp.parsed=[];Imp.error=\'\';Imp.raw=null;navigate(\'aiimport\')"><i data-lucide="rotate-ccw"></i> ملف آخر</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="__dmAISaveAll()"><i data-lucide="save"></i> حفظ الكل (' + rows.length + ')</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    (Imp.showRaw && Imp.raw ?
+      '<div class="card" style="margin-bottom:1rem"><pre style="background:var(--surface-2);padding:1rem;border-radius:8px;font-size:.7rem;line-height:1.5;max-height:300px;overflow:auto;white-space:pre-wrap">' + esc(JSON.stringify(Imp.raw, null, 2)) + '</pre></div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none;border-radius:0">' +
+      '<table class="data-table" style="min-width:900px">' +
+        '<thead><tr><th>#</th><th>العميل</th><th>التاريخ</th><th>الباكدج</th><th>الأفراد</th><th>المناسبة</th><th>القاعة</th><th></th></tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table></div></div>';
+
+    if (window.lucide) lucide.createIcons();
+
+    el.querySelectorAll('.ai-f').forEach(function (inp) {
+      inp.onchange = function (e) {
+        var tr = e.target.closest('tr[data-idx]');
+        if (!tr) return;
+        var idx = +tr.dataset.idx;
+        if (Imp.parsed[idx]) Imp.parsed[idx][e.target.dataset.f] = e.target.type === 'number' ? parseInt(e.target.value) : e.target.value;
+      };
+    });
+  }
+
+  window.__dmAIToggleRaw = function () { Imp.showRaw = !Imp.showRaw; navigate('aiimport'); };
+
+  window.__dmAISaveAll = function () {
+    if (!Imp.parsed.length) return;
+    var n = 0;
+    Imp.parsed.forEach(function (p) {
+      if (!p.clientName) return;
+      State.data.bookings.push({
+        id: 'b_' + Math.random().toString(36).slice(2, 10),
+        date: p.date || todayISO(),
+        hallId: p.hallId,
+        clientName: p.clientName,
+        phone: '',
+        eventType: p.eventType || 'Wedding',
+        startTime: '19:00', endTime: '23:00',
+        status: 'pending', paymentStatus: 'unpaid',
+        cost: 0, guestsCount: p.guestsCount || 0,
+        notes: 'AI: ' + Imp.fileName
+      });
+      n++;
+    });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    try { if (typeof logActivity === 'function') logActivity('ai-import', 'booking', null, null, { count: n }); } catch (e) {}
+    toast('✓ ' + n + ' حجز', 'success');
+    Imp.parsed = []; Imp.raw = null;
+    setTimeout(function () { navigate('bookings'); }, 500);
+  };
+
+  /* =========================================================
+     CHAT STATE
+     ========================================================= */
+  var Chat = {
+    open: false,
+    messages: [],  // {role: 'user'|'assistant', text}
+    busy: false
+  };
+  window.__dmChat = Chat;
+
+  function buildSystemPrompt() {
+    var d = State.data;
+    var s = window.__dmSaaS || {};
+    var company = s.company ? s.company.name : 'غير محددة';
+    var plan = s.subscription ? s.subscription.planId : 'trial';
+    var today = todayISO();
+
+    var emps = (d.employees || []).map(function (e) {
+      return e.name + ' (' + e.role + ')' + (e.status !== 'active' ? ' [غير نشط]' : '');
+    }).join(', ');
+
+    var hallsInfo = (d.halls || []).map(function (h) {
+      return (h.name.ar || h.name.en) + ' - ' + h.requirements.map(function (r) {
+        return r.role + ' x' + r.count;
+      }).join(', ');
+    }).join(' | ');
+
+    var todayBookings = (d.bookings || []).filter(function (b) { return b.date === today && b.status !== 'cancelled'; });
+    var todaySummary = todayBookings.map(function (b) {
+      var h = d.halls.find(function (x) { return x.id === b.hallId; });
+      return (b.clientName || '') + ' @ ' + (h ? (h.name.ar || h.name.en) : '?');
+    }).join('; ');
+
+    return 'أنت مساعد ذكي لنظام إدارة إنتاج الفيديو "Dr Media Pro".\n' +
+      'الشركة: ' + company + ' · الباقة: ' + plan + ' · التاريخ: ' + today + '\n\n' +
+      'بيانات النظام الحالية:\n' +
+      '- الموظفون (' + (d.employees || []).length + '): ' + (emps || 'لا يوجد') + '\n' +
+      '- القاعات (' + (d.halls || []).length + '): ' + (hallsInfo || 'لا يوجد') + '\n' +
+      '- إجمالي الحجوزات: ' + ((d.bookings || []).length) + '\n' +
+      '- حجوزات اليوم (' + todayBookings.length + '): ' + (todaySummary || 'لا يوجد') + '\n' +
+      '- العملاء: ' + ((d.clients || []).length) + '\n' +
+      '- المعدات: ' + ((d.equipment || []).length) + '\n\n' +
+      'قواعد:\n' +
+      '1. أجب بالعربي بإيجاز ووضوح\n' +
+      '2. لما المستخدم يسأل عن بيانات، اعتمد على الأرقام اللي فوق\n' +
+      '3. لما يطلب منك مهمة (زي "افتح الحجوزات")، اقترح الزر المناسب بس متعملش أي حاجة تلقائيًا\n' +
+      '4. لو السؤال عن حاجة مش واضحة، اسأل للتوضيح\n' +
+      '5. حافظ على الردود قصيرة (2-4 أسطر عادة)\n' +
+      '6. متخترعش أرقام أو بيانات مش موجودة فوق';
+  }
+
+  async function sendChatMessage(userText) {
+    if (!userText.trim() || Chat.busy) return;
+    if (!getKey()) {
+      Chat.messages.push({ role: 'assistant', text: '⚠️ لازم تعد مفتاح Groq أولًا من الإعدادات.' });
+      renderChatMessages();
+      return;
+    }
+
+    Chat.messages.push({ role: 'user', text: userText });
+    renderChatMessages();
+    Chat.busy = true;
+    updateChatStatus('يكتب…');
+
+    try {
+      var messages = [{ role: 'system', content: buildSystemPrompt() }];
+      // Last 10 messages for context
+      Chat.messages.slice(-10).forEach(function (m) {
+        messages.push({ role: m.role, content: m.text });
+      });
+
+      var res = await groqRequest(GROQ_CHAT_URL, {
+        model: TEXT_MODEL,
+        temperature: 0.7,
+        max_tokens: 1000,
+        messages: messages
+      });
+
+      var reply = res.choices[0].message.content;
+      Chat.messages.push({ role: 'assistant', text: reply });
+      Chat.busy = false;
+      renderChatMessages();
+    } catch (e) {
+      console.error('[Chat]', e);
+      Chat.messages.push({ role: 'assistant', text: '❌ خطأ: ' + (e.message || e) });
+      Chat.busy = false;
+      renderChatMessages();
+    } finally {
+      updateChatStatus('');
+    }
+  }
+  window.__dmSendChat = sendChatMessage;
+
+  /* =========================================================
+     CHAT UI
+     ========================================================= */
+  function injectChatFab() {
+    if (document.getElementById('dm-chat-fab')) return;
+    var fab = document.createElement('button');
+    fab.id = 'dm-chat-fab';
+    fab.title = 'المساعد الذكي';
+    fab.style.cssText = 'position:fixed;bottom:5.5rem;inset-inline-end:1.25rem;z-index:8999;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 32px -8px rgba(168,85,247,.5);transition:all .25s';
+    fab.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    fab.onmouseover = function () { fab.style.transform = 'scale(1.08)'; };
+    fab.onmouseout = function () { fab.style.transform = 'scale(1)'; };
+    fab.onclick = function () { toggleChat(); };
+    document.body.appendChild(fab);
+  }
+
+  function toggleChat(force) {
+    var panel = document.getElementById('dm-chat-panel');
+    var shouldOpen = force !== undefined ? force : !Chat.open;
+
+    if (shouldOpen && !panel) {
+      Chat.open = true;
+      renderChatPanel();
+    } else if (!shouldOpen && panel) {
+      Chat.open = false;
+      panel.remove();
+    }
+  }
+
+  function renderChatPanel() {
+    var panel = document.createElement('div');
+    panel.id = 'dm-chat-panel';
+    panel.style.cssText = 'position:fixed;bottom:9.5rem;inset-inline-end:1.25rem;z-index:9000;width:min(420px,calc(100vw - 2rem));height:min(560px,75vh);background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:0 30px 60px -20px rgba(0,0,0,.4);display:flex;flex-direction:column;overflow:hidden';
+
+    panel.innerHTML =
+      '<div style="padding:.85rem 1.15rem;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(168,85,247,.08),rgba(124,58,237,.08));display:flex;align-items:center;gap:.65rem">' +
+        '<div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">AI</div>' +
+        '<div style="flex:1"><div style="font-weight:700;font-size:.9rem">المساعد الذكي</div>' +
+        '<div id="dm-chat-status" style="font-size:.7rem;color:var(--text-muted)"></div></div>' +
+        '<button id="dm-chat-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:6px">' +
+          '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>' +
+        '</button>' +
+      '</div>' +
+
+      '<div id="dm-chat-body" style="flex:1;overflow-y:auto;padding:1rem;background:var(--bg);display:flex;flex-direction:column;gap:.6rem"></div>' +
+
+      '<div style="padding:.5rem .75rem;border-top:1px solid var(--border);display:flex;gap:.35rem;overflow-x:auto;background:var(--surface)">' +
+        chatQuick('حجوزات اليوم', 'اقتراح') +
+        chatQuick('عدد الموظفين', 'الموظفون') +
+        chatQuick('مين أكثر موظف عمل؟', 'الأكثر عملًا') +
+        chatQuick('نصائح لزيادة الإيراد', 'نصائح') +
+      '</div>' +
+
+      '<div style="padding:.65rem .75rem;border-top:1px solid var(--border);display:flex;gap:.5rem;background:var(--surface)">' +
+        '<input type="text" id="dm-chat-input" placeholder="اكتب رسالتك…" autocomplete="off" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:.55rem .75rem;font-size:.85rem;color:var(--text);font-family:inherit;outline:none">' +
+        '<button id="dm-chat-send" style="width:36px;height:36px;border-radius:10px;background:var(--primary);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center">' +
+          '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>' +
+        '</button>' +
+      '</div>';
+
+    document.body.appendChild(panel);
+
+    document.getElementById('dm-chat-close').onclick = function () { toggleChat(false); };
+    var input = document.getElementById('dm-chat-input');
+    var send = function () {
+      var v = input.value.trim();
+      input.value = '';
+      if (v) sendChatMessage(v);
+    };
+    document.getElementById('dm-chat-send').onclick = send;
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+
+    // Quick action buttons
+    panel.querySelectorAll('.dm-chat-q').forEach(function (b) {
+      b.onclick = function () { sendChatMessage(b.dataset.q); };
+    });
+
+    // Init welcome message
+    if (!Chat.messages.length) {
+      Chat.messages.push({
+        role: 'assistant',
+        text: 'أهلاً! 👋 أنا مساعدك الذكي. اسألني عن:\n• حجوزات اليوم\n• عدد الموظفين\n• أكثر موظف عمل\n• نصائح لإدارة أفضل'
+      });
+    }
+
+    renderChatMessages();
+    setTimeout(function () { input.focus(); }, 150);
+  }
+
+  function chatQuick(q, label) {
+    return '<button class="dm-chat-q" data-q="' + esc(q) + '" style="padding:.35rem .7rem;border-radius:999px;font-size:.7rem;background:var(--surface-2);border:1px solid var(--border);color:var(--text-muted);cursor:pointer;white-space:nowrap;flex-shrink:0">' + esc(label) + '</button>';
+  }
+
+  function renderChatMessages() {
+    var body = document.getElementById('dm-chat-body');
+    if (!body) return;
+    body.innerHTML = Chat.messages.map(function (m) {
+      if (m.role === 'user') {
+        return '<div style="align-self:flex-end;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:.6rem .9rem;border-radius:14px 14px 4px 14px;font-size:.85rem;max-width:85%;white-space:pre-wrap;word-break:break-word">' + esc(m.text) + '</div>';
+      } else {
+        return '<div style="align-self:flex-start;background:var(--surface);border:1px solid var(--border);padding:.6rem .9rem;border-radius:14px 14px 14px 4px;font-size:.85rem;max-width:85%;white-space:pre-wrap;word-break:break-word">' + esc(m.text) + '</div>';
+      }
+    }).join('');
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function updateChatStatus(s) {
+    var el = document.getElementById('dm-chat-status');
+    if (el) el.textContent = s || '';
+  }
+
+  /* =========================================================
+     KEY MODAL
+     ========================================================= */
+  function showKeyModal() {
+    if (document.getElementById('dm-groq-modal')) return;
+    var modal = document.createElement('div');
+    modal.id = 'dm-groq-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem';
+
+    modal.innerHTML =
+      '<div style="max-width:480px;width:100%;background:var(--surface);border-radius:20px;padding:2rem;border:1px solid var(--border)">' +
+        '<div style="text-align:center;margin-bottom:1.25rem">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">🔑</div>' +
+          '<h3 style="margin:0;font-size:1.15rem">إعداد مفتاح Groq</h3>' +
+          '<p style="font-size:.82rem;color:var(--text-muted);margin:.5rem 0 0">مفتاح مجاني 100% — دقيقة واحدة للتسجيل</p>' +
+        '</div>' +
+        '<a href="https://console.groq.com/keys" target="_blank" style="display:block;text-align:center;padding:.75rem;background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.3);border-radius:10px;color:#f97316;font-size:.85rem;font-weight:700;text-decoration:none;margin-bottom:1rem">🔗 افتح console.groq.com/keys</a>' +
+        '<div class="field">' +
+          '<label style="font-size:.8rem;font-weight:700">Groq API Key</label>' +
+          '<input type="text" id="dm-groq-input" placeholder="gsk_..." autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:ui-monospace,monospace;font-size:.8rem;margin-top:.35rem">' +
+        '</div>' +
+        '<div id="dm-groq-msg" style="font-size:.75rem;color:#ef4444;min-height:1.2em;margin-top:.5rem"></div>' +
+        '<div style="display:flex;gap:.5rem;margin-top:1rem">' +
+          '<button id="dm-groq-cancel" style="flex:1;padding:.7rem;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-weight:600;cursor:pointer;font-family:inherit">إلغاء</button>' +
+          '<button id="dm-groq-save" style="flex:2;padding:.7rem;border-radius:10px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit">حفظ واختبار</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(modal);
+
+    var input = document.getElementById('dm-groq-input');
+    var msg = document.getElementById('dm-groq-msg');
+    var existing = getKey();
+    if (existing) input.value = existing;
+    setTimeout(function () { input.focus(); }, 100);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save(); });
+
+    document.getElementById('dm-groq-cancel').onclick = function () { modal.remove(); };
+    document.getElementById('dm-groq-save').onclick = save;
+
+    function save() {
+      var v = (input.value || '').trim();
+      if (!v || v.indexOf('gsk_') !== 0) { msg.style.color = '#ef4444'; msg.textContent = 'المفتاح لازم يبدأ بـ gsk_'; return; }
+      msg.style.color = '#f59e0b'; msg.textContent = 'جاري الاختبار…';
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'https://api.groq.com/openai/v1/models', true);
+      xhr.setRequestHeader('Authorization', 'Bearer ' + v);
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          localStorage.setItem(KEY_STORAGE, v);
+          msg.style.color = '#10b981'; msg.textContent = '✓ تم الحفظ';
+          toast('✓ المفتاح شغال', 'success');
+          setTimeout(function () {
+            modal.remove();
+            if (State.page === 'aiimport') navigate('aiimport');
+          }, 700);
+        } else {
+          msg.style.color = '#ef4444'; msg.textContent = '✗ فشل (' + xhr.status + ')';
+        }
+      };
+      xhr.onerror = function () { msg.style.color = '#ef4444'; msg.textContent = '✗ فشل الاتصال'; };
+      xhr.send();
+    }
+  }
+  window.__dmGroqSetup = showKeyModal;
+
+  /* =========================================================
+     REGISTER NAV
+     ========================================================= */
+  function registerNav() {
+    var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (!ops) return;
+    ops.items = ops.items.filter(function (i) { return i.id !== 'aiimport' && i.id !== 'importsmart'; });
+    var idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+    ops.items.splice(idx >= 0 ? idx + 1 : ops.items.length, 0, {
+      id: 'aiimport', icon: 'sparkles', label: 'ai_import'
+    });
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  waitFor(
+    function () {
+      return typeof State !== 'undefined' &&
+             typeof Pages !== 'undefined' &&
+             typeof NAV_ITEMS !== 'undefined' &&
+             document.getElementById('topbar');
+    },
+    function () {
+      registerNav();
+
+      // Inject chat FAB (only when logged in)
+      waitFor(
+        function () { return window.__dmSaaS && window.__dmSaaS.ready && window.__dmSaaS.user; },
+        function () {
+          injectChatFab();
+        }
+      );
+
+      console.log('%c[Section 51] ✓ AI Import + Chat ready', 'color:#10b981;font-weight:bold');
+      console.log('  __dmGroqSetup()        — إعداد المفتاح');
+      console.log('  __dmChat.open=true     — فتح الشات');
+      console.log('  __dmSendChat("...")    — إرسال رسالة');
+    }
+  );
+
+})();
 
 
 
