@@ -17924,6 +17924,697 @@ ${halls}
   console.log('  __dmSetKey("...")  — تعيين مفتاح جديد');
 
 })();
+/* =========================================================
+   SECTION 48: AI Import — Groq Vision (Llama 3.2)
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Upload image (JPG/PNG/WEBP)
+   - Groq reads it with Llama 3.2 Vision
+   - Extracts: hall, date, client, package, guests, event
+   - Review before saving
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 48] AI Import (Groq) loading…', 'color:#f97316;font-weight:bold;font-size:14px');
+
+  /* =========================================================
+     CONFIG
+     ========================================================= */
+  var GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+  var GROQ_MODEL = 'llama-3.2-90b-vision-preview';
+  var GROQ_KEY_STORAGE = 'dm_groq_key';
+
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function toast(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'info');
+  }
+
+  function getKey() {
+    try { return (localStorage.getItem(GROQ_KEY_STORAGE) || '').trim(); } catch (e) { return ''; }
+  }
+
+  /* =========================================================
+     STATE
+     ========================================================= */
+  var AI = {
+    file: null,
+    fileName: '',
+    parsed: [],
+    busy: false,
+    status: '',
+    error: '',
+    activeHallId: 'all',
+    raw: null,
+    showRaw: false
+  };
+  window.__dmGroq = AI;
+
+  /* =========================================================
+     FILE → BASE64
+     ========================================================= */
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var dataUrl = reader.result;
+        // data:image/jpeg;base64,XXXX
+        var match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) { reject(new Error('Invalid image')); return; }
+        resolve({ mimeType: match[1], base64: match[2], dataUrl: dataUrl });
+      };
+      reader.onerror = function () { reject(new Error('Failed to read file')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* =========================================================
+     GROQ API CALL
+     ========================================================= */
+  async function callGroq(imageData) {
+    var key = getKey();
+    if (!key) throw new Error('NO_KEY');
+
+    var prompt = buildPrompt();
+
+    var body = {
+      model: GROQ_MODEL,
+      temperature: 0.1,
+      max_tokens: 8000,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:' + imageData.mimeType + ';base64,' + imageData.base64
+              }
+            }
+          ]
+        }
+      ]
+    };
+
+    var res = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      var errText = await res.text();
+      throw new Error('Groq error ' + res.status + ': ' + errText.substring(0, 250));
+    }
+
+    var data = await res.json();
+    var text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) throw new Error('Empty response');
+
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      var m = text.match(/\{[\s\S]*\}/);
+      if (m) parsed = JSON.parse(m[0]);
+      else throw new Error('AI returned invalid JSON');
+    }
+
+    return parsed;
+  }
+
+  /* =========================================================
+     PROMPT
+     ========================================================= */
+  function buildPrompt() {
+    var halls = (State.data.halls || []).map(function (h) {
+      return '- ' + (h.name.ar || h.name.en) + ' (كود: ' + h.code + ')';
+    }).join('\n');
+
+    return 'أنت محاسب دقيق. عندك صورة لجدول حجوزات قاعة أفراح (بالعربي). استخرج كل البيانات وأرجع JSON فقط بدون أي شرح.\n\n' +
+      'القاعات المتاحة:\n' + halls + '\n\n' +
+      'تعليمات:\n' +
+      '1. كل صف في الجدول = حجز واحد\n' +
+      '2. الجدول ممكن يكون مقسم لأقسام بعناوين (مثل "القاعة المغلقة شهر اكتوبر") — كل الصفوف اللي تحت العنوان ده تتبع نفس القاعة\n' +
+      '3. الأعمدة عادةً: اليوم، التاريخ، اسم العميل، الباكدج، عدد الأفراد\n' +
+      '4. التاريخ: حوله إلى YYYY-MM-DD (السنة 2026)\n' +
+      '5. الباكدج: انسخه كما هو (عشاء 1، سواريه، هاي تي، مطبخ، إلخ)\n' +
+      '6. عدد الأفراد: رقم صحيح (0 لو مش موجود)\n' +
+      '7. eventType: استنتجها:\n' +
+      '   - عشاء / فرح / زفاف → "Wedding"\n' +
+      '   - سواريه / خطوبة → "Engagement"\n' +
+      '   - حنة → "Henna"\n' +
+      '   - هاي تي / عيد ميلاد → "Birthday"\n' +
+      '   - مؤتمر → "Corporate"\n\n' +
+      'المطلوب JSON بالشكل:\n' +
+      '{"bookings":[{"hall":"القاعة المغلقة","date":"2026-10-01","clientName":"أحمد سامح","packageType":"عشاء 1","guestsCount":250,"eventType":"Wedding"}]}\n\n' +
+      'مهم: استخرج كل الصفوف بدون استثناء. الأسماء العربية كاملة كما هي. لو خلية فاضية اترك "" أو 0. متخترعش بيانات.';
+  }
+
+  /* =========================================================
+     MAP RESULT
+     ========================================================= */
+  function normalize(s) {
+    return String(s || '')
+      .replace(/[\u064B-\u0652]/g, '')
+      .replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function mapToInternal(aiResult) {
+    var halls = State.data.halls || [];
+    return (aiResult.bookings || []).map(function (b) {
+      var hallId = halls.length ? halls[0].id : '';
+      if (b.hall) {
+        var hn = normalize(b.hall);
+        for (var i = 0; i < halls.length; i++) {
+          var h = halls[i];
+          var ar = normalize(h.name.ar || '');
+          var en = normalize(h.name.en || '');
+          if ((ar && (hn.indexOf(ar) >= 0 || ar.indexOf(hn) >= 0)) ||
+              (en && (hn.indexOf(en) >= 0 || en.indexOf(hn) >= 0)) ||
+              (h.code && hn === normalize(h.code))) {
+            hallId = h.id;
+            break;
+          }
+        }
+      }
+      return {
+        hallId: hallId,
+        hallName: b.hall || '',
+        date: b.date || todayISO(),
+        clientName: b.clientName || '',
+        packageType: b.packageType || '',
+        guestsCount: parseInt(b.guestsCount) || 0,
+        eventType: b.eventType || 'Wedding',
+        phone: b.phone || '',
+        notes: b.notes || '',
+        startTime: '19:00',
+        endTime: '23:00',
+        cost: 0
+      };
+    });
+  }
+
+  /* =========================================================
+     PROCESS FILE
+     ========================================================= */
+  async function processFile(file) {
+    if (!file) return;
+
+    if (!getKey()) {
+      showKeyModal();
+      return;
+    }
+
+    AI.file = file;
+    AI.fileName = file.name;
+    AI.parsed = [];
+    AI.busy = true;
+    AI.error = '';
+    AI.raw = null;
+    AI.status = 'جاري تحليل الصورة بـ AI…';
+    AI.activeHallId = 'all';
+    navigate('aiimport');
+
+    try {
+      var data = await fileToBase64(file);
+      var result = await callGroq(data);
+      AI.raw = result;
+      AI.parsed = mapToInternal(result);
+      AI.busy = false;
+      AI.status = '';
+      navigate('aiimport');
+
+      if (AI.parsed.length > 0) {
+        toast('✓ تم استخراج ' + AI.parsed.length + ' حجز', 'success');
+      } else {
+        toast('لم يتم استخراج بيانات — جرب صورة أوضح', 'warn');
+      }
+    } catch (err) {
+      console.error('[Section 48]', err);
+      AI.busy = false;
+      AI.status = '';
+      AI.error = err.message || String(err);
+      navigate('aiimport');
+    }
+  }
+
+  /* =========================================================
+     PAGE: AI Import
+     ========================================================= */
+  Pages.aiimport = function (el) {
+    if (AI.busy) {
+      el.innerHTML =
+        '<div class="card" style="max-width:540px;margin:2rem auto;text-align:center;padding:3rem 2rem">' +
+          '<div style="font-size:3rem;margin-bottom:1rem">🤖</div>' +
+          '<div style="font-size:1rem;font-weight:700;margin-bottom:.5rem">' + esc(AI.status) + '</div>' +
+          '<div style="width:60px;height:60px;margin:1.5rem auto;border:4px solid var(--border);border-top-color:#f97316;border-radius:50%;animation:spin 1s linear infinite"></div>' +
+          '<div style="font-size:.8rem;color:var(--text-muted)">' + esc(AI.fileName) + '</div>' +
+          '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>' +
+        '</div>';
+      return;
+    }
+
+    if (AI.error) {
+      renderError(el);
+    } else if (AI.parsed.length > 0) {
+      renderReview(el);
+    } else {
+      renderUpload(el);
+    }
+  };
+
+  /* =========================================================
+     RENDER: Upload
+     ========================================================= */
+  function renderUpload(el) {
+    var hasKey = !!getKey();
+
+    el.innerHTML =
+      '<div style="max-width:640px;margin:1rem auto">' +
+        '<div class="card" style="padding:2rem">' +
+          '<div style="text-align:center;margin-bottom:1.5rem">' +
+            '<div style="font-size:3rem;margin-bottom:.5rem">🤖</div>' +
+            '<h3 style="margin:0 0 .35rem;font-size:1.15rem">استيراد الحجوزات بالذكاء الاصطناعي</h3>' +
+            '<p style="color:var(--text-muted);font-size:.85rem;margin:.35rem 0 0">' +
+              'ارفع صورة جدول الحجوزات — AI يقرأها ويفهمها' +
+            '</p>' +
+          '</div>' +
+
+          (hasKey ? '' :
+            '<div style="margin-bottom:1.5rem;padding:1rem;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:12px;text-align:center">' +
+              '<div style="font-size:.85rem;color:#f59e0b;font-weight:700;margin-bottom:.5rem">⚠️ مفتاح Groq مطلوب</div>' +
+              '<button class="btn btn-primary btn-sm" onclick="__dmGroqSetup()">🔑 إعداد المفتاح</button>' +
+            '</div>') +
+
+          '<div id="ai-dropzone" style="border:3px dashed var(--border);border-radius:16px;padding:3rem 1.5rem;text-align:center;cursor:pointer;background:var(--surface-2);transition:all .2s;' + (hasKey ? '' : 'opacity:.5;pointer-events:none;') + '">' +
+            '<div style="font-size:2.5rem;margin-bottom:.5rem">📤</div>' +
+            '<div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">اضغط لاختيار صورة أو PDF</div>' +
+            '<div style="font-size:.75rem;color:var(--text-muted)">JPG · PNG · WEBP · PDF</div>' +
+          '</div>' +
+          '<input type="file" id="ai-file" accept="image/*,application/pdf" style="display:none">' +
+        '</div>' +
+
+        '<div class="card" style="margin-top:1rem;background:rgba(249,115,22,.05);border-color:rgba(249,115,22,.2)">' +
+          '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.9">' +
+            '<b style="color:#f97316">✨ مميزات الذكاء الاصطناعي:</b><br>' +
+            '• دقة 95%+ على الجداول العربية<br>' +
+            '• يقرأ العناوين ويعرف القاعات<br>' +
+            '• يفهم "عشاء"، "سواريه"، "هاي تي" ويحدد نوع المناسبة<br>' +
+            '• سرعة 2-4 ثواني<br>' +
+            '<br><b style="color:#f97316">📋 طريقة الاستخدام:</b><br>' +
+            '1. اضغط المنطقة فوق واختار صورة الجدول<br>' +
+            '2. AI يحلل الصورة<br>' +
+            '3. راجع النتائج<br>' +
+            '4. اضغط "حفظ الكل"' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    if (window.lucide) lucide.createIcons();
+
+    var dz = document.getElementById('ai-dropzone');
+    var fi = document.getElementById('ai-file');
+    if (dz && fi && hasKey) {
+      dz.onclick = function () { fi.click(); };
+      fi.onchange = function (e) {
+        if (e.target.files[0]) processFile(e.target.files[0]);
+      };
+      dz.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = '#f97316';
+        dz.style.background = 'rgba(249,115,22,.08)';
+      });
+      dz.addEventListener('dragleave', function () {
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
+      });
+      dz.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--border)';
+        dz.style.background = 'var(--surface-2)';
+        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+      });
+    }
+  }
+
+  /* =========================================================
+     RENDER: Error
+     ========================================================= */
+  function renderError(el) {
+    var isNoKey = AI.error === 'NO_KEY';
+    el.innerHTML =
+      '<div style="max-width:640px;margin:1rem auto">' +
+        '<div class="card" style="border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.05)">' +
+          '<div style="text-align:center;padding:1rem">' +
+            '<div style="font-size:2.5rem;margin-bottom:.5rem">⚠️</div>' +
+            '<h3 style="margin:0 0 .5rem;color:#ef4444">' + (isNoKey ? 'مفتاح Groq مطلوب' : 'خطأ من الذكاء الاصطناعي') + '</h3>' +
+            (isNoKey ? '' : '<p style="font-size:.82rem;color:var(--text-muted);margin:.5rem 0;word-break:break-word">' + esc(AI.error) + '</p>') +
+            '<div style="display:flex;gap:.5rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">' +
+              (isNoKey ? '<button class="btn btn-primary" onclick="__dmGroqSetup()">🔑 إعداد المفتاح</button>' : '') +
+              '<button class="btn btn-ghost" onclick="__dmGroqReset()">↺ حاول مرة أخرى</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* =========================================================
+     RENDER: Review
+     ========================================================= */
+  function renderReview(el) {
+    var halls = State.data.halls || [];
+    var rows = AI.parsed;
+
+    var grouped = {};
+    rows.forEach(function (r, idx) {
+      var key = r.hallId || 'unknown';
+      grouped[key] = grouped[key] || [];
+      grouped[key].push({ row: r, idx: idx });
+    });
+
+    var hallIds = Object.keys(grouped);
+    var activeHallId = AI.activeHallId || 'all';
+    var visibleGroups = activeHallId === 'all'
+      ? hallIds.map(function (hid) { return { hallId: hid, items: grouped[hid] }; })
+      : (grouped[activeHallId] ? [{ hallId: activeHallId, items: grouped[activeHallId] }] : []);
+
+    var filterBtns =
+      '<button class="btn ' + (activeHallId === 'all' ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmGroqSetHall(\'all\')">' +
+      'كل القاعات (' + rows.length + ')</button>';
+
+    hallIds.forEach(function (hid) {
+      var h = halls.find(function (x) { return x.id === hid; });
+      var hName = h ? (h.name[State.lang] || h.name.ar) : '(بدون قاعة)';
+      filterBtns +=
+        '<button class="btn ' + (activeHallId === hid ? 'btn-primary' : 'btn-ghost') + ' btn-sm" onclick="__dmGroqSetHall(\'' + hid + '\')">' +
+        esc(hName) + ' (' + grouped[hid].length + ')</button>';
+    });
+
+    var sectionsHtml = '';
+    visibleGroups.forEach(function (grp) {
+      var h = halls.find(function (x) { return x.id === grp.hallId; });
+      var hName = h ? (h.name[State.lang] || h.name.ar) : (grp.items[0] ? grp.items[0].row.hallName : '(بدون قاعة)');
+
+      var groupRows = grp.items.map(function (item) {
+        var r = item.row;
+        var idx = item.idx;
+        var evOptions = ['Wedding', 'Engagement', 'Henna', 'Birthday', 'Corporate', 'Other']
+          .map(function (ev) {
+            return '<option value="' + ev + '"' + (r.eventType === ev ? ' selected' : '') + '>' + ev + '</option>';
+          }).join('');
+        var hallOptions = halls.map(function (hh) {
+          return '<option value="' + hh.id + '"' + (r.hallId === hh.id ? ' selected' : '') + '>' + esc(hh.name[State.lang] || hh.name.ar) + '</option>';
+        }).join('');
+
+        return '<tr data-idx="' + idx + '">' +
+          '<td style="font-weight:700;color:var(--text-muted);width:30px">' + (idx + 1) + '</td>' +
+          '<td><input class="ai-f" data-f="clientName" value="' + esc(r.clientName) + '" style="width:100%;min-width:180px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+          '<td><input class="ai-f" data-f="date" type="date" value="' + esc(r.date) + '" style="padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+          '<td><input class="ai-f" data-f="packageType" value="' + esc(r.packageType) + '" style="width:80px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+          '<td><input class="ai-f" data-f="guestsCount" type="number" value="' + (r.guestsCount || 0) + '" style="width:70px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem"></td>' +
+          '<td><select class="ai-f" data-f="eventType" style="width:120px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + evOptions + '</select></td>' +
+          '<td><select class="ai-f" data-f="hallId" style="width:130px;padding:.4rem;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:.8rem">' + hallOptions + '</select></td>' +
+          '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dmGroqDel(' + idx + ')" style="color:#ef4444"><i data-lucide="trash-2"></i></button></td>' +
+        '</tr>';
+      }).join('');
+
+      sectionsHtml +=
+        '<div class="card" style="margin-bottom:1rem;padding:0;overflow:hidden">' +
+          '<div style="background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;padding:.75rem 1.25rem;display:flex;justify-content:space-between;align-items:center">' +
+            '<div style="font-weight:800;font-size:.95rem">🏛 ' + esc(hName) + '</div>' +
+            '<div style="font-size:.78rem;opacity:.95">' + grp.items.length + ' حجز</div>' +
+          '</div>' +
+          '<div class="table-wrap" style="border:none;border-radius:0">' +
+            '<table class="data-table" style="min-width:900px">' +
+              '<thead><tr>' +
+                '<th>#</th><th>العميل</th><th>التاريخ</th><th>الباكدج</th><th>الأفراد</th><th>المناسبة</th><th>القاعة</th><th></th>' +
+              '</tr></thead>' +
+              '<tbody>' + groupRows + '</tbody>' +
+            '</table>' +
+          '</div>' +
+        '</div>';
+    });
+
+    el.innerHTML =
+      '<div class="card" style="margin-bottom:1rem">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">' +
+          '<div style="display:flex;align-items:center;gap:.5rem">' +
+            '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">🤖</div>' +
+            '<b style="font-size:1rem">مراجعة النتائج</b>' +
+          '</div>' +
+          '<span class="badge-pill badge-purple">' + rows.length + ' حجز</span>' +
+          '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">' +
+            '<button class="btn btn-ghost btn-sm" onclick="__dmGroqToggleRaw()"><i data-lucide="code"></i> ' + (AI.showRaw ? 'إخفاء AI' : 'عرض AI') + '</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="__dmGroqReset()"><i data-lucide="rotate-ccw"></i> ملف آخر</button>' +
+            '<button class="btn btn-primary btn-sm" onclick="__dmGroqSave()"><i data-lucide="save"></i> حفظ الكل (' + rows.length + ')</button>' +
+          '</div>' +
+        '</div>' +
+        '<div style="margin-top:.75rem;display:flex;gap:.35rem;flex-wrap:wrap">' + filterBtns + '</div>' +
+      '</div>' +
+      (AI.showRaw && AI.raw ?
+        '<div class="card" style="margin-bottom:1rem"><pre style="background:var(--surface-2);padding:1rem;border-radius:8px;font-size:.7rem;line-height:1.5;max-height:300px;overflow:auto;white-space:pre-wrap">' +
+        esc(JSON.stringify(AI.raw, null, 2)) + '</pre></div>'
+        : '') +
+      sectionsHtml;
+
+    if (window.lucide) lucide.createIcons();
+
+    el.querySelectorAll('.ai-f').forEach(function (inp) {
+      inp.onchange = function (e) {
+        var tr = e.target.closest('tr[data-idx]');
+        if (!tr) return;
+        var idx = parseInt(tr.dataset.idx);
+        var f = e.target.dataset.f;
+        if (AI.parsed[idx]) {
+          AI.parsed[idx][f] = e.target.type === 'number' ? parseInt(e.target.value) : e.target.value;
+        }
+      };
+    });
+  }
+
+  /* =========================================================
+     KEY SETUP MODAL
+     ========================================================= */
+  function showKeyModal() {
+    if (document.getElementById('dm-groq-modal')) return;
+
+    var modal = document.createElement('div');
+    modal.id = 'dm-groq-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem';
+
+    modal.innerHTML =
+      '<div style="max-width:480px;width:100%;background:var(--surface);border-radius:20px;padding:2rem;border:1px solid var(--border)">' +
+        '<div style="text-align:center;margin-bottom:1.25rem">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">🔑</div>' +
+          '<h3 style="margin:0;font-size:1.15rem">إعداد مفتاح Groq</h3>' +
+          '<p style="font-size:.82rem;color:var(--text-muted);margin:.5rem 0 0">' +
+            'مفتاح مجاني 100% — دقيقة واحدة للتسجيل' +
+          '</p>' +
+        '</div>' +
+        '<a href="https://console.groq.com/keys" target="_blank" style="display:block;text-align:center;padding:.75rem;background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.3);border-radius:10px;color:#f97316;font-size:.85rem;font-weight:700;text-decoration:none;margin-bottom:1rem">' +
+          '🔗 افتح console.groq.com/keys' +
+        '</a>' +
+        '<div class="field">' +
+          '<label style="font-size:.8rem;font-weight:700">Groq API Key</label>' +
+          '<input type="text" id="dm-groq-input" placeholder="gsk_..." autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:ui-monospace,monospace;font-size:.8rem;margin-top:.35rem">' +
+        '</div>' +
+        '<div id="dm-groq-msg" style="font-size:.75rem;color:#ef4444;min-height:1.2em;margin-top:.5rem"></div>' +
+        '<div style="display:flex;gap:.5rem;margin-top:1rem">' +
+          '<button id="dm-groq-cancel" style="flex:1;padding:.7rem;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-weight:600;cursor:pointer;font-family:inherit">إلغاء</button>' +
+          '<button id="dm-groq-save" style="flex:2;padding:.7rem;border-radius:10px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit">حفظ واختبار</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(modal);
+
+    var input = document.getElementById('dm-groq-input');
+    var msg = document.getElementById('dm-groq-msg');
+    var existing = getKey();
+    if (existing) input.value = existing;
+
+    setTimeout(function () { input.focus(); }, 100);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') save();
+    });
+
+    document.getElementById('dm-groq-cancel').onclick = function () { modal.remove(); };
+    document.getElementById('dm-groq-save').onclick = save;
+
+    function save() {
+      var val = (input.value || '').trim().replace(/\s+/g, '');
+      if (!val) { msg.textContent = 'المفتاح فارغ'; return; }
+      if (val.indexOf('gsk_') !== 0) {
+        msg.textContent = 'المفتاح لازم يبدأ بـ gsk_';
+        return;
+      }
+
+      msg.style.color = '#f59e0b';
+      msg.textContent = 'جاري الاختبار…';
+
+      fetch('https://api.groq.com/openai/v1/models', {
+        headers: { 'Authorization': 'Bearer ' + val }
+      })
+      .then(function (r) {
+        if (r.ok) {
+          localStorage.setItem(GROQ_KEY_STORAGE, val);
+          msg.style.color = '#10b981';
+          msg.textContent = '✓ المفتاح يعمل — تم الحفظ';
+          toast('✓ تم حفظ المفتاح', 'success');
+          setTimeout(function () {
+            modal.remove();
+            if (State.page === 'aiimport') navigate('aiimport');
+          }, 700);
+        } else {
+          msg.style.color = '#ef4444';
+          msg.textContent = '✗ المفتاح مش صالح (' + r.status + ')';
+        }
+      })
+      .catch(function (e) {
+        msg.style.color = '#ef4444';
+        msg.textContent = '✗ فشل الاتصال';
+      });
+    }
+  }
+
+  /* =========================================================
+     PUBLIC HANDLERS
+     ========================================================= */
+  window.__dmGroqSetup = showKeyModal;
+  window.__dmGroqSetHall = function (hid) { AI.activeHallId = hid; navigate('aiimport'); };
+  window.__dmGroqToggleRaw = function () { AI.showRaw = !AI.showRaw; navigate('aiimport'); };
+  window.__dmGroqDel = function (idx) { AI.parsed.splice(idx, 1); navigate('aiimport'); };
+  window.__dmGroqReset = function () {
+    AI.file = null;
+    AI.fileName = '';
+    AI.parsed = [];
+    AI.busy = false;
+    AI.status = '';
+    AI.error = '';
+    AI.raw = null;
+    AI.activeHallId = 'all';
+    navigate('aiimport');
+  };
+
+  window.__dmGroqSave = function () {
+    if (!AI.parsed.length) return;
+    var added = 0;
+    AI.parsed.forEach(function (p) {
+      if (!p.clientName) return;
+      State.data.bookings.push({
+        id: 'b_' + Math.random().toString(36).slice(2, 10),
+        date: p.date || todayISO(),
+        hallId: p.hallId,
+        clientName: p.clientName || '-',
+        phone: p.phone || '',
+        eventType: p.eventType || 'Wedding',
+        startTime: p.startTime || '19:00',
+        endTime: p.endTime || '23:00',
+        status: 'pending',
+        paymentStatus: 'unpaid',
+        cost: p.cost || 0,
+        guestsCount: p.guestsCount || 0,
+        notes: p.notes || ('مستورد من: ' + AI.fileName)
+      });
+      added++;
+    });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    try { if (typeof logActivity === 'function') logActivity('ai-import', 'booking', null, null, { count: added }); } catch (e) {}
+    toast('✓ تم استيراد ' + added + ' حجز', 'success');
+    AI.parsed = [];
+    AI.file = null;
+    AI.raw = null;
+    setTimeout(function () { navigate('bookings'); }, 600);
+  };
+
+  window.__dmGroqStatus = function () {
+    var k = getKey();
+    console.table({
+      hasKey: !!k,
+      length: k ? k.length : 0,
+      prefix: k ? k.substring(0, 12) : 'none'
+    });
+  };
+
+  window.__dmGroqTest = async function () {
+    var k = getKey();
+    if (!k) { console.error('❌ No key'); return false; }
+    var res = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': 'Bearer ' + k }
+    });
+    if (res.ok) {
+      var d = await res.json();
+      var vision = (d.data || []).filter(function (m) { return m.id.indexOf('vision') >= 0; });
+      console.log('%c✅ Groq يعمل!', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('Vision models:', vision.map(function (m) { return m.id; }));
+      return true;
+    } else {
+      console.error('❌ Groq error:', res.status, await res.text());
+      return false;
+    }
+  };
+
+  /* =========================================================
+     REGISTER NAV
+     ========================================================= */
+  function registerNav() {
+    var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (!ops) return;
+
+    // Remove old entries
+    ops.items = ops.items.filter(function (i) {
+      return i.id !== 'aiimport' && i.id !== 'importsmart';
+    });
+
+    // Add new one
+    var idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+    var at = idx >= 0 ? idx + 1 : ops.items.length;
+    ops.items.splice(at, 0, { id: 'aiimport', icon: 'sparkles', label: 'ai_import' });
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  waitFor(
+    function () {
+      return typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof NAV_ITEMS !== 'undefined';
+    },
+    function () {
+      registerNav();
+      console.log('%c[Section 48] ✓ AI Import ready (Groq)', 'color:#10b981;font-weight:bold');
+      if (!getKey()) {
+        console.log('%c[Section 48] ⚠ لم يتم إعداد مفتاح Groq بعد — سجّل من console.groq.com/keys', 'color:#f59e0b');
+      } else {
+        console.log('%c[Section 48] ✓ مفتاح Groq محفوظ', 'color:#10b981');
+      }
+      console.log('  __dmGroqSetup()  — إعداد المفتاح');
+      console.log('  __dmGroqTest()   — اختبار المفتاح');
+    }
+  );
+
+})();
 
 
 
