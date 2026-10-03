@@ -16854,8 +16854,8 @@ service cloud.firestore {
   /* =========================================================
      ⚠️ ضع مفتاح Gemini هنا
      ========================================================= */
-  var GEMINI_API_KEY = 'AIzaSyCCEYuUW6aSO8KxEyTXJSeoWmpj5dUu6vY';
-  var GEMINI_MODEL = 'gemini-1.5-flash'; // أو gemini-1.5-flash
+  var GEMINI_API_KEY = 'AQ.Ab8RN6IXK1af-wYLbO_eCtr347J1P7OV1-Vo168vqAC_jRNO9Q';
+  var GEMINI_MODEL = 'gemini-2.0-flash'; // أو gemini-1.5-flash
   var GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=';
 
   function waitFor(cond, cb, maxTries) {
