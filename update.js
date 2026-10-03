@@ -17544,6 +17544,260 @@ ${halls}
   );
 
 })();
+/* =========================================================
+   SECTION 45: Fix Gemini Key Validation
+   Version: 1.0.0
+   ---------------------------------------------------------
+   Accepts both formats:
+   - AIzaSy... (legacy Google AI Studio format)
+   - AQ.Ab8RN6... (new Gemini API format — 2026)
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 45] Key Validation Fix loading…', 'color:#10b981;font-weight:bold');
+
+  var KEY_STORAGE = 'dm_gemini_api_key';
+
+  function getKey() {
+    try { return (localStorage.getItem(KEY_STORAGE) || '').trim(); } catch (e) { return ''; }
+  }
+
+  function isValidKey(k) {
+    if (!k || k.length < 20) return false;
+    // Old format: AIzaSy...
+    if (k.indexOf('AIza') === 0) return true;
+    // New format: AQ.Ab8...
+    if (k.indexOf('AQ.') === 0) return true;
+    return false;
+  }
+
+  /* =========================================================
+     REPLACE the fetch interceptor with a smarter one
+     ========================================================= */
+  function installSmarterFetch() {
+    // Preserve any previous patching
+    var origFetch = window.fetch;
+
+    window.fetch = function (url, options) {
+      var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
+
+      if (urlStr.indexOf('generativelanguage.googleapis.com') >= 0) {
+        var storedKey = getKey();
+
+        if (!storedKey) {
+          console.error('[Section 45] ❌ No Gemini key stored');
+          return Promise.reject(new Error('Gemini API key not configured'));
+        }
+
+        if (!isValidKey(storedKey)) {
+          console.error('[Section 45] ❌ Invalid key format:', storedKey.substring(0, 10));
+          return Promise.reject(new Error('Invalid API key format'));
+        }
+
+        // Inject/replace key
+        if (urlStr.match(/[?&]key=/)) {
+          urlStr = urlStr.replace(/key=[^&]*/, 'key=' + encodeURIComponent(storedKey));
+        } else {
+          urlStr += (urlStr.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(storedKey);
+        }
+
+        console.log('%c[Section 45] 📡 Gemini call with key: ' + storedKey.substring(0, 12) + '…', 'color:#10b981');
+
+        return origFetch(urlStr, options);
+      }
+
+      return origFetch(url, options);
+    };
+
+    console.log('[Section 45] ✓ Smarter fetch installed');
+  }
+
+  /* =========================================================
+     FIX MODAL from Section 44 — accept both formats
+     ========================================================= */
+  function patchModal() {
+    // Override Section 44's validation by replacing the whole modal handler
+    var origSetup = window.__dmSetupGeminiKey;
+    if (!origSetup) return;
+
+    window.__dmSetupGeminiKey = function () {
+      if (document.getElementById('dm-key-modal')) return;
+
+      var modal = document.createElement('div');
+      modal.id = 'dm-key-modal';
+      modal.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem';
+
+      modal.innerHTML =
+        '<div style="max-width:480px;width:100%;background:var(--surface);border-radius:20px;padding:2rem;border:1px solid var(--border)">' +
+          '<div style="text-align:center;margin-bottom:1.25rem">' +
+            '<div style="font-size:2.5rem;margin-bottom:.5rem">🔑</div>' +
+            '<h3 style="margin:0;font-size:1.15rem">مفتاح Gemini</h3>' +
+            '<p style="font-size:.85rem;color:var(--text-muted);margin:.5rem 0 0">' +
+              'يقبل الشكلين: AIzaSy... أو AQ.Ab...' +
+            '</p>' +
+          '</div>' +
+          '<a href="https://aistudio.google.com/app/apikey" target="_blank" style="display:block;text-align:center;font-size:.8rem;color:#a855f7;margin-bottom:1rem;text-decoration:none">' +
+            '🔗 Google AI Studio' +
+          '</a>' +
+          '<div class="field">' +
+            '<label>API Key</label>' +
+            '<input type="text" id="dm-key-input" placeholder="AQ.Ab8RN6... أو AIzaSy..." autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:ui-monospace,monospace;font-size:.75rem">' +
+          '</div>' +
+          '<div id="dm-key-msg" style="font-size:.75rem;color:#ef4444;min-height:1.2em;margin-top:.5rem"></div>' +
+          '<div style="display:flex;gap:.5rem;margin-top:1rem">' +
+            '<button id="dm-key-cancel" style="flex:1;padding:.7rem;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-weight:600;cursor:pointer;font-family:inherit">إلغاء</button>' +
+            '<button id="dm-key-save" style="flex:2;padding:.7rem;border-radius:10px;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit">حفظ واختبار</button>' +
+          '</div>' +
+        '</div>';
+
+      document.body.appendChild(modal);
+
+      var input = document.getElementById('dm-key-input');
+      var msg = document.getElementById('dm-key-msg');
+      var currentKey = getKey();
+      if (currentKey) input.value = currentKey;
+
+      if (input) {
+        setTimeout(function () { input.focus(); }, 100);
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') saveKey();
+        });
+      }
+
+      document.getElementById('dm-key-cancel').onclick = function () {
+        modal.remove();
+      };
+
+      document.getElementById('dm-key-save').onclick = saveKey;
+
+      function saveKey() {
+        var val = (input.value || '').trim();
+        val = val.replace(/\s+/g, ''); // remove any whitespace
+
+        if (!val) {
+          msg.style.color = '#ef4444';
+          msg.textContent = 'المفتاح فارغ';
+          return;
+        }
+
+        if (!isValidKey(val)) {
+          msg.style.color = '#ef4444';
+          msg.textContent = 'المفتاح لازم يبدأ بـ AIzaSy أو AQ.Ab';
+          return;
+        }
+
+        // Save first
+        try { localStorage.setItem(KEY_STORAGE, val); } catch (e) {}
+
+        // Test
+        msg.style.color = '#f59e0b';
+        msg.textContent = 'جاري الاختبار…';
+
+        fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(val))
+          .then(function (r) {
+            if (r.ok) {
+              msg.style.color = '#10b981';
+              msg.textContent = '✓ المفتاح يعمل — تم الحفظ';
+              if (typeof showToast === 'function') showToast('✓ المفتاح يعمل', 'success');
+              setTimeout(function () { modal.remove(); }, 900);
+            } else {
+              msg.style.color = '#ef4444';
+              msg.textContent = '✗ فشل الاختبار (كود: ' + r.status + ')';
+            }
+          })
+          .catch(function (e) {
+            msg.style.color = '#f59e0b';
+            msg.textContent = '✓ تم الحفظ (تحقق عند الاستخدام)';
+            setTimeout(function () { modal.remove(); }, 900);
+          });
+      }
+    };
+  }
+
+  /* =========================================================
+     PUBLIC: status check
+     ========================================================= */
+  window.__dmGeminiStatus = function () {
+    var k = getKey();
+    var s = {
+      hasKey: !!k,
+      length: k ? k.length : 0,
+      valid: isValidKey(k),
+      format: k ? (k.indexOf('AIza') === 0 ? 'AIzaSy (legacy)' : (k.indexOf('AQ.') === 0 ? 'AQ.Ab (new)' : 'unknown')) : 'none',
+      prefix: k ? k.substring(0, 12) : null,
+      suffix: k ? k.substring(k.length - 6) : null
+    };
+    console.table(s);
+    return s;
+  };
+
+  /* =========================================================
+     TEST COMMAND
+     ========================================================= */
+  window.__dmAITest = async function () {
+    var key = getKey();
+    if (!key) {
+      console.error('❌ المفتاح غير موجود — استخدم __dmSetupGeminiKey()');
+      return false;
+    }
+
+    if (!isValidKey(key)) {
+      console.error('❌ المفتاح غير صالح — الشكل غلط');
+      return false;
+    }
+
+    console.log('Testing Gemini API with key:', key.substring(0, 12) + '…');
+
+    try {
+      var res = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key)
+      );
+
+      if (res.ok) {
+        var data = await res.json();
+        var models = (data.models || []).filter(function (m) {
+          return (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0;
+        });
+        console.log('%c✅ Gemini API works!', 'color:#10b981;font-weight:bold;font-size:14px');
+        console.log('Available models for generateContent:');
+        models.slice(0, 10).forEach(function (m) {
+          console.log('  → ' + m.name.replace('models/', ''));
+        });
+        return true;
+      } else {
+        var errText = await res.text();
+        console.error('%c❌ Gemini error (' + res.status + ')', 'color:#ef4444;font-weight:bold', errText.substring(0, 300));
+        return false;
+      }
+    } catch (e) {
+      console.error('❌ Test failed:', e.message);
+      return false;
+    }
+  };
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function boot() {
+    installSmarterFetch();
+    patchModal();
+
+    var k = getKey();
+    if (k) {
+      console.log('%c[Section 45] ✓ Ready — Key detected: ' + k.substring(0, 12) + '… (' + k.length + ' chars)', 'color:#10b981;font-weight:bold');
+    } else {
+      console.log('%c[Section 45] ⚠ No key — run: __dmSetupGeminiKey()', 'color:#f59e0b;font-weight:bold');
+    }
+
+    console.log('  __dmAITest()           — اختبار المفتاح');
+    console.log('  __dmGeminiStatus()     — حالة المفتاح');
+    console.log('  __dmSetupGeminiKey()   — تعيين المفتاح');
+  }
+
+  boot();
+
+})();
 
 
 
