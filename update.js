@@ -16139,99 +16139,46 @@ service cloud.firestore {
   /* =========================================================
      9. SERVICE WORKER — caches app files
      ========================================================= */
-  async function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) {
-      console.log('[Section 40] SW not supported');
-      return;
-    }
-
-    var swCode = `
-      const CACHE_NAME = 'drmedia-v1';
-      const URLS_TO_CACHE = [
-        './',
-        './index.html',
-        './update.js'
-      ];
-
-      self.addEventListener('install', (e) => {
-        self.skipWaiting();
-        e.waitUntil(
-          caches.open(CACHE_NAME).then((c) => c.addAll(URLS_TO_CACHE).catch(() => {}))
-        );
-      });
-
-      self.addEventListener('activate', (e) => {
-        e.waitUntil(
-          caches.keys().then((keys) =>
-            Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-          )
-        );
-        self.clients.claim();
-      });
-
-      self.addEventListener('fetch', (e) => {
-        // Network first, fallback to cache
-        e.respondWith(
-          fetch(e.request).then((res) => {
-            if (res && res.status === 200 && e.request.method === 'GET') {
-              const copy = res.clone();
-              caches.open(CACHE_NAME).then((c) => c.put(e.request, copy).catch(() => {}));
-            }
-            return res;
-          }).catch(() => caches.match(e.request))
-        );
-      });
-    `;
-
-    try {
-      var blob = new Blob([swCode], { type: 'application/javascript' });
-      var url = URL.createObjectURL(blob);
-      var reg = await navigator.serviceWorker.register(url, { scope: './' });
-      console.log('%c[Section 40] ✓ Service Worker registered', 'color:#10b981;font-weight:bold');
-
-      // Attach message channel for cleanup
-      window.__dmSWReg = reg;
-    } catch (err) {
-      console.warn('[Section 40] SW registration failed:', err.message);
-    }
+ async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    console.log('[Section 40] SW not supported');
+    return;
   }
+
+  try {
+    var reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    console.log('%c[Section 40] ✓ Service Worker registered from /sw.js', 'color:#10b981;font-weight:bold');
+    window.__dmSWReg = reg;
+
+    // Handle updates
+    reg.addEventListener('updatefound', function () {
+      console.log('[Section 40] New SW version available');
+    });
+  } catch (err) {
+    console.warn('[Section 40] SW registration failed:', err.message);
+  }
+}
 
   /* =========================================================
      10. PWA MANIFEST (inline)
      ========================================================= */
-  function injectPWA() {
-    if (document.querySelector('link[rel="manifest"]')) return;
-
-    var manifest = {
-      name: 'Dr Media Pro',
-      short_name: 'DrMedia',
-      description: 'Professional Video Production Management System',
-      start_url: './',
-      display: 'standalone',
-      background_color: '#0f0a1f',
-      theme_color: '#7c3aed',
-      orientation: 'any',
-      icons: [
-        { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="40" fill="%237c3aed"/><text x="96" y="130" font-family="system-ui" font-size="100" font-weight="800" fill="white" text-anchor="middle">D</text></svg>', sizes: '192x192', type: 'image/svg+xml' },
-        { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="100" fill="%237c3aed"/><text x="256" y="350" font-family="system-ui" font-size="280" font-weight="800" fill="white" text-anchor="middle">D</text></svg>', sizes: '512x512', type: 'image/svg+xml' }
-      ]
-    };
-
-    var blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-
-    var link = document.createElement('link');
-    link.rel = 'manifest';
-    link.href = url;
-    document.head.appendChild(link);
-
-    var meta = document.createElement('meta');
-    meta.name = 'theme-color';
-    meta.content = '#7c3aed';
-    document.head.appendChild(meta);
-
-    console.log('[Section 40] ✓ PWA manifest injected');
+ function injectPWA() {
+  // PWA Manifest moved to /manifest.json (real file)
+  // Just ensure meta tags exist
+  if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+    var m1 = document.createElement('meta');
+    m1.name = 'apple-mobile-web-app-capable';
+    m1.content = 'yes';
+    document.head.appendChild(m1);
   }
+  if (!document.querySelector('meta[name="mobile-web-app-capable"]')) {
+    var m2 = document.createElement('meta');
+    m2.name = 'mobile-web-app-capable';
+    m2.content = 'yes';
+    document.head.appendChild(m2);
+  }
+  console.log('[Section 40] ✓ PWA meta tags ready');
+}
 
   /* =========================================================
      11. PUBLIC COMMANDS
