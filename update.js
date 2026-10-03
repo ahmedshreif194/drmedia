@@ -18615,6 +18615,215 @@ ${halls}
   );
 
 })();
+/* =========================================================
+   SECTION 49: Clean Fetch Patch (Fix Firestore)
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Replaces ALL old fetch patches with one clean version
+   - Only touches Groq/Gemini URLs
+   - Firestore + Firebase URLS pass through untouched
+   - Fixes "client is offline" error
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 49] Clean Fetch Patch loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  /* =========================================================
+     1. FIND THE ORIGINAL FETCH
+     ========================================================= */
+  // The original fetch is at window.fetch but may be wrapped multiple times.
+  // We need to find the CLEANEST one by testing if it's native code.
+
+  function findOriginalFetch() {
+    var f = window.fetch;
+    // Walk up the chain — sometimes wrapped functions have .__original
+    while (f && f.__originalFetch) {
+      f = f.__originalFetch;
+    }
+    return f;
+  }
+
+  var originalFetch = findOriginalFetch();
+
+  // If we can't find a clean one, use a fresh bound fetch
+  if (!originalFetch || originalFetch.toString().indexOf('[native code]') < 0) {
+    // Use an iframe to get a clean fetch
+    try {
+      var iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+      originalFetch = iframe.contentWindow.fetch.bind(window);
+      console.log('[Section 49] ✓ Recovered native fetch from iframe');
+    } catch (e) {
+      console.warn('[Section 49] Could not get clean fetch, using current one');
+      originalFetch = window.fetch;
+    }
+  }
+
+  /* =========================================================
+     2. URL CLASSIFIER
+     ========================================================= */
+  var PROTECTED_HOSTS = [
+    'firestore.googleapis.com',
+    'firebaseio.com',
+    'firebaseapp.com',
+    'identitytoolkit.googleapis.com',
+    'securetoken.googleapis.com',
+    'www.googleapis.com',
+    'gstatic.com',
+    'googleusercontent.com'
+  ];
+
+  function isProtected(url) {
+    for (var i = 0; i < PROTECTED_HOSTS.length; i++) {
+      if (url.indexOf(PROTECTED_HOSTS[i]) >= 0) return true;
+    }
+    return false;
+  }
+
+  function isGroq(url) {
+    return url.indexOf('api.groq.com') >= 0;
+  }
+
+  function isGemini(url) {
+    return url.indexOf('generativelanguage.googleapis.com') >= 0;
+  }
+
+  /* =========================================================
+     3. CLEAN FETCH IMPLEMENTATION
+     ========================================================= */
+  window.fetch = function (url, options) {
+    var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
+
+    // Pass-through for Firebase/Firestore/Google Auth — UNTOUCHED
+    if (isProtected(urlStr)) {
+      return originalFetch(url, options);
+    }
+
+    // Groq — inject key in Authorization header
+    if (isGroq(urlStr)) {
+      var groqKey = localStorage.getItem('dm_groq_key');
+      if (groqKey && options) {
+        options.headers = options.headers || {};
+        if (options.headers instanceof Headers) {
+          options.headers.set('Authorization', 'Bearer ' + groqKey);
+        } else {
+          options.headers['Authorization'] = 'Bearer ' + groqKey;
+        }
+      }
+      return originalFetch(url, options);
+    }
+
+    // Gemini — everything else
+    if (isGemini(urlStr)) {
+      // This old code path shouldn't be used now (we use Groq)
+      return originalFetch(url, options);
+    }
+
+    // Default — untouched
+    return originalFetch(url, options);
+  };
+
+  // Mark as our patched version
+  window.fetch.__originalFetch = originalFetch;
+  window.fetch.__dm49 = true;
+
+  console.log('%c[Section 49] ✓ Clean fetch installed', 'color:#10b981;font-weight:bold');
+
+  /* =========================================================
+     4. FORCE FIRESTORE RECONNECT
+     ========================================================= */
+  async function forceReconnect() {
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules || !fb.modules.fsMod) return;
+
+      var fsMod = fb.modules.fsMod;
+      // Force terminate + reinitialize
+      try {
+        if (fsMod.terminate) {
+          await fsMod.terminate(fb.db);
+          console.log('[Section 49] ✓ Firestore terminated');
+        }
+      } catch (e) {}
+
+      // Small delay
+      await new Promise(function (r) { setTimeout(r, 500); });
+
+      // Reconnect
+      try {
+        if (fsMod.getFirestore && fb.app) {
+          fb.db = fsMod.getFirestore(fb.app);
+          console.log('[Section 49] ✓ Firestore reconnected');
+        }
+      } catch (e) {
+        console.warn('[Section 49] reconnect failed:', e);
+      }
+
+      // Test connection
+      try {
+        var testRef = fsMod.doc(fb.db, '_health', 'ping');
+        await fsMod.getDoc(testRef);
+        console.log('%c[Section 49] ✅ Firestore is ONLINE', 'color:#10b981;font-weight:bold');
+      } catch (e) {
+        if (e.code === 'permission-denied' || e.code === 'not-found') {
+          console.log('%c[Section 49] ✅ Firestore is ONLINE (rules ok)', 'color:#10b981;font-weight:bold');
+        } else {
+          console.warn('[Section 49] Firestore test failed:', e.code || e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('[Section 49] reconnect error:', e);
+    }
+  }
+
+  /* =========================================================
+     5. PUBLIC COMMANDS
+     ========================================================= */
+  window.__dmForceReconnect = forceReconnect;
+
+  window.__dmCheckNet = async function () {
+    var s = {
+      online: navigator.onLine,
+      fetchIsNative: window.fetch.toString().indexOf('[native code]') >= 0,
+      hasOriginalFetch: !!window.fetch.__originalFetch,
+      firebaseReady: !!(window.DrMediaFB && window.DrMediaFB.ready)
+    };
+    console.table(s);
+
+    // Try raw fetch to Firestore
+    try {
+      var r = await originalFetch('https://firestore.googleapis.com/', { method: 'HEAD' });
+      console.log('Firestore reachable:', r.status);
+    } catch (e) {
+      console.log('Firestore unreachable:', e.message);
+    }
+    return s;
+  };
+
+  /* =========================================================
+     6. AUTO FIX ON BOOT
+     ========================================================= */
+  function autoFix() {
+    console.log('[Section 49] Auto-fixing Firestore connection…');
+    setTimeout(forceReconnect, 2000);
+  }
+
+  // Run when Firebase is ready
+  var check = setInterval(function () {
+    if (window.DrMediaFB && window.DrMediaFB.ready) {
+      clearInterval(check);
+      autoFix();
+    }
+  }, 500);
+  setTimeout(function () { clearInterval(check); }, 30000);
+
+  console.log('%c[Section 49] ✓ Ready', 'color:#10b981;font-weight:bold');
+  console.log('  __dmCheckNet()        — فحص الشبكة');
+  console.log('  __dmForceReconnect()  — إعادة الاتصال بـ Firestore');
+
+})();
 
 
 
