@@ -18583,6 +18583,420 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 54: Final Fixes
+   Version: 1.0.0
+   ---------------------------------------------------------
+   1) Fix old importBookings (Excel parser)
+   2) Bookings page — newest first (descending date)
+   3) Ensure AI import tab appears
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 54] Final Fixes loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  var XLSX_CDN = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+
+  function loadXLSX() {
+    return new Promise(function (res) {
+      if (window.XLSX) { res(); return; }
+      var s = document.createElement('script');
+      s.src = XLSX_CDN;
+      s.onload = res;
+      s.onerror = res;
+      document.head.appendChild(s);
+    });
+  }
+
+  function normalize(s) {
+    return String(s || '').replace(/[\u064B-\u0652]/g, '').replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function convertDate(d) {
+    if (!d) return todayISO();
+    if (d instanceof Date) {
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    var s = String(d).trim();
+    var m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) {
+      var y = parseInt(m[3]); if (y < 100) y += y < 50 ? 2000 : 1900;
+      return y + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+    }
+    return todayISO();
+  }
+
+  function detectEventType(pkg) {
+    var n = normalize(pkg);
+    if (/عشاء|فرح|زفاف/.test(n)) return 'Wedding';
+    if (/سواريه|خطوبه|مطبخ/.test(n)) return 'Engagement';
+    if (/حنه/.test(n)) return 'Henna';
+    if (/هاي تي|عيد ميلاد/.test(n)) return 'Birthday';
+    if (/مؤتمر/.test(n)) return 'Corporate';
+    return 'Wedding';
+  }
+
+  function matchHall(name) {
+    var halls = State.data.halls || [];
+    if (!halls.length) return '';
+    if (!name) return halls[0].id;
+    var n = normalize(name);
+    for (var i = 0; i < halls.length; i++) {
+      var h = halls[i];
+      var ar = normalize(h.name.ar || '');
+      var en = normalize(h.name.en || '');
+      if ((ar && (n.indexOf(ar) >= 0 || ar.indexOf(n) >= 0)) ||
+          (en && (n.indexOf(en) >= 0 || en.indexOf(n) >= 0))) return h.id;
+    }
+    return halls[0].id;
+  }
+
+  /* =========================================================
+     1) FIX OLD importBookings — use SheetJS
+     ========================================================= */
+  window.importBookings = function () {
+    if (typeof openModal !== 'function') return;
+
+    openModal({
+      title: 'استيراد Excel / CSV',
+      size: 'lg',
+      body:
+        '<div style="padding:1rem;background:rgba(124,58,237,.05);border-radius:10px;margin-bottom:1rem;font-size:.82rem;line-height:1.8">' +
+          '<b>📊 الصيغة المدعومة:</b><br>' +
+          '• <b>.xlsx / .xls</b> — Excel حقيقي<br>' +
+          '• <b>.csv</b> — نص مفصول بفواصل<br><br>' +
+          '<b>الأعمدة المطلوبة:</b> date · hall · client · phone · event · start · end · cost<br>' +
+          '<span style="color:#10b981">✓ يتم التعرف عليها تلقائيًا بالعربي أو الإنجليزي</span>' +
+        '</div>' +
+        '<div class="field">' +
+          '<label>اختر ملف Excel أو CSV</label>' +
+          '<input type="file" id="imp-file" accept=".csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">' +
+        '</div>' +
+        '<div id="imp-preview" style="margin-top:1rem"></div>',
+      footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>'
+    });
+
+    setTimeout(function () {
+      var inp = document.getElementById('imp-file');
+      if (inp) inp.onchange = handleFile;
+    }, 100);
+  };
+
+  async function handleFile(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    var previewEl = document.getElementById('imp-preview');
+    previewEl.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-muted)">جاري قراءة الملف…</div>';
+
+    try {
+      await loadXLSX();
+      if (!window.XLSX) throw new Error('فشل تحميل مكتبة Excel — تحقق من الإنترنت');
+
+      var buf = await file.arrayBuffer();
+      var wb = window.XLSX.read(buf, { type: 'array', cellDates: true });
+      var allRows = [];
+
+      wb.SheetNames.forEach(function (sheetName) {
+        var ws = wb.Sheets[sheetName];
+        var rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+        if (!rows.length) return;
+
+        // Try to find a header row within first 5 rows
+        var headers = null;
+        var headerIdx = -1;
+        for (var i = 0; i < Math.min(5, rows.length); i++) {
+          var line = rows[i].map(function (c) { return normalize(String(c)); }).join(' ');
+          if (/تاريخ|عميل|باكدج|افراد|أفراد|date|client|guest/.test(line)) {
+            headers = rows[i].map(function (c) { return normalize(String(c)); });
+            headerIdx = i;
+            break;
+          }
+        }
+
+        // Skip sheet if no headers
+        if (!headers) return;
+
+        // Detect current hall from sheet name
+        var currentHallId = matchHall(sheetName);
+
+        for (var j = headerIdx + 1; j < rows.length; j++) {
+          var row = rows[j];
+          if (!row || !row.length) continue;
+          var nonEmpty = row.filter(function (c) { return String(c).trim() !== ''; });
+          if (!nonEmpty.length) continue;
+
+          // Section header (single cell with hall name)
+          if (nonEmpty.length === 1) {
+            var h = matchHall(String(nonEmpty[0]));
+            var detectedName = normalize(String(nonEmpty[0]));
+            var isHallHeader = (State.data.halls || []).some(function (hh) {
+              return detectedName.indexOf(normalize(hh.name.ar || '')) >= 0 ||
+                     detectedName.indexOf(normalize(hh.name.en || '')) >= 0;
+            });
+            if (isHallHeader) {
+              currentHallId = h;
+              continue;
+            }
+          }
+
+          var get = function (keys) {
+            for (var k = 0; k < keys.length; k++) {
+              var idx = headers.indexOf(normalize(keys[k]));
+              if (idx < 0) {
+                // Try partial match
+                for (var hi = 0; hi < headers.length; hi++) {
+                  if (headers[hi] && headers[hi].indexOf(normalize(keys[k])) >= 0) {
+                    idx = hi; break;
+                  }
+                }
+              }
+              if (idx >= 0) return String(row[idx] || '').trim();
+            }
+            return '';
+          };
+
+          var date = get(['تاريخ', 'التاريخ', 'date']);
+          var client = get(['عميل', 'اسم العميل', 'العميل', 'client', 'name', 'اسم']);
+          var phone = get(['هاتف', 'تليفون', 'phone', 'mobile', 'tel']);
+          var hallName = get(['قاعة', 'القاعة', 'hall', 'venue']);
+          var pkg = get(['باكدج', 'الباكدج', 'package', 'منيو', 'المناسبة', 'مناسبة', 'event']);
+          var guests = get(['افراد', 'أفراد', 'عدد', 'guests', 'count', 'pax']);
+          var cost = get(['تكلفة', 'السعر', 'cost', 'price', 'amount']);
+
+          if (!client && !date) continue;
+
+          var hallId = currentHallId;
+          if (hallName) {
+            var matchedHall = matchHall(hallName);
+            if (matchedHall) hallId = matchedHall;
+          }
+
+          allRows.push({
+            date: convertDate(date),
+            hallId: hallId,
+            clientName: client || '-',
+            phone: phone || '',
+            eventType: detectEventType(pkg),
+            packageType: pkg,
+            startTime: '19:00',
+            endTime: '23:00',
+            cost: parseInt(String(cost).replace(/[^\d]/g, '')) || 0,
+            guestsCount: parseInt(String(guests).replace(/[^\d]/g, '')) || 0
+          });
+        }
+      });
+
+      if (!allRows.length) {
+        previewEl.innerHTML = '<div style="padding:1rem;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;color:#ef4444;font-size:.85rem">' +
+          '⚠️ لم يتم العثور على صفوف صحيحة في الملف.<br>' +
+          'تأكد إن الأعمدة تحتوي على: تاريخ، اسم العميل، الباكدج، عدد الأفراد' +
+        '</div>';
+        return;
+      }
+
+      // Show preview
+      var previewHtml = '<div style="background:var(--surface-2);border-radius:10px;padding:1rem;max-height:300px;overflow:auto">' +
+        '<div style="font-size:.82rem;font-weight:700;color:#10b981;margin-bottom:.65rem">✓ تم قراءة ' + allRows.length + ' حجز</div>' +
+        '<table style="width:100%;font-size:.75rem"><thead><tr style="color:var(--text-muted)">' +
+        '<th style="text-align:start;padding:.35rem">التاريخ</th>' +
+        '<th style="text-align:start;padding:.35rem">العميل</th>' +
+        '<th style="text-align:start;padding:.35rem">الباكدج</th>' +
+        '<th style="text-align:start;padding:.35rem">الأفراد</th>' +
+        '</tr></thead><tbody>';
+      allRows.slice(0, 8).forEach(function (r) {
+        previewHtml += '<tr style="border-top:1px solid var(--border)">' +
+          '<td style="padding:.35rem">' + r.date + '</td>' +
+          '<td style="padding:.35rem">' + (r.clientName || '-') + '</td>' +
+          '<td style="padding:.35rem">' + (r.packageType || '-') + '</td>' +
+          '<td style="padding:.35rem">' + r.guestsCount + '</td>' +
+        '</tr>';
+      });
+      if (allRows.length > 8) {
+        previewHtml += '<tr><td colspan="4" style="padding:.5rem;text-align:center;color:var(--text-muted)">… و ' + (allRows.length - 8) + ' حجز آخر</td></tr>';
+      }
+      previewHtml += '</tbody></table></div>';
+
+      previewEl.innerHTML = previewHtml +
+        '<div style="display:flex;gap:.5rem;margin-top:1rem;justify-content:flex-end">' +
+          '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+          '<button class="btn btn-primary" id="imp-apply">حفظ ' + allRows.length + ' حجز</button>' +
+        '</div>';
+
+      document.getElementById('imp-apply').onclick = function () {
+        var added = 0;
+        allRows.forEach(function (b) {
+          State.data.bookings.push({
+            id: 'b_' + Math.random().toString(36).slice(2, 10),
+            date: b.date, hallId: b.hallId,
+            clientName: b.clientName, phone: b.phone,
+            eventType: b.eventType,
+            startTime: b.startTime, endTime: b.endTime,
+            status: 'pending', paymentStatus: 'unpaid',
+            cost: b.cost, guestsCount: b.guestsCount,
+            notes: 'Excel: ' + file.name
+          });
+          added++;
+        });
+        try { saveData(); } catch (e) {}
+        try { if (typeof logActivity === 'function') logActivity('excel-import', 'booking', null, null, { count: added }); } catch (e) {}
+        if (typeof showToast === 'function') showToast('✓ تم استيراد ' + added + ' حجز', 'success');
+        closeModal();
+        setTimeout(function () { navigate('bookings'); }, 500);
+      };
+
+    } catch (err) {
+      console.error('[Section 54]', err);
+      previewEl.innerHTML = '<div style="padding:1rem;background:rgba(239,68,68,.1);border-radius:10px;color:#ef4444;font-size:.85rem">' +
+        '❌ خطأ: ' + err.message + '</div>';
+    }
+  }
+
+  /* =========================================================
+     2) FIX BOOKINGS SORTING — newest first
+     ========================================================= */
+  function hookBookingsSort() {
+    if (!Pages.bookings) return;
+    if (Pages.bookings.__dm54) return;
+
+    var orig = Pages.bookings;
+    Pages.bookings = function (el) {
+      // Force sort state before rendering
+      State.filters.bkSortDesc = true;
+      orig.apply(this, arguments);
+    };
+    Pages.bookings.__dm54 = true;
+
+    // Also fix the underlying sort in Section 1's code by wrapping
+    // We can't easily reach inside, so we do a DOM-level fix after render
+    setTimeout(function () {
+      // Try to override after every navigate to bookings
+      var origNav = window.navigate;
+      if (origNav && !origNav.__dm54) {
+        window.navigate = function (page) {
+          var r = origNav.apply(this, arguments);
+          if (page === 'bookings') {
+            setTimeout(function () {
+              var tbody = document.querySelector('#content table.data-table tbody');
+              if (tbody) sortBookingsTableDesc(tbody);
+            }, 250);
+          }
+          return r;
+        };
+        window.navigate.__dm54 = true;
+      }
+    }, 500);
+  }
+
+  function sortBookingsTableDesc(tbody) {
+    try {
+      var rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length < 2) return;
+
+      // Try to extract date from row (usually 2nd column)
+      var parsed = rows.map(function (tr, idx) {
+        var cells = tr.querySelectorAll('td');
+        var dateStr = '';
+        // Date is usually in the 2nd cell
+        if (cells[1]) dateStr = cells[1].textContent.trim();
+        // Try to parse any date-like format
+        var iso = parseDateFromCell(dateStr);
+        return { row: tr, date: iso, idx: idx };
+      });
+
+      // Check if already sorted
+      var sorted = parsed.slice().sort(function (a, b) {
+        if (!a.date && !b.date) return 0;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return b.date.localeCompare(a.date); // desc
+      });
+
+      // If order changed → re-append
+      var changed = sorted.some(function (x, i) { return x.idx !== i; });
+      if (changed) {
+        tbody.innerHTML = '';
+        sorted.forEach(function (x) { tbody.appendChild(x.row); });
+        console.log('%c[Section 54] ✓ Bookings sorted (newest first)', 'color:#10b981');
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  function parseDateFromCell(s) {
+    if (!s) return '';
+    // Try DD/MM/YYYY, YYYY-MM-DD, etc.
+    var m = s.match(/(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{1,4})/);
+    if (!m) return '';
+    var a = parseInt(m[1]), b = parseInt(m[2]), c = parseInt(m[3]);
+    // If a > 1000 → YYYY-MM-DD
+    if (a > 1000) return a + '-' + String(b).padStart(2, '0') + '-' + String(c).padStart(2, '0');
+    // Else DD-MM-YYYY
+    var y = c < 100 ? c + 2000 : c;
+    return y + '-' + String(b).padStart(2, '0') + '-' + String(a).padStart(2, '0');
+  }
+
+  /* =========================================================
+     3) ENSURE AI IMPORT TAB EXISTS
+     ========================================================= */
+  function ensureAIImportNav() {
+    var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (!ops) return;
+
+    // Remove duplicates
+    var seen = {};
+    ops.items = ops.items.filter(function (i) {
+      if (i.id === 'aiimport' || i.id === 'importsmart') {
+        if (seen[i.id]) return false;
+        seen[i.id] = true;
+      }
+      return true;
+    });
+
+    // Add if missing
+    if (!ops.items.find(function (i) { return i.id === 'aiimport'; })) {
+      var idx = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+      var at = idx >= 0 ? idx + 1 : ops.items.length;
+      ops.items.splice(at, 0, { id: 'aiimport', icon: 'sparkles', label: 'ai_import' });
+    }
+
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof NAV_ITEMS !== 'undefined'
+        && typeof State !== 'undefined';
+    },
+    function () {
+      hookBookingsSort();
+      ensureAIImportNav();
+
+      // Re-check nav every 3 seconds (in case renderSidebar overwrites)
+      setInterval(ensureAIImportNav, 3000);
+
+      console.log('%c[Section 54] ✓ Final Fixes ready', 'color:#10b981;font-weight:bold;font-size:13px');
+      console.log('  1. Excel import → SheetJS حقيقي');
+      console.log('  2. Bookings → الأحدث أولاً');
+      console.log('  3. AI Import tab → مضمون الظهور');
+    }
+  );
+
+})();
 
 
 
