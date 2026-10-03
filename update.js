@@ -18997,6 +18997,287 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 55: Bookings Sort Fix
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Sort ascending (oldest first: 1-10 → 2-10 → ...)
+   - Group same-day bookings together (all halls of day 1)
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 55] Bookings Sort Fix loading…', 'color:#10b981;font-weight:bold');
+
+  /* =========================================================
+     HOOK RENDER — resort after every bookings render
+     ========================================================= */
+  function hookBookingsPage() {
+    if (!Pages.bookings) {
+      setTimeout(hookBookingsPage, 200);
+      return;
+    }
+
+    if (Pages.bookings.__dm55) return;
+
+    var orig = Pages.bookings;
+    Pages.bookings = function (el) {
+      // Apply sort BEFORE rendering
+      applySortState();
+      orig.apply(this, arguments);
+
+      // After render, re-order the DOM to guarantee correct order
+      setTimeout(function () {
+        reorderTable(el);
+      }, 150);
+    };
+    Pages.bookings.__dm55 = true;
+    console.log('[Section 55] ✓ Bookings page hooked');
+  }
+
+  /* =========================================================
+     FORCE SORT STATE — the underlying code uses State.filters
+     ========================================================= */
+  function applySortState() {
+    // Some versions of index.html sort by this flag
+    // We also do DOM-level re-sorting as a safety net
+    State.filters.bkSortDesc = false;
+  }
+
+  /* =========================================================
+     DOM REORDER — guarantee date ASC + group by day
+     ========================================================= */
+  function reorderTable(root) {
+    try {
+      var tbody = root.querySelector('table.data-table tbody');
+      if (!tbody) return;
+
+      var rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length < 2) return;
+
+      // Skip if it's an empty state
+      if (rows[0] && rows[0].querySelector('.empty-state')) return;
+
+      // Parse date from each row (2nd cell usually = date)
+      var parsed = rows.map(function (tr, idx) {
+        var cells = tr.querySelectorAll('td');
+        var dateStr = '';
+        // Try cell index 1 (typical), then any cell that looks like a date
+        if (cells[1]) dateStr = cells[1].textContent.trim();
+        var iso = parseDateCell(dateStr);
+        if (!iso) {
+          for (var i = 0; i < cells.length; i++) {
+            var v = (cells[i].textContent || '').trim();
+            var p = parseDateCell(v);
+            if (p) { iso = p; break; }
+          }
+        }
+        return { row: tr, date: iso, idx: idx };
+      });
+
+      // Sort by date ASC (oldest first)
+      // Rows with no date go to the end
+      parsed.sort(function (a, b) {
+        if (!a.date && !b.date) return a.idx - b.idx;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.idx - b.idx; // preserve order within same day
+      });
+
+      // Check if order changed
+      var changed = parsed.some(function (x, i) { return x.idx !== i; });
+      if (!changed) return;
+
+      // Re-append rows in new order
+      parsed.forEach(function (x) { tbody.appendChild(x.row); });
+
+      console.log('%c[Section 55] ✓ Bookings sorted ASC + grouped by date', 'color:#10b981;font-weight:bold');
+    } catch (e) {
+      console.warn('[Section 55] reorder failed:', e);
+    }
+  }
+
+  /* =========================================================
+     DATE PARSER
+     ========================================================= */
+  function parseDateCell(s) {
+    if (!s) return '';
+    s = String(s).trim();
+
+    // Try to extract any date pattern
+    // DD/MM/YYYY or DD-MM-YYYY
+    var m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) {
+      var d = parseInt(m[1]), mo = parseInt(m[2]), y = parseInt(m[3]);
+      if (y < 100) y += y < 50 ? 2000 : 1900;
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      }
+    }
+
+    // YYYY-MM-DD
+    m = s.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if (m) {
+      var y2 = parseInt(m[1]), mo2 = parseInt(m[2]), d2 = parseInt(m[3]);
+      if (mo2 >= 1 && mo2 <= 12 && d2 >= 1 && d2 <= 31) {
+        return y2 + '-' + String(mo2).padStart(2, '0') + '-' + String(d2).padStart(2, '0');
+      }
+    }
+
+    // Arabic month names
+    var arMonths = {
+      'يناير': 1, 'فبراير': 2, 'مارس': 3, 'أبريل': 4, 'ابريل': 4,
+      'مايو': 5, 'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'اغسطس': 8,
+      'سبتمبر': 9, 'أكتوبر': 10, 'اكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12
+    };
+    for (var arName in arMonths) {
+      if (s.indexOf(arName) >= 0) {
+        var dm = s.match(/(\d{1,2})/);
+        var ym = s.match(/(20\d{2})/);
+        var day = dm ? parseInt(dm[1]) : 1;
+        var year = ym ? parseInt(ym[1]) : new Date().getFullYear();
+        return year + '-' + String(arMonths[arName]).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      }
+    }
+
+    return '';
+  }
+
+  /* =========================================================
+     ADD VISUAL GROUPING (highlight same-day rows)
+     ========================================================= */
+  function addDayGrouping(root) {
+    try {
+      var tbody = root.querySelector('table.data-table tbody');
+      if (!tbody) return;
+
+      var rows = Array.from(tbody.querySelectorAll('tr'));
+      var lastDate = null;
+
+      rows.forEach(function (tr) {
+        var cells = tr.querySelectorAll('td');
+        var dateStr = cells[1] ? cells[1].textContent.trim() : '';
+        var iso = parseDateCell(dateStr);
+
+        // Remove old grouping classes
+        tr.style.borderTop = '';
+        tr.style.background = '';
+
+        if (iso && iso !== lastDate) {
+          // First row of a new day → subtle top border
+          tr.style.borderTop = '2px solid var(--primary)';
+          lastDate = iso;
+        } else if (iso === lastDate) {
+          // Same day → very subtle background
+          tr.style.background = 'rgba(124,58,237,.03)';
+        }
+      });
+    } catch (e) {}
+  }
+
+  /* =========================================================
+     HOOK NAVIGATE — reapply after each navigation
+     ========================================================= */
+  function hookNavigate() {
+    if (window.navigate.__dm55) return;
+    var orig = window.navigate;
+    window.navigate = function (page) {
+      var r = orig.apply(this, arguments);
+      if (page === 'bookings') {
+        setTimeout(function () {
+          var content = document.getElementById('content');
+          if (content) {
+            reorderTable(content);
+            addDayGrouping(content);
+          }
+        }, 350);
+      }
+      return r;
+    };
+    window.navigate.__dm55 = true;
+  }
+
+  /* =========================================================
+     WATCH DOM — reorder whenever bookings table changes
+     ========================================================= */
+  function watchContent() {
+    var target = document.getElementById('content');
+    if (!target) {
+      setTimeout(watchContent, 500);
+      return;
+    }
+
+    var observer = new MutationObserver(function () {
+      if (State.page !== 'bookings') return;
+      clearTimeout(window.__dm55T);
+      window.__dm55T = setTimeout(function () {
+        var content = document.getElementById('content');
+        if (content) {
+          reorderTable(content);
+          addDayGrouping(content);
+        }
+      }, 250);
+    });
+
+    observer.observe(target, { childList: true, subtree: true });
+    console.log('[Section 55] ✓ DOM observer active');
+  }
+
+  /* =========================================================
+     PUBLIC COMMANDS
+     ========================================================= */
+  window.__dmSortBookings = function () {
+    var content = document.getElementById('content');
+    if (!content) return;
+    reorderTable(content);
+    addDayGrouping(content);
+    console.log('✓ Re-sorted');
+  };
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof State !== 'undefined'
+        && typeof navigate === 'function'
+        && document.getElementById('content');
+    },
+    function () {
+      hookBookingsPage();
+      hookNavigate();
+      watchContent();
+
+      // If already on bookings, apply now
+      if (State.page === 'bookings') {
+        setTimeout(function () {
+          var content = document.getElementById('content');
+          if (content) {
+            reorderTable(content);
+            addDayGrouping(content);
+          }
+        }, 400);
+      }
+
+      console.log('%c[Section 55] ═══ Bookings Sort READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  📅 تصاعدي: 1-10 → 2-10 → 3-10');
+      console.log('  🏛 حجوزات نفس اليوم تحت بعض');
+      console.log('  __dmSortBookings()  — إعادة الترتيب يدويًا');
+    }
+  );
+
+})();
 
 
 
