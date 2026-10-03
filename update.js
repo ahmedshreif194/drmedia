@@ -19278,6 +19278,685 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 56: Bookings Page Overhaul
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Sort ASC (1-10 → 2-10 → ...)
+   - Group same-day bookings
+   - Rich filters (date range, hall, status, payment, event)
+   - Quick ranges (today, week, month, upcoming, past)
+   - Stats bar
+   - Sortable columns
+   - Pagination
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 56] Bookings Overhaul loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  /* =========================================================
+     HELPERS
+     ========================================================= */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function getDayName(dateStr) {
+    if (!dateStr) return '';
+    var days = State.lang === 'ar'
+      ? ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+      : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    try { return days[new Date(dateStr).getDay()]; } catch (e) { return ''; }
+  }
+
+  function fmtDateLong(d) {
+    if (!d) return '';
+    try {
+      return new Date(d).toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      });
+    } catch (e) { return d; }
+  }
+
+  function fmtDateShort(d) {
+    if (!d) return '-';
+    try {
+      return new Date(d).toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', {
+        day: '2-digit', month: '2-digit', year: 'numeric'
+      });
+    } catch (e) { return d; }
+  }
+
+  function fmtMoney(n) {
+    return (n || 0).toLocaleString() + ' EGP';
+  }
+
+  function parseDateSafe(s) {
+    if (!s) return '';
+    var m = String(s).match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+    m = String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) {
+      var y = parseInt(m[3]); if (y < 100) y += y < 50 ? 2000 : 1900;
+      return y + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+    }
+    return '';
+  }
+
+  function todayISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function addDays(iso, n) {
+    var d = new Date(iso);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function statusColor(s) {
+    return { confirmed: 'green', pending: 'yellow', cancelled: 'red', completed: 'blue' }[s] || 'gray';
+  }
+
+  function paymentColor(p) {
+    return { paid: 'green', partial: 'yellow', unpaid: 'red' }[p] || 'gray';
+  }
+
+  /* =========================================================
+     GET FILTER STATE
+     ========================================================= */
+  function getFilters() {
+    var f = State.filters;
+    if (f.bkRange === undefined) f.bkRange = 'all';
+    if (f.bkSearch === undefined) f.bkSearch = '';
+    if (f.bkFrom === undefined) f.bkFrom = '';
+    if (f.bkTo === undefined) f.bkTo = '';
+    if (f.bkHall === undefined) f.bkHall = 'all';
+    if (f.bkStatus === undefined) f.bkStatus = 'all';
+    if (f.bkPayment === undefined) f.bkPayment = 'all';
+    if (f.bkEvent === undefined) f.bkEvent = 'all';
+    if (f.bkSort === undefined) f.bkSort = 'date_asc';
+    if (f.bkPage === undefined) f.bkPage = 1;
+    if (f.bkPerPage === undefined) f.bkPerPage = 100;
+    if (f.bkGroupDays === undefined) f.bkGroupDays = true;
+    return f;
+  }
+
+  /* =========================================================
+     APPLY FILTERS
+     ========================================================= */
+  function applyFilters(bookings, f) {
+    var today = todayISO();
+    var list = bookings.slice();
+
+    // Range
+    if (f.bkRange === 'today') {
+      list = list.filter(function (b) { return b.date === today; });
+    } else if (f.bkRange === 'tomorrow') {
+      list = list.filter(function (b) { return b.date === addDays(today, 1); });
+    } else if (f.bkRange === 'week') {
+      var weekEnd = addDays(today, 7);
+      list = list.filter(function (b) { return b.date >= today && b.date <= weekEnd; });
+    } else if (f.bkRange === 'month') {
+      var monthEnd = addDays(today, 30);
+      list = list.filter(function (b) { return b.date >= today && b.date <= monthEnd; });
+    } else if (f.bkRange === 'upcoming') {
+      list = list.filter(function (b) { return b.date >= today; });
+    } else if (f.bkRange === 'past') {
+      list = list.filter(function (b) { return b.date < today; });
+    } else if (f.bkRange === 'custom') {
+      if (f.bkFrom) list = list.filter(function (b) { return b.date >= f.bkFrom; });
+      if (f.bkTo) list = list.filter(function (b) { return b.date <= f.bkTo; });
+    }
+
+    // Search
+    if (f.bkSearch) {
+      var q = f.bkSearch.toLowerCase().trim();
+      list = list.filter(function (b) {
+        var hay = ((b.clientName || '') + ' ' + (b.phone || '') + ' ' + (b.id || '') + ' ' + (b.notes || '')).toLowerCase();
+        return hay.indexOf(q) >= 0;
+      });
+    }
+
+    // Hall
+    if (f.bkHall !== 'all') {
+      list = list.filter(function (b) { return b.hallId === f.bkHall; });
+    }
+
+    // Status
+    if (f.bkStatus !== 'all') {
+      list = list.filter(function (b) { return b.status === f.bkStatus; });
+    }
+
+    // Payment
+    if (f.bkPayment !== 'all') {
+      list = list.filter(function (b) { return (b.paymentStatus || 'unpaid') === f.bkPayment; });
+    }
+
+    // Event
+    if (f.bkEvent !== 'all') {
+      list = list.filter(function (b) { return b.eventType === f.bkEvent; });
+    }
+
+    return list;
+  }
+
+  /* =========================================================
+     APPLY SORT
+     ========================================================= */
+  function applySort(list, sortKey) {
+    var sorted = list.slice();
+    switch (sortKey) {
+      case 'date_desc':
+        sorted.sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+        break;
+      case 'client':
+        sorted.sort(function (a, b) { return (a.clientName || '').localeCompare(b.clientName || '', 'ar'); });
+        break;
+      case 'cost_desc':
+        sorted.sort(function (a, b) { return (b.cost || 0) - (a.cost || 0); });
+        break;
+      case 'cost_asc':
+        sorted.sort(function (a, b) { return (a.cost || 0) - (b.cost || 0); });
+        break;
+      case 'created_desc':
+        sorted.sort(function (a, b) {
+          return String(b.createdAt || b.id || '').localeCompare(String(a.createdAt || a.id || ''));
+        });
+        break;
+      default: // date_asc
+        sorted.sort(function (a, b) {
+          var d = (a.date || '').localeCompare(b.date || '');
+          if (d !== 0) return d;
+          // Same date → preserve insertion order
+          return 0;
+        });
+    }
+    return sorted;
+  }
+
+  /* =========================================================
+     GROUP BY DAY
+     ========================================================= */
+  function groupByDay(list) {
+    var groups = [];
+    var currentDate = null;
+    var currentGroup = null;
+    list.forEach(function (b) {
+      if (b.date !== currentDate) {
+        currentGroup = { date: b.date, bookings: [] };
+        groups.push(currentGroup);
+        currentDate = b.date;
+      }
+      currentGroup.bookings.push(b);
+    });
+    return groups;
+  }
+
+  /* =========================================================
+     MAIN PAGE
+     ========================================================= */
+  Pages.bookings = function (el) {
+    var f = getFilters();
+    var allBookings = State.data.bookings || [];
+    var halls = State.data.halls || [];
+
+    // Apply filters + sort
+    var filtered = applyFilters(allBookings, f);
+    var sorted = applySort(filtered, f.bkSort);
+
+    // Stats
+    var stats = {
+      total: sorted.length,
+      confirmed: sorted.filter(function (b) { return b.status === 'confirmed'; }).length,
+      pending: sorted.filter(function (b) { return b.status === 'pending'; }).length,
+      completed: sorted.filter(function (b) { return b.status === 'completed'; }).length,
+      cancelled: sorted.filter(function (b) { return b.status === 'cancelled'; }).length,
+      revenue: sorted.reduce(function (s, b) { return s + (b.cost || 0); }, 0),
+      guests: sorted.reduce(function (s, b) { return s + (b.guestsCount || 0); }, 0)
+    };
+
+    // Pagination
+    var totalPages = Math.max(1, Math.ceil(sorted.length / f.bkPerPage));
+    if (f.bkPage > totalPages) f.bkPage = totalPages;
+    var start = (f.bkPage - 1) * f.bkPerPage;
+    var pageItems = sorted.slice(start, start + f.bkPerPage);
+
+    // Group page items
+    var groups = f.bkGroupDays ? groupByDay(pageItems) : [{ date: null, bookings: pageItems }];
+
+    // Build UI
+    var rangeBtns = [
+      { k: 'all', l: 'الكل' },
+      { k: 'today', l: 'اليوم' },
+      { k: 'tomorrow', l: 'غدًا' },
+      { k: 'week', l: 'الأسبوع' },
+      { k: 'month', l: 'الشهر' },
+      { k: 'upcoming', l: 'قادم' },
+      { k: 'past', l: 'سابق' }
+    ];
+
+    var html = '';
+
+    /* ============== FILTER BAR ============== */
+    html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+
+    // Row 1: Search + Quick ranges + Add
+    html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.85rem">';
+    html += '<div style="position:relative;flex:1;min-width:220px">';
+    html += '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="position:absolute;inset-inline-start:12px;top:50%;transform:translateY(-50%);color:var(--text-muted)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+    html += '<input type="text" id="bk-search" placeholder="بحث بالاسم، الهاتف، الملاحظات…" value="' + esc(f.bkSearch) + '" style="width:100%;padding:.55rem .85rem;padding-inline-start:34px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:.85rem;outline:none">';
+    html += '</div>';
+
+    // Quick range chips
+    html += '<div style="display:flex;gap:.35rem;flex-wrap:wrap;overflow-x:auto">';
+    rangeBtns.forEach(function (rb) {
+      var active = f.bkRange === rb.k || (rb.k === 'all' && f.bkRange === 'all');
+      html += '<button class="btn ' + (active ? 'btn-primary' : 'btn-ghost') + ' btn-sm" data-range="' + rb.k + '" style="white-space:nowrap;font-size:.75rem;padding:.4rem .7rem">' + rb.l + '</button>';
+    });
+    html += '</div>';
+
+    // Add button
+    if (typeof can === 'function' ? can('bookings', 'create') : true) {
+      html += '<button class="btn btn-primary btn-sm" onclick="editBooking()" style="margin-inline-start:auto"><i data-lucide="plus"></i> إضافة</button>';
+    }
+    html += '</div>';
+
+    // Row 2: Advanced filters
+    html += '<div id="bk-adv-filters" style="display:flex;flex-wrap:wrap;gap:.5rem;padding-top:.85rem;border-top:1px solid var(--border)">';
+
+    // Date from
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:130px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">من تاريخ</label>';
+    html += '<input type="date" id="bk-from" value="' + esc(f.bkFrom) + '" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '</div>';
+
+    // Date to
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:130px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">إلى تاريخ</label>';
+    html += '<input type="date" id="bk-to" value="' + esc(f.bkTo) + '" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '</div>';
+
+    // Hall
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:130px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">القاعة</label>';
+    html += '<select id="bk-hall" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '<option value="all">الكل</option>';
+    halls.forEach(function (h) {
+      html += '<option value="' + h.id + '"' + (f.bkHall === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+    });
+    html += '</select></div>';
+
+    // Status
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:120px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">الحالة</label>';
+    html += '<select id="bk-status" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '<option value="all">الكل</option>';
+    html += '<option value="confirmed"' + (f.bkStatus === 'confirmed' ? ' selected' : '') + '>مؤكد</option>';
+    html += '<option value="pending"' + (f.bkStatus === 'pending' ? ' selected' : '') + '>قيد الانتظار</option>';
+    html += '<option value="completed"' + (f.bkStatus === 'completed' ? ' selected' : '') + '>مكتمل</option>';
+    html += '<option value="cancelled"' + (f.bkStatus === 'cancelled' ? ' selected' : '') + '>ملغي</option>';
+    html += '</select></div>';
+
+    // Payment
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:120px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">الدفع</label>';
+    html += '<select id="bk-payment" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '<option value="all">الكل</option>';
+    html += '<option value="paid"' + (f.bkPayment === 'paid' ? ' selected' : '') + '>مدفوع</option>';
+    html += '<option value="partial"' + (f.bkPayment === 'partial' ? ' selected' : '') + '>جزئي</option>';
+    html += '<option value="unpaid"' + (f.bkPayment === 'unpaid' ? ' selected' : '') + '>غير مدفوع</option>';
+    html += '</select></div>';
+
+    // Event
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:120px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">المناسبة</label>';
+    html += '<select id="bk-event" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '<option value="all">الكل</option>';
+    ['Wedding','Engagement','Henna','Birthday','Corporate','Other'].forEach(function (ev) {
+      html += '<option value="' + ev + '"' + (f.bkEvent === ev ? ' selected' : '') + '>' + ev + '</option>';
+    });
+    html += '</select></div>';
+
+    // Sort
+    html += '<div style="display:flex;flex-direction:column;gap:.2rem;min-width:140px">';
+    html += '<label style="font-size:.7rem;font-weight:600;color:var(--text-muted)">الترتيب</label>';
+    html += '<select id="bk-sort" style="padding:.45rem .6rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.8rem">';
+    html += '<option value="date_asc"' + (f.bkSort === 'date_asc' ? ' selected' : '') + '>📅 التاريخ (الأقدم أولاً)</option>';
+    html += '<option value="date_desc"' + (f.bkSort === 'date_desc' ? ' selected' : '') + '>📅 التاريخ (الأحدث أولاً)</option>';
+    html += '<option value="client"' + (f.bkSort === 'client' ? ' selected' : '') + '>👤 اسم العميل</option>';
+    html += '<option value="cost_desc"' + (f.bkSort === 'cost_desc' ? ' selected' : '') + '>💰 الأعلى قيمة</option>';
+    html += '<option value="cost_asc"' + (f.bkSort === 'cost_asc' ? ' selected' : '') + '>💰 الأقل قيمة</option>';
+    html += '</select></div>';
+
+    // Clear filters button
+    html += '<div style="display:flex;align-items:flex-end">';
+    html += '<button class="btn btn-ghost btn-sm" id="bk-clear" style="color:#ef4444"><i data-lucide="x" style="width:12px;height:12px"></i> مسح</button>';
+    html += '</div>';
+
+    html += '</div>'; // end advanced filters
+    html += '</div>'; // end filter card
+
+    /* ============== STATS BAR ============== */
+    html += '<div class="grid-stats" style="margin-bottom:1rem">';
+    html += statCard('إجمالي', stats.total, 'list', '#7c3aed');
+    html += statCard('مؤكد', stats.confirmed, 'check-circle', '#10b981');
+    html += statCard('قيد الانتظار', stats.pending, 'clock', '#f59e0b');
+    html += statCard('مكتمل', stats.completed, 'check', '#3b82f6');
+    html += statCard('ملغي', stats.cancelled, 'x-circle', '#ef4444');
+    html += statCard('الإيراد', fmtMoney(stats.revenue), 'dollar-sign', '#06b6d4');
+    html += statCard('الأفراد', stats.guests.toLocaleString(), 'users', '#ec4899');
+    html += '</div>';
+
+    /* ============== RESULTS ============== */
+    if (!sorted.length) {
+      html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem">';
+      html += '<i data-lucide="calendar-x"></i>';
+      html += '<p>لا توجد حجوزات مطابقة للفلاتر الحالية</p>';
+      html += '</div></div>';
+    } else {
+      // Results header
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:.65rem">';
+      html += '<div style="font-size:.82rem;color:var(--text-muted)">عرض <b style="color:var(--text)">' + (start + 1) + '-' + Math.min(start + f.bkPerPage, sorted.length) + '</b> من <b style="color:var(--text)">' + sorted.length + '</b> حجز</div>';
+      html += '<div style="display:flex;gap:.35rem;flex-wrap:wrap">';
+      html += '<label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;padding:.35rem .65rem;background:var(--surface-2);border-radius:8px">';
+      html += '<input type="checkbox" id="bk-group" ' + (f.bkGroupDays ? 'checked' : '') + ' style="accent-color:var(--primary)"> تجميع باليوم';
+      html += '</label>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="__dmBkExportCSV()"><i data-lucide="download" style="width:12px;height:12px"></i> Excel</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="window.print()"><i data-lucide="printer" style="width:12px;height:12px"></i> طباعة</button>';
+      html += '</div>';
+      html += '</div>';
+
+      // Groups / rows
+      groups.forEach(function (grp) {
+        if (f.bkGroupDays && grp.date) {
+          // Day header
+          var dayTotal = grp.bookings.reduce(function (s, b) { return s + (b.cost || 0); }, 0);
+          var isToday = grp.date === todayISO();
+          var isPast = grp.date < todayISO();
+          var headerColor = isToday ? '#10b981' : (isPast ? '#94a3b8' : '#7c3aed');
+          var headerLabel = isToday ? ' (اليوم)' : (isPast ? '' : '');
+
+          html += '<div class="card" style="margin-bottom:.85rem;padding:0;overflow:hidden">';
+          html += '<div style="background:' + headerColor + ';color:#fff;padding:.65rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;font-weight:700">';
+          html += '<div style="display:flex;align-items:center;gap:.5rem;font-size:.9rem">';
+          html += '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>';
+          html += esc(fmtDateLong(grp.date) + headerLabel);
+          html += '</div>';
+          html += '<div style="display:flex;gap:.85rem;font-size:.75rem;opacity:.95">';
+          html += '<span>📋 <b>' + grp.bookings.length + '</b> حجز</span>';
+          if (dayTotal) html += '<span>💰 <b>' + fmtMoney(dayTotal) + '</b></span>';
+          html += '</div>';
+          html += '</div>';
+          html += '<div class="table-wrap" style="border:none;border-radius:0">';
+          html += renderTable(grp.bookings, halls, true);
+          html += '</div>';
+          html += '</div>';
+        } else {
+          // No grouping
+          html += '<div class="card" style="padding:0;overflow:hidden;margin-bottom:.85rem">';
+          html += '<div class="table-wrap" style="border:none;border-radius:0">';
+          html += renderTable(grp.bookings, halls, false);
+          html += '</div>';
+          html += '</div>';
+        }
+      });
+
+      // Pagination
+      if (totalPages > 1) {
+        html += '<div style="display:flex;justify-content:center;align-items:center;gap:.5rem;margin-top:1rem;flex-wrap:wrap">';
+        html += '<button class="btn btn-ghost btn-sm" ' + (f.bkPage <= 1 ? 'disabled' : '') + ' onclick="__dmBkPage(' + (f.bkPage - 1) + ')">← السابق</button>';
+        html += '<span style="font-size:.82rem;padding:0 .75rem">صفحة <b>' + f.bkPage + '</b> من <b>' + totalPages + '</b></span>';
+        html += '<button class="btn btn-ghost btn-sm" ' + (f.bkPage >= totalPages ? 'disabled' : '') + ' onclick="__dmBkPage(' + (f.bkPage + 1) + ')">التالي →</button>';
+        html += '</div>';
+      }
+    }
+
+    el.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+
+    // Bind events
+    bindEvents(el);
+  };
+
+  function statCard(label, value, icon, color) {
+    return '<div class="stat-card" style="padding:.85rem">' +
+      '<div class="stat-icon" style="background:' + color + '20;color:' + color + ';width:36px;height:36px">' +
+        '<i data-lucide="' + icon + '" style="width:16px;height:16px"></i></div>' +
+      '<div class="stat-body"><div class="label" style="font-size:.7rem">' + esc(label) + '</div>' +
+      '<div class="value" style="font-size:1.05rem">' + esc(value) + '</div></div>' +
+    '</div>';
+  }
+
+  /* =========================================================
+     TABLE RENDER
+     ========================================================= */
+  function renderTable(bookings, halls, hideDateCol) {
+    var html = '<table class="data-table" style="min-width:900px">';
+    html += '<thead><tr>';
+    html += '<th style="width:3rem">#</th>';
+    if (!hideDateCol) html += '<th>التاريخ</th>';
+    html += '<th>القاعة</th>';
+    html += '<th>العميل</th>';
+    html += '<th>المناسبة</th>';
+    html += '<th>الباكدج</th>';
+    html += '<th>الأفراد</th>';
+    html += '<th>الوقت</th>';
+    html += '<th>التكلفة</th>';
+    html += '<th>الدفع</th>';
+    html += '<th>الحالة</th>';
+    html += '<th style="width:6rem"></th>';
+    html += '</tr></thead><tbody>';
+
+    bookings.forEach(function (b, i) {
+      var hall = halls.find(function (x) { return x.id === b.hallId; });
+      var hallName = hall ? (hall.name[State.lang] || hall.name.ar) : '-';
+
+      html += '<tr data-booking-id="' + esc(b.id) + '">';
+      html += '<td style="color:var(--text-muted);font-weight:700;font-size:.75rem">' + (i + 1) + '</td>';
+      if (!hideDateCol) {
+        html += '<td style="white-space:nowrap"><div style="font-weight:600;font-size:.85rem">' + esc(fmtDateShort(b.date)) + '</div>';
+        html += '<div style="font-size:.7rem;color:var(--text-muted)">' + esc(getDayName(b.date)) + '</div></td>';
+      }
+      html += '<td><div style="font-weight:600;font-size:.85rem">' + esc(hallName) + '</div></td>';
+      html += '<td>';
+      html += '<div style="font-weight:600;font-size:.85rem">' + esc(b.clientName || '-') + '</div>';
+      if (b.phone) html += '<div style="font-size:.7rem;color:var(--text-muted)"><a href="tel:' + esc(b.phone) + '" style="color:inherit;text-decoration:none">📞 ' + esc(b.phone) + '</a></div>';
+      html += '</td>';
+      html += '<td><span style="font-size:.75rem">' + esc(b.eventType || '-') + '</span></td>';
+      html += '<td><span style="font-size:.75rem;color:var(--text-muted)">' + esc(b.packageType || '-') + '</span></td>';
+      html += '<td>' + (b.guestsCount ? '<span style="font-weight:600">' + b.guestsCount + '</span>' : '<span style="color:var(--text-muted)">-</span>') + '</td>';
+      html += '<td style="font-size:.78rem;white-space:nowrap">' + esc((b.startTime || '') + (b.endTime ? ' - ' + b.endTime : '')) + '</td>';
+      html += '<td style="font-weight:600;font-size:.8rem">' + (b.cost ? fmtMoney(b.cost) : '<span style="color:var(--text-muted)">-</span>') + '</td>';
+      html += '<td><span class="badge-pill badge-' + paymentColor(b.paymentStatus || 'unpaid') + '">' + esc(b.paymentStatus || 'unpaid') + '</span></td>';
+      html += '<td><span class="badge-pill badge-' + statusColor(b.status) + '">' + esc(b.status) + '</span></td>';
+      html += '<td>';
+      html += '<div style="display:flex;gap:.2rem">';
+      html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="editBooking(\'' + esc(b.id) + '\')" title="تعديل"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>';
+      html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="deleteBooking(\'' + esc(b.id) + '\')" title="حذف" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+      html += '</div></td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  /* =========================================================
+     EVENT BINDING
+     ========================================================= */
+  function bindEvents(el) {
+    // Search (debounced)
+    var searchEl = el.querySelector('#bk-search');
+    if (searchEl) {
+      var st;
+      searchEl.oninput = function (e) {
+        clearTimeout(st);
+        var v = e.target.value;
+        st = setTimeout(function () {
+          State.filters.bkSearch = v;
+          State.filters.bkPage = 1;
+          navigate('bookings');
+        }, 250);
+      };
+    }
+
+    // Quick ranges
+    el.querySelectorAll('[data-range]').forEach(function (btn) {
+      btn.onclick = function () {
+        State.filters.bkRange = btn.dataset.range;
+        State.filters.bkPage = 1;
+        if (btn.dataset.range !== 'custom') {
+          State.filters.bkFrom = '';
+          State.filters.bkTo = '';
+        }
+        navigate('bookings');
+      };
+    });
+
+    // Filters
+    ['bk-from', 'bk-to', 'bk-hall', 'bk-status', 'bk-payment', 'bk-event', 'bk-sort'].forEach(function (id) {
+      var elm = el.querySelector('#' + id);
+      if (!elm) return;
+      elm.onchange = function () {
+        var val = elm.value;
+        switch (id) {
+          case 'bk-from': State.filters.bkFrom = val; if (val) State.filters.bkRange = 'custom'; break;
+          case 'bk-to': State.filters.bkTo = val; if (val) State.filters.bkRange = 'custom'; break;
+          case 'bk-hall': State.filters.bkHall = val; break;
+          case 'bk-status': State.filters.bkStatus = val; break;
+          case 'bk-payment': State.filters.bkPayment = val; break;
+          case 'bk-event': State.filters.bkEvent = val; break;
+          case 'bk-sort': State.filters.bkSort = val; break;
+        }
+        State.filters.bkPage = 1;
+        navigate('bookings');
+      };
+    });
+
+    // Group checkbox
+    var groupEl = el.querySelector('#bk-group');
+    if (groupEl) {
+      groupEl.onchange = function (e) {
+        State.filters.bkGroupDays = e.target.checked;
+        navigate('bookings');
+      };
+    }
+
+    // Clear
+    var clearEl = el.querySelector('#bk-clear');
+    if (clearEl) {
+      clearEl.onclick = function () {
+        State.filters.bkSearch = '';
+        State.filters.bkRange = 'all';
+        State.filters.bkFrom = '';
+        State.filters.bkTo = '';
+        State.filters.bkHall = 'all';
+        State.filters.bkStatus = 'all';
+        State.filters.bkPayment = 'all';
+        State.filters.bkEvent = 'all';
+        State.filters.bkSort = 'date_asc';
+        State.filters.bkPage = 1;
+        navigate('bookings');
+      };
+    }
+  }
+
+  /* =========================================================
+     PUBLIC COMMANDS
+     ========================================================= */
+  window.__dmBkPage = function (p) {
+    State.filters.bkPage = Math.max(1, p);
+    navigate('bookings');
+  };
+
+  window.__dmBkExportCSV = function () {
+    var f = getFilters();
+    var list = applySort(applyFilters(State.data.bookings || [], f), f.bkSort);
+    var rows = [['Date','Day','Hall','Client','Phone','Event','Package','Guests','Start','End','Cost','Payment','Status']];
+    list.forEach(function (b) {
+      var hall = (State.data.halls || []).find(function (h) { return h.id === b.hallId; });
+      rows.push([
+        b.date,
+        getDayName(b.date),
+        hall ? (hall.name.ar || hall.name.en) : '',
+        b.clientName || '',
+        b.phone || '',
+        b.eventType || '',
+        b.packageType || '',
+        b.guestsCount || 0,
+        b.startTime || '',
+        b.endTime || '',
+        b.cost || 0,
+        b.paymentStatus || 'unpaid',
+        b.status || ''
+      ]);
+    });
+    var csv = rows.map(function (r) {
+      return r.map(function (x) { return '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"'; }).join(',');
+    }).join('\n');
+    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'bookings-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    if (typeof showToast === 'function') showToast('✓ تم التصدير', 'success');
+  };
+
+  /* =========================================================
+     FORCE CLEANUP of Section 55's mutation observer
+     ========================================================= */
+  function disableSection55() {
+    // Stop Section 55's mutation observer by clearing the flag
+    if (window.__dm55T) {
+      clearTimeout(window.__dm55T);
+      window.__dm55T = null;
+    }
+    // Mark Section 55's hooks as stale (they'll check page type)
+    window.__dm56Active = true;
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof State !== 'undefined'
+        && typeof navigate === 'function';
+    },
+    function () {
+      disableSection55();
+
+      // Re-render if currently on bookings
+      if (State.page === 'bookings') {
+        setTimeout(function () { navigate('bookings'); }, 200);
+      }
+
+      console.log('%c[Section 56] ═══ Bookings Overhaul READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  📅 ترتيب تصاعدي: 1-10 → 2-10');
+      console.log('  🏛 تجميع حسب اليوم');
+      console.log('  🔍 فلاتر: بحث · تاريخ · قاعة · حالة · دفع · مناسبة');
+      console.log('  ⚡ اختصارات: اليوم · غدًا · الأسبوع · الشهر · قادم · سابق');
+      console.log('  📊 إحصائيات: 7 بطاقات');
+      console.log('  📥 تصدير Excel · 🖨️ طباعة');
+    }
+  );
+
+})();
 
 
 
