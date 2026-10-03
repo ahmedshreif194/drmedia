@@ -16341,6 +16341,554 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 41: Mobile Responsive Fix
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Fixes topbar overflow on mobile
+   - Hides non-essential elements on small screens
+   - Fixes sidebar drawer behavior
+   - Fixes banner spacing
+   - Adds mobile-friendly touch targets
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 41] Mobile Fix loading…', 'color:#ef4444;font-weight:bold;font-size:14px');
+
+  /* =========================================================
+     1. INJECT MOBILE FIX STYLES
+     ========================================================= */
+  function injectStyles() {
+    if (document.getElementById('dm-mobile-fix-styles')) return;
+
+    var s = document.createElement('style');
+    s.id = 'dm-mobile-fix-styles';
+    s.textContent = `
+      /* ============ TOPBAR OVERFLOW FIX ============ */
+      #topbar {
+        overflow: hidden !important;
+        padding: .7rem 1rem !important;
+        gap: .35rem !important;
+      }
+      #topbar .page-title {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+      }
+      #topbar .page-title > div > span:first-child {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+        max-width: 100%;
+      }
+
+      /* ============ HIDE NON-ESSENTIAL TOPBAR ITEMS ON MOBILE ============ */
+      @media (max-width: 640px) {
+        /* Hide clock on mobile — too big */
+        #dm-clock {
+          display: none !important;
+        }
+
+        /* Compact sync indicator */
+        #dm-sync-indicator {
+          padding: .25rem .5rem !important;
+          font-size: .6rem !important;
+        }
+        #dm-sync-indicator span:last-child {
+          display: none !important;
+        }
+        #dm-sync-indicator::before {
+          content: '●';
+          font-size: .9rem;
+          margin-inline-end: .15rem;
+        }
+
+        /* Compact super admin badge */
+        #dm-super-badge {
+          padding: .2rem .45rem !important;
+          font-size: .6rem !important;
+          margin-inline-end: .15rem !important;
+        }
+        #dm-super-badge::before {
+          content: '👑';
+          margin-inline-end: .15rem;
+        }
+        #dm-super-badge {
+          /* Hide the text */
+          font-size: 0 !important;
+        }
+        #dm-super-badge::after {
+          content: 'SA';
+          font-size: .55rem;
+          font-weight: 800;
+        }
+
+        /* Hide WhatsApp quick button on mobile */
+        #dm-wa-quick {
+          display: none !important;
+        }
+
+        /* Compact topbar buttons */
+        .topbar-btn {
+          padding: 6px !important;
+        }
+        .topbar-btn svg {
+          width: 18px !important;
+          height: 18px !important;
+        }
+
+        /* Command palette trigger hidden on mobile (keyboard) */
+        .dm-cmd-trigger {
+          display: none !important;
+        }
+
+        /* Hide lang button text, keep icon */
+        #lang-btn {
+          padding: 6px !important;
+        }
+      }
+
+      /* ============ SIDEBAR FIX ============ */
+      @media (max-width: 1024px) {
+        aside#sidebar {
+          width: 260px !important;
+          max-width: 80vw !important;
+          box-shadow: -10px 0 30px rgba(0,0,0,.4);
+          z-index: 999 !important;
+        }
+        [dir="rtl"] aside#sidebar {
+          transform: translateX(100%) !important;
+        }
+        [dir="ltr"] aside#sidebar {
+          transform: translateX(-100%) !important;
+        }
+        aside#sidebar.open {
+          transform: translateX(0) !important;
+        }
+        .sidebar-overlay {
+          z-index: 998 !important;
+        }
+      }
+
+      /* ============ CONTENT AREA FIX ============ */
+      @media (max-width: 640px) {
+        #content {
+          padding: .85rem !important;
+          overflow-x: hidden !important;
+        }
+
+        /* Cards on mobile */
+        .card {
+          padding: 1rem !important;
+          border-radius: 14px !important;
+        }
+
+        /* Stat cards stack nicely */
+        .grid-stats {
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+          gap: .65rem !important;
+        }
+        .stat-card {
+          padding: .85rem !important;
+        }
+        .stat-body .value {
+          font-size: 1.15rem !important;
+        }
+        .stat-icon {
+          width: 38px !important;
+          height: 38px !important;
+        }
+
+        /* Charts smaller on mobile */
+        .chart-canvas-wrap {
+          height: 200px !important;
+        }
+        .chart-box {
+          padding: .85rem !important;
+        }
+
+        /* Tables — horizontal scroll */
+        .table-wrap {
+          border-radius: 10px !important;
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch;
+        }
+        table.data-table {
+          font-size: .78rem !important;
+          min-width: 640px;
+        }
+        table.data-table th,
+        table.data-table td {
+          padding: .55rem .6rem !important;
+          white-space: nowrap;
+        }
+
+        /* Buttons */
+        .btn {
+          padding: .55rem .85rem !important;
+          font-size: .8rem !important;
+        }
+        .btn-sm {
+          padding: .4rem .7rem !important;
+          font-size: .75rem !important;
+        }
+
+        /* Section titles */
+        .section-title {
+          font-size: .9rem !important;
+          margin: 1rem 0 .65rem !important;
+        }
+
+        /* Fields */
+        .form-row {
+          grid-template-columns: 1fr !important;
+          gap: .65rem !important;
+        }
+
+        /* Tabs */
+        .tabs {
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch;
+          white-space: nowrap;
+          scrollbar-width: none;
+        }
+        .tabs::-webkit-scrollbar { display: none; }
+        .tab {
+          padding: .5rem .8rem !important;
+          font-size: .78rem !important;
+          flex-shrink: 0;
+        }
+      }
+
+      /* ============ BANNERS FIX ============ */
+      #dm-sub-banner,
+      #dm-grace-banner {
+        padding: .55rem .85rem !important;
+        font-size: .75rem !important;
+        gap: .35rem !important;
+        flex-wrap: nowrap !important;
+        overflow: hidden;
+      }
+      #dm-sub-banner span:first-child,
+      #dm-grace-banner span:first-child {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+        min-width: 0;
+      }
+      #dm-sub-upgrade,
+      #dm-grace-renew {
+        padding: .3rem .65rem !important;
+        font-size: .68rem !important;
+        flex-shrink: 0 !important;
+      }
+
+      @media (max-width: 640px) {
+        #dm-sub-banner,
+        #dm-grace-banner {
+          padding: .45rem .65rem !important;
+          font-size: .7rem !important;
+        }
+      }
+
+      /* ============ MODALS FIX ============ */
+      @media (max-width: 640px) {
+        .modal {
+          max-width: 100% !important;
+          width: 100% !important;
+          margin: 0 !important;
+          border-radius: 16px 16px 0 0 !important;
+          max-height: 92vh !important;
+        }
+        .modal-backdrop {
+          align-items: flex-end !important;
+          padding: 0 !important;
+        }
+        .modal-header {
+          padding: .85rem 1rem !important;
+        }
+        .modal-body {
+          padding: 1rem !important;
+        }
+        .modal-footer {
+          padding: .75rem 1rem !important;
+          flex-wrap: wrap;
+        }
+      }
+
+      /* ============ SAAS FORMS (LOGIN) FIX ============ */
+      @media (max-width: 640px) {
+        .login-card {
+          padding: 1.5rem 1.25rem !important;
+          border-radius: 18px !important;
+        }
+        .brand-logo .icon {
+          width: 48px !important;
+          height: 48px !important;
+          font-size: 1.25rem !important;
+        }
+        .brand-logo h1 {
+          font-size: 1.25rem !important;
+        }
+        .saas-tabs {
+          margin-bottom: .85rem !important;
+        }
+        .saas-tab {
+          padding: .55rem !important;
+          font-size: .82rem !important;
+        }
+      }
+
+      /* ============ MOBILE MENU BUTTON ============ */
+      @media (max-width: 1024px) {
+        .menu-btn {
+          display: flex !important;
+          padding: 6px !important;
+        }
+        .menu-btn svg {
+          width: 20px !important;
+          height: 20px !important;
+        }
+      }
+
+      /* ============ FLOATING ELEMENTS FIX ============ */
+      @media (max-width: 640px) {
+        /* AI Chat FAB smaller */
+        #dm-chat-fab {
+          width: 48px !important;
+          height: 48px !important;
+          bottom: .85rem !important;
+          inset-inline-end: .85rem !important;
+        }
+        #dm-chat-fab svg {
+          width: 20px !important;
+          height: 20px !important;
+        }
+
+        /* Bulk bar */
+        #dm-bulk-bar {
+          left: .5rem !important;
+          right: .5rem !important;
+          bottom: .5rem !important;
+          padding: .45rem .65rem !important;
+        }
+        .dm-bulk-btn {
+          width: 32px !important;
+          height: 32px !important;
+        }
+      }
+
+      /* ============ ENSURE PROPER WIDTHS ============ */
+      * {
+        min-width: 0;
+      }
+      html, body {
+        overflow-x: hidden !important;
+        max-width: 100vw !important;
+      }
+      main#main {
+        max-width: 100vw;
+        overflow-x: hidden;
+      }
+
+      /* ============ HORIZONTAL SCROLL FOR WIDE TABLES ============ */
+      .table-wrap::after {
+        content: '';
+        display: block;
+        height: 2px;
+      }
+    `;
+    document.head.appendChild(s);
+    console.log('[Section 41] ✓ Mobile styles injected');
+  }
+
+  /* =========================================================
+     2. ENSURE SIDEBAR DRAWER WORKS
+     ========================================================= */
+  function fixSidebar() {
+    // Make sure menu button opens sidebar
+    var menuBtn = document.getElementById('menu-btn');
+    var sidebar = document.getElementById('sidebar');
+    var overlay = document.getElementById('sidebar-overlay');
+
+    if (!menuBtn || !sidebar) return;
+
+    // Remove old handlers by cloning
+    if (!menuBtn.__dm41Fixed) {
+      var newBtn = menuBtn.cloneNode(true);
+      menuBtn.parentNode.replaceChild(newBtn, menuBtn);
+      newBtn.__dm41Fixed = true;
+
+      newBtn.onclick = function () {
+        sidebar.classList.add('open');
+        if (overlay) overlay.classList.add('show');
+      };
+    }
+
+    if (overlay && !overlay.__dm41Fixed) {
+      var newOverlay = overlay.cloneNode(true);
+      overlay.parentNode.replaceChild(newOverlay, overlay);
+      newOverlay.__dm41Fixed = true;
+
+      newOverlay.onclick = function () {
+        sidebar.classList.remove('open');
+        newOverlay.classList.remove('show');
+      };
+    }
+
+    // Close on navigation
+    document.querySelectorAll('#sidebar-nav .nav-item').forEach(function (item) {
+      if (item.__dm41Fixed) return;
+      item.__dm41Fixed = true;
+      var origClick = item.onclick;
+      item.addEventListener('click', function () {
+        setTimeout(function () {
+          sidebar.classList.remove('open');
+          if (overlay) overlay.classList.remove('show');
+        }, 150);
+      });
+    });
+  }
+
+  /* =========================================================
+     3. COMPACT TOPBAR ON MOBILE — merge buttons
+     ========================================================= */
+  function compactTopbarOnMobile() {
+    if (window.innerWidth > 640) return;
+
+    // Find all topbar buttons
+    var topbar = document.getElementById('topbar');
+    if (!topbar) return;
+
+    // Ensure proper ordering
+    // Menu | Title | (sync/super) | Notif | More | Lang | Theme | Logout
+    // We'll group Lang/Theme/Logout into a "More" button on very small screens
+
+    // Simpler approach: hide them via CSS (already done in styles)
+    // Just ensure they exist
+  }
+
+  /* =========================================================
+     4. FIX VIEWPORT META
+     ========================================================= */
+  function fixViewport() {
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    // Ensure proper scaling
+    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover');
+  }
+
+  /* =========================================================
+     5. SAFE AREA FOR NOTCHED PHONES
+     ========================================================= */
+  function applySafeArea() {
+    var style = document.createElement('style');
+    style.textContent = `
+      @supports (padding: max(0px)) {
+        #topbar {
+          padding-top: max(.7rem, env(safe-area-inset-top)) !important;
+        }
+        #content {
+          padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+        }
+        #sidebar {
+          padding-top: env(safe-area-inset-top);
+        }
+        aside#sidebar.open {
+          padding-top: max(0px, env(safe-area-inset-top)) !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  /* =========================================================
+     6. HOOK RENDER TO REAPPLY ON NAVIGATION
+     ========================================================= */
+  function hookRender() {
+    if (typeof window.navigate !== 'function') return;
+    if (window.navigate.__dm41Hooked) return;
+
+    var orig = window.navigate;
+    window.navigate = function () {
+      var r = orig.apply(this, arguments);
+      setTimeout(function () {
+        fixSidebar();
+        compactTopbarOnMobile();
+      }, 200);
+      return r;
+    };
+    window.navigate.__dm41Hooked = true;
+  }
+
+  /* =========================================================
+     7. HANDLE RESIZE
+     ========================================================= */
+  function watchResize() {
+    var t;
+    window.addEventListener('resize', function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        fixSidebar();
+        compactTopbarOnMobile();
+        // Close sidebar if going to desktop
+        if (window.innerWidth > 1024) {
+          var sidebar = document.getElementById('sidebar');
+          var overlay = document.getElementById('sidebar-overlay');
+          if (sidebar) sidebar.classList.remove('open');
+          if (overlay) overlay.classList.remove('show');
+        }
+      }, 200);
+    });
+  }
+
+  /* =========================================================
+     8. BOOT
+     ========================================================= */
+  function boot() {
+    fixViewport();
+    injectStyles();
+    applySafeArea();
+
+    setTimeout(fixSidebar, 500);
+    setTimeout(compactTopbarOnMobile, 800);
+
+    hookRender();
+    watchResize();
+
+    console.log('%c[Section 41] ✓ Mobile responsive fixed', 'color:#10b981;font-weight:bold;font-size:13px');
+  }
+
+  // Boot as soon as possible
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      setTimeout(boot, 300);
+    });
+  } else {
+    setTimeout(boot, 300);
+  }
+
+  // Also boot after login
+  var authCheck = setInterval(function () {
+    if (window.__dmSaaS && window.__dmSaaS.ready && window.__dmSaaS.user) {
+      boot();
+      clearInterval(authCheck);
+    }
+  }, 2000);
+  setTimeout(function () { clearInterval(authCheck); }, 60000);
+
+  // Public command to force refresh
+  window.__dmFixMobile = function () {
+    injectStyles();
+    fixSidebar();
+    if (typeof navigate === 'function' && State.page) navigate(State.page);
+    console.log('✓ Mobile fixed');
+  };
+
+})();
 
 
 
