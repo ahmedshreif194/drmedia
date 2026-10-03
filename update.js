@@ -17511,6 +17511,472 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 52: Smart Batch Import — Extract ALL bookings
+   Version: 1.0.0
+   ---------------------------------------------------------
+   Problem: Groq OTPM limit = 1000 tokens/min
+   For 35+ bookings, one request gets truncated
+   
+   Solution: Multi-batch extraction
+   - Batch 1: 15 bookings
+   - Wait for rate limit reset
+   - Batch 2: next 15 bookings
+   - Merge results
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 52] Smart Batch Import loading…', 'color:#f97316;font-weight:bold;font-size:14px');
+
+  var GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
+  var VISION_MODEL = 'qwen/qwen3.8-27b';
+  var KEY_STORAGE = 'dm_groq_key';
+  var BATCH_SIZE = 12;        // عدد الحجوزات في كل دفعة
+  var MAX_BATCHES = 10;       // حد أقصى
+  var RETRY_DELAY_MS = 65000; // 65 ثانية للـ OTPM
+  var MAX_RETRIES = 3;
+
+  function getKey() {
+    try { return (localStorage.getItem(KEY_STORAGE) || '').trim(); } catch (e) { return ''; }
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function toast(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'info');
+  }
+
+  function normalize(s) {
+    return String(s || '').replace(/[\u064B-\u0652]/g, '').replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  /* =========================================================
+     XHR — direct call
+     ========================================================= */
+  function groqCall(body) {
+    return new Promise(function (resolve, reject) {
+      var key = getKey();
+      if (!key) { reject(new Error('NO_KEY')); return; }
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', GROQ_CHAT_URL, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Authorization', 'Bearer ' + key);
+      xhr.timeout = 90000;
+
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          try { resolve(JSON.parse(xhr.responseText)); }
+          catch (e) { reject(new Error('Invalid JSON')); }
+        } else if (xhr.status === 429) {
+          // Rate limit
+          var retryAfter = 65;
+          try {
+            var err = JSON.parse(xhr.responseText);
+            var match = (err.error && err.error.message || '').match(/try again in ([\d.]+)s/);
+            if (match) retryAfter = Math.ceil(parseFloat(match[1])) + 2;
+          } catch (e) {}
+          var rateErr = new Error('RATE_LIMIT');
+          rateErr.retryAfter = retryAfter;
+          reject(rateErr);
+        } else {
+          var msg = 'Groq ' + xhr.status;
+          try {
+            var ej = JSON.parse(xhr.responseText);
+            msg += ': ' + (ej.error && ej.error.message || '').substring(0, 200);
+          } catch (e) { msg += ': ' + xhr.responseText.substring(0, 200); }
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = function () { reject(new Error('Network error')); };
+      xhr.ontimeout = function () { reject(new Error('Timeout')); };
+      xhr.send(JSON.stringify(body));
+    });
+  }
+
+  /* =========================================================
+     FILE READER
+     ========================================================= */
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () {
+        var m = String(r.result).match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) { reject(new Error('Invalid image')); return; }
+        resolve({ mimeType: m[1], base64: m[2] });
+      };
+      r.onerror = function () { reject(new Error('Read failed')); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  /* =========================================================
+     HALLS INFO
+     ========================================================= */
+  function hallsInfo() {
+    return (State.data.halls || []).map(function (h) {
+      return '- ' + (h.name.ar || h.name.en) + ' (' + h.code + ')';
+    }).join('\n');
+  }
+
+  /* =========================================================
+     PROMPTS FOR BATCHES
+     ========================================================= */
+  function buildBatchPrompt(batchNumber, batchSize, alreadyExtracted) {
+    var startIdx = alreadyExtracted.length;
+    var base = 'أنت محاسب دقيق. من صورة جدول الحجوزات المرفقة، استخرج البيانات كـ JSON.\n\n' +
+      'القاعات:\n' + hallsInfo() + '\n\n' +
+      'تعليمات أساسية:\n' +
+      '1. كل صف في الجدول = حجز\n' +
+      '2. التاريخ بصيغة YYYY-MM-DD (السنة 2026)\n' +
+      '3. الباكدج كما هو (عشاء 1، سواريه، هاي تي، مطبخ)\n' +
+      '4. عدد الأفراد: رقم صحيح (0 لو مش موجود)\n' +
+      '5. eventType: عشاء→Wedding · سواريه→Engagement · حنة→Henna · هاي تي→Birthday\n' +
+      '6. اتبع عناوين القاعات (مثل "القاعة المغلقة")\n\n';
+
+    if (batchNumber === 1) {
+      return base +
+        '🎯 المطلوب في هذه الدفعة: **أول ' + batchSize + ' حجز** فقط من أعلى الجدول.\n' +
+        'الصيغة: {"bookings":[{"hall":"القاعة المغلقة","date":"2026-10-01","clientName":"...","packageType":"...","guestsCount":250,"eventType":"Wedding"}]}\n' +
+        'مهم: رجع فقط ' + batchSize + ' حجز. متكملش أكثر.\n' +
+        'لو الجدول أقل من ' + batchSize + ' صف، رجعهم كلهم.';
+    }
+
+    var lastClient = alreadyExtracted.length ? alreadyExtracted[alreadyExtracted.length - 1].clientName : '';
+    var lastDate = alreadyExtracted.length ? alreadyExtracted[alreadyExtracted.length - 1].date : '';
+
+    return base +
+      '🎯 **مهم جدًا:**\n' +
+      'استخرجنا بالفعل ' + startIdx + ' حجز من أعلى الجدول.\n' +
+      'آخر حجز تم استخراجه: ' + lastClient + ' (' + lastDate + ')\n\n' +
+      'المطلوب: **الحجوزات الـ ' + batchSize + ' التالية** التي تلي "' + lastClient + '" مباشرة.\n' +
+      'متبدأش من الأول — ابدأ من بعد آخر حجز.\n' +
+      'رجع فقط ' + batchSize + ' حجز (أو أقل لو خلص الجدول).\n' +
+      'لو الجدول خلص تمامًا، رجع {"bookings":[]}';
+  }
+
+  /* =========================================================
+     MAP TO INTERNAL
+     ========================================================= */
+  function mapToInternal(bookings) {
+    var halls = State.data.halls || [];
+    return bookings.map(function (b) {
+      var hid = halls.length ? halls[0].id : '';
+      if (b.hall) {
+        var hn = normalize(b.hall);
+        for (var i = 0; i < halls.length; i++) {
+          var h = halls[i];
+          var ar = normalize(h.name.ar || '');
+          var en = normalize(h.name.en || '');
+          if ((ar && (hn.indexOf(ar) >= 0 || ar.indexOf(hn) >= 0)) ||
+              (en && (hn.indexOf(en) >= 0 || en.indexOf(hn) >= 0))) { hid = h.id; break; }
+        }
+      }
+      return {
+        hallId: hid, hallName: b.hall || '',
+        date: b.date || todayISO(),
+        clientName: b.clientName || '',
+        packageType: b.packageType || '',
+        guestsCount: parseInt(b.guestsCount) || 0,
+        eventType: b.eventType || 'Wedding',
+        startTime: '19:00', endTime: '23:00', cost: 0
+      };
+    });
+  }
+
+  /* =========================================================
+     EXTRACT WITH RETRIES
+     ========================================================= */
+  async function callWithRetry(body, attempt) {
+    attempt = attempt || 1;
+    try {
+      return await groqCall(body);
+    } catch (err) {
+      if (err.message === 'RATE_LIMIT' && attempt <= MAX_RETRIES) {
+        var wait = err.retryAfter || 65;
+        console.log('%c[Section 52] ⏳ Rate limit — waiting ' + wait + 's…', 'color:#f59e0b;font-weight:bold');
+        updateProgress('⏳ انتظار ' + wait + ' ثانية للحد المسموح…');
+        await new Promise(function (r) { setTimeout(r, wait * 1000); });
+        return callWithRetry(body, attempt + 1);
+      }
+      throw err;
+    }
+  }
+
+  /* =========================================================
+     PROGRESS UI
+     ========================================================= */
+  var Progress = { text: '', batch: 0, total: 0 };
+
+  function updateProgress(text, batch, total) {
+    Progress.text = text || Progress.text;
+    if (batch !== undefined) Progress.batch = batch;
+    if (total !== undefined) Progress.total = total;
+
+    var el = document.getElementById('dm-batch-progress');
+    if (!el) return;
+
+    el.innerHTML =
+      '<div style="text-align:center;margin-bottom:.75rem">' +
+        '<div style="font-size:.9rem;font-weight:700;color:#f97316">' + esc(Progress.text) + '</div>' +
+      '</div>' +
+      (Progress.total > 0 ?
+        '<div style="display:flex;align-items:center;gap:.65rem;justify-content:center">' +
+          '<span style="font-size:.75rem">دفعة ' + Progress.batch + ' / ' + Progress.total + '</span>' +
+          '<div style="flex:1;max-width:200px;height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden">' +
+            '<div style="height:100%;width:' + (Progress.batch / Progress.total * 100) + '%;background:#f97316;transition:width .3s"></div>' +
+          '</div>' +
+        '</div>'
+        : '');
+  }
+
+  /* =========================================================
+     MAIN EXTRACTION — MULTI-BATCH
+     ========================================================= */
+  async function extractAllBookings(img) {
+    var allBookings = [];
+    var batchNumber = 1;
+    var noProgressCount = 0;
+
+    while (batchNumber <= MAX_BATCHES) {
+      updateProgress('جاري تحليل الدفعة ' + batchNumber + '…', batchNumber, '?');
+      console.log('%c[Section 52] 📦 Batch ' + batchNumber + ' (already: ' + allBookings.length + ')', 'color:#f97316;font-weight:bold');
+
+      var prompt = buildBatchPrompt(batchNumber, BATCH_SIZE, allBookings);
+
+      var res = await callWithRetry({
+        model: VISION_MODEL,
+        temperature: 0.1,
+        max_tokens: 900,
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: 'data:' + img.mimeType + ';base64,' + img.base64 } }
+          ]
+        }]
+      });
+
+      var text = res.choices[0].message.content;
+      var parsed;
+      try { parsed = JSON.parse(text); }
+      catch (e) {
+        var m = text.match(/\{[\s\S]*\}/);
+        parsed = m ? JSON.parse(m[0]) : { bookings: [] };
+      }
+
+      var newBookings = parsed.bookings || [];
+      console.log('   Got ' + newBookings.length + ' bookings from batch ' + batchNumber);
+
+      if (newBookings.length === 0) {
+        // End of table
+        console.log('%c[Section 52] ✅ Table ended at batch ' + batchNumber, 'color:#10b981');
+        break;
+      }
+
+      // Dedupe against existing
+      var beforeCount = allBookings.length;
+      newBookings.forEach(function (b) {
+        // Skip if same clientName + date already exists
+        var isDup = allBookings.some(function (x) {
+          return normalize(x.clientName) === normalize(b.clientName) &&
+                 x.date === b.date;
+        });
+        if (!isDup && b.clientName) {
+          allBookings.push(b);
+        }
+      });
+
+      var added = allBookings.length - beforeCount;
+      console.log('   ✓ Added ' + added + ' unique (total: ' + allBookings.length + ')');
+
+      // If no unique was added → probably stuck, break
+      if (added === 0) {
+        noProgressCount++;
+        if (noProgressCount >= 2) {
+          console.log('%c[Section 52] ⚠ No progress for 2 batches — stopping', 'color:#f59e0b');
+          break;
+        }
+      } else {
+        noProgressCount = 0;
+      }
+
+      // If we got fewer than requested → table ended
+      if (newBookings.length < BATCH_SIZE) {
+        console.log('%c[Section 52] ✅ Got < batch size — likely end of table', 'color:#10b981');
+        break;
+      }
+
+      batchNumber++;
+
+      // Wait for rate limit if needed
+      if (batchNumber > 1) {
+        updateProgress('⏳ انتظار قبل الدفعة التالية…', batchNumber, '?');
+        await new Promise(function (r) { setTimeout(r, 1500); });
+      }
+    }
+
+    return allBookings;
+  }
+
+  /* =========================================================
+     EXPOSE — override Section 51's processImage
+     ========================================================= */
+  function overrideProcessImage() {
+    // Check Section 51's module is loaded
+    if (!window.__dmAIImp) {
+      console.warn('[Section 52] Section 51 not found');
+      return false;
+    }
+
+    // We need to override the internal processImage function.
+    // We do this by replacing Pages.aiimport handler and the file input handler.
+
+    var Imp = window.__dmAIImp;
+
+    window.__dmProcessImage = async function (file) {
+      if (!getKey()) {
+        if (typeof window.__dmGroqSetup === 'function') window.__dmGroqSetup();
+        return;
+      }
+
+      Imp.fileName = file.name;
+      Imp.parsed = [];
+      Imp.busy = true;
+      Imp.error = '';
+      Imp.raw = null;
+
+      navigate('aiimport');
+
+      try {
+        var img = await fileToBase64(file);
+        var rawBookings = await extractAllBookings(img);
+
+        if (!rawBookings.length) {
+          Imp.busy = false;
+          Imp.error = 'لم يتم استخراج أي حجز — جرب صورة أوضح';
+          navigate('aiimport');
+          return;
+        }
+
+        Imp.raw = { bookings: rawBookings };
+        Imp.parsed = mapToInternal(rawBookings);
+        Imp.busy = false;
+        navigate('aiimport');
+        toast('✓ تم استخراج ' + Imp.parsed.length + ' حجز كاملاً', 'success');
+      } catch (e) {
+        console.error('[Section 52]', e);
+        Imp.busy = false;
+        Imp.error = e.message || String(e);
+        navigate('aiimport');
+      }
+    };
+    return true;
+  }
+
+  /* =========================================================
+     REPLACE FILE INPUT HANDLER IN RENDER
+     ========================================================= */
+  function hookRenderFunction() {
+    if (!Pages.aiimport) return false;
+
+    // Save original renderer
+    var origRender = Pages.aiimport;
+
+    // Replace with wrapper that rebinds file input
+    Pages.aiimport = function (el) {
+      origRender.apply(this, arguments);
+
+      setTimeout(function () {
+        var dz = document.getElementById('ai-dz') || document.getElementById('ai-dropzone');
+        var fi = document.getElementById('ai-file');
+
+        if (dz && fi) {
+          // Rebind to our new handler
+          var newFi = fi.cloneNode(true);
+          fi.parentNode.replaceChild(newFi, fi);
+
+          dz.onclick = function () { newFi.click(); };
+
+          newFi.onchange = function (e) {
+            if (e.target.files[0]) window.__dmProcessImage(e.target.files[0]);
+          };
+
+          // Drag & drop
+          ['dragover', 'dragenter'].forEach(function (ev) {
+            dz.addEventListener(ev, function (e) {
+              e.preventDefault();
+              dz.style.borderColor = '#f97316';
+              dz.style.background = 'rgba(249,115,22,.08)';
+            });
+          });
+          ['dragleave', 'drop'].forEach(function (ev) {
+            dz.addEventListener(ev, function (e) {
+              e.preventDefault();
+              dz.style.borderColor = 'var(--border)';
+              dz.style.background = 'var(--surface-2)';
+            });
+          });
+          dz.addEventListener('drop', function (e) {
+            if (e.dataTransfer.files[0]) window.__dmProcessImage(e.dataTransfer.files[0]);
+          });
+        }
+
+        // Add progress display in busy state
+        if (Imp.busy) {
+          var card = el.querySelector('.card');
+          if (card && !document.getElementById('dm-batch-progress')) {
+            var prog = document.createElement('div');
+            prog.id = 'dm-batch-progress';
+            prog.style.cssText = 'margin-top:1rem';
+            card.appendChild(prog);
+            updateProgress(Progress.text || 'جاري التحليل…');
+          }
+        }
+      }, 50);
+    };
+
+    return true;
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, maxTries) {
+    maxTries = maxTries || 200;
+    var tries = 0;
+    var t = setInterval(function () {
+      if (++tries > maxTries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && Pages.aiimport
+        && window.__dmAIImp;
+    },
+    function () {
+      overrideProcessImage();
+      hookRenderFunction();
+
+      console.log('%c[Section 52] ═══ Smart Batch Import READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  Batch size:', BATCH_SIZE, 'bookings');
+      console.log('  Max batches:', MAX_BATCHES);
+      console.log('  Auto-retry on rate limit: yes');
+      console.log('  💡 الطريقة الجديدة: يقسم الطلب لدفعات تلقائيًا');
+    }
+  );
+
+})();
 
 
 
