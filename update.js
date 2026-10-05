@@ -20832,6 +20832,1409 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 59: Complete Fixes Pack (Rewrite)
+   Version: 2.0.0
+   ---------------------------------------------------------
+   1) Firebase Counters — يعمل للـ Super Admin
+   2) Bulk Selection — يعمل في كل الصفحات
+   3) Substitutions — تعديل + حذف + تراجع
+   4) Payroll Payments — 3 مراحل
+   5) Attendance Log — سجل شامل
+   6) Full name in employees
+   7) QR codes للمستخدمين
+   8) Login cleanup + Employee registration
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 59] Complete Fixes loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  /* =========================================================
+     HELPERS
+     ========================================================= */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function isSA() { return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin); }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function uid(p) { return (p || 'x') + '_' + Math.random().toString(36).slice(2, 10); }
+
+  /* =========================================================
+     1) FIREBASE COUNTERS — re-register robustly
+     ========================================================= */
+  function registerCountersPage() {
+    Pages.counters = function (el) {
+      if (!isSA()) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="lock"></i><p>الصفحة متاحة للمدير العام فقط</p></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      var C = (window.DrMediaCounters && window.DrMediaCounters.get) ? window.DrMediaCounters.get() : null;
+      if (!C) C = { today: { reads: 0, writes: 0, deletes: 0 }, total: { reads: 0, writes: 0, deletes: 0 }, byCollection: {} };
+
+      var today = C.today || { reads: 0, writes: 0, deletes: 0 };
+      var total = C.total || { reads: 0, writes: 0, deletes: 0 };
+      var byCol = C.byCollection || {};
+
+      // Firestore Spark quotas
+      var QUOTAS = { reads: 50000, writes: 20000, deletes: 20000 };
+      var pct = function (u, t) { return Math.min(100, Math.round((u / t) * 100)); };
+      var clr = function (p) { return p < 50 ? '#10b981' : p < 80 ? '#f59e0b' : '#ef4444'; };
+
+      var html = '';
+      html += '<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">';
+      html += '<i data-lucide="gauge" style="width:20px;height:20px;color:var(--primary)"></i>';
+      html += '<span style="font-weight:800;font-size:1.05rem">عدادات Firebase</span>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem">';
+      html += '<button class="btn btn-ghost btn-sm" onclick="navigate(\'counters\')"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> تحديث</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'تصفير كل العدادات؟\')){window.DrMediaCounters.reset();navigate(\'counters\')}" style="color:#ef4444"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i> تصفير</button>';
+      html += '</div></div>';
+
+      // Daily quotas
+      html += '<div class="grid-stats" style="margin-bottom:1.25rem">';
+      html += quotaCard('قراءات اليوم', today.reads, QUOTAS.reads, '#7c3aed', pct, clr);
+      html += quotaCard('كتابات اليوم', today.writes, QUOTAS.writes, '#10b981', pct, clr);
+      html += quotaCard('حذف اليوم', today.deletes, QUOTAS.deletes, '#ef4444', pct, clr);
+      html += '</div>';
+
+      // Totals
+      html += '<div class="grid-3" style="margin-bottom:1.25rem">';
+      html += totCard('إجمالي القراءات', total.reads, '#7c3aed');
+      html += totCard('إجمالي الكتابات', total.writes, '#10b981');
+      html += totCard('إجمالي الحذف', total.deletes, '#ef4444');
+      html += '</div>';
+
+      // By collection
+      if (Object.keys(byCol).length) {
+        html += '<div class="card"><h4 style="margin:0 0 .75rem;font-size:.9rem">حسب المجموعة</h4>';
+        html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>المجموعة</th><th>قراءات</th><th>كتابات</th><th>حذف</th></tr></thead><tbody>';
+        Object.keys(byCol).sort(function (a, b) {
+          return (byCol[b].reads + byCol[b].writes) - (byCol[a].reads + byCol[a].writes);
+        }).forEach(function (k) {
+          var v = byCol[k];
+          html += '<tr><td><b>' + esc(k) + '</b></td><td>' + (v.reads || 0).toLocaleString() + '</td><td>' + (v.writes || 0).toLocaleString() + '</td><td>' + (v.deletes || 0).toLocaleString() + '</td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+      } else {
+        html += '<div class="card"><div class="empty-state" style="padding:2rem"><p>لا يوجد بيانات بعد</p></div></div>';
+      }
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      function quotaCard(label, used, total, color, pctFn, clrFn) {
+        var p = pctFn(used, total);
+        return '<div class="stat-card" style="flex-direction:column;align-items:stretch">' +
+          '<div style="font-size:.72rem;color:var(--text-muted)">' + esc(label) + '</div>' +
+          '<div style="font-size:1.35rem;font-weight:800;color:' + color + ';margin:.35rem 0">' + used.toLocaleString() + '</div>' +
+          '<div style="height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:.35rem">' +
+            '<div style="height:100%;width:' + p + '%;background:' + clrFn(p) + ';transition:width .4s"></div>' +
+          '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:.35rem">' + p + '% من ' + total.toLocaleString() + '</div>' +
+        '</div>';
+      }
+      function totCard(label, value, color) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="bar-chart-3"></i></div>' +
+          '<div class="stat-body"><div class="label">' + esc(label) + '</div><div class="value">' + value.toLocaleString() + '</div></div></div>';
+      }
+    };
+  }
+
+  function ensureCountersNav() {
+    if (!isSA()) return;
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+
+    var superSection = document.getElementById('dm-super-nav');
+    if (!superSection) {
+      superSection = document.createElement('div');
+      superSection.id = 'dm-super-nav';
+      superSection.innerHTML = '<div class="nav-section" style="color:#f59e0b;opacity:1;letter-spacing:.1em">⚡ SUPER ADMIN</div>';
+      nav.appendChild(superSection);
+    }
+
+    // Counters link
+    if (!superSection.querySelector('[data-page="counters"]')) {
+      var a = document.createElement('a');
+      a.className = 'nav-item';
+      a.setAttribute('data-page', 'counters');
+      a.style.cssText = 'cursor:pointer;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:#06b6d4';
+      a.innerHTML = '<i data-lucide="gauge" style="color:#06b6d4"></i><span style="color:#06b6d4;font-weight:700">عدادات Firebase</span>';
+      a.onclick = function (e) { e.preventDefault(); navigate('counters'); };
+      superSection.appendChild(a);
+    }
+
+    // Subscribers link
+    if (!superSection.querySelector('[data-page="subscribers"]')) {
+      var s = document.createElement('a');
+      s.className = 'nav-item';
+      s.setAttribute('data-page', 'subscribers');
+      s.style.cssText = 'cursor:pointer;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);color:#7c3aed';
+      s.innerHTML = '<i data-lucide="users" style="color:#7c3aed"></i><span style="color:#7c3aed;font-weight:700">المشتركين</span>';
+      s.onclick = function (e) {
+        e.preventDefault();
+        if (typeof window.__dmSATab === 'function') window.__dmSATab('subscribers');
+        else navigate('subscribers');
+      };
+      superSection.appendChild(s);
+    }
+
+    // Super Admin main link
+    if (!superSection.querySelector('[data-page="superadmin"]')) {
+      var m = document.createElement('a');
+      m.className = 'nav-item';
+      m.setAttribute('data-page', 'superadmin');
+      m.style.cssText = 'cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#f59e0b';
+      m.innerHTML = '<i data-lucide="crown" style="color:#f59e0b"></i><span style="color:#f59e0b;font-weight:700">لوحة المدير العام</span>';
+      m.onclick = function (e) {
+        e.preventDefault();
+        if (typeof window.__dmSuperAdmin === 'function') window.__dmSuperAdmin();
+        else navigate('superadmin');
+      };
+      // Insert at top
+      superSection.insertBefore(m, superSection.children[1] || null);
+    }
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  /* =========================================================
+     2) BULK SELECTION — robust via MutationObserver
+     ========================================================= */
+  var Bulk = {
+    selected: new Set(),
+    page: '',
+    observer: null,
+    scheduled: false
+  };
+  window.__dmBulk = Bulk;
+
+  var BULK_PAGES = ['employees', 'bookings', 'clients', 'halls', 'equipment', 'advances', 'deductions', 'bonuses', 'leaves', 'attendance'];
+
+  function scheduleBulkInject() {
+    if (Bulk.scheduled) return;
+    Bulk.scheduled = true;
+    clearTimeout(window.__dm59Bt);
+    window.__dm59Bt = setTimeout(function () {
+      Bulk.scheduled = false;
+      injectBulkCheckboxes();
+    }, 200);
+  }
+
+  function injectBulkCheckboxes() {
+    var page = State.page;
+    if (BULK_PAGES.indexOf(page) < 0) {
+      var existing = document.getElementById('dm-bulk-bar');
+      if (existing) existing.remove();
+      return;
+    }
+    Bulk.page = page;
+
+    var tables = document.querySelectorAll('#content .data-table');
+    tables.forEach(function (table) {
+      var thead = table.querySelector('thead tr');
+      var tbody = table.querySelector('tbody');
+      if (!thead || !tbody) return;
+
+      // Header checkbox
+      if (!thead.querySelector('.dm-bulk-th')) {
+        var th = document.createElement('th');
+        th.className = 'dm-bulk-th';
+        th.style.cssText = 'width:34px;padding:.5rem .35rem';
+        th.innerHTML = '<input type="checkbox" class="dm-bulk-select-all" style="accent-color:var(--primary);cursor:pointer;width:16px;height:16px">';
+        thead.insertBefore(th, thead.firstChild);
+      }
+
+      // Rows
+      var rows = tbody.querySelectorAll('tr');
+      rows.forEach(function (tr) {
+        if (tr.querySelector('.dm-bulk-td')) return;
+        if (tr.querySelector('.empty-state')) return;
+
+        // Extract ID from any onclick
+        var id = null;
+        var allButtons = tr.querySelectorAll('button[onclick]');
+        for (var i = 0; i < allButtons.length; i++) {
+          var oc = allButtons[i].getAttribute('onclick') || '';
+          var m = oc.match(/(?:edit|view|open|delete|show)[A-Za-z]*\(['"]([a-zA-Z0-9_]+)['"]/);
+          if (!m) m = oc.match(/\(['"]([a-zA-Z0-9_]{4,})['"]/);
+          if (m) { id = m[1]; break; }
+        }
+        if (!id) {
+          // Try data attribute
+          id = tr.getAttribute('data-booking-id') || tr.getAttribute('data-id') || tr.dataset.dmRowId;
+        }
+        if (!id) return;
+
+        tr.dataset.dmRowId = id;
+        var td = document.createElement('td');
+        td.className = 'dm-bulk-td';
+        td.style.cssText = 'width:34px;padding:.5rem .35rem';
+        var checked = Bulk.selected.has(id) ? ' checked' : '';
+        td.innerHTML = '<input type="checkbox" class="dm-bulk-checkbox" data-id="' + id + '"' + checked + ' style="accent-color:var(--primary);cursor:pointer;width:16px;height:16px">';
+        tr.insertBefore(td, tr.firstChild);
+      });
+    });
+
+    // Bind
+    document.querySelectorAll('.dm-bulk-checkbox').forEach(function (cb) {
+      if (cb.__dm59) return;
+      cb.__dm59 = 1;
+      cb.addEventListener('change', function () {
+        var id = cb.dataset.id;
+        if (cb.checked) Bulk.selected.add(id);
+        else Bulk.selected.delete(id);
+        updateBulkBar();
+        updateSelectAllState();
+      });
+    });
+
+    document.querySelectorAll('.dm-bulk-select-all').forEach(function (sa) {
+      if (sa.__dm59) return;
+      sa.__dm59 = 1;
+      sa.addEventListener('change', function () {
+        var table = sa.closest('table');
+        if (!table) return;
+        table.querySelectorAll('.dm-bulk-checkbox').forEach(function (cb) {
+          cb.checked = sa.checked;
+          var id = cb.dataset.id;
+          if (sa.checked) Bulk.selected.add(id);
+          else Bulk.selected.delete(id);
+        });
+        updateBulkBar();
+      });
+    });
+
+    updateSelectAllState();
+    updateBulkBar();
+  }
+
+  function updateSelectAllState() {
+    document.querySelectorAll('#content .data-table').forEach(function (table) {
+      var sa = table.querySelector('.dm-bulk-select-all');
+      if (!sa) return;
+      var cbs = table.querySelectorAll('.dm-bulk-checkbox');
+      if (!cbs.length) return;
+      var total = 0, checked = 0;
+      cbs.forEach(function (cb) { total++; if (cb.checked) checked++; });
+      sa.checked = total > 0 && checked === total;
+      sa.indeterminate = checked > 0 && checked < total;
+    });
+  }
+
+  function updateBulkBar() {
+    var count = Bulk.selected.size;
+    var bar = document.getElementById('dm-bulk-bar');
+
+    if (count === 0) {
+      if (bar) bar.remove();
+      return;
+    }
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'dm-bulk-bar';
+      bar.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:.55rem .85rem;box-shadow:0 20px 40px -10px rgba(0,0,0,.35);display:flex;align-items:center;gap:.5rem;z-index:8600';
+      document.body.appendChild(bar);
+    }
+
+    bar.innerHTML =
+      '<div style="display:flex;align-items:center;gap:.5rem;padding-inline-end:.5rem">' +
+        '<span style="background:var(--primary);color:#fff;border-radius:50%;min-width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;padding:0 .35rem">' + count + '</span>' +
+        '<span style="font-weight:700;font-size:.85rem">محدد</span>' +
+      '</div>' +
+      '<div style="width:1px;height:24px;background:var(--border)"></div>' +
+      '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59BulkExport()" title="تصدير" style="color:#10b981"><i data-lucide="download"></i></button>' +
+      '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59BulkPrint()" title="طباعة"><i data-lucide="printer"></i></button>' +
+      '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59BulkDelete()" title="حذف" style="color:#ef4444"><i data-lucide="trash-2"></i></button>' +
+      '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59BulkClear()" title="مسح"><i data-lucide="x"></i></button>';
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  window.__dm59BulkClear = function () {
+    Bulk.selected.clear();
+    document.querySelectorAll('.dm-bulk-checkbox').forEach(function (cb) { cb.checked = false; });
+    document.querySelectorAll('.dm-bulk-select-all').forEach(function (sa) { sa.checked = false; sa.indeterminate = false; });
+    updateBulkBar();
+  };
+
+  window.__dm59BulkDelete = function () {
+    if (!Bulk.selected.size) return;
+    if (!confirm('حذف ' + Bulk.selected.size + ' عنصر نهائيًا؟')) return;
+    var ids = Array.from(Bulk.selected);
+    var listKey = { employees: 'employees', bookings: 'bookings', clients: 'clients', halls: 'halls', equipment: 'equipment', advances: 'advances', deductions: 'deductions', bonuses: 'bonuses', leaves: 'leaves', attendance: 'attendance' }[Bulk.page];
+    if (!listKey || !State.data[listKey]) return;
+    var before = State.data[listKey].length;
+    State.data[listKey] = State.data[listKey].filter(function (x) { return ids.indexOf(x.id) < 0; });
+    var removed = before - State.data[listKey].length;
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم حذف ' + removed, 'success');
+    Bulk.selected.clear();
+    updateBulkBar();
+    setTimeout(function () { navigate(Bulk.page); }, 200);
+  };
+
+  window.__dm59BulkExport = function () {
+    var ids = Array.from(Bulk.selected);
+    if (!ids.length) return;
+    var listKey = { employees: 'employees', bookings: 'bookings', clients: 'clients', halls: 'halls', equipment: 'equipment', advances: 'advances', deductions: 'deductions', bonuses: 'bonuses', leaves: 'leaves', attendance: 'attendance' }[Bulk.page];
+    if (!listKey) return;
+    var rows = (State.data[listKey] || []).filter(function (x) { return ids.indexOf(x.id) >= 0; });
+    if (!rows.length) return;
+    var headers = Object.keys(rows[0]).filter(function (k) { return typeof rows[0][k] !== 'object'; });
+    var csv = [headers].concat(rows.map(function (r) {
+      return headers.map(function (h) { return String(r[h] == null ? '' : r[h]); });
+    })).map(function (r) {
+      return r.map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(',');
+    }).join('\n');
+    var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = listKey + '-selected.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('✓ تم التصدير', 'success');
+  };
+
+  window.__dm59BulkPrint = function () {
+    var ids = Array.from(Bulk.selected);
+    if (!ids.length) return;
+    var listKey = { employees: 'employees', bookings: 'bookings', clients: 'clients', halls: 'halls', equipment: 'equipment', advances: 'advances', deductions: 'deductions', bonuses: 'bonuses', leaves: 'leaves', attendance: 'attendance' }[Bulk.page];
+    if (!listKey) return;
+    var rows = (State.data[listKey] || []).filter(function (x) { return ids.indexOf(x.id) >= 0; });
+    var headers = Object.keys(rows[0] || {}).filter(function (k) { return typeof rows[0][k] !== 'object'; });
+    var w = window.open('', '_blank');
+    if (!w) return;
+    var html = '<html dir="rtl"><head><meta charset="UTF-8"><title>طباعة</title>';
+    html += '<style>body{font-family:system-ui;padding:2rem;direction:rtl}table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{padding:.5rem;border:1px solid #ddd;text-align:start}th{background:#f3f4f6}</style>';
+    html += '</head><body><h1>Dr Media Pro</h1><h2>' + esc(listKey) + ' — ' + rows.length + ' عنصر</h2><table><thead><tr>';
+    headers.forEach(function (h) { html += '<th>' + esc(h) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr>';
+      headers.forEach(function (h) { html += '<td>' + esc(r[h]) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table><scr' + 'ipt>setTimeout(function(){window.print()},300)</scr' + 'ipt></body></html>';
+    w.document.write(html);
+    w.document.close();
+  };
+
+  function hookBulk() {
+    // Watch #content for table changes
+    var content = document.getElementById('content');
+    if (!content) { setTimeout(hookBulk, 500); return; }
+    if (content.__dm59Bulk) return;
+    content.__dm59Bulk = true;
+
+    var obs = new MutationObserver(function () {
+      scheduleBulkInject();
+    });
+    obs.observe(content, { childList: true, subtree: true });
+
+    // Also hook navigate
+    if (typeof navigate === 'function' && !navigate.__dm59Bulk) {
+      var orig = navigate;
+      window.navigate = function (page) {
+        if (page !== Bulk.page) {
+          Bulk.selected.clear();
+          var bar = document.getElementById('dm-bulk-bar');
+          if (bar) bar.remove();
+        }
+        var r = orig.apply(this, arguments);
+        setTimeout(scheduleBulkInject, 300);
+        return r;
+      };
+      window.navigate.__dm59Bulk = true;
+    }
+
+    scheduleBulkInject();
+  }
+
+  /* =========================================================
+     3) SUBSTITUTIONS ENHANCED
+     ========================================================= */
+  function ensureSubstitutionsData() {
+    if (!State.data.substitutions) State.data.substitutions = [];
+  }
+
+  function registerSubstitutionsPage() {
+    Pages.substitutions = function (el) {
+      ensureSubstitutionsData();
+      var list = (State.data.substitutions || []).slice().sort(function (a, b) {
+        return (b.date || '').localeCompare(a.date || '');
+      });
+
+      // Filters
+      var f = State.filters.subFilters || { search: '', from: '', to: '', employee: 'all' };
+      State.filters.subFilters = f;
+
+      var filtered = list.filter(function (s) {
+        if (f.search) {
+          var q = f.search.toLowerCase();
+          var hay = ((empName(s.originalEmployeeId) + ' ' + empName(s.replacementEmployeeId) + ' ' + (s.reason || '')).toLowerCase());
+          if (hay.indexOf(q) < 0) return false;
+        }
+        if (f.from && s.date < f.from) return false;
+        if (f.to && s.date > f.to) return false;
+        if (f.employee !== 'all') {
+          if (s.originalEmployeeId !== f.employee && s.replacementEmployeeId !== f.employee) return false;
+        }
+        return true;
+      });
+
+      var html = '';
+
+      // Header
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.85rem">';
+      html += '<i data-lucide="repeat" style="width:20px;height:20px;color:#f59e0b"></i>';
+      html += '<span style="font-weight:800;font-size:1.05rem">سجل الاستبدالات</span>';
+      html += '<span class="badge-pill badge-purple" style="margin-inline-start:.5rem">' + filtered.length + ' استبدال</span>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">';
+      html += '<button class="btn btn-ghost btn-sm" onclick="__dm59SubExport()"><i data-lucide="download" style="width:12px;height:12px"></i> تصدير</button>';
+      html += '<button class="btn btn-primary btn-sm" onclick="__dm59SubAdd()"><i data-lucide="plus" style="width:12px;height:12px"></i> استبدال يدوي</button>';
+      html += '</div></div>';
+
+      // Filters row
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem">';
+      html += '<input type="text" id="sub-search" placeholder="بحث..." value="' + esc(f.search) + '" style="flex:1;min-width:180px;padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem;outline:none">';
+      html += '<input type="date" id="sub-from" value="' + esc(f.from) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<input type="date" id="sub-to" value="' + esc(f.to) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<select id="sub-emp" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<option value="all">كل الموظفين</option>';
+      (State.data.employees || []).forEach(function (e) {
+        html += '<option value="' + e.id + '"' + (f.employee === e.id ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+      });
+      html += '</select>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="State.filters.subFilters={search:\'\',from:\'\',to:\'\',employee:\'all\'};navigate(\'substitutions\')" style="color:#ef4444">مسح</button>';
+      html += '</div>';
+      html += '</div>';
+
+      // List
+      if (!filtered.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem">';
+        html += '<i data-lucide="inbox"></i><p>لا يوجد استبدالات</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden">';
+        html += '<div class="table-wrap" style="border:none">';
+        html += '<table class="data-table"><thead><tr>';
+        html += '<th>التاريخ</th>';
+        html += '<th>القاعة</th>';
+        html += '<th>الدور</th>';
+        html += '<th>الأصلي</th>';
+        html += '<th>البديل</th>';
+        html += '<th>السبب</th>';
+        html += '<th>معتمد من</th>';
+        html += '<th style="width:100px">إجراءات</th>';
+        html += '</tr></thead><tbody>';
+
+        filtered.forEach(function (s) {
+          html += '<tr>';
+          html += '<td style="font-size:.82rem;font-weight:600">' + esc(fmtDateShort(s.date)) + '<div style="font-size:.68rem;color:var(--text-muted)">' + esc(getDayName(s.date)) + '</div></td>';
+          html += '<td style="font-size:.82rem">' + esc(hallName(s.hallId)) + '</td>';
+          html += '<td><span class="badge-pill badge-purple" style="font-size:.68rem">' + esc(s.role || '-') + '</span></td>';
+          html += '<td><div style="display:flex;align-items:center;gap:.4rem"><div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.65rem">' + esc(initials(empName(s.originalEmployeeId))) + '</div><span style="font-size:.82rem">' + esc(empName(s.originalEmployeeId)) + '</span></div></td>';
+          html += '<td><div style="display:flex;align-items:center;gap:.4rem"><div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.65rem">' + esc(initials(empName(s.replacementEmployeeId))) + '</div><span style="font-size:.82rem">' + esc(empName(s.replacementEmployeeId)) + '</span></div></td>';
+          html += '<td style="font-size:.78rem;color:var(--text-muted)">' + esc(s.reason || '-') + '</td>';
+          html += '<td style="font-size:.72rem;color:var(--text-muted)">' + esc(s.approvedBy || '-') + '</td>';
+          html += '<td><div style="display:flex;gap:.2rem">';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59SubEdit(\'' + s.id + '\')" title="تعديل" style="color:#7c3aed"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59SubDelete(\'' + s.id + '\')" title="حذف" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+          html += '</div></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      }
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      // Bind filter events
+      setTimeout(function () {
+        var se = document.getElementById('sub-search');
+        if (se) { var t; se.oninput = function (ev) { clearTimeout(t); t = setTimeout(function () { f.search = ev.target.value; navigate('substitutions'); }, 300); }; }
+        var fe = document.getElementById('sub-from');
+        if (fe) fe.onchange = function (ev) { f.from = ev.target.value; navigate('substitutions'); };
+        var te = document.getElementById('sub-to');
+        if (te) te.onchange = function (ev) { f.to = ev.target.value; navigate('substitutions'); };
+        var ee = document.getElementById('sub-emp');
+        if (ee) ee.onchange = function (ev) { f.employee = ev.target.value; navigate('substitutions'); };
+      }, 100);
+    };
+  }
+
+  window.__dm59SubAdd = function () {
+    var employees = State.data.employees || [];
+    var html = '';
+    html += '<div class="field"><label>التاريخ</label><input type="date" id="sub-f-date" value="' + todayISO() + '"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>القاعة</label><select id="sub-f-hall">';
+    (State.data.halls || []).forEach(function (h) {
+      html += '<option value="' + h.id + '">' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الدور</label><select id="sub-f-role">';
+    ['Director','Photographer','Crane','Supervisor','Assistant'].forEach(function (r) {
+      html += '<option value="' + r + '">' + r + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الموظف الأصلي</label><select id="sub-f-orig">';
+    employees.forEach(function (e) {
+      html += '<option value="' + e.id + '">' + esc(e.name) + ' — ' + esc(e.role) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>البديل</label><select id="sub-f-rep">';
+    employees.forEach(function (e) {
+      html += '<option value="' + e.id + '">' + esc(e.name) + ' — ' + esc(e.role) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>السبب</label><textarea id="sub-f-reason" rows="2"></textarea></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '➕ استبدال يدوي',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm59SubSave()">حفظ</button>'
+      });
+    }
+  };
+
+  window.__dm59SubSave = function (editId) {
+    var date = document.getElementById('sub-f-date').value;
+    var hallId = document.getElementById('sub-f-hall').value;
+    var role = document.getElementById('sub-f-role').value;
+    var orig = document.getElementById('sub-f-orig').value;
+    var rep = document.getElementById('sub-f-rep').value;
+    var reason = document.getElementById('sub-f-reason').value;
+
+    if (orig === rep) { toast('لا يمكن استبدال الموظف بنفسه', 'error'); return; }
+
+    if (editId) {
+      var idx = State.data.substitutions.findIndex(function (s) { return s.id === editId; });
+      if (idx >= 0) {
+        State.data.substitutions[idx] = Object.assign({}, State.data.substitutions[idx], {
+          date: date, hallId: hallId, role: role,
+          originalEmployeeId: orig, replacementEmployeeId: rep,
+          reason: reason, updatedAt: new Date().toISOString()
+        });
+      }
+    } else {
+      State.data.substitutions.push({
+        id: uid('sub'),
+        date: date, hallId: hallId, role: role,
+        originalEmployeeId: orig, replacementEmployeeId: rep,
+        reason: reason,
+        approvedBy: (State.user && State.user.name) || 'system',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    if (typeof closeModal === 'function') closeModal();
+    toast('✓ تم الحفظ', 'success');
+    setTimeout(function () { navigate('substitutions'); }, 300);
+  };
+
+  window.__dm59SubEdit = function (id) {
+    var s = State.data.substitutions.find(function (x) { return x.id === id; });
+    if (!s) return;
+
+    var employees = State.data.employees || [];
+    var html = '';
+    html += '<div class="field"><label>التاريخ</label><input type="date" id="sub-f-date" value="' + esc(s.date) + '"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>القاعة</label><select id="sub-f-hall">';
+    (State.data.halls || []).forEach(function (h) {
+      html += '<option value="' + h.id + '"' + (h.id === s.hallId ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الدور</label><select id="sub-f-role">';
+    ['Director','Photographer','Crane','Supervisor','Assistant'].forEach(function (r) {
+      html += '<option value="' + r + '"' + (r === s.role ? ' selected' : '') + '>' + r + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الأصلي</label><select id="sub-f-orig">';
+    employees.forEach(function (e) {
+      html += '<option value="' + e.id + '"' + (e.id === s.originalEmployeeId ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>البديل</label><select id="sub-f-rep">';
+    employees.forEach(function (e) {
+      html += '<option value="' + e.id + '"' + (e.id === s.replacementEmployeeId ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>السبب</label><textarea id="sub-f-reason" rows="2">' + esc(s.reason || '') + '</textarea></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '✏️ تعديل استبدال',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm59SubSave(\'' + id + '\')">حفظ</button>'
+      });
+    }
+  };
+
+  window.__dm59SubDelete = function (id) {
+    if (!confirm('حذف هذا الاستبدال؟')) return;
+    State.data.substitutions = (State.data.substitutions || []).filter(function (s) { return s.id !== id; });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم الحذف', 'success');
+    setTimeout(function () { navigate('substitutions'); }, 300);
+  };
+
+  window.__dm59SubExport = function () {
+    var list = State.data.substitutions || [];
+    var csv = [['Date','Hall','Role','Original','Replacement','Reason','ApprovedBy']];
+    list.forEach(function (s) {
+      csv.push([
+        s.date, hallName(s.hallId), s.role,
+        empName(s.originalEmployeeId), empName(s.replacementEmployeeId),
+        s.reason || '', s.approvedBy || ''
+      ]);
+    });
+    var text = csv.map(function (r) { return r.map(function (x) { return '"' + String(x || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'substitutions.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('✓ تم التصدير', 'success');
+  };
+
+  /* =========================================================
+     4) PAYROLL PAYMENTS — 3 cycles
+     ========================================================= */
+  function ensurePayrollData() {
+    if (!State.data.payroll_payments) State.data.payroll_payments = [];
+  }
+
+  function getCycleForDate(dateStr) {
+    // dateStr: YYYY-MM-DD
+    if (!dateStr) return null;
+    var d = new Date(dateStr + 'T12:00:00');
+    var day = d.getDate();
+    if (day >= 1 && day <= 10) return 'cycle1';
+    if (day >= 11 && day <= 20) return 'cycle2';
+    return 'cycle3';
+  }
+
+  function getCycleRange(cycle, year, month) {
+    // month: 0-11
+    var from, to;
+    if (cycle === 'cycle1') { from = 1; to = 10; }
+    else if (cycle === 'cycle2') { from = 11; to = 20; }
+    else {
+      from = 21;
+      to = new Date(year, month + 1, 0).getDate(); // last day of month
+    }
+    return {
+      from: year + '-' + String(month + 1).padStart(2, '0') + '-' + String(from).padStart(2, '0'),
+      to: year + '-' + String(month + 1).padStart(2, '0') + '-' + String(to).padStart(2, '0'),
+      payDay: to
+    };
+  }
+
+  function findPayment(employeeId, cycle, year, month) {
+    var monthKey = year + '-' + String(month + 1).padStart(2, '0');
+    return (State.data.payroll_payments || []).find(function (p) {
+      return p.employeeId === employeeId && p.cycle === cycle && p.monthKey === monthKey;
+    });
+  }
+
+  function registerPayrollPage() {
+    // Override Section 1's payroll page
+    Pages.payroll = function (el) {
+      ensurePayrollData();
+      var now = new Date();
+      var year = State.filters.prYear !== undefined ? State.filters.prYear : now.getFullYear();
+      var month = State.filters.prMonth !== undefined ? State.filters.prMonth : now.getMonth();
+      State.filters.prYear = year;
+      State.filters.prMonth = month;
+
+      var monthName = new Date(year, month, 1).toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', { month: 'long', year: 'numeric' });
+
+      var cycles = [
+        { id: 'cycle1', label: 'المرحلة 1', days: '1 - 10', payDay: 10 },
+        { id: 'cycle2', label: 'المرحلة 2', days: '11 - 20', payDay: 20 },
+        { id: 'cycle3', label: 'المرحلة 3', days: '21 - نهاية الشهر', payDay: '30/31' }
+      ];
+
+      var html = '';
+
+      // Header
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">';
+      html += '<i data-lucide="wallet" style="width:22px;height:22px;color:#7c3aed"></i>';
+      html += '<span style="font-weight:800;font-size:1.05rem">صرف الرواتب</span>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem;align-items:center">';
+      html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59PrPrevMonth()"><i data-lucide="chevron-right"></i></button>';
+      html += '<span style="font-weight:700;font-size:.9rem;min-width:130px;text-align:center">' + esc(monthName) + '</span>';
+      html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59PrNextMonth()"><i data-lucide="chevron-left"></i></button>';
+      html += '</div></div>';
+      html += '</div>';
+
+      // Cycles
+      cycles.forEach(function (c) {
+        var range = getCycleRange(c.id, year, month);
+        var emps = State.data.employees || [];
+
+        // Compute for each employee
+        var rows = emps.map(function (emp) {
+          var workDays = (State.data.distributions || []).filter(function (d) {
+            return d.employeeId === emp.id && d.date >= range.from && d.date <= range.to && d.status === 'confirmed';
+          }).length;
+          var basePay = workDays * (emp.dayRate || 0);
+          var advs = (State.data.advances || []).filter(function (a) {
+            return a.employeeId === emp.id && a.date >= range.from && a.date <= range.to;
+          }).reduce(function (s, a) { return s + (a.amount || 0); }, 0);
+          var deds = (State.data.deductions || []).filter(function (a) {
+            return a.employeeId === emp.id && a.date >= range.from && a.date <= range.to;
+          }).reduce(function (s, a) { return s + (a.amount || 0); }, 0);
+          var bons = (State.data.bonuses || []).filter(function (a) {
+            return a.employeeId === emp.id && a.date >= range.from && a.date <= range.to;
+          }).reduce(function (s, a) { return s + (a.amount || 0); }, 0);
+          var net = basePay + bons - advs - deds;
+          var payment = findPayment(emp.id, c.id, year, month);
+          return { emp: emp, workDays: workDays, basePay: basePay, advs: advs, deds: deds, bons: bons, net: net, payment: payment };
+        });
+
+        var totalNet = rows.reduce(function (s, r) { return s + (r.net || 0); }, 0);
+        var paidCount = rows.filter(function (r) { return r.payment && r.payment.status === 'paid'; }).length;
+        var unpaidCount = rows.filter(function (r) { return !r.payment || r.payment.status !== 'paid'; }).length;
+
+        html += '<div class="card" style="margin-bottom:1rem;padding:0;overflow:hidden">';
+        html += '<div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:.85rem 1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">';
+        html += '<div style="display:flex;align-items:center;gap:.65rem">';
+        html += '<b style="font-size:1rem">' + esc(c.label) + '</b>';
+        html += '<span style="font-size:.75rem;background:rgba(255,255,255,.2);padding:.2rem .55rem;border-radius:999px">أيام ' + esc(c.days) + '</span>';
+        html += '<span style="font-size:.75rem;opacity:.9">يوم الصرف: ' + esc(String(c.payDay)) + '</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:.75rem;font-size:.78rem">';
+        html += '<span>📋 <b>' + emps.length + '</b> موظف</span>';
+        html += '<span style="color:#6ee7b7">✓ <b>' + paidCount + '</b> مدفوع</span>';
+        html += '<span style="color:#fca5a5">⏳ <b>' + unpaidCount + '</b> لم يُصرف</span>';
+        html += '<span>💰 <b>' + totalNet.toLocaleString() + ' EGP</b></span>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div class="table-wrap" style="border:none;border-radius:0">';
+        html += '<table class="data-table"><thead><tr>';
+        html += '<th>الموظف</th>';
+        html += '<th>أيام العمل</th>';
+        html += '<th>الأساسي</th>';
+        html += '<th>إضافات</th>';
+        html += '<th>خصومات</th>';
+        html += '<th>الصافي</th>';
+        html += '<th>الحالة</th>';
+        html += '<th style="width:130px">إجراءات</th>';
+        html += '</tr></thead><tbody>';
+
+        rows.forEach(function (r) {
+          var isPaid = r.payment && r.payment.status === 'paid';
+          html += '<tr>';
+          html += '<td><div style="display:flex;align-items:center;gap:.5rem"><div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.72rem">' + esc(initials(r.emp.name)) + '</div><div><div style="font-weight:600;font-size:.85rem;white-space:nowrap">' + esc(r.emp.name) + '</div><div style="font-size:.68rem;color:var(--text-muted)">' + esc(r.emp.role) + '</div></div></div></td>';
+          html += '<td><b>' + r.workDays + '</b></td>';
+          html += '<td>' + r.basePay.toLocaleString() + '</td>';
+          html += '<td style="color:#10b981">+' + r.bons.toLocaleString() + '</td>';
+          html += '<td style="color:#ef4444">-' + (r.advs + r.deds).toLocaleString() + '</td>';
+          html += '<td><b style="color:var(--primary);font-size:.95rem">' + r.net.toLocaleString() + ' EGP</b></td>';
+          html += '<td>' + (isPaid ? '<span class="badge-pill badge-green">✓ مدفوع</span><div style="font-size:.65rem;color:var(--text-muted);margin-top:.2rem">' + esc(fmtDateShort(r.payment.paidAt ? r.payment.paidAt.slice(0, 10) : '')) + '</div>' : '<span class="badge-pill badge-yellow">⏳ لم يُصرف</span>') + '</td>';
+          html += '<td><div style="display:flex;gap:.2rem">';
+          if (!isPaid) {
+            html += '<button class="btn btn-success btn-sm" onclick="__dm59MarkPaid(\'' + r.emp.id + '\',\'' + c.id + '\',' + year + ',' + month + ',' + r.net + ')" style="font-size:.7rem;padding:.35rem .65rem">✓ صرف</button>';
+          } else {
+            html += '<button class="btn btn-ghost btn-sm" onclick="__dm59UnmarkPaid(\'' + r.emp.id + '\',\'' + c.id + '\',' + year + ',' + month + ')" style="font-size:.7rem;padding:.35rem .65rem;color:#f59e0b">↺</button>';
+          }
+          html += '</div></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+        html += '</div>';
+      });
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    };
+  }
+
+  window.__dm59MarkPaid = function (empId, cycle, year, month, amount) {
+    if (!confirm('تأكيد صرف ' + amount + ' EGP؟')) return;
+    ensurePayrollData();
+    var monthKey = year + '-' + String(month + 1).padStart(2, '0');
+    var existing = findPayment(empId, cycle, year, month);
+
+    if (existing) {
+      existing.status = 'paid';
+      existing.amount = amount;
+      existing.paidAt = new Date().toISOString();
+      existing.paidBy = (State.user && State.user.name) || 'system';
+    } else {
+      State.data.payroll_payments.push({
+        id: uid('pp'),
+        employeeId: empId,
+        cycle: cycle,
+        monthKey: monthKey,
+        year: year,
+        month: month,
+        amount: amount,
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        paidBy: (State.user && State.user.name) || 'system'
+      });
+    }
+
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم تسجيل الصرف', 'success');
+    setTimeout(function () { navigate('payroll'); }, 300);
+  };
+
+  window.__dm59UnmarkPaid = function (empId, cycle, year, month) {
+    if (!confirm('إلغاء تسجيل الصرف؟')) return;
+    ensurePayrollData();
+    var monthKey = year + '-' + String(month + 1).padStart(2, '0');
+    var p = findPayment(empId, cycle, year, month);
+    if (p) {
+      p.status = 'unpaid';
+      p.paidAt = null;
+      delete p.paidBy;
+    }
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم الإلغاء', 'success');
+    setTimeout(function () { navigate('payroll'); }, 300);
+  };
+
+  window.__dm59PrPrevMonth = function () {
+    var m = State.filters.prMonth - 1, y = State.filters.prYear;
+    if (m < 0) { m = 11; y--; }
+    State.filters.prMonth = m;
+    State.filters.prYear = y;
+    navigate('payroll');
+  };
+  window.__dm59PrNextMonth = function () {
+    var m = State.filters.prMonth + 1, y = State.filters.prYear;
+    if (m > 11) { m = 0; y++; }
+    State.filters.prMonth = m;
+    State.filters.prYear = y;
+    navigate('payroll');
+  };
+
+  /* =========================================================
+     5) ATTENDANCE LOG
+     ========================================================= */
+  function registerAttendanceLogPage() {
+    Pages.attlog = function (el) {
+      var att = State.data.attendance || [];
+      var f = State.filters.attFilters || { search: '', from: '', to: '', status: 'all', employee: 'all' };
+      State.filters.attFilters = f;
+
+      var filtered = att.filter(function (a) {
+        if (f.from && a.date < f.from) return false;
+        if (f.to && a.date > f.to) return false;
+        if (f.status !== 'all' && a.status !== f.status) return false;
+        if (f.employee !== 'all' && a.employeeId !== f.employee) return false;
+        if (f.search) {
+          var q = f.search.toLowerCase();
+          if (empName(a.employeeId).toLowerCase().indexOf(q) < 0) return false;
+        }
+        return true;
+      }).sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+
+      var todayCount = att.filter(function (a) { return a.date === todayISO(); }).length;
+      var presentToday = att.filter(function (a) { return a.date === todayISO() && a.status === 'present'; }).length;
+      var lateToday = att.filter(function (a) { return a.date === todayISO() && a.status === 'late'; }).length;
+      var absentToday = att.filter(function (a) { return a.date === todayISO() && a.status === 'absent'; }).length;
+
+      var html = '';
+
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.85rem">';
+      html += '<i data-lucide="clock" style="width:20px;height:20px;color:#f59e0b"></i>';
+      html += '<span style="font-weight:800;font-size:1.05rem">سجل الحضور والانصراف</span>';
+      html += '<span class="badge-pill badge-purple">' + filtered.length + ' سجل</span>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem">';
+      html += '<button class="btn btn-ghost btn-sm" onclick="__dm59AttExport()"><i data-lucide="download" style="width:12px;height:12px"></i> تصدير</button>';
+      html += '<button class="btn btn-primary btn-sm" onclick="navigate(\'attendance\')"><i data-lucide="check-square" style="width:12px;height:12px"></i> تسجيل حضور اليوم</button>';
+      html += '</div></div>';
+
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem">';
+      html += '<input type="text" id="att-search" placeholder="بحث بالاسم..." value="' + esc(f.search) + '" style="flex:1;min-width:180px;padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem;outline:none">';
+      html += '<input type="date" id="att-from" value="' + esc(f.from) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<input type="date" id="att-to" value="' + esc(f.to) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<select id="att-status" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<option value="all">كل الحالات</option>';
+      ['present','late','absent','leave'].forEach(function (s) {
+        html += '<option value="' + s + '"' + (f.status === s ? ' selected' : '') + '>' + s + '</option>';
+      });
+      html += '</select>';
+      html += '<select id="att-emp" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<option value="all">كل الموظفين</option>';
+      (State.data.employees || []).forEach(function (e) {
+        html += '<option value="' + e.id + '"' + (f.employee === e.id ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+      });
+      html += '</select>';
+      html += '</div></div>';
+
+      // Today's stats
+      html += '<div class="grid-stats" style="margin-bottom:1rem">';
+      html += statCard('إجمالي اليوم', todayCount, 'list', '#7c3aed');
+      html += statCard('حاضر', presentToday, 'check-circle', '#10b981');
+      html += statCard('متأخر', lateToday, 'clock', '#f59e0b');
+      html += statCard('غائب', absentToday, 'x-circle', '#ef4444');
+      html += '</div>';
+
+      // Table
+      if (!filtered.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="inbox"></i><p>لا يوجد سجلات حضور</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+        html += '<th>التاريخ</th><th>اليوم</th><th>الموظف</th><th>الحضور</th><th>الانصراف</th><th>الساعات</th><th>الحالة</th><th style="width:80px"></th>';
+        html += '</tr></thead><tbody>';
+
+        filtered.forEach(function (a) {
+          var hours = '';
+          if (a.checkIn && a.checkOut) {
+            var ci = a.checkIn.split(':'), co = a.checkOut.split(':');
+            var ciMin = (+ci[0]) * 60 + (+ci[1]);
+            var coMin = (+co[0]) * 60 + (+co[1]);
+            var diff = (coMin - ciMin) / 60;
+            if (diff > 0) hours = diff.toFixed(1) + ' س';
+          }
+
+          html += '<tr>';
+          html += '<td style="font-weight:600;font-size:.82rem">' + esc(fmtDateShort(a.date)) + '</td>';
+          html += '<td style="font-size:.78rem;color:var(--text-muted)">' + esc(getDayName(a.date)) + '</td>';
+          html += '<td><div style="display:flex;align-items:center;gap:.5rem"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.68rem">' + esc(initials(empName(a.employeeId))) + '</div><b style="font-size:.82rem">' + esc(empName(a.employeeId)) + '</b></div></td>';
+          html += '<td style="font-size:.82rem"><b>' + esc(a.checkIn || '-') + '</b></td>';
+          html += '<td style="font-size:.82rem">' + esc(a.checkOut || '-') + '</td>';
+          html += '<td style="font-size:.82rem">' + (hours || '-') + '</td>';
+          html += '<td><span class="badge-pill badge-' + ({present:'green',late:'yellow',absent:'red',leave:'purple'}[a.status] || 'gray') + '">' + esc(a.status) + '</span></td>';
+          html += '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dm59AttDelete(\'' + a.id + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      }
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      setTimeout(function () {
+        var se = document.getElementById('att-search');
+        if (se) { var t; se.oninput = function (ev) { clearTimeout(t); t = setTimeout(function () { f.search = ev.target.value; navigate('attlog'); }, 300); }; }
+        ['att-from','att-to','att-status','att-emp'].forEach(function (id) {
+          var elm = document.getElementById(id);
+          if (!elm) return;
+          elm.onchange = function () {
+            if (id === 'att-from') f.from = elm.value;
+            else if (id === 'att-to') f.to = elm.value;
+            else if (id === 'att-status') f.status = elm.value;
+            else if (id === 'att-emp') f.employee = elm.value;
+            navigate('attlog');
+          };
+        });
+      }, 100);
+
+      function statCard(label, value, icon, color) {
+        return '<div class="stat-card" style="padding:.85rem"><div class="stat-icon" style="background:' + color + '20;color:' + color + ';width:36px;height:36px"><i data-lucide="' + icon + '" style="width:16px;height:16px"></i></div><div class="stat-body"><div class="label" style="font-size:.7rem">' + esc(label) + '</div><div class="value" style="font-size:1.1rem">' + esc(value) + '</div></div></div>';
+      }
+    };
+  }
+
+  window.__dm59AttDelete = function (id) {
+    if (!confirm('حذف هذا السجل؟')) return;
+    State.data.attendance = (State.data.attendance || []).filter(function (a) { return a.id !== id; });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم الحذف', 'success');
+    setTimeout(function () { navigate('attlog'); }, 300);
+  };
+
+  window.__dm59AttExport = function () {
+    var list = State.data.attendance || [];
+    var csv = [['Date','Day','Employee','CheckIn','CheckOut','Status']];
+    list.forEach(function (a) {
+      csv.push([a.date, getDayName(a.date), empName(a.employeeId), a.checkIn || '', a.checkOut || '', a.status]);
+    });
+    var text = csv.map(function (r) { return r.map(function (x) { return '"' + String(x || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'attendance-log.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('✓ تم التصدير', 'success');
+  };
+
+  /* =========================================================
+     6) FULL NAME IN EMPLOYEES — CSS
+     ========================================================= */
+  function applyFullNameCSS() {
+    if (document.getElementById('dm59-fullname-css')) return;
+    var s = document.createElement('style');
+    s.id = 'dm59-fullname-css';
+    s.textContent =
+      '#content table.data-table td .cell-user{min-width:0!important;flex-wrap:wrap;align-items:flex-start}' +
+      '#content table.data-table td .cell-user>div:last-child{min-width:0;overflow:visible!important;max-width:none!important}' +
+      '#content table.data-table td .cell-user>div:last-child>div:first-child{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;word-break:break-word;line-height:1.3;font-weight:600}' +
+      '#content table.data-table th:nth-child(2),#content table.data-table td:nth-child(2){min-width:180px}';
+    document.head.appendChild(s);
+  }
+
+  /* =========================================================
+     7) QR CODES
+     ========================================================= */
+  function loadQRCodeLib() {
+    return new Promise(function (resolve) {
+      if (window.QRCode) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+      s.onload = resolve;
+      s.onerror = resolve;
+      document.head.appendChild(s);
+    });
+  }
+
+  window.__dm59ShowQR = async function (userId) {
+    await loadQRCodeLib();
+    if (!window.QRCode) { toast('فشل تحميل مكتبة QR', 'error'); return; }
+
+    var user = (State.data.users || []).find(function (u) { return u.id === userId; });
+    if (!user) { toast('المستخدم غير موجود', 'error'); return; }
+
+    var emp = user.employeeId ? (State.data.employees || []).find(function (e) { return e.id === user.employeeId; }) : null;
+    var loginUrl = window.location.origin + window.location.pathname;
+
+    var qrContent = JSON.stringify({
+      type: 'drmedia_login',
+      url: loginUrl,
+      username: user.username,
+      password: user.password || '•••',
+      name: user.name
+    });
+
+    var html = '<div style="text-align:center;padding:1rem">';
+    html += '<div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.85rem">📱 امسح الكود بتطبيق QR Reader</div>';
+    html += '<div style="display:inline-block;padding:1rem;background:#fff;border-radius:12px;margin-bottom:1rem"><div id="dm-qr-target"></div></div>';
+    html += '<div style="padding:.85rem;background:var(--surface-2);border-radius:10px;text-align:start;font-size:.82rem;line-height:1.9">';
+    html += '<div><b>الاسم:</b> ' + esc(user.name) + '</div>';
+    html += '<div><b>البريد:</b> ' + esc(user.username) + '</div>';
+    if (user.password) html += '<div><b>كلمة المرور:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px">' + esc(user.password) + '</code></div>';
+    if (emp) html += '<div><b>الوظيفة:</b> ' + esc(emp.role) + '</div>';
+    html += '</div>';
+    html += '<div style="margin-top:1rem;font-size:.72rem;color:var(--text-muted);line-height:1.6">';
+    html += '⚠️ امسح الكود → يسجّل الدخول مباشرة<br>';
+    html += '💡 للحفاظ على الأمان: احفظ الصورة وامسحها من العرض بعد ما تنتهي';
+    html += '</div>';
+    html += '</div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔗 QR Code — ' + esc(user.name),
+        size: 'sm',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' +
+                '<button class="btn btn-primary" onclick="window.print()">🖨️ طباعة</button>'
+      });
+
+      setTimeout(function () {
+        var target = document.getElementById('dm-qr-target');
+        if (!target) return;
+        window.QRCode.toCanvas(qrContent, { width: 220, margin: 1 }, function (err, canvas) {
+          if (err) { console.error('QR error:', err); return; }
+          target.innerHTML = '';
+          target.appendChild(canvas);
+        });
+      }, 100);
+    }
+  };
+
+  function addQRButtons() {
+    // Employees page
+    if (Pages.employees && !Pages.employees.__dm59QR) {
+      var origE = Pages.employees;
+      Pages.employees = function (el) {
+        origE.apply(this, arguments);
+        setTimeout(function () {
+          var rows = el.querySelectorAll('table.data-table tbody tr');
+          rows.forEach(function (tr) {
+            if (tr.querySelector('.dm-qr-btn')) return;
+            var editBtn = tr.querySelector('button[onclick*="editEmployee"]');
+            if (!editBtn) return;
+            var m = editBtn.getAttribute('onclick').match(/editEmployee\('([^']+)'\)/);
+            if (!m) return;
+            var empId = m[1];
+            var user = (State.data.users || []).find(function (u) { return u.employeeId === empId; });
+            if (!user) return;
+            var actionDiv = tr.querySelector('td:last-child > div');
+            if (!actionDiv) return;
+            var btn = document.createElement('button');
+            btn.className = 'btn btn-ghost btn-icon btn-sm dm-qr-btn';
+            btn.title = 'QR';
+            btn.style.color = '#7c3aed';
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>';
+            btn.onclick = function (e) { e.stopPropagation(); window.__dm59ShowQR(user.id); };
+            actionDiv.appendChild(btn);
+          });
+          if (window.lucide) lucide.createIcons();
+        }, 200);
+      };
+      Pages.employees.__dm59QR = true;
+    }
+
+    // Users page
+    if (Pages.users && !Pages.users.__dm59QR) {
+      var origU = Pages.users;
+      Pages.users = function (el) {
+        origU.apply(this, arguments);
+        setTimeout(function () {
+          var rows = el.querySelectorAll('table.data-table tbody tr');
+          rows.forEach(function (tr) {
+            if (tr.querySelector('.dm-qr-btn')) return;
+            var editBtn = tr.querySelector('button[onclick*="editUser"]');
+            if (!editBtn) return;
+            var m = editBtn.getAttribute('onclick').match(/editUser\('([^']+)'\)/);
+            if (!m) return;
+            var uid2 = m[1];
+            var actionDiv = tr.querySelector('td:last-child > div');
+            if (!actionDiv) return;
+            var btn = document.createElement('button');
+            btn.className = 'btn btn-ghost btn-icon btn-sm dm-qr-btn';
+            btn.title = 'QR';
+            btn.style.color = '#7c3aed';
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>';
+            btn.onclick = function (e) { e.stopPropagation(); window.__dm59ShowQR(uid2); };
+            actionDiv.appendChild(btn);
+          });
+          if (window.lucide) lucide.createIcons();
+        }, 200);
+      };
+      Pages.users.__dm59QR = true;
+    }
+  }
+
+  /* =========================================================
+     8) LOGIN CLEANUP + EMPLOYEE REGISTRATION
+     ========================================================= */
+  function cleanupLogin() {
+    var hint = document.querySelector('.demo-hint');
+    if (hint) hint.remove();
+
+    var lu = document.getElementById('login-user') || document.getElementById('saas-email');
+    var lp = document.getElementById('login-pass') || document.getElementById('saas-password');
+
+    // Only clear if values are still demo defaults
+    if (lu && lu.value === 'admin' && lu.dataset.dmCleared !== '1') {
+      lu.value = '';
+      lu.dataset.dmCleared = '1';
+    }
+    if (lp && lp.value === 'admin' && lp.dataset.dmCleared !== '1') {
+      lp.value = '';
+      lp.dataset.dmCleared = '1';
+    }
+
+    var loginCard = document.querySelector('.login-card');
+    if (!loginCard) return;
+    if (loginCard.querySelector('.dm-register-block')) return;
+
+    var block = document.createElement('div');
+    block.className = 'dm-register-block';
+    block.style.cssText = 'margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid rgba(255,255,255,.08);text-align:center';
+    block.innerHTML =
+      '<div style="font-size:.78rem;color:#94a3b8;margin-bottom:.75rem">موظف جديد؟ سجّل حسابك هنا</div>' +
+      '<button type="button" id="dm-open-register" style="width:100%;padding:.75rem;border-radius:12px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.35);color:#6ee7b7;font-weight:700;cursor:pointer;font-family:inherit;font-size:.85rem">' +
+        '👤 تسجيل موظف' +
+      '</button>';
+
+    var superBlock = loginCard.querySelector('#saas-super-block');
+    if (superBlock && superBlock.parentNode === loginCard) {
+      loginCard.insertBefore(block, superBlock);
+    } else {
+      loginCard.appendChild(block);
+    }
+
+    var btn = document.getElementById('dm-open-register');
+    if (btn) btn.onclick = showEmployeeRegister;
+  }
+
+  function showEmployeeRegister() {
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(16,185,129,.08);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += 'سجّل بياناتك، وبعدها المدير هيربط حسابك بالوظيفة بتاعتك.';
+    html += '</div>';
+    html += '<div class="field"><label>الاسم الكامل *</label><input id="reg-name" type="text" placeholder="أحمد محمد"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>البريد الإلكتروني *</label><input id="reg-email" type="email" placeholder="you@example.com"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الهاتف</label><input id="reg-phone" type="tel" placeholder="01xxxxxxxxx"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>كلمة المرور * (6+ حروف)</label><input id="reg-pass" type="password" placeholder="••••••••"></div>';
+    html += '<div id="reg-error" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '👤 تسجيل موظف جديد',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm59Register()">إنشاء الحساب</button>'
+      });
+    }
+  }
+
+  window.__dm59Register = async function () {
+    var name = (document.getElementById('reg-name').value || '').trim();
+    var email = (document.getElementById('reg-email').value || '').trim();
+    var phone = (document.getElementById('reg-phone').value || '').trim();
+    var pass = (document.getElementById('reg-pass').value || '').trim();
+    var err = document.getElementById('reg-error');
+
+    if (!name || !email || !pass) { err.textContent = 'كل الحقول المطلوبة'; return; }
+    if (pass.length < 6) { err.textContent = 'كلمة المرور 6+ حروف'; return; }
+
+    err.style.color = '#f59e0b';
+    err.textContent = 'جاري التسجيل…';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.auth || !fb.modules) throw new Error('Firebase مش جاهز');
+
+      var cred = await fb.modules.authMod.createUserWithEmailAndPassword(fb.auth, email, pass);
+      var uidVal = cred.user.uid;
+
+      await fb.modules.fsMod.setDoc(fb.modules.fsMod.doc(fb.db, 'users', uidVal), {
+        uid: uidVal,
+        email: email,
+        name: name,
+        phone: phone,
+        role: 'pending_employee',
+        status: 'pending',
+        companyId: null,
+        createdAt: fb.modules.fsMod.serverTimestamp()
+      });
+
+      err.style.color = '#10b981';
+      err.textContent = '✓ تم التسجيل! انتظر موافقة المدير';
+
+      await fb.modules.authMod.signOut(fb.auth);
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        toast('✓ سجّلت — المدير هيربط حسابك', 'success');
+      }, 1500);
+    } catch (e) {
+      console.error(e);
+      err.style.color = '#ef4444';
+      if (e.code === 'auth/email-already-in-use') err.textContent = 'البريد مستخدم';
+      else if (e.code === 'auth/weak-password') err.textContent = 'كلمة مرور ضعيفة';
+      else err.textContent = 'خطأ: ' + (e.message || '');
+    }
+  };
+
+  /* =========================================================
+     REGISTER NAV ITEMS + SUBSCRIPTIONS PAGE
+     ========================================================= */
+  function ensureSubscribersPage() {
+    if (!isSA()) return;
+    if (Pages.subscribers) return;
+    Pages.subscribers = function (el) {
+      if (typeof Pages.superadmin === 'function') {
+        State.filters.saTab = 'subscribers';
+        return Pages.superadmin(el);
+      }
+      el.innerHTML = '<div class="empty-state"><p>افتح لوحة المدير العام</p></div>';
+    };
+  }
+
+  function registerAttLogNav() {
+    var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (ops && !ops.items.find(function (i) { return i.id === 'attlog'; })) {
+      ops.items.push({ id: 'attlog', icon: 'history', label: 'سجل الحضور' });
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 300;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined' &&
+             typeof State !== 'undefined' &&
+             typeof navigate === 'function' &&
+             document.getElementById('content');
+    },
+    function () {
+      // 1. Counters
+      registerCountersPage();
+
+      // 2. Bulk
+      hookBulk();
+
+      // 3. Substitutions
+      ensureSubstitutionsData();
+      registerSubstitutionsPage();
+
+      // 4. Payroll
+      ensurePayrollData();
+      registerPayrollPage();
+
+      // 5. Attendance Log
+      registerAttendanceLogPage();
+      registerAttLogNav();
+
+      // 6. Full name
+      applyFullNameCSS();
+
+      // 7. QR
+      addQRButtons();
+
+      // 8. Login
+      cleanupLogin();
+      setInterval(cleanupLogin, 3000);
+      setInterval(addQRButtons, 5000);
+
+      // Super admin nav
+      waitFor(
+        function () { return window.__dmSaaS && window.__dmSaaS.ready; },
+        function () {
+          ensureCountersNav();
+          ensureSubscribersPage();
+          setInterval(ensureCountersNav, 5000);
+        }
+      );
+
+      console.log('%c[Section 59] ═══ ALL FIXES READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ Firebase Counters (للمدير العام)');
+      console.log('  ✅ Bulk Selection في كل الصفحات');
+      console.log('  ✅ Substitutions (إضافة + تعديل + حذف)');
+      console.log('  ✅ Payroll Payments (3 مراحل)');
+      console.log('  ✅ Attendance Log (سجل شامل)');
+      console.log('  ✅ الأسماء كاملة');
+      console.log('  ✅ QR Codes للمستخدمين');
+      console.log('  ✅ Login نظيف + تسجيل موظفين');
+    }
+  );
+
+})();
 
 
 
