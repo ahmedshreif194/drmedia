@@ -20295,6 +20295,543 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 58: Big Fixes
+   Version: 1.0.0
+   ---------------------------------------------------------
+   1) Multi-role employees (assign multiple roles)
+   2) Global ascending date sort
+   3) Refresh keeps current page
+   4) Restore Subscribers page
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 58] Big Fixes loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function toast(m, t) {
+    if (typeof showToast === 'function') showToast(m, t || 'info');
+  }
+
+  /* =========================================================
+     1) MULTI-ROLE EMPLOYEES
+     ========================================================= */
+  var AVAILABLE_ROLES = ['Director', 'Photographer', 'Crane', 'Supervisor', 'Assistant'];
+
+  function overrideEmployeeForm() {
+    window.editEmployee = function (id) {
+      var e = id ? State.data.employees.find(function (x) { return x.id === id; }) : null;
+      var empRoles = (e && e.roles && e.roles.length) ? e.roles.slice() : [(e && e.role) || 'Photographer'];
+
+      var bodyHtml = '';
+
+      // Basic info
+      bodyHtml += '<div class="form-row">';
+      bodyHtml += '<div class="field"><label>كود الموظف</label><input id="f-code" value="' + esc(e ? (e.code || '') : 'E' + String((State.data.employees || []).length + 1).padStart(3, '0')) + '"></div>';
+      bodyHtml += '<div class="field"><label>الاسم *</label><input id="f-name" value="' + esc(e ? e.name : '') + '" required></div>';
+      bodyHtml += '<div class="field"><label>الهاتف</label><input id="f-phone" value="' + esc(e ? (e.phone || '') : '') + '"></div>';
+      bodyHtml += '<div class="field"><label>سعر اليوم</label><input type="number" id="f-dayRate" value="' + (e ? (e.dayRate || 200) : 200) + '"></div>';
+      bodyHtml += '<div class="field"><label>الراتب الشهري</label><input type="number" id="f-salary" value="' + (e ? (e.salary || 0) : 0) + '"></div>';
+      bodyHtml += '<div class="field"><label>تاريخ التعيين</label><input type="date" id="f-hireDate" value="' + esc(e ? (e.hireDate || todayISO()) : todayISO()) + '"></div>';
+      bodyHtml += '<div class="field"><label>الحالة</label>';
+      bodyHtml += '<select id="f-status">';
+      bodyHtml += '<option value="active"' + (e && e.status === 'active' ? ' selected' : '') + '>نشط</option>';
+      bodyHtml += '<option value="inactive"' + (e && e.status === 'inactive' ? ' selected' : '') + '>غير نشط</option>';
+      bodyHtml += '</select></div>';
+      bodyHtml += '</div>';
+
+      // Multi-role checkboxes
+      bodyHtml += '<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--border)">';
+      bodyHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">';
+      bodyHtml += '<label style="font-size:.85rem;font-weight:700">🎭 الأدوار (يمكن اختيار أكثر من دور)</label>';
+      bodyHtml += '<span id="f-roles-count" style="font-size:.72rem;color:var(--text-muted)">' + empRoles.length + ' محدد</span>';
+      bodyHtml += '</div>';
+      bodyHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">';
+
+      AVAILABLE_ROLES.forEach(function (role) {
+        var checked = empRoles.indexOf(role) >= 0;
+        var emoji = { Director: '🎬', Photographer: '📷', Crane: '🎥', Supervisor: '👔', Assistant: '🤝' }[role] || '👤';
+        bodyHtml += '<label style="display:flex;align-items:center;gap:.5rem;padding:.65rem .85rem;background:var(--surface-2);border:2px solid ' + (checked ? 'var(--primary)' : 'var(--border)') + ';border-radius:10px;cursor:pointer;transition:all .15s" class="f-role-label" data-role="' + role + '">';
+        bodyHtml += '<input type="checkbox" class="f-role-cb" value="' + role + '"' + (checked ? ' checked' : '') + ' style="accent-color:var(--primary);width:18px;height:18px">';
+        bodyHtml += '<span style="font-size:1rem">' + emoji + '</span>';
+        bodyHtml += '<span style="font-weight:600;font-size:.85rem">' + role + '</span>';
+        bodyHtml += '</label>';
+      });
+
+      bodyHtml += '</div>';
+      bodyHtml += '<div id="f-roles-error" style="color:#ef4444;font-size:.75rem;margin-top:.5rem;display:none">⚠️ اختر دور واحد على الأقل</div>';
+      bodyHtml += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.65rem;padding:.6rem .75rem;background:rgba(124,58,237,.05);border-radius:8px;line-height:1.6">';
+      bodyHtml += '💡 <b>مثال:</b> أحمد مصور + مخرج — لو في نقص مخرجين، النظام هيرشحه تلقائيًا.';
+      bodyHtml += '</div>';
+      bodyHtml += '</div>';
+
+      // Notes
+      bodyHtml += '<div class="field" style="margin-top:1rem"><label>ملاحظات</label><textarea id="f-notes">' + esc(e ? (e.notes || '') : '') + '</textarea></div>';
+
+      if (typeof openModal !== 'function') return;
+
+      openModal({
+        title: e ? 'تعديل — ' + esc(e.name) : 'إضافة موظف',
+        size: 'lg',
+        body: bodyHtml,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm58SaveEmployee(\'' + (id || '') + '\')">حفظ</button>'
+      });
+
+      // Bind checkbox highlighting
+      setTimeout(function () {
+        document.querySelectorAll('.f-role-cb').forEach(function (cb) {
+          cb.onchange = function () {
+            var lbl = cb.closest('.f-role-label');
+            if (cb.checked) {
+              lbl.style.borderColor = 'var(--primary)';
+              lbl.style.background = 'rgba(124,58,237,.08)';
+            } else {
+              lbl.style.borderColor = 'var(--border)';
+              lbl.style.background = 'var(--surface-2)';
+            }
+            var count = document.querySelectorAll('.f-role-cb:checked').length;
+            var cntEl = document.getElementById('f-roles-count');
+            if (cntEl) cntEl.textContent = count + ' محدد';
+            var err = document.getElementById('f-roles-error');
+            if (err) err.style.display = count > 0 ? 'none' : 'block';
+          };
+        });
+        // Init highlight
+        document.querySelectorAll('.f-role-cb').forEach(function (cb) {
+          if (cb.checked) {
+            var lbl = cb.closest('.f-role-label');
+            if (lbl) lbl.style.background = 'rgba(124,58,237,.08)';
+          }
+        });
+      }, 100);
+    };
+  }
+
+  window.__dm58SaveEmployee = function (id) {
+    var name = (document.getElementById('f-name').value || '').trim();
+    if (!name) { toast('الاسم مطلوب', 'error'); return; }
+
+    // Get selected roles
+    var selectedRoles = [];
+    document.querySelectorAll('.f-role-cb:checked').forEach(function (cb) {
+      selectedRoles.push(cb.value);
+    });
+
+    if (!selectedRoles.length) {
+      toast('اختر دور واحد على الأقل', 'error');
+      var err = document.getElementById('f-roles-error');
+      if (err) err.style.display = 'block';
+      return;
+    }
+
+    var data = {
+      code: (document.getElementById('f-code').value || '').trim(),
+      name: name,
+      phone: (document.getElementById('f-phone').value || '').trim(),
+      role: selectedRoles[0],              // Primary role = first selected
+      roles: selectedRoles,                 // All roles
+      dayRate: +document.getElementById('f-dayRate').value || 0,
+      salary: +document.getElementById('f-salary').value || 0,
+      hireDate: document.getElementById('f-hireDate').value,
+      status: document.getElementById('f-status').value,
+      notes: document.getElementById('f-notes').value
+    };
+
+    if (id) {
+      var idx = State.data.employees.findIndex(function (e) { return e.id === id; });
+      if (idx >= 0) {
+        var old = Object.assign({}, State.data.employees[idx]);
+        State.data.employees[idx] = Object.assign({}, old, data);
+        try { if (typeof logActivity === 'function') logActivity('update', 'employee', id, old, data); } catch (e) {}
+      }
+    } else {
+      State.data.employees.push(Object.assign({ id: 'emp_' + Math.random().toString(36).slice(2, 9) }, data));
+      try { if (typeof logActivity === 'function') logActivity('create', 'employee', data.code, null, data); } catch (e) {}
+    }
+
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    if (typeof closeModal === 'function') closeModal();
+    toast('✓ ' + (id ? 'تم التعديل' : 'تم الإضافة'), 'success');
+    setTimeout(function () { navigate('employees'); }, 300);
+  };
+
+  /* =========================================================
+     UPDATE EMPLOYEES TABLE — show all roles + role badges
+     ========================================================= */
+  function overrideEmployeesPage() {
+    if (!Pages.employees) return;
+    if (Pages.employees.__dm58) return;
+
+    var orig = Pages.employees;
+    Pages.employees = function (el) {
+      orig.apply(this, arguments);
+
+      // After render, enhance the roles column to show all badges
+      setTimeout(function () {
+        var rows = el.querySelectorAll('table.data-table tbody tr');
+        rows.forEach(function (tr) {
+          var cells = tr.querySelectorAll('td');
+          if (cells.length < 3) return;
+
+          // Find employee by checking action buttons
+          var editBtn = tr.querySelector('button[onclick*="editEmployee"]');
+          if (!editBtn) return;
+          var m = editBtn.getAttribute('onclick').match(/editEmployee\('([^']+)'\)/);
+          if (!m) return;
+          var emp = State.data.employees.find(function (e) { return e.id === m[1]; });
+          if (!emp) return;
+
+          // Enhance name cell to show all roles
+          var nameCell = cells[1];
+          var userDiv = nameCell.querySelector('.cell-user');
+          if (userDiv && !userDiv.querySelector('.dm-roles-badges')) {
+            var sub = userDiv.querySelector('div > div:last-child');
+            if (sub) {
+              var allRoles = emp.roles && emp.roles.length ? emp.roles : [emp.role];
+              var rolesHtml = allRoles.map(function (r) {
+                var emoji = { Director: '🎬', Photographer: '📷', Crane: '🎥', Supervisor: '👔', Assistant: '🤝' }[r] || '👤';
+                return '<span class="badge-pill badge-purple dm-roles-badges" style="font-size:.6rem;padding:.1rem .4rem;margin-inline-end:.15rem">' + emoji + ' ' + r + '</span>';
+              }).join('');
+              sub.innerHTML = rolesHtml;
+            }
+          }
+        });
+        if (window.lucide) lucide.createIcons();
+      }, 150);
+    };
+    Pages.employees.__dm58 = true;
+  }
+
+  /* =========================================================
+     2) GLOBAL ASCENDING SORT
+     ========================================================= */
+  function globalSortPatch() {
+    // Ensure default sort is ascending in State filters
+    if (State.filters) {
+      State.filters.bkSort = State.filters.bkSort || 'date_asc';
+      if (State.filters.bkSort === 'date_desc' && !State.filters.__userChangedSort) {
+        State.filters.bkSort = 'date_asc';
+      }
+    }
+
+    // Override any page-level sort functions
+    // Patch the original navigate to re-sort tables after render
+    var origNav = window.navigate;
+    if (!origNav.__dm58) {
+      window.navigate = function (page) {
+        var r = origNav.apply(this, arguments);
+        setTimeout(function () {
+          try {
+            sortDateTablesAscending();
+          } catch (e) {}
+        }, 400);
+        return r;
+      };
+      window.navigate.__dm58 = true;
+    }
+  }
+
+  function sortDateTablesAscending() {
+    var tables = document.querySelectorAll('#content table.data-table');
+    tables.forEach(function (table) {
+      // Only sort tables that have a date column
+      var headers = Array.from(table.querySelectorAll('thead th')).map(function (th) {
+        return (th.textContent || '').trim();
+      });
+      var dateIdx = -1;
+      for (var i = 0; i < headers.length; i++) {
+        if (/التاريخ|تاريخ|date|اليوم|day/i.test(headers[i])) {
+          dateIdx = i; break;
+        }
+      }
+      if (dateIdx < 0) return;
+
+      var tbody = table.querySelector('tbody');
+      if (!tbody) return;
+
+      var rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length < 2) return;
+      if (rows[0] && rows[0].querySelector('.empty-state')) return;
+
+      var parsed = rows.map(function (tr, idx) {
+        var cells = tr.querySelectorAll('td');
+        var dateStr = cells[dateIdx] ? cells[dateIdx].textContent.trim() : '';
+        return { row: tr, date: parseAnyDate(dateStr), idx: idx };
+      });
+
+      parsed.sort(function (a, b) {
+        if (!a.date && !b.date) return a.idx - b.idx;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        var d = a.date.localeCompare(b.date);
+        return d !== 0 ? d : a.idx - b.idx;
+      });
+
+      var changed = parsed.some(function (x, i) { return x.idx !== i; });
+      if (changed) {
+        parsed.forEach(function (x) { tbody.appendChild(x.row); });
+      }
+    });
+  }
+
+  function parseAnyDate(s) {
+    if (!s) return '';
+    s = String(s).trim();
+
+    // YYYY-MM-DD
+    var m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+
+    // DD/MM/YYYY or DD-MM-YYYY
+    m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (m) {
+      var d = parseInt(m[1]), mo = parseInt(m[2]), y = parseInt(m[3]);
+      if (y < 100) y += y < 50 ? 2000 : 1900;
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      }
+    }
+
+    // Arabic months
+    var arMonths = {
+      'يناير': 1, 'فبراير': 2, 'مارس': 3, 'أبريل': 4, 'ابريل': 4,
+      'مايو': 5, 'يونيو': 6, 'يوليو': 7, 'أغسطس': 8, 'اغسطس': 8,
+      'سبتمبر': 9, 'أكتوبر': 10, 'اكتوبر': 10, 'نوفمبر': 11, 'ديسمبر': 12
+    };
+    for (var name in arMonths) {
+      if (s.indexOf(name) >= 0) {
+        var dm = s.match(/(\d{1,2})/);
+        var ym = s.match(/(20\d{2})/);
+        var day = dm ? parseInt(dm[1]) : 1;
+        var year = ym ? parseInt(ym[1]) : new Date().getFullYear();
+        return year + '-' + String(arMonths[name]).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      }
+    }
+
+    return '';
+  }
+
+  /* =========================================================
+     3) REFRESH KEEPS CURRENT PAGE
+     ========================================================= */
+  var PAGE_KEY = 'dm_current_page_v58';
+  var SESSION_KEY = 'dm_session_keep_v58';
+
+  function saveCurrentPage(page) {
+    try {
+      sessionStorage.setItem(PAGE_KEY, page);
+      sessionStorage.setItem(SESSION_KEY, '1');
+    } catch (e) {}
+  }
+
+  function getSavedPage() {
+    try { return sessionStorage.getItem(PAGE_KEY) || 'dashboard'; } catch (e) { return 'dashboard'; }
+  }
+
+  function hasActiveSession() {
+    try { return sessionStorage.getItem(SESSION_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function patchNavigateToSavePage() {
+    // Patch navigate to save current page
+    var origNav = window.navigate;
+    if (origNav.__dm58save) return;
+    window.navigate = function (page) {
+      if (page) saveCurrentPage(page);
+      return origNav.apply(this, arguments);
+    };
+    window.navigate.__dm58save = true;
+  }
+
+  function restorePageOnBoot() {
+    // Only if active session exists
+    if (!hasActiveSession()) return;
+
+    // Wait for login state
+    var checkCount = 0;
+    var t = setInterval(function () {
+      checkCount++;
+      if (checkCount > 100) { clearInterval(t); return; }
+
+      // Wait until app screen is visible
+      var loginScreen = document.getElementById('login-screen');
+      var appScreen = document.getElementById('app');
+      if (!appScreen || appScreen.classList.contains('hidden')) return;
+      if (loginScreen && !loginScreen.classList.contains('hidden')) return;
+
+      clearInterval(t);
+      var savedPage = getSavedPage();
+
+      // Verify page exists in nav
+      var validPages = ['dashboard','employees','halls','bookings','calendar','distribution',
+                       'attendance','payroll','advances','deductions','bonuses','clients',
+                       'equipment','reports','notifications','users','activity','trash',
+                       'settings','leaves','substitutions','timeline','pl','bulkdist',
+                       'distlog','byhall','aiimport','mysub','superadmin'];
+
+      if (validPages.indexOf(savedPage) >= 0 && savedPage !== 'dashboard') {
+        console.log('%c[Section 58] Restoring page:', 'color:#10b981', savedPage);
+        setTimeout(function () {
+          if (typeof navigate === 'function') navigate(savedPage);
+        }, 300);
+      }
+    }, 100);
+  }
+
+  function blockAggressiveLogout() {
+    // Prevent Section 32 from clearing session on F5
+    // The key indicator is dm_flow_inited_v2 which Section 32 uses
+    try {
+      sessionStorage.setItem('dm_flow_inited_v2', '1');
+      sessionStorage.setItem('dm_session_active_v2', '1');
+      sessionStorage.setItem('dm_app_loaded', '1');
+      sessionStorage.setItem('dm_page_loaded', '1');
+    } catch (e) {}
+  }
+
+  /* =========================================================
+     4) RESTORE SUBSCRIBERS PAGE
+     ========================================================= */
+  function ensureSubscribersPage() {
+    if (!window.__dmSaaS || !window.__dmSaaS.isSuperAdmin) return;
+
+    // Register page if missing
+    if (!Pages.subscribers) {
+      Pages.subscribers = function (el) {
+        // Delegate to Section 34's super admin panel
+        if (Pages.superadmin) {
+          State.filters.saTab = 'subscribers';
+          return Pages.superadmin(el);
+        }
+        el.innerHTML = '<div class="empty-state" style="padding:3rem 1rem"><p>استخدم لوحة المدير العام</p></div>';
+      };
+    }
+
+    // Ensure nav item exists
+    var nav = document.getElementById('sidebar-nav');
+    if (nav && !nav.querySelector('[data-page="subscribers"]')) {
+      // Add to Super Admin section
+      var superSection = document.getElementById('dm-super-nav');
+      if (!superSection) {
+        // Create the super admin section
+        superSection = document.createElement('div');
+        superSection.id = 'dm-super-nav';
+        superSection.innerHTML =
+          '<div class="nav-section" style="color:#f59e0b;opacity:1;letter-spacing:.1em">⚡ SUPER ADMIN</div>' +
+          '<a class="nav-item" data-page="superadmin" style="cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#f59e0b">' +
+            '<i data-lucide="crown" style="color:#f59e0b"></i>' +
+            '<span style="color:#f59e0b;font-weight:700">لوحة المدير العام</span>' +
+          '</a>';
+        nav.appendChild(superSection);
+        var link = superSection.querySelector('.nav-item');
+        if (link) link.onclick = function (e) {
+          e.preventDefault();
+          if (typeof window.__dmSuperAdmin === 'function') window.__dmSuperAdmin();
+          else navigate('superadmin');
+        };
+      }
+
+      // Add subscribers link
+      if (!superSection.querySelector('[data-page="subscribers"]')) {
+        var subLink = document.createElement('a');
+        subLink.className = 'nav-item';
+        subLink.setAttribute('data-page', 'subscribers');
+        subLink.style.cssText = 'cursor:pointer;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.35);color:#7c3aed';
+        subLink.innerHTML = '<i data-lucide="users" style="color:#7c3aed"></i><span style="color:#7c3aed;font-weight:700">المشتركين</span>';
+        subLink.onclick = function (e) {
+          e.preventDefault();
+          navigate('subscribers');
+        };
+        superSection.appendChild(subLink);
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  }
+
+  /* =========================================================
+     HOOK RENDER SIDEBAR — re-add subscribers
+     ========================================================= */
+  function hookSidebar() {
+    if (typeof window.renderSidebar !== 'function') return;
+    if (window.renderSidebar.__dm58) return;
+
+    var orig = window.renderSidebar;
+    window.renderSidebar = function () {
+      var r = orig.apply(this, arguments);
+      setTimeout(ensureSubscribersPage, 100);
+      return r;
+    };
+    window.renderSidebar.__dm58 = true;
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof State !== 'undefined'
+        && typeof navigate === 'function'
+        && typeof window.editEmployee === 'function';
+    },
+    function () {
+      // 1. Multi-role
+      overrideEmployeeForm();
+      overrideEmployeesPage();
+
+      // 2. Ascending sort
+      globalSortPatch();
+
+      // 3. Refresh memory
+      blockAggressiveLogout();
+      patchNavigateToSavePage();
+      restorePageOnBoot();
+
+      // 4. Subscribers page
+      ensureSubscribersPage();
+      hookSidebar();
+
+      // Watch for sidebar re-renders
+      setInterval(ensureSubscribersPage, 3000);
+
+      // Watch for table updates (sort)
+      var content = document.getElementById('content');
+      if (content) {
+        var obs = new MutationObserver(function () {
+          clearTimeout(window.__dm58T);
+          window.__dm58T = setTimeout(function () {
+            sortDateTablesAscending();
+            ensureSubscribersPage();
+          }, 200);
+        });
+        obs.observe(content, { childList: true, subtree: true });
+      }
+
+      console.log('%c[Section 58] ═══ Big Fixes READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ الموظف بأدوار متعددة — اختر أكثر من دور');
+      console.log('  ✅ الترتيب التصاعدي في كل الجداول (1 → 10)');
+      console.log('  ✅ F5 يرجعك لنفس الصفحة');
+      console.log('  ✅ صفحة المشتركين رجعت للـ Sidebar');
+    }
+  );
+
+})();
 
 
 
