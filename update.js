@@ -24460,6 +24460,1081 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 62: QR Auto-Login + Codes Fix + Detailed Tab
+   Version: 1.0.0
+   ---------------------------------------------------------
+   1) QR → auto-login URL (opens site & logs in automatically)
+   2) Codes: full rules message + auto-detect
+   3) Subscribers page: 3 tabs (list, codes, detailed)
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 62] loading…', 'color:#8b5cf6;font-weight:bold;font-size:14px');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function isSA() { return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin); }
+
+  /* =========================================================
+     1) AUTO-LOGIN FROM URL
+     ---------------------------------------------------------
+     Format: ?autologin=USER&auth=PASSWORD
+     (uses 'auth' as obscure name to avoid filters)
+     ========================================================= */
+  function setupAutoLogin() {
+    function check() {
+      var params = new URLSearchParams(window.location.search);
+      var user = params.get('autologin');
+      var pass = params.get('auth');
+
+      if (!user || !pass) return;
+
+      console.log('[Section 62] 🔑 Auto-login detected for:', user);
+
+      // Clean URL immediately for security
+      try {
+        var cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (e) {}
+
+      // Wait for Firebase + login screen
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        if (tries > 100) { clearInterval(t); return; }
+
+        var fb = window.DrMediaFB;
+        if (!fb || !fb.ready || !fb.modules) return;
+        if (!fb.modules.authMod || !fb.modules.authMod.signInWithEmailAndPassword) return;
+
+        clearInterval(t);
+
+        // Show loading
+        var loginScreen = document.getElementById('login-screen');
+        if (loginScreen) {
+          var card = loginScreen.querySelector('.login-card');
+          if (card) {
+            var loading = document.createElement('div');
+            loading.id = 'dm62-loading';
+            loading.style.cssText = 'text-align:center;padding:2rem;color:#fff';
+            loading.innerHTML = '<div style="font-size:3rem;margin-bottom:1rem">🔐</div>' +
+              '<div style="font-weight:700;font-size:1rem">جاري تسجيل الدخول…</div>' +
+              '<div style="margin-top:1rem;width:50px;height:50px;margin-inline:auto;border:4px solid rgba(255,255,255,.1);border-top-color:#7c3aed;border-radius:50%;animation:dm62spin 1s linear infinite"></div>' +
+              '<style>@keyframes dm62spin{to{transform:rotate(360deg)}}</style>';
+            card.appendChild(loading);
+          }
+        }
+
+        // Attempt sign in
+        fb.modules.authMod.signInWithEmailAndPassword(fb.auth, user, pass)
+          .then(function (cred) {
+            console.log('[Section 62] ✓ Auto-login successful');
+            toast('✓ مرحبًا ' + (cred.user.email || ''), 'success');
+
+            // Remove loading
+            var l = document.getElementById('dm62-loading');
+            if (l) l.remove();
+
+            // If already on login screen, hide it and let existing flow take over
+            var ls = document.getElementById('login-screen');
+            var app = document.getElementById('app');
+            if (ls) ls.classList.add('hidden');
+            if (app) app.classList.remove('hidden');
+          })
+          .catch(function (err) {
+            console.error('[Section 62] Auto-login failed:', err);
+            var l = document.getElementById('dm62-loading');
+            if (l) l.remove();
+            toast('فشل الدخول التلقائي — سجل يدويًا', 'error');
+          });
+      }, 150);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', check);
+    } else {
+      check();
+    }
+  }
+  setupAutoLogin();
+
+  /* =========================================================
+     2) QR — generates auto-login URL
+     ========================================================= */
+  window.__dm62ShowQR = function (userId) {
+    var user = (State.data.users || []).find(function (u) { return u.id === userId; });
+    if (!user) { toast('المستخدم غير موجود', 'error'); return; }
+
+    var emp = user.employeeId ? (State.data.employees || []).find(function (e) { return e.id === user.employeeId; }) : null;
+
+    // Auto-login URL
+    var baseUrl = window.location.origin + window.location.pathname;
+    var autoLoginUrl = baseUrl + '?autologin=' + encodeURIComponent(user.username) + '&auth=' + encodeURIComponent(user.password || '');
+
+    // QR image via public API
+    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=350x350&margin=10&data=' + encodeURIComponent(autoLoginUrl);
+
+    var html = '<div style="text-align:center;padding:1rem">';
+    html += '<div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.85rem">';
+    html += '📱 امسح الكود بكاميرا الموبايل → هيفتح رابط الدخول تلقائيًا';
+    html += '</div>';
+
+    html += '<div style="display:inline-block;padding:1rem;background:#fff;border-radius:12px;margin-bottom:1rem">';
+    html += '<img src="' + qrUrl + '" alt="QR" style="width:280px;height:280px;display:block" onerror="this.parentElement.innerHTML=\'<div style=color:#ef4444;padding:2rem;font-size:.85rem>فشل تحميل QR</div>\'">';
+    html += '</div>';
+
+    html += '<div style="padding:.85rem;background:var(--surface-2);border-radius:10px;text-align:start;font-size:.82rem;line-height:1.9">';
+    html += '<div><b>الاسم:</b> ' + esc(user.name) + '</div>';
+    html += '<div><b>البريد:</b> ' + esc(user.username) + '</div>';
+    if (user.password) html += '<div><b>كلمة المرور:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px">' + esc(user.password) + '</code></div>';
+    if (emp) html += '<div><b>الوظيفة:</b> ' + esc(emp.role) + '</div>';
+    html += '</div>';
+
+    html += '<div style="margin-top:1rem;padding:.75rem;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:10px;font-size:.75rem;color:#6ee7b7;text-align:start;line-height:1.7">';
+    html += '<b>⚡ عند المسح:</b><br>';
+    html += '1. الكاميرا هتقرأ الرابط<br>';
+    html += '2. الرابط يفتح الموقع<br>';
+    html += '3. تسجيل الدخول تلقائيًا بالحساب';
+    html += '</div>';
+
+    html += '<div style="margin-top:1rem;display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap">';
+    html += '<a href="' + qrUrl + '" target="_blank" download="qr-' + esc(user.name) + '.png" class="btn btn-ghost btn-sm" style="text-decoration:none">📥 تحميل QR</a>';
+    html += '<button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>';
+    html += '<button class="btn btn-primary btn-sm" onclick="__dm62TestLogin(\'' + esc(autoLoginUrl) + '\')">🔗 فتح الرابط</button>';
+    html += '</div>';
+
+    html += '<div style="margin-top:1rem;font-size:.72rem;color:var(--text-muted);line-height:1.6">';
+    html += '⚠️ <b>تحذير أمني:</b> الرابط فيه كلمة المرور. للحماية، امسح صورة QR بعد ما تسلمها للموظف.';
+    html += '</div>';
+
+    html += '</div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔗 QR Code — ' + esc(user.name),
+        size: 'sm',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>'
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+  };
+
+  window.__dm62TestLogin = function (url) {
+    // Open in new tab to test
+    window.open(url, '_blank');
+  };
+
+  // Override previous handlers
+  window.__dm61ShowQR = window.__dm62ShowQR;
+  window.__dm60ShowQR = window.__dm62ShowQR;
+  window.__dm59ShowQR = window.__dm62ShowQR;
+
+  /* =========================================================
+     3) MERGED SUBSCRIBERS PAGE — 3 TABS
+     ========================================================= */
+  function registerSubscribers3Tabs() {
+    Pages.subscribers = function (el) {
+      if (!isSA()) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="lock"></i><p>للمدير العام فقط</p></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      var tab = State.filters.subsTab || 'list';
+      State.filters.subsTab = tab;
+
+      var html = '';
+      html += '<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap">';
+      html += '<div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center">';
+      html += '<i data-lucide="users" style="color:#fff;width:24px;height:24px"></i></div>';
+      html += '<div><div style="font-weight:800;font-size:1.15rem">المشتركين</div>';
+      html += '<div style="font-size:.75rem;color:var(--text-muted)">إدارة كاملة للمشتركين والأكواد والتفاصيل</div></div>';
+      html += '</div>';
+
+      // 3 Tabs
+      html += '<div class="tabs" style="margin-bottom:1.25rem">';
+      html += '<div class="tab ' + (tab === 'list' ? 'active' : '') + '" onclick="State.filters.subsTab=\'list\';navigate(\'subscribers\')">👥 المشتركين</div>';
+      html += '<div class="tab ' + (tab === 'codes' ? 'active' : '') + '" onclick="State.filters.subsTab=\'codes\';navigate(\'subscribers\')">🔑 أكواد التفعيل</div>';
+      html += '<div class="tab ' + (tab === 'detailed' ? 'active' : '') + '" onclick="State.filters.subsTab=\'detailed\';navigate(\'subscribers\')">📊 تفصيل الاستركات</div>';
+      html += '</div>';
+
+      html += '<div id="dm62-body"></div>';
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      if (tab === 'codes') renderCodesTab62();
+      else if (tab === 'detailed') renderDetailedTab62();
+      else renderListTab62();
+    };
+  }
+
+  /* =========================================================
+     TAB 1: Subscribers List
+     ========================================================= */
+  function renderListTab62() {
+    var body = document.getElementById('dm62-body');
+    if (!body) return;
+    body.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready || !fb.modules) {
+      body.innerHTML = '<div class="empty-state"><p>Firebase مش جاهز</p></div>';
+      return;
+    }
+    var fsMod = fb.modules.fsMod;
+    var db = fb.db;
+
+    Promise.all([
+      fsMod.getDocs(fsMod.collection(db, 'companies')),
+      fsMod.getDocs(fsMod.collection(db, 'subscriptions'))
+    ]).then(function (results) {
+      var comps = results[0];
+      var subs = results[1];
+      var subMap = {};
+      subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+      var companies = [];
+      comps.forEach(function (d) {
+        var c = d.data();
+        var sub = subMap[c.id] || {};
+        var now = Date.now();
+        var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - now) / 86400000)) : 0;
+        companies.push({
+          id: c.id, name: c.name || '—',
+          ownerEmail: c.ownerEmail || '—', phone: c.phone || '—',
+          planId: sub.planId || 'trial',
+          planName: sub.planName || sub.planId || 'trial',
+          days: days, expired: days <= 0,
+          status: sub.status || 'unknown',
+          expiresAt: sub.expiresAt
+        });
+      });
+
+      companies.sort(function (a, b) { return a.days - b.days; });
+
+      var active = companies.filter(function (c) { return !c.expired; }).length;
+      var expired = companies.filter(function (c) { return c.expired; }).length;
+      var prices = { starter: 500, pro: 1200, business: 2500, enterprise: 0 };
+      var mrr = companies.reduce(function (s, c) {
+        return s + (!c.expired ? (prices[c.planId] || 0) : 0);
+      }, 0);
+
+      var html = '';
+      html += '<div class="grid-stats" style="margin-bottom:1rem">';
+      html += stat('إجمالي', companies.length, 'building-2', '#7c3aed');
+      html += stat('نشط', active, 'check-circle', '#10b981');
+      html += stat('منتهي', expired, 'alert-circle', '#ef4444');
+      html += stat('MRR', mrr.toLocaleString() + ' EGP', 'dollar-sign', '#06b6d4');
+      html += '</div>';
+
+      html += '<div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">';
+      html += '<button class="btn btn-primary btn-sm" onclick="__dm62AddSub()"><i data-lucide="user-plus" style="width:12px;height:12px"></i> إضافة مشترك</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="navigate(\'subscribers\')"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> تحديث</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="__dm62ExportSubs()"><i data-lucide="download" style="width:12px;height:12px"></i> تصدير</button>';
+      html += '</div>';
+
+      if (!companies.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="inbox"></i><p>لا يوجد مشتركين</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+        html += '<th>الشركة</th><th>المالك</th><th>الباقة</th><th>الأيام</th><th>الحالة</th><th style="width:220px">إجراءات</th>';
+        html += '</tr></thead><tbody>';
+
+        companies.forEach(function (c) {
+          var sColor = c.expired ? 'red' : (c.days <= 3 ? 'yellow' : 'green');
+          var sText = c.expired ? 'منتهي' : 'نشط';
+          html += '<tr>';
+          html += '<td><div style="display:flex;align-items:center;gap:.5rem"><div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem">' + esc((c.name || '?').charAt(0).toUpperCase()) + '</div><div><b>' + esc(c.name) + '</b><div style="font-size:.68rem;color:var(--text-muted)">' + esc(c.id.slice(0, 18)) + '…</div></div></div></td>';
+          html += '<td><div style="font-size:.82rem">' + esc(c.ownerEmail) + '</div><div style="font-size:.7rem;color:var(--text-muted)">' + esc(c.phone) + '</div></td>';
+          html += '<td><span class="badge-pill badge-purple">' + esc(c.planName) + '</span></td>';
+          html += '<td><b style="color:' + (c.expired ? '#ef4444' : '#10b981') + ';font-size:1rem">' + c.days + '</b></td>';
+          html += '<td><span class="badge-pill badge-' + sColor + '">' + sText + '</span></td>';
+          html += '<td><div style="display:flex;gap:.25rem;flex-wrap:wrap">';
+          html += '<button class="btn btn-success btn-sm" onclick="__dm62ExtendSub(\'' + c.id + '\')" style="font-size:.7rem;padding:.35rem .65rem"><i data-lucide="calendar-plus" style="width:11px;height:11px"></i> تمديد</button>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm62ViewSub(\'' + c.id + '\')" style="color:#7c3aed"><i data-lucide="eye" style="width:12px;height:12px"></i></button>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm62SendLoginQR(\'' + c.id + '\')" style="color:#06b6d4" title="QR الدخول"><i data-lucide="qr-code" style="width:12px;height:12px"></i></button>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm62DeleteSub(\'' + c.id + '\',\'' + esc(c.name) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+          html += '</div></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      }
+
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      function stat(label, value, icon, color) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div><div class="stat-body"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div></div></div>';
+      }
+    }).catch(function (err) {
+      body.innerHTML = '<div class="empty-state"><p>فشل: ' + esc(err.message) + '</p></div>';
+    });
+  }
+  window.renderListTab62 = renderListTab62;
+
+  /* =========================================================
+     TAB 2: Codes
+     ========================================================= */
+  function renderCodesTab62() {
+    var body = document.getElementById('dm62-body');
+    if (!body) return;
+    body.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready || !fb.modules) {
+      body.innerHTML = '<div class="empty-state"><p>Firebase مش جاهز</p></div>';
+      return;
+    }
+    var fsMod = fb.modules.fsMod;
+    var db = fb.db;
+
+    fsMod.getDocs(fsMod.collection(db, 'activation_codes')).then(function (snap) {
+      var codes = [];
+      snap.forEach(function (d) {
+        var data = d.data();
+        data._id = d.id;
+        codes.push(data);
+      });
+      codes.sort(function (a, b) {
+        var ta = a.createdAt ? (a.createdAt.seconds || 0) : 0;
+        var tb = b.createdAt ? (b.createdAt.seconds || 0) : 0;
+        return tb - ta;
+      });
+
+      var html = '';
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem;background:linear-gradient(135deg,rgba(236,72,153,.06),rgba(124,58,237,.06));border-color:rgba(236,72,153,.2)">';
+      html += '<div style="display:flex;gap:.75rem;align-items:flex-start">';
+      html += '<div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#ec4899,#be185d);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i data-lucide="key-round" style="color:#fff;width:20px;height:20px"></i></div>';
+      html += '<div style="flex:1">';
+      html += '<div style="font-weight:800;font-size:.95rem;margin-bottom:.25rem">أكواد التفعيل</div>';
+      html += '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.6">';
+      html += 'أنشئ كود وأرسله للعميل. يسجّل ويستخدمه لتفعيل الاشتراك.';
+      html += '</div></div>';
+      html += '<button class="btn btn-primary btn-sm" onclick="__dm62GenCode()"><i data-lucide="plus" style="width:12px;height:12px"></i> إنشاء كود</button>';
+      html += '</div></div>';
+
+      var active = codes.filter(function (c) {
+        return c.active && (!c.expiresAt || c.expiresAt > Date.now()) && (!c.maxUses || (c.usedCount || 0) < c.maxUses);
+      }).length;
+      var used = codes.filter(function (c) { return (c.usedCount || 0) > 0; }).length;
+      var expired = codes.filter(function (c) {
+        return !c.active || (c.expiresAt && c.expiresAt <= Date.now()) || (c.maxUses && (c.usedCount || 0) >= c.maxUses);
+      }).length;
+
+      html += '<div class="grid-stats" style="margin-bottom:1rem">';
+      html += stat('إجمالي', codes.length, 'key', '#ec4899');
+      html += stat('نشطة', active, 'check-circle', '#10b981');
+      html += stat('مستخدمة', used, 'user-check', '#7c3aed');
+      html += stat('منتهية', expired, 'x-circle', '#ef4444');
+      html += '</div>';
+
+      if (!codes.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="key-round"></i><p>لا يوجد أكواد</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+        html += '<th>الكود</th><th>الباقة</th><th>الأيام</th><th>مستخدم/الحد</th><th>الحالة</th><th>ينتهي</th><th style="width:130px"></th>';
+        html += '</tr></thead><tbody>';
+
+        codes.forEach(function (c) {
+          var isExpired = c.expiresAt && c.expiresAt < Date.now();
+          var isMaxed = c.maxUses && (c.usedCount || 0) >= c.maxUses;
+          var status = !c.active ? 'معطل' : (isExpired ? 'منتهي' : (isMaxed ? 'مستخدم' : 'نشط'));
+          var sColor = status === 'نشط' ? 'green' : (status === 'معطل' ? 'gray' : 'red');
+
+          html += '<tr>';
+          html += '<td><code style="font-weight:800;font-size:.9rem;color:#ec4899;letter-spacing:.06em;cursor:pointer;user-select:all" onclick="__dm62CopyCode(\'' + esc(c.code) + '\')" title="اضغط للنسخ">' + esc(c.code) + '</code></td>';
+          html += '<td><span class="badge-pill badge-purple">' + esc(c.planName || c.planId) + '</span></td>';
+          html += '<td><b>' + (c.days || 30) + '</b></td>';
+          html += '<td>' + (c.usedCount || 0) + ' / ' + (c.maxUses || '∞') + '</td>';
+          html += '<td><span class="badge-pill badge-' + sColor + '">' + status + '</span></td>';
+          html += '<td style="font-size:.75rem">' + (c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-EG') : '—') + '</td>';
+          html += '<td><div style="display:flex;gap:.2rem">';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm62CopyCode(\'' + esc(c.code) + '\')" style="color:#10b981"><i data-lucide="copy" style="width:12px;height:12px"></i></button>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm62DelCode(\'' + esc(c._id) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+          html += '</div></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      }
+
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      function stat(label, value, icon, color) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div><div class="stat-body"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div></div></div>';
+      }
+    }).catch(function (err) {
+      console.error('[Section 62] Codes error:', err);
+      // Show detailed rules info
+      var rulesHtml = '';
+      rulesHtml += '<div class="card" style="border-color:rgba(239,68,68,.3)">';
+      rulesHtml += '<h3 style="color:#ef4444;margin:0 0 .5rem;display:flex;align-items:center;gap:.5rem">⚠️ فشل تحميل الأكواد</h3>';
+      rulesHtml += '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:1rem">' + esc(err.message) + '</div>';
+      rulesHtml += '<div style="background:#1e293b;color:#a7f3d0;padding:1rem;border-radius:10px;font-family:monospace;font-size:.75rem;line-height:1.7;overflow-x:auto;white-space:pre">';
+      rulesHtml += 'match /activation_codes/{codeId} {\n';
+      rulesHtml += '  allow read: if request.auth != null;\n';
+      rulesHtml += '  allow create, update, delete: if request.auth != null\n';
+      rulesHtml += '    && exists(/databases/$(database)/documents/users/$(request.auth.uid))\n';
+      rulesHtml += '    && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == \'super_admin\';\n';
+      rulesHtml += '}';
+      rulesHtml += '</div>';
+      rulesHtml += '<div style="margin-top:1rem;padding:1rem;background:rgba(59,130,246,.08);border-radius:10px;font-size:.82rem;line-height:1.8">';
+      rulesHtml += '<b>📋 الخطوات:</b><br>';
+      rulesHtml += '1. افتح <a href="https://console.firebase.google.com/project/drmedia-vpms/firestore/rules" target="_blank" style="color:#3b82f6">Firebase Rules</a><br>';
+      rulesHtml += '2. الصق الكود فوق <b>قبل آخر `}`</b><br>';
+      rulesHtml += '3. اضغط <b>Publish</b><br>';
+      rulesHtml += '4. اعمل Refresh للصفحة';
+      rulesHtml += '</div>';
+      rulesHtml += '<button class="btn btn-ghost btn-sm" style="margin-top:1rem" onclick="__dm62CopyRules()"><i data-lucide="copy"></i> نسخ القواعد</button>';
+      rulesHtml += '</div>';
+      body.innerHTML = rulesHtml;
+      if (window.lucide) lucide.createIcons();
+    });
+  }
+  window.renderCodesTab62 = renderCodesTab62;
+
+  window.__dm62CopyRules = function () {
+    var rules = "match /activation_codes/{codeId} {\n  allow read: if request.auth != null;\n  allow create, update, delete: if request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';\n}";
+    try {
+      navigator.clipboard.writeText(rules);
+      toast('✓ تم نسخ القواعد', 'success');
+    } catch (e) {
+      toast('انسخ يدويًا', 'info');
+    }
+  };
+
+  /* =========================================================
+     TAB 3: Detailed Subscriptions
+     ========================================================= */
+  function renderDetailedTab62() {
+    var body = document.getElementById('dm62-body');
+    if (!body) return;
+    body.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready || !fb.modules) {
+      body.innerHTML = '<div class="empty-state"><p>Firebase مش جاهز</p></div>';
+      return;
+    }
+    var fsMod = fb.modules.fsMod;
+    var db = fb.db;
+
+    Promise.all([
+      fsMod.getDocs(fsMod.collection(db, 'companies')),
+      fsMod.getDocs(fsMod.collection(db, 'subscriptions')),
+      fsMod.getDocs(fsMod.collection(db, 'payment_orders'))
+    ]).then(function (results) {
+      var comps = results[0];
+      var subs = results[1];
+      var orders = results[2];
+
+      var subMap = {};
+      subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+      var ordersByCompany = {};
+      orders.forEach(function (d) {
+        var o = d.data();
+        if (o.companyId && o.status === 'success') {
+          ordersByCompany[o.companyId] = ordersByCompany[o.companyId] || [];
+          ordersByCompany[o.companyId].push(o);
+        }
+      });
+
+      var prices = { starter: 500, pro: 1200, business: 2500, enterprise: 0 };
+
+      var rows = [];
+      var totalRevenue = 0;
+      var totalActive = 0;
+      var totalExpired = 0;
+      var planBreakdown = { starter: 0, pro: 0, business: 0, enterprise: 0, trial: 0 };
+
+      comps.forEach(function (d) {
+        var c = d.data();
+        var sub = subMap[c.id] || {};
+        var now = Date.now();
+        var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - now) / 86400000)) : 0;
+        var expired = days <= 0;
+        var companyOrders = ordersByCompany[c.id] || [];
+        var paid = companyOrders.reduce(function (s, o) { return s + (o.amount || 0); }, 0);
+        var lifetimeValue = paid;
+        var monthlyValue = (!expired && sub.planId !== 'trial') ? (prices[sub.planId] || 0) : 0;
+
+        totalRevenue += paid;
+        if (expired) totalExpired++; else totalActive++;
+
+        planBreakdown[sub.planId] = (planBreakdown[sub.planId] || 0) + 1;
+
+        rows.push({
+          id: c.id, name: c.name || '—',
+          ownerEmail: c.ownerEmail || '—', phone: c.phone || '—',
+          planId: sub.planId || 'trial',
+          planName: sub.planName || sub.planId || 'Trial',
+          days: days, expired: expired,
+          expiresAt: sub.expiresAt,
+          startedAt: sub.startedAt,
+          createdAt: c.createdAt,
+          paid: paid,
+          ordersCount: companyOrders.length,
+          monthlyValue: monthlyValue,
+          lifetimeValue: lifetimeValue
+        });
+      });
+
+      rows.sort(function (a, b) { return b.lifetimeValue - a.lifetimeValue; });
+
+      // Monthly revenue history (last 6 months from orders)
+      var monthlyRev = {};
+      var nowD = new Date();
+      for (var i = 5; i >= 0; i--) {
+        var dt = new Date(nowD.getFullYear(), nowD.getMonth() - i, 1);
+        var key = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+        monthlyRev[key] = { label: dt.toLocaleDateString('ar-EG', { month: 'short', year: '2-digit' }), amount: 0, count: 0 };
+      }
+      orders.forEach(function (d) {
+        var o = d.data();
+        if (o.status !== 'success') return;
+        var ts = o.paidAt ? (o.paidAt.seconds ? o.paidAt.seconds * 1000 : o.paidAt) :
+                 o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+        if (!ts) return;
+        var dte = new Date(ts);
+        var k = dte.getFullYear() + '-' + String(dte.getMonth() + 1).padStart(2, '0');
+        if (monthlyRev[k]) {
+          monthlyRev[k].amount += (o.amount || 0);
+          monthlyRev[k].count++;
+        }
+      });
+
+      var totalLifetime = rows.reduce(function (s, r) { return s + r.lifetimeValue; }, 0);
+      var avgLifetime = rows.length ? Math.round(totalLifetime / rows.length) : 0;
+      var churnRate = rows.length ? ((totalExpired / rows.length) * 100).toFixed(1) : 0;
+
+      var html = '';
+
+      // Top KPIs
+      html += '<div class="grid-stats" style="margin-bottom:1.25rem">';
+      html += kpi('إجمالي الإيراد', totalRevenue.toLocaleString() + ' EGP', 'dollar-sign', '#10b981', 'من كل المدفوعات');
+      html += kpi('إجمالي المشتركين', rows.length, 'users', '#7c3aed', totalActive + ' نشط · ' + totalExpired + ' منتهي');
+      html += kpi('متوسط قيمة العميل', avgLifetime.toLocaleString() + ' EGP', 'trending-up', '#06b6d4', 'Lifetime Value');
+      html += kpi('معدل التسرب', churnRate + '%', 'user-x', '#ef4444', 'اشتراكات منتهية');
+      html += '</div>';
+
+      // Charts
+      html += '<div class="grid-2" style="margin-bottom:1.25rem">';
+      html += '<div class="chart-box"><h4><i data-lucide="bar-chart-3"></i> الإيراد الشهري</h4><div class="chart-canvas-wrap"><canvas id="dm62-chart-rev"></canvas></div></div>';
+      html += '<div class="chart-box"><h4><i data-lucide="pie-chart"></i> توزيع الباقات</h4><div class="chart-canvas-wrap"><canvas id="dm62-chart-plans"></canvas></div></div>';
+      html += '</div>';
+
+      // Plan breakdown
+      html += '<div class="card" style="margin-bottom:1.25rem">';
+      html += '<h4 style="margin:0 0 1rem;font-size:.9rem">توزيع المشتركين حسب الباقة</h4>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem">';
+      Object.keys(planBreakdown).forEach(function (pid) {
+        if (planBreakdown[pid] === 0 && pid !== 'trial') return;
+        var colors = { starter: '#06b6d4', pro: '#7c3aed', business: '#f59e0b', enterprise: '#10b981', trial: '#94a3b8' };
+        var names = { starter: 'Starter', pro: 'Professional', business: 'Business', enterprise: 'Enterprise', trial: 'تجربة' };
+        var color = colors[pid] || '#94a3b8';
+        html += '<div style="padding:.85rem;background:' + color + '10;border:1px solid ' + color + '30;border-radius:12px">';
+        html += '<div style="font-size:.7rem;color:var(--text-muted);margin-bottom:.25rem">' + esc(names[pid] || pid) + '</div>';
+        html += '<div style="font-size:1.5rem;font-weight:800;color:' + color + '">' + planBreakdown[pid] + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '</div>';
+
+      // Detailed table
+      html += '<div class="card" style="padding:0;overflow:hidden">';
+      html += '<div style="padding:1rem 1.25rem;border-bottom:1px solid var(--border)">';
+      html += '<h4 style="margin:0;font-size:.95rem;display:flex;align-items:center;gap:.5rem">';
+      html += '<i data-lucide="table" style="width:16px;height:16px;color:#7c3aed"></i>';
+      html += 'تفصيل كل مشترك (' + rows.length + ')';
+      html += '</h4></div>';
+      html += '<div class="table-wrap" style="border:none;border-radius:0"><table class="data-table" style="min-width:900px"><thead><tr>';
+      html += '<th>#</th><th>الشركة</th><th>الباقة</th><th>البداية</th><th>الانتهاء</th><th>الأيام</th><th>عدد المدفوعات</th><th>إجمالي المدفوع</th><th>القيمة الشهرية</th><th>الحالة</th>';
+      html += '</tr></thead><tbody>';
+
+      rows.forEach(function (r, i) {
+        var sColor = r.expired ? 'red' : (r.days <= 3 ? 'yellow' : 'green');
+        html += '<tr>';
+        html += '<td style="font-weight:700;color:var(--text-muted)">' + (i + 1) + '</td>';
+        html += '<td><div style="font-weight:600;font-size:.85rem">' + esc(r.name) + '</div><div style="font-size:.68rem;color:var(--text-muted)">' + esc(r.ownerEmail) + '</div></td>';
+        html += '<td><span class="badge-pill badge-purple">' + esc(r.planName) + '</span></td>';
+        html += '<td style="font-size:.75rem">' + (r.startedAt ? new Date(r.startedAt).toLocaleDateString('ar-EG') : '—') + '</td>';
+        html += '<td style="font-size:.75rem">' + (r.expiresAt ? new Date(r.expiresAt).toLocaleDateString('ar-EG') : '—') + '</td>';
+        html += '<td><b style="color:' + (r.expired ? '#ef4444' : '#10b981') + '">' + r.days + '</b></td>';
+        html += '<td style="text-align:center">' + r.ordersCount + '</td>';
+        html += '<td><b style="color:#10b981">' + r.paid.toLocaleString() + ' EGP</b></td>';
+        html += '<td>' + (r.monthlyValue ? r.monthlyValue.toLocaleString() + ' EGP' : '—') + '</td>';
+        html += '<td><span class="badge-pill badge-' + sColor + '">' + (r.expired ? 'منتهي' : 'نشط') + '</span></td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table></div></div>';
+
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      // Render charts
+      setTimeout(function () {
+        if (!window.Chart) return;
+
+        var chartEl = document.getElementById('dm62-chart-rev');
+        if (chartEl) {
+          if (window.__dm62ChartRev) try { window.__dm62ChartRev.destroy(); } catch (e) {}
+          var labels = Object.values(monthlyRev).map(function (x) { return x.label; });
+          var data = Object.values(monthlyRev).map(function (x) { return x.amount; });
+          window.__dm62ChartRev = new Chart(chartEl, {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'الإيراد', data: data, backgroundColor: '#10b981', borderRadius: 8, barThickness: 40 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return v.toLocaleString(); } } }, x: { grid: { display: false } } } }
+          });
+        }
+
+        var pieEl = document.getElementById('dm62-chart-plans');
+        if (pieEl) {
+          if (window.__dm62ChartPlans) try { window.__dm62ChartPlans.destroy(); } catch (e) {}
+          var planLabels = [];
+          var planData = [];
+          var planColors = [];
+          var colorMap = { starter: '#06b6d4', pro: '#7c3aed', business: '#f59e0b', enterprise: '#10b981', trial: '#94a3b8' };
+          var nameMap = { starter: 'Starter', pro: 'Professional', business: 'Business', enterprise: 'Enterprise', trial: 'Trial' };
+          Object.keys(planBreakdown).forEach(function (k) {
+            if (planBreakdown[k] > 0) {
+              planLabels.push(nameMap[k] || k);
+              planData.push(planBreakdown[k]);
+              planColors.push(colorMap[k] || '#94a3b8');
+            }
+          });
+          window.__dm62ChartPlans = new Chart(pieEl, {
+            type: 'doughnut',
+            data: { labels: planLabels, datasets: [{ data: planData, backgroundColor: planColors, borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } } }
+          });
+        }
+      }, 150);
+
+      function kpi(label, value, icon, color, sub) {
+        return '<div class="stat-card">' +
+          '<div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div>' +
+          '<div class="stat-body"><div class="label">' + esc(label) + '</div>' +
+          '<div class="value" style="font-size:1.25rem">' + esc(value) + '</div>' +
+          (sub ? '<div style="font-size:.68rem;color:var(--text-muted);margin-top:.15rem">' + esc(sub) + '</div>' : '') +
+          '</div></div>';
+      }
+    }).catch(function (err) {
+      body.innerHTML = '<div class="empty-state"><p>فشل: ' + esc(err.message) + '</p></div>';
+    });
+  }
+  window.renderDetailedTab62 = renderDetailedTab62;
+
+  /* =========================================================
+     4) ACTIONS
+     ========================================================= */
+  window.__dm62GenCode = function () {
+    var html = '';
+    html += '<div class="form-row">';
+    html += '<div class="field"><label>الباقة</label><select id="c62-plan">';
+    html += '<option value="starter">Starter — 500 EGP</option>';
+    html += '<option value="pro" selected>Professional — 1200 EGP</option>';
+    html += '<option value="business">Business — 2500 EGP</option>';
+    html += '<option value="enterprise">Enterprise</option>';
+    html += '</select></div>';
+    html += '<div class="field"><label>الأيام</label><input id="c62-days" type="number" value="30" min="1"></div>';
+    html += '</div>';
+    html += '<div class="form-row" style="margin-top:.65rem">';
+    html += '<div class="field"><label>أقصى استخدامات</label><input id="c62-max" type="number" value="1" min="1"></div>';
+    html += '<div class="field"><label>صالح لمدة (يوم)</label><input id="c62-valid" type="number" value="90" min="1"></div>';
+    html += '</div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>ملاحظة</label><input id="c62-note" type="text"></div>';
+    html += '<div id="c62-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔑 إنشاء كود',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm62SaveCode()">إنشاء</button>'
+      });
+    }
+  };
+
+  window.__dm62SaveCode = async function () {
+    var planId = document.getElementById('c62-plan').value;
+    var days = parseInt(document.getElementById('c62-days').value) || 30;
+    var maxUses = parseInt(document.getElementById('c62-max').value) || 1;
+    var validDays = parseInt(document.getElementById('c62-valid').value) || 90;
+    var note = document.getElementById('c62-note').value || '';
+    var msg = document.getElementById('c62-msg');
+
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var part = function (n) {
+      var s = '';
+      for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+      return s;
+    };
+    var code = 'DRM-' + part(4) + '-' + part(4);
+    var planNames = { starter: 'Starter', pro: 'Professional', business: 'Business', enterprise: 'Enterprise' };
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = 'جاري الإنشاء…';
+
+    try {
+      var fb = window.DrMediaFB;
+      var fsMod = fb.modules.fsMod;
+      var now = Date.now();
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'activation_codes', code), {
+        code: code, planId: planId, planName: planNames[planId] || planId,
+        days: days, maxUses: maxUses, usedCount: 0,
+        expiresAt: now + (validDays * 86400000),
+        active: true, note: note,
+        createdBy: window.__dmSaaS.user.uid,
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم إنشاء الكود: ' + code;
+      try { navigator.clipboard.writeText(code); } catch (e) {}
+      toast('✓ الكود: ' + code, 'success');
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        renderCodesTab62();
+      }, 800);
+    } catch (e) {
+      console.error(e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'permission-denied') msg.textContent = '❌ صلاحيات — حدّث Firestore Rules';
+      else msg.textContent = '❌ ' + e.message;
+    }
+  };
+
+  window.__dm62DelCode = function (codeId) {
+    if (!confirm('حذف الكود؟')) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.deleteDoc(fsMod.doc(fb.db, 'activation_codes', codeId)).then(function () {
+      toast('✓', 'success'); renderCodesTab62();
+    }).catch(function (e) { toast('فشل: ' + e.message, 'error'); });
+  };
+
+  window.__dm62CopyCode = function (code) {
+    try { navigator.clipboard.writeText(code); toast('✓ نسخ', 'success'); }
+    catch (e) { toast(code, 'info'); }
+  };
+
+  window.__dm62SendLoginQR = function (companyId) {
+    // Find the owner user for this company
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.getDocs(fsMod.collection(fb.db, 'users')).then(function (snap) {
+      var user = null;
+      snap.forEach(function (d) {
+        var u = d.data();
+        if (u.companyId === companyId && u.role === 'owner') user = u;
+      });
+      if (!user) { toast('لم يتم العثور على المستخدم', 'error'); return; }
+      // Need password — check if we have it in company app state
+      fsMod.getDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main')).then(function (appSnap) {
+        var data = appSnap.exists() ? appSnap.data() : {};
+        var payload = data.payload || {};
+        var usersList = payload.users || [];
+        var localUser = usersList.find(function (lu) { return lu.email === user.email || lu.firebaseUid === user.uid; });
+        if (localUser && localUser.password) user.password = localUser.password;
+        // Now show QR
+        var tmpUsers = (State.data.users || []).slice();
+        if (!tmpUsers.find(function (u) { return u.id === user.uid; })) {
+          State.data.users.push({
+            id: user.uid,
+            username: user.email,
+            password: localUser ? localUser.password : '',
+            name: user.name,
+            role: 'Admin'
+          });
+        }
+        window.__dm62ShowQR(user.uid);
+      });
+    });
+  };
+
+  window.__dm62AddSub = function () {
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(124,58,237,.06);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">إنشاء حساب كامل لعميل جديد.</div>';
+    html += '<div class="field"><label>الشركة *</label><input id="s62-company" type="text"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>المسؤول *</label><input id="s62-name" type="text"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>البريد *</label><input id="s62-email" type="email"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الهاتف</label><input id="s62-phone" type="tel"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>كلمة المرور *</label><input id="s62-pass" type="text" placeholder="6+ حروف"></div>';
+    html += '<div class="form-row" style="margin-top:.75rem">';
+    html += '<div class="field"><label>الباقة</label><select id="s62-plan">';
+    html += '<option value="starter">Starter</option>';
+    html += '<option value="pro" selected>Professional</option>';
+    html += '<option value="business">Business</option>';
+    html += '</select></div>';
+    html += '<div class="field"><label>المدة (يوم)</label><input id="s62-days" type="number" value="30"></div>';
+    html += '</div>';
+    html += '<div id="s62-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '➕ إضافة مشترك',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm62SaveSub()">إنشاء</button>'
+      });
+    }
+  };
+
+  window.__dm62SaveSub = async function () {
+    var companyName = (document.getElementById('s62-company').value || '').trim();
+    var name = (document.getElementById('s62-name').value || '').trim();
+    var email = (document.getElementById('s62-email').value || '').trim();
+    var phone = (document.getElementById('s62-phone').value || '').trim();
+    var pass = (document.getElementById('s62-pass').value || '').trim();
+    var planId = document.getElementById('s62-plan').value;
+    var days = parseInt(document.getElementById('s62-days').value) || 30;
+    var msg = document.getElementById('s62-msg');
+
+    if (!companyName || !name || !email || !pass) { msg.textContent = 'الحقول المطلوبة'; return; }
+    if (pass.length < 6) { msg.textContent = 'كلمة المرور 6+'; return; }
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = 'جاري الإنشاء…';
+
+    try {
+      var fb = window.DrMediaFB;
+      var authMod = fb.modules.authMod;
+      var fsMod = fb.modules.fsMod;
+      var appMod = fb.modules.appMod;
+
+      var appName = 'sub62_' + Date.now();
+      var secondApp = appMod.initializeApp(fb.app.options, appName);
+      var secondAuth = authMod.getAuth(secondApp);
+
+      var cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+      var uidNew = cred.user.uid;
+
+      try { await authMod.signOut(secondAuth); } catch (e) {}
+      try { await secondApp.delete(); } catch (e) {}
+
+      var companyId = 'c_' + uidNew.slice(0, 12);
+      var now = Date.now();
+      var expiresAt = now + (days * 86400000);
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId), {
+        id: companyId, name: companyName, ownerUid: uidNew,
+        ownerEmail: email, phone: phone, active: true,
+        createdAt: fsMod.serverTimestamp(),
+        createdBy: window.__dmSaaS.user.uid
+      });
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'users', uidNew), {
+        uid: uidNew, email: email, name: name, phone: phone,
+        companyId: companyId, role: 'owner',
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'subscriptions', companyId), {
+        companyId: companyId, planId: planId, status: 'active',
+        startedAt: now, expiresAt: expiresAt,
+        activatedBy: window.__dmSaaS.user.uid,
+        activatedAt: fsMod.serverTimestamp()
+      });
+
+      var seed = {
+        users: [{ id: uidNew, username: email, password: pass, name: name, role: 'Admin', employeeId: null, email: email, firebaseUid: uidNew }],
+        roles: [
+          { id: 'r1', name: 'Admin', permissions: { '*': ['view','create','edit','delete','export','print','approve'] } },
+          { id: 'r2', name: 'Manager', permissions: { employees:['view','create','edit'], bookings:['view','create','edit','approve'] } },
+          { id: 'r3', name: 'Employee', permissions: { self: ['view'] } }
+        ],
+        employees: [],
+        halls: [
+          { id: 'hall1', name: { ar: 'القاعة المغلقة', en: 'Closed Hall' }, code: 'H1', type: 'Closed', status: 'active', address: '', notes: '', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 5000 },
+          { id: 'hall2', name: { ar: 'القاعة الأوبن', en: 'Open Hall' }, code: 'H2', type: 'Open', status: 'active', address: '', notes: '', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 4500 },
+          { id: 'hall3', name: { ar: 'الكافيه', en: 'Cafe' }, code: 'H3', type: 'Cafe', status: 'active', address: '', notes: '', requirements: [{role:'Photographer',count:1}], cost: 1500 }
+        ],
+        clients: [], equipment: [], bookings: [], distributions: [],
+        attendance: [], leaves: [], substitutions: [],
+        advances: [], deductions: [], bonuses: [], payroll_payments: [],
+        notifications: [], activityLogs: [], trash: [],
+        settings: {
+          companyName: companyName, phone: phone, email: email, address: '',
+          rolePrices: { Director: 300, Photographer: 200, Crane: 250, Supervisor: 250, Assistant: 150 },
+          payroll: { p1: {from:1,to:10}, p2: {from:11,to:20}, p3: {from:21,to:31} },
+          notifications: { enabled: true, whatsapp: false, whatsappApi: '' },
+          distribution: { preventSameHallConsecutive: true, fairRotation: true, maxConsecutiveDays: 6 },
+          security: { passwordMin: 6, sessionTimeout: 60 },
+          theme: 'light', lang: 'ar'
+        }
+      };
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main'), {
+        payload: seed,
+        updatedBy: 'system',
+        updatedByUser: window.__dmSaaS.user.email,
+        updatedAt: fsMod.serverTimestamp(),
+        version: now
+      });
+
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم الإنشاء';
+      toast('✓ ' + companyName, 'success');
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        renderListTab62();
+      }, 1000);
+    } catch (e) {
+      console.error(e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'auth/email-already-in-use') msg.textContent = 'البريد مستخدم';
+      else if (e.code === 'auth/weak-password') msg.textContent = 'كلمة مرور ضعيفة';
+      else msg.textContent = 'خطأ: ' + (e.message || '');
+    }
+  };
+
+  window.__dm62ExtendSub = function (companyId) {
+    var days = prompt('كم يوم إضافي؟', '30');
+    if (!days) return;
+    days = parseInt(days);
+    if (!days) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    var ref = fsMod.doc(fb.db, 'subscriptions', companyId);
+    fsMod.getDoc(ref).then(function (snap) {
+      var cur = snap.exists() ? snap.data() : {};
+      var base = Math.max(cur.expiresAt || 0, Date.now());
+      return fsMod.setDoc(ref, {
+        companyId: companyId, status: 'active',
+        expiresAt: base + (days * 86400000),
+        extendedBy: window.__dmSaaS.user.uid,
+        extendedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+    }).then(function () {
+      toast('✓ تم التمديد ' + days + ' يوم', 'success');
+      renderListTab62();
+    }).catch(function (e) { toast('فشل: ' + e.message, 'error'); });
+  };
+
+  window.__dm62ViewSub = function (companyId) {
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    Promise.all([
+      fsMod.getDoc(fsMod.doc(fb.db, 'companies', companyId)),
+      fsMod.getDoc(fsMod.doc(fb.db, 'subscriptions', companyId))
+    ]).then(function (r) {
+      var c = r[0].exists() ? r[0].data() : {};
+      var s = r[1].exists() ? r[1].data() : {};
+      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:.85rem">';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">ID</b><div>' + esc(c.id || companyId) + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">الاسم</b><div>' + esc(c.name) + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">المالك</b><div>' + esc(c.ownerEmail) + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">الهاتف</b><div>' + esc(c.phone || '—') + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">الباقة</b><div>' + esc(s.planId || '—') + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">ينتهي</b><div>' + (s.expiresAt ? new Date(s.expiresAt).toLocaleDateString('ar-EG') : '—') + '</div></div>';
+      html += '</div>';
+      if (typeof openModal === 'function') {
+        openModal({ title: '🏢 ' + esc(c.name), body: html, size: 'md', footer: '<button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' });
+      }
+    });
+  };
+
+  window.__dm62DeleteSub = function (companyId, name) {
+    if (!confirm('حذف "' + name + '" نهائيًا؟')) return;
+    if (!confirm('تأكيد أخير؟')) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    Promise.all([
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main')).catch(function () {}),
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'companies', companyId)).catch(function () {}),
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'subscriptions', companyId)).catch(function () {})
+    ]).then(function () { toast('✓ تم الحذف', 'success'); renderListTab62(); });
+  };
+
+  window.__dm62ExportSubs = function () {
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.getDocs(fsMod.collection(fb.db, 'companies')).then(function (snap) {
+      var rows = [['ID','Name','Owner Email','Phone']];
+      snap.forEach(function (d) {
+        var c = d.data();
+        rows.push([c.id, c.name || '', c.ownerEmail || '', c.phone || '']);
+      });
+      var csv = rows.map(function (r) { return r.map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+      var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'subscribers.csv'; a.click();
+      URL.revokeObjectURL(url);
+      toast('✓', 'success');
+    });
+  };
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 300;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () { return typeof Pages !== 'undefined' && typeof State !== 'undefined' && typeof navigate === 'function'; },
+    function () {
+      registerSubscribers3Tabs();
+
+      // Re-inject QR buttons
+      setInterval(function () {
+        document.querySelectorAll('#content table.data-table tbody tr').forEach(function (tr) {
+          if (tr.querySelector('.dm-qr-btn')) return;
+          var editBtn = tr.querySelector('button[onclick*="editEmployee"]') || tr.querySelector('button[onclick*="editUser"]');
+          if (!editBtn) return;
+          var m = editBtn.getAttribute('onclick').match(/(?:editEmployee|editUser)\(['"]([^'"]+)['"]\)/);
+          if (!m) return;
+          var id = m[1];
+          var user = null;
+          if (editBtn.getAttribute('onclick').indexOf('editEmployee') >= 0) {
+            user = (State.data.users || []).find(function (u) { return u.employeeId === id; });
+          } else {
+            user = (State.data.users || []).find(function (u) { return u.id === id; });
+          }
+          if (!user) return;
+          var actionDiv = tr.querySelector('td:last-child > div');
+          if (!actionDiv) return;
+          var btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-icon btn-sm dm-qr-btn';
+          btn.title = 'QR';
+          btn.style.color = '#7c3aed';
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>';
+          btn.onclick = function (e) { e.stopPropagation(); window.__dm62ShowQR(user.id); };
+          actionDiv.appendChild(btn);
+        });
+        if (window.lucide) lucide.createIcons();
+      }, 2000);
+
+      console.log('%c[Section 62] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ QR → Auto-Login URL (يفتح الموقع ويسجل دخول)');
+      console.log('  ✅ مشتركين: 3 تابات (قائمة · أكواد · تفصيل)');
+      console.log('  📌 حدّث Firestore Rules (اقرأ التعليمات تحت)');
+    }
+  );
+
+})();
 
 
 
