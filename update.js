@@ -19957,6 +19957,344 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 57: Calendar Timezone Fix
+   Version: 1.0.0
+   ---------------------------------------------------------
+   Fixes: dates shifted by one day in calendar view
+   Cause: toISOString() converts to UTC
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 57] Calendar Timezone Fix loading…', 'color:#10b981;font-weight:bold');
+
+  /* =========================================================
+     SAFE DATE-TO-ISO (local timezone, no UTC shift)
+     ========================================================= */
+  function localISO(date) {
+    if (!date) return '';
+    var d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return '';
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
+  function todayISO() {
+    return localISO(new Date());
+  }
+
+  /* =========================================================
+     REPLACE CALENDAR PAGE
+     ========================================================= */
+  function fixCalendar() {
+    if (!Pages.calendar) {
+      setTimeout(fixCalendar, 200);
+      return;
+    }
+
+    Pages.calendar = function (el) {
+      var now = new Date();
+      var year = State.filters.calYear !== undefined ? State.filters.calYear : now.getFullYear();
+      var month = State.filters.calMonth !== undefined ? State.filters.calMonth : now.getMonth();
+      State.filters.calYear = year;
+      State.filters.calMonth = month;
+
+      var monthName = new Date(year, month, 1).toLocaleDateString(
+        State.lang === 'ar' ? 'ar-EG' : 'en-GB',
+        { month: 'long', year: 'numeric' }
+      );
+
+      var dayNames = State.lang === 'ar'
+        ? ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت']
+        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      // Build calendar cells — using LOCAL time, not UTC
+      var firstDay = new Date(year, month, 1);
+      var startOffset = firstDay.getDay();
+      var daysInMonth = new Date(year, month + 1, 0).getDate();
+      var prevMonthDays = new Date(year, month, 0).getDate();
+
+      var cells = [];
+      // Previous month days
+      for (var i = startOffset - 1; i >= 0; i--) {
+        cells.push({
+          day: prevMonthDays - i,
+          muted: true,
+          date: new Date(year, month - 1, prevMonthDays - i)
+        });
+      }
+      // Current month days
+      for (var j = 1; j <= daysInMonth; j++) {
+        cells.push({
+          day: j,
+          muted: false,
+          date: new Date(year, month, j)
+        });
+      }
+      // Next month days
+      while (cells.length % 7 !== 0 || cells.length < 35) {
+        var last = cells[cells.length - 1];
+        var nd = new Date(last.date);
+        nd.setDate(nd.getDate() + 1);
+        cells.push({ day: nd.getDate(), muted: true, date: nd });
+        if (cells.length >= 42) break;
+      }
+
+      var todayStr = todayISO();
+
+      // Build HTML
+      var html = '<div class="card">';
+
+      // Header
+      html += '<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">';
+      html += '<button class="btn btn-ghost btn-icon" onclick="calPrev()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' + (State.lang === 'ar' ? '<polyline points="9 18 15 12 9 6"/>' : '<polyline points="15 18 9 12 15 6"/>') + '</svg></button>';
+      html += '<h3 style="margin:0;font-size:1.05rem;font-weight:700;flex:1;text-align:center;min-width:150px">' + monthName + '</h3>';
+      html += '<button class="btn btn-ghost btn-icon" onclick="calNext()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' + (State.lang === 'ar' ? '<polyline points="15 18 9 12 15 6"/>' : '<polyline points="9 18 15 12 9 6"/>') + '</svg></button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="calToday()">' + (State.lang === 'ar' ? 'اليوم' : 'Today') + '</button>';
+      html += '</div>';
+
+      // Day names
+      html += '<div class="cal-head">';
+      dayNames.forEach(function (d) {
+        html += '<div>' + d + '</div>';
+      });
+      html += '</div>';
+
+      // Grid
+      html += '<div class="cal-grid">';
+      cells.forEach(function (c) {
+        var iso = localISO(c.date); // ← LOCAL ISO — no shift
+        var dayBookings = (State.data.bookings || []).filter(function (b) {
+          return b.date === iso && b.status !== 'cancelled';
+        });
+        var isToday = iso === todayStr;
+
+        html += '<div class="cal-day ' + (c.muted ? 'empty' : '') + ' ' + (isToday ? 'today' : '') + '"';
+        if (!c.muted) {
+          html += ' onclick="selectCalDay(\'' + iso + '\')"';
+        }
+        html += '>';
+
+        html += '<div class="num">' + c.day + '</div>';
+
+        if (dayBookings.length) {
+          html += '<span class="ev-count">' + dayBookings.length + '</span>';
+          html += '<div class="events">';
+          dayBookings.slice(0, 4).forEach(function () {
+            html += '<div class="ev-dot"></div>';
+          });
+          html += '</div>';
+        }
+
+        html += '</div>';
+      });
+      html += '</div>';
+
+      // Footer stats
+      var monthPrefix = year + '-' + String(month + 1).padStart(2, '0');
+      var monthBookings = (State.data.bookings || []).filter(function (b) {
+        return b.date && b.date.indexOf(monthPrefix) === 0 && b.status !== 'cancelled';
+      });
+      html += '<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;gap:1rem;flex-wrap:wrap;font-size:.82rem;color:var(--text-muted);justify-content:center">';
+      html += '<span>📋 <b style="color:var(--text)">' + monthBookings.length + '</b> حجز هذا الشهر</span>';
+      var revenue = monthBookings.reduce(function (s, b) { return s + (b.cost || 0); }, 0);
+      if (revenue) {
+        html += '<span>💰 <b style="color:var(--text)">' + revenue.toLocaleString() + ' EGP</b></span>';
+      }
+      html += '</div>';
+
+      html += '</div>';
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    };
+
+    console.log('%c[Section 57] ✓ Calendar fixed (local timezone)', 'color:#10b981;font-weight:bold');
+  }
+
+  /* =========================================================
+     FIX selectCalDay (used by calendar cell click)
+     ========================================================= */
+  function fixSelectCalDay() {
+    window.selectCalDay = function (iso) {
+      var bookings = (State.data.bookings || []).filter(function (b) {
+        return b.date === iso && b.status !== 'cancelled';
+      });
+      var dists = (State.data.distributions || []).filter(function (x) { return x.date === iso; });
+
+      var L = I18N[State.lang] || I18N.ar;
+      var dateObj = new Date(iso + 'T12:00:00');
+      var formatted = dateObj.toLocaleDateString(
+        State.lang === 'ar' ? 'ar-EG' : 'en-GB',
+        { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }
+      );
+
+      var html = '';
+
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">';
+      html += '<h4 style="margin:0;font-size:.9rem">📋 الحجوزات (' + bookings.length + ')</h4>';
+      html += '<button class="btn btn-primary btn-sm" onclick="closeModal(); navigate(\'distribution\'); State.filters.distDate=\'' + iso + '\';">';
+      html += '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> ';
+      html += 'توزيع الموظفين</button>';
+      html += '</div>';
+
+      if (!bookings.length) {
+        html += '<div class="empty-state" style="padding:2rem 1rem">';
+        html += '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="opacity:.4;margin-bottom:.5rem"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="m9 16 2 2 4-4"/></svg>';
+        html += '<p>لا توجد حجوزات في هذا اليوم</p>';
+        html += '</div>';
+      } else {
+        bookings.forEach(function (b) {
+          var hall = (State.data.halls || []).find(function (h) { return h.id === b.hallId; });
+          var hallName = hall ? (hall.name[State.lang] || hall.name.ar) : '-';
+          var statusColor = { confirmed: 'green', pending: 'yellow', completed: 'blue', cancelled: 'red' }[b.status] || 'gray';
+
+          html += '<div style="padding:.7rem;border:1px solid var(--border);border-radius:10px;margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">';
+          html += '<div style="flex:1;min-width:0">';
+          html += '<div style="font-weight:600;font-size:.88rem">' + esc(hallName) + ' — ' + esc(b.clientName || '-') + '</div>';
+          html += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.15rem">';
+          html += (b.startTime || '') + (b.endTime ? ' - ' + b.endTime : '');
+          if (b.eventType) html += ' · ' + esc(b.eventType);
+          if (b.guestsCount) html += ' · 👥 ' + b.guestsCount;
+          html += '</div>';
+          html += '</div>';
+          html += '<div style="display:flex;gap:.35rem;align-items:center">';
+          html += '<span class="badge-pill badge-' + statusColor + '">' + (I18N[State.lang][b.status] || b.status) + '</span>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="closeModal();editBooking(\'' + b.id + '\')" title="تعديل"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>';
+          html += '</div>';
+          html += '</div>';
+        });
+      }
+
+      if (dists.length) {
+        html += '<h4 style="margin:1rem 0 .5rem;font-size:.9rem">👥 التوزيعات (' + dists.length + ')</h4>';
+        var grouped = {};
+        dists.forEach(function (d) {
+          var hall = (State.data.halls || []).find(function (h) { return h.id === d.hallId; });
+          var hName = hall ? (hall.name[State.lang] || hall.name.ar) : '-';
+          grouped[hName] = grouped[hName] || [];
+          var emp = (State.data.employees || []).find(function (e) { return e.id === d.employeeId; });
+          grouped[hName].push({ name: emp ? emp.name : (d.manualName || '-'), role: d.role });
+        });
+        Object.keys(grouped).forEach(function (hName) {
+          html += '<div style="padding:.5rem;background:var(--surface-2);border-radius:8px;margin-bottom:.35rem;font-size:.82rem">';
+          html += '<b>' + esc(hName) + ':</b> ';
+          html += grouped[hName].map(function (x) {
+            return '<span style="display:inline-block;padding:.15rem .45rem;background:var(--surface);border-radius:6px;margin:.15rem;font-size:.72rem">' + esc(x.name) + ' (' + esc(x.role) + ')</span>';
+          }).join('');
+          html += '</div>';
+        });
+      }
+
+      if (typeof openModal === 'function') {
+        openModal({
+          title: formatted,
+          size: 'lg',
+          body: html
+        });
+      }
+    };
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* =========================================================
+     FIX NAVIGATION (prev/next month)
+     ========================================================= */
+  function fixCalNav() {
+    window.calPrev = function () {
+      var m = State.filters.calMonth - 1;
+      var y = State.filters.calYear;
+      if (m < 0) { m = 11; y--; }
+      State.filters.calMonth = m;
+      State.filters.calYear = y;
+      navigate('calendar');
+    };
+    window.calNext = function () {
+      var m = State.filters.calMonth + 1;
+      var y = State.filters.calYear;
+      if (m > 11) { m = 0; y++; }
+      State.filters.calMonth = m;
+      State.filters.calYear = y;
+      navigate('calendar');
+    };
+    window.calToday = function () {
+      var n = new Date();
+      State.filters.calMonth = n.getMonth();
+      State.filters.calYear = n.getFullYear();
+      navigate('calendar');
+    };
+  }
+
+  /* =========================================================
+     FIX ANY OTHER toISOString BUGS in the system
+     ========================================================= */
+  function patchToISOString() {
+    // Override native toISOString in our codebase (risky but works)
+    // Better: just fix the functions that call it
+
+    // Common utility from index.html
+    if (window.todayISO && typeof window.todayISO === 'function') {
+      var origToday = window.todayISO;
+      window.todayISO = function () {
+        var d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      };
+    }
+
+    // addDaysISO helper
+    if (window.addDaysISO && typeof window.addDaysISO === 'function') {
+      window.addDaysISO = function (d, n) {
+        var dt = d instanceof Date ? new Date(d) : new Date(d + 'T12:00:00');
+        dt.setDate(dt.getDate() + n);
+        return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      };
+    }
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined'
+        && typeof State !== 'undefined'
+        && typeof navigate === 'function';
+    },
+    function () {
+      fixCalendar();
+      fixSelectCalDay();
+      fixCalNav();
+      patchToISOString();
+
+      // Re-render if on calendar
+      if (State.page === 'calendar') {
+        setTimeout(function () { navigate('calendar'); }, 200);
+      }
+
+      console.log('%c[Section 57] ═══ Calendar Timezone Fix READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  🗓️  الآن الحجوزات تظهر في اليوم الصحيح');
+      console.log('  📅 1-10 → يظهر في اليوم 1 (وليس 2)');
+    }
+  );
+
+})();
 
 
 
