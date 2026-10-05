@@ -22235,6 +22235,1445 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 60: Master Fixes (Comprehensive)
+   Version: 3.0.0
+   ---------------------------------------------------------
+   Fixes everything:
+   - Attendance Log (nav + full page)
+   - QR Codes (visible buttons)
+   - Firebase Counters (charts + quota)
+   - Substitutions (add/edit/delete + working page)
+   - Login: remove register, keep clean login
+   - Refresh: stay on same page
+   - Subscribers: add subscriber + code generation
+   - Activation codes (replace trial)
+   - Hall price → apply to all bookings
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 60] ═══ Master Fixes loading…', 'color:#8b5cf6;font-weight:bold;font-size:15px');
+
+  /* =========================================================
+     SAFE HELPERS
+     ========================================================= */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function isSA() { return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin); }
+  function uid(p) { return (p||'x') + '_' + Math.random().toString(36).slice(2, 10); }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function addDaysISO(d, n) {
+    var x = new Date(d + 'T12:00:00');
+    x.setDate(x.getDate() + n);
+    return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  }
+  function initials(name) {
+    return (name || '?').trim().split(/\s+/).map(function (s) { return s[0]; }).slice(0, 2).join('').toUpperCase();
+  }
+  function empName(id) {
+    var e = (State.data.employees || []).find(function (x) { return x.id === id; });
+    return e ? e.name : '-';
+  }
+  function hallName(id) {
+    var h = (State.data.halls || []).find(function (x) { return x.id === id; });
+    return h ? (h.name[State.lang] || h.name.ar) : '-';
+  }
+  function getDayName(d) {
+    if (!d) return '';
+    var days = State.lang === 'ar'
+      ? ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    try { return days[new Date(d + 'T12:00:00').getDay()]; } catch (e) { return ''; }
+  }
+  function fmtDateShort(d) {
+    if (!d) return '-';
+    try {
+      return new Date(d + 'T12:00:00').toLocaleDateString(State.lang === 'ar' ? 'ar-EG' : 'en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (e) { return d; }
+  }
+  function fmtMoney(n) { return (n || 0).toLocaleString() + ' EGP'; }
+
+  /* =========================================================
+     1) NAV FIX — Force-add all missing items
+     ========================================================= */
+  function fixNavItems() {
+    var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+    if (ops) {
+      // Attendance Log
+      if (!ops.items.find(function (i) { return i.id === 'attlog'; })) {
+        ops.items.push({ id: 'attlog', icon: 'history', label: 'سجل الحضور' });
+      }
+      // AI Import
+      if (!ops.items.find(function (i) { return i.id === 'aiimport'; })) {
+        var bki = ops.items.findIndex(function (i) { return i.id === 'bookings'; });
+        ops.items.splice(bki >= 0 ? bki + 1 : ops.items.length, 0, { id: 'aiimport', icon: 'sparkles', label: 'ai_import' });
+      }
+    }
+    try { renderSidebar(); } catch (e) {}
+  }
+
+  function ensureSuperAdminNav() {
+    if (!isSA()) return;
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+    var superSec = document.getElementById('dm-super-nav');
+    if (!superSec) {
+      superSec = document.createElement('div');
+      superSec.id = 'dm-super-nav';
+      superSec.innerHTML = '<div class="nav-section" style="color:#f59e0b;opacity:1;letter-spacing:.1em">⚡ SUPER ADMIN</div>';
+      nav.appendChild(superSec);
+    }
+
+    // Main panel link
+    if (!superSec.querySelector('[data-page="superadmin"]')) {
+      var m = document.createElement('a');
+      m.className = 'nav-item';
+      m.setAttribute('data-page', 'superadmin');
+      m.style.cssText = 'cursor:pointer;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35)';
+      m.innerHTML = '<i data-lucide="crown" style="color:#f59e0b"></i><span style="color:#f59e0b;font-weight:700">لوحة المدير العام</span>';
+      m.onclick = function (e) { e.preventDefault(); if (typeof window.__dmSuperAdmin === 'function') window.__dmSuperAdmin(); else navigate('superadmin'); };
+      superSec.appendChild(m);
+    }
+    if (!superSec.querySelector('[data-page="subscribers"]')) {
+      var s = document.createElement('a');
+      s.className = 'nav-item';
+      s.setAttribute('data-page', 'subscribers');
+      s.style.cssText = 'cursor:pointer;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.35)';
+      s.innerHTML = '<i data-lucide="users" style="color:#7c3aed"></i><span style="color:#7c3aed;font-weight:700">المشتركين</span>';
+      s.onclick = function (e) { e.preventDefault(); navigate('subscribers'); };
+      superSec.appendChild(s);
+    }
+    if (!superSec.querySelector('[data-page="counters"]')) {
+      var c = document.createElement('a');
+      c.className = 'nav-item';
+      c.setAttribute('data-page', 'counters');
+      c.style.cssText = 'cursor:pointer;background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.35)';
+      c.innerHTML = '<i data-lucide="gauge" style="color:#06b6d4"></i><span style="color:#06b6d4;font-weight:700">عدادات Firebase</span>';
+      c.onclick = function (e) { e.preventDefault(); navigate('counters'); };
+      superSec.appendChild(c);
+    }
+    if (!superSec.querySelector('[data-page="codes"]')) {
+      var cd = document.createElement('a');
+      cd.className = 'nav-item';
+      cd.setAttribute('data-page', 'codes');
+      cd.style.cssText = 'cursor:pointer;background:rgba(236,72,153,.12);border:1px solid rgba(236,72,153,.35)';
+      cd.innerHTML = '<i data-lucide="key-round" style="color:#ec4899"></i><span style="color:#ec4899;font-weight:700">أكواد التفعيل</span>';
+      cd.onclick = function (e) { e.preventDefault(); navigate('codes'); };
+      superSec.appendChild(cd);
+    }
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  /* =========================================================
+     2) FIREBASE COUNTERS — full featured with charts
+     ========================================================= */
+  function registerCounters() {
+    Pages.counters = function (el) {
+      if (!isSA()) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="lock"></i><p>للمدير العام فقط</p></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      var C = (window.DrMediaCounters && window.DrMediaCounters.get) ? window.DrMediaCounters.get() : null;
+      if (!C) C = { today: {date: todayISO(), reads:0, writes:0, deletes:0}, total: {reads:0,writes:0,deletes:0}, byCollection: {}, history: [] };
+
+      var today = C.today || { reads: 0, writes: 0, deletes: 0 };
+      var total = C.total || { reads: 0, writes: 0, deletes: 0 };
+      var byCol = C.byCollection || {};
+      var history = C.history || [];
+
+      var QUOTAS = { reads: 50000, writes: 20000, deletes: 20000 };
+      var pct = function (u, t) { return Math.min(100, Math.round((u / t) * 100)); };
+      var clr = function (p) { return p < 50 ? '#10b981' : p < 80 ? '#f59e0b' : '#ef4444'; };
+
+      var html = '';
+      html += '<div class="card" style="margin-bottom:1.25rem;padding:1rem">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">';
+      html += '<div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#06b6d4,#0891b2);display:flex;align-items:center;justify-content:center"><i data-lucide="gauge" style="color:#fff;width:20px;height:20px"></i></div>';
+      html += '<div><div style="font-weight:800;font-size:1.05rem">عدادات Firebase</div><div style="font-size:.72rem;color:var(--text-muted)">استهلاك الخطة المجانية (Spark)</div></div>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem">';
+      html += '<button class="btn btn-ghost btn-sm" onclick="navigate(\'counters\')"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> تحديث</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'تصفير كل العدادات؟\')){window.DrMediaCounters.reset();navigate(\'counters\')}" style="color:#ef4444"><i data-lucide="rotate-ccw" style="width:12px;height:12px"></i> تصفير</button>';
+      html += '</div></div></div>';
+
+      // Quota cards
+      html += '<div class="grid-3" style="margin-bottom:1.25rem">';
+      html += quotaCard('قراءات اليوم', today.reads, QUOTAS.reads, '#7c3aed');
+      html += quotaCard('كتابات اليوم', today.writes, QUOTAS.writes, '#10b981');
+      html += quotaCard('حذف اليوم', today.deletes, QUOTAS.deletes, '#ef4444');
+      html += '</div>';
+
+      // Totals
+      html += '<div class="grid-3" style="margin-bottom:1.25rem">';
+      html += totalCard('إجمالي القراءات', total.reads, 'book-open', '#7c3aed');
+      html += totalCard('إجمالي الكتابات', total.writes, 'pencil', '#10b981');
+      html += totalCard('إجمالي الحذف', total.deletes, 'trash-2', '#ef4444');
+      html += '</div>';
+
+      // Charts
+      html += '<div class="grid-2" style="margin-bottom:1.25rem">';
+      html += '<div class="chart-box"><h4><i data-lucide="bar-chart-3"></i> آخر 7 أيام</h4><div class="chart-canvas-wrap"><canvas id="dm-ctr-chart"></canvas></div></div>';
+      html += '<div class="chart-box"><h4><i data-lucide="pie-chart"></i> توزيع العمليات</h4><div class="chart-canvas-wrap"><canvas id="dm-ctr-pie"></canvas></div></div>';
+      html += '</div>';
+
+      // By collection
+      if (Object.keys(byCol).length) {
+        html += '<div class="card"><h4 style="margin:0 0 .75rem;font-size:.9rem">حسب المجموعة</h4>';
+        html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>المجموعة</th><th>قراءات</th><th>كتابات</th><th>حذف</th></tr></thead><tbody>';
+        Object.keys(byCol).sort(function (a, b) { return (byCol[b].reads + byCol[b].writes) - (byCol[a].reads + byCol[a].writes); }).forEach(function (k) {
+          var v = byCol[k];
+          html += '<tr><td><b>' + esc(k) + '</b></td><td>' + (v.reads || 0).toLocaleString() + '</td><td>' + (v.writes || 0).toLocaleString() + '</td><td>' + (v.deletes || 0).toLocaleString() + '</td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+      }
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      // Render charts
+      setTimeout(function () {
+        if (!window.Chart) return;
+
+        var last7 = [];
+        for (var i = 6; i >= 0; i--) {
+          var d = addDaysISO(todayISO(), -i);
+          var h = history.find(function (x) { return x.date === d; }) || { date: d, reads: 0, writes: 0, deletes: 0 };
+          last7.push(h);
+        }
+        last7.push(today); // include today
+
+        var chartEl = document.getElementById('dm-ctr-chart');
+        if (chartEl) {
+          if (window.__dm60ctrChart) try { window.__dm60ctrChart.destroy(); } catch (e) {}
+          window.__dm60ctrChart = new Chart(chartEl, {
+            type: 'line',
+            data: {
+              labels: last7.map(function (x) { return x.date.slice(5); }),
+              datasets: [
+                { label: 'قراءات', data: last7.map(function (x) { return x.reads; }), borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,.1)', fill: true, tension: .4, borderWidth: 2 },
+                { label: 'كتابات', data: last7.map(function (x) { return x.writes; }), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.1)', fill: true, tension: .4, borderWidth: 2 }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } }
+          });
+        }
+
+        var pieEl = document.getElementById('dm-ctr-pie');
+        if (pieEl) {
+          if (window.__dm60ctrPie) try { window.__dm60ctrPie.destroy(); } catch (e) {}
+          window.__dm60ctrPie = new Chart(pieEl, {
+            type: 'doughnut',
+            data: {
+              labels: ['قراءات', 'كتابات', 'حذف'],
+              datasets: [{ data: [total.reads || 0, total.writes || 0, total.deletes || 0], backgroundColor: ['#7c3aed', '#10b981', '#ef4444'], borderWidth: 0 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+          });
+        }
+      }, 150);
+
+      function quotaCard(label, used, total, color) {
+        var p = pct(used, total);
+        return '<div class="stat-card" style="flex-direction:column;align-items:stretch;padding:1rem">' +
+          '<div style="font-size:.72rem;color:var(--text-muted)">' + esc(label) + '</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:' + color + ';margin:.35rem 0">' + used.toLocaleString() + '</div>' +
+          '<div style="height:8px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:.35rem">' +
+            '<div style="height:100%;width:' + p + '%;background:' + clr(p) + ';transition:width .4s"></div>' +
+          '</div>' +
+          '<div style="font-size:.65rem;color:var(--text-muted);margin-top:.35rem">' + p + '% من ' + total.toLocaleString() + '</div>' +
+        '</div>';
+      }
+      function totalCard(label, value, icon, color) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div>' +
+          '<div class="stat-body"><div class="label">' + esc(label) + '</div><div class="value">' + value.toLocaleString() + '</div></div></div>';
+      }
+    };
+  }
+
+  /* =========================================================
+     3) SUBSTITUTIONS — full page with add/edit/delete
+     ========================================================= */
+  function registerSubstitutions() {
+    if (!State.data.substitutions) State.data.substitutions = [];
+
+    Pages.substitutions = function (el) {
+      var f = State.filters.subFilters || { search: '', from: '', to: '', employee: 'all' };
+      State.filters.subFilters = f;
+
+      var list = (State.data.substitutions || []).slice();
+
+      var filtered = list.filter(function (s) {
+        if (f.search) {
+          var q = f.search.toLowerCase();
+          var hay = (empName(s.originalEmployeeId) + ' ' + empName(s.replacementEmployeeId) + ' ' + (s.reason || '')).toLowerCase();
+          if (hay.indexOf(q) < 0) return false;
+        }
+        if (f.from && s.date < f.from) return false;
+        if (f.to && s.date > f.to) return false;
+        if (f.employee !== 'all' && s.originalEmployeeId !== f.employee && s.replacementEmployeeId !== f.employee) return false;
+        return true;
+      });
+
+      filtered.sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+
+      var html = '';
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.85rem">';
+      html += '<div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center"><i data-lucide="repeat" style="color:#fff;width:20px;height:20px"></i></div>';
+      html += '<div><div style="font-weight:800;font-size:1.05rem">سجل الاستبدالات</div><div style="font-size:.72rem;color:var(--text-muted)">' + filtered.length + ' استبدال</div></div>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem">';
+      html += '<button class="btn btn-ghost btn-sm" onclick="__dm60SubExport()"><i data-lucide="download" style="width:12px;height:12px"></i> تصدير</button>';
+      html += '<button class="btn btn-primary btn-sm" onclick="__dm60SubAdd()"><i data-lucide="plus" style="width:12px;height:12px"></i> استبدال جديد</button>';
+      html += '</div></div>';
+
+      // Filters
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem">';
+      html += '<input type="text" id="sub-search" placeholder="بحث..." value="' + esc(f.search) + '" style="flex:1;min-width:180px;padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem;outline:none">';
+      html += '<input type="date" id="sub-from" value="' + esc(f.from) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<input type="date" id="sub-to" value="' + esc(f.to) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<select id="sub-emp" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<option value="all">كل الموظفين</option>';
+      (State.data.employees || []).forEach(function (e) {
+        html += '<option value="' + e.id + '"' + (f.employee === e.id ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+      });
+      html += '</select>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="State.filters.subFilters={search:\'\',from:\'\',to:\'\',employee:\'all\'};navigate(\'substitutions\')" style="color:#ef4444">مسح</button>';
+      html += '</div></div>';
+
+      // Table
+      if (!filtered.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="inbox"></i><p>لا يوجد استبدالات</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+        html += '<th>التاريخ</th><th>القاعة</th><th>الدور</th><th>الأصلي</th><th>البديل</th><th>السبب</th><th>معتمد</th><th style="width:100px">إجراءات</th>';
+        html += '</tr></thead><tbody>';
+
+        filtered.forEach(function (s) {
+          html += '<tr>';
+          html += '<td style="font-weight:600;font-size:.82rem">' + esc(fmtDateShort(s.date)) + '<div style="font-size:.68rem;color:var(--text-muted)">' + esc(getDayName(s.date)) + '</div></td>';
+          html += '<td style="font-size:.82rem">' + esc(hallName(s.hallId)) + '</td>';
+          html += '<td><span class="badge-pill badge-purple" style="font-size:.68rem">' + esc(s.role || '-') + '</span></td>';
+          html += '<td><div style="display:flex;align-items:center;gap:.4rem"><div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.65rem">' + esc(initials(empName(s.originalEmployeeId))) + '</div><span style="font-size:.82rem">' + esc(empName(s.originalEmployeeId)) + '</span></div></td>';
+          html += '<td><div style="display:flex;align-items:center;gap:.4rem"><div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.65rem">' + esc(initials(empName(s.replacementEmployeeId))) + '</div><span style="font-size:.82rem">' + esc(empName(s.replacementEmployeeId)) + '</span></div></td>';
+          html += '<td style="font-size:.78rem;color:var(--text-muted)">' + esc(s.reason || '-') + '</td>';
+          html += '<td style="font-size:.72rem;color:var(--text-muted)">' + esc(s.approvedBy || '-') + '</td>';
+          html += '<td><div style="display:flex;gap:.2rem">';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm60SubEdit(\'' + s.id + '\')" style="color:#7c3aed"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>';
+          html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm60SubDelete(\'' + s.id + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+          html += '</div></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      }
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      setTimeout(function () {
+        var se = document.getElementById('sub-search');
+        if (se) { var t; se.oninput = function (ev) { clearTimeout(t); t = setTimeout(function () { f.search = ev.target.value; navigate('substitutions'); }, 300); }; }
+        ['sub-from', 'sub-to', 'sub-emp'].forEach(function (id) {
+          var elm = document.getElementById(id);
+          if (!elm) return;
+          elm.onchange = function () {
+            if (id === 'sub-from') f.from = elm.value;
+            else if (id === 'sub-to') f.to = elm.value;
+            else f.employee = elm.value;
+            navigate('substitutions');
+          };
+        });
+      }, 100);
+    };
+  }
+
+  window.__dm60SubAdd = function () { showSubForm(null); };
+  window.__dm60SubEdit = function (id) { showSubForm(id); };
+
+  function showSubForm(editId) {
+    var s = editId ? (State.data.substitutions || []).find(function (x) { return x.id === editId; }) : null;
+    var emps = State.data.employees || [];
+    var halls = State.data.halls || [];
+
+    var html = '';
+    html += '<div class="form-row">';
+    html += '<div class="field"><label>التاريخ *</label><input type="date" id="sf-date" value="' + esc(s ? s.date : todayISO()) + '"></div>';
+    html += '<div class="field"><label>القاعة</label><select id="sf-hall">';
+    halls.forEach(function (h) { html += '<option value="' + h.id + '"' + (s && s.hallId === h.id ? ' selected' : '') + '>' + esc(h.name[State.lang] || h.name.ar) + '</option>'; });
+    html += '</select></div>';
+    html += '<div class="field"><label>الدور</label><select id="sf-role">';
+    ['Director','Photographer','Crane','Supervisor','Assistant'].forEach(function (r) {
+      html += '<option value="' + r + '"' + (s && s.role === r ? ' selected' : '') + '>' + r + '</option>';
+    });
+    html += '</select></div>';
+    html += '</div>';
+    html += '<div class="form-row" style="margin-top:.75rem">';
+    html += '<div class="field"><label>الموظف الأصلي *</label><select id="sf-orig">';
+    emps.forEach(function (e) { html += '<option value="' + e.id + '"' + (s && s.originalEmployeeId === e.id ? ' selected' : '') + '>' + esc(e.name) + ' — ' + esc(e.role) + '</option>'; });
+    html += '</select></div>';
+    html += '<div class="field"><label>البديل *</label><select id="sf-rep">';
+    emps.forEach(function (e) { html += '<option value="' + e.id + '"' + (s && s.replacementEmployeeId === e.id ? ' selected' : '') + '>' + esc(e.name) + ' — ' + esc(e.role) + '</option>'; });
+    html += '</select></div>';
+    html += '</div>';
+    html += '<div class="field" style="margin-top:.75rem"><label>السبب</label><textarea id="sf-reason" rows="2">' + esc(s ? s.reason : '') + '</textarea></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: s ? '✏️ تعديل استبدال' : '➕ استبدال جديد',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm60SubSave(\'' + (editId || '') + '\')">حفظ</button>'
+      });
+    }
+  }
+
+  window.__dm60SubSave = function (editId) {
+    var date = document.getElementById('sf-date').value;
+    var hallId = document.getElementById('sf-hall').value;
+    var role = document.getElementById('sf-role').value;
+    var orig = document.getElementById('sf-orig').value;
+    var rep = document.getElementById('sf-rep').value;
+    var reason = document.getElementById('sf-reason').value;
+
+    if (!date) { toast('التاريخ مطلوب', 'error'); return; }
+    if (orig === rep) { toast('لا يمكن استبدال الموظف بنفسه', 'error'); return; }
+
+    if (editId) {
+      var idx = State.data.substitutions.findIndex(function (x) { return x.id === editId; });
+      if (idx >= 0) {
+        State.data.substitutions[idx] = Object.assign({}, State.data.substitutions[idx], {
+          date: date, hallId: hallId, role: role,
+          originalEmployeeId: orig, replacementEmployeeId: rep,
+          reason: reason, updatedAt: new Date().toISOString()
+        });
+      }
+    } else {
+      State.data.substitutions.push({
+        id: uid('sub'),
+        date: date, hallId: hallId, role: role,
+        originalEmployeeId: orig, replacementEmployeeId: rep,
+        reason: reason,
+        approvedBy: (State.user && State.user.name) || 'system',
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    if (typeof closeModal === 'function') closeModal();
+    toast('✓ تم الحفظ', 'success');
+    setTimeout(function () { navigate('substitutions'); }, 300);
+  };
+
+  window.__dm60SubDelete = function (id) {
+    if (!confirm('حذف هذا الاستبدال؟')) return;
+    State.data.substitutions = (State.data.substitutions || []).filter(function (s) { return s.id !== id; });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم الحذف', 'success');
+    setTimeout(function () { navigate('substitutions'); }, 300);
+  };
+
+  window.__dm60SubExport = function () {
+    var list = State.data.substitutions || [];
+    var csv = [['Date', 'Hall', 'Role', 'Original', 'Replacement', 'Reason', 'ApprovedBy']];
+    list.forEach(function (s) {
+      csv.push([s.date, hallName(s.hallId), s.role, empName(s.originalEmployeeId), empName(s.replacementEmployeeId), s.reason || '', s.approvedBy || '']);
+    });
+    var text = csv.map(function (r) { return r.map(function (x) { return '"' + String(x || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'substitutions.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('✓ تم التصدير', 'success');
+  };
+
+  /* =========================================================
+     4) ATTENDANCE LOG — full page
+     ========================================================= */
+  function registerAttendanceLog() {
+    Pages.attlog = function (el) {
+      var att = State.data.attendance || [];
+      var f = State.filters.attFilters || { search: '', from: '', to: '', status: 'all', employee: 'all' };
+      State.filters.attFilters = f;
+
+      var filtered = att.filter(function (a) {
+        if (f.from && a.date < f.from) return false;
+        if (f.to && a.date > f.to) return false;
+        if (f.status !== 'all' && a.status !== f.status) return false;
+        if (f.employee !== 'all' && a.employeeId !== f.employee) return false;
+        if (f.search && empName(a.employeeId).toLowerCase().indexOf(f.search.toLowerCase()) < 0) return false;
+        return true;
+      }).sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+
+      var today = todayISO();
+      var tCount = att.filter(function (a) { return a.date === today; }).length;
+      var tPresent = att.filter(function (a) { return a.date === today && a.status === 'present'; }).length;
+      var tLate = att.filter(function (a) { return a.date === today && a.status === 'late'; }).length;
+      var tAbsent = att.filter(function (a) { return a.date === today && a.status === 'absent'; }).length;
+
+      var html = '';
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.85rem">';
+      html += '<div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center"><i data-lucide="clock" style="color:#fff;width:20px;height:20px"></i></div>';
+      html += '<div><div style="font-weight:800;font-size:1.05rem">سجل الحضور والانصراف</div><div style="font-size:.72rem;color:var(--text-muted)">' + filtered.length + ' سجل</div></div>';
+      html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem">';
+      html += '<button class="btn btn-ghost btn-sm" onclick="__dm60AttExport()"><i data-lucide="download" style="width:12px;height:12px"></i> تصدير</button>';
+      html += '<button class="btn btn-primary btn-sm" onclick="navigate(\'attendance\')"><i data-lucide="check-square" style="width:12px;height:12px"></i> تسجيل حضور</button>';
+      html += '</div></div>';
+
+      html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem">';
+      html += '<input type="text" id="att-search" placeholder="بحث بالاسم..." value="' + esc(f.search) + '" style="flex:1;min-width:180px;padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem;outline:none">';
+      html += '<input type="date" id="att-from" value="' + esc(f.from) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<input type="date" id="att-to" value="' + esc(f.to) + '" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<select id="att-status" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<option value="all">كل الحالات</option>';
+      ['present','late','absent','leave'].forEach(function (s) {
+        html += '<option value="' + s + '"' + (f.status === s ? ' selected' : '') + '>' + ({present:'حاضر',late:'متأخر',absent:'غائب',leave:'إجازة'}[s]) + '</option>';
+      });
+      html += '</select>';
+      html += '<select id="att-emp" style="padding:.5rem .75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.82rem">';
+      html += '<option value="all">كل الموظفين</option>';
+      (State.data.employees || []).forEach(function (e) {
+        html += '<option value="' + e.id + '"' + (f.employee === e.id ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+      });
+      html += '</select>';
+      html += '</div></div>';
+
+      // Today stats
+      html += '<div class="grid-stats" style="margin-bottom:1rem">';
+      html += statCard('إجمالي اليوم', tCount, 'list', '#7c3aed');
+      html += statCard('حاضر', tPresent, 'check-circle', '#10b981');
+      html += statCard('متأخر', tLate, 'clock', '#f59e0b');
+      html += statCard('غائب', tAbsent, 'x-circle', '#ef4444');
+      html += '</div>';
+
+      if (!filtered.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="inbox"></i><p>لا يوجد سجلات</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+        html += '<th>التاريخ</th><th>اليوم</th><th>الموظف</th><th>حضور</th><th>انصراف</th><th>ساعات</th><th>الحالة</th><th style="width:80px"></th>';
+        html += '</tr></thead><tbody>';
+
+        filtered.forEach(function (a) {
+          var hrs = '';
+          if (a.checkIn && a.checkOut) {
+            var ci = a.checkIn.split(':'), co = a.checkOut.split(':');
+            var diff = ((+co[0] * 60 + +co[1]) - (+ci[0] * 60 + +ci[1])) / 60;
+            if (diff > 0) hrs = diff.toFixed(1) + 'س';
+          }
+          html += '<tr>';
+          html += '<td style="font-weight:600;font-size:.82rem">' + esc(fmtDateShort(a.date)) + '</td>';
+          html += '<td style="font-size:.78rem;color:var(--text-muted)">' + esc(getDayName(a.date)) + '</td>';
+          html += '<td><div style="display:flex;align-items:center;gap:.5rem"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.68rem">' + esc(initials(empName(a.employeeId))) + '</div><b style="font-size:.82rem">' + esc(empName(a.employeeId)) + '</b></div></td>';
+          html += '<td style="font-size:.82rem"><b>' + esc(a.checkIn || '-') + '</b></td>';
+          html += '<td style="font-size:.82rem">' + esc(a.checkOut || '-') + '</td>';
+          html += '<td style="font-size:.82rem">' + (hrs || '-') + '</td>';
+          html += '<td><span class="badge-pill badge-' + ({present:'green',late:'yellow',absent:'red',leave:'purple'}[a.status] || 'gray') + '">' + esc({present:'حاضر',late:'متأخر',absent:'غائب',leave:'إجازة'}[a.status] || a.status) + '</span></td>';
+          html += '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dm60AttDel(\'' + a.id + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button></td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div></div>';
+      }
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      setTimeout(function () {
+        var se = document.getElementById('att-search');
+        if (se) { var t; se.oninput = function (ev) { clearTimeout(t); t = setTimeout(function () { f.search = ev.target.value; navigate('attlog'); }, 300); }; }
+        ['att-from', 'att-to', 'att-status', 'att-emp'].forEach(function (id) {
+          var elm = document.getElementById(id);
+          if (!elm) return;
+          elm.onchange = function () {
+            if (id === 'att-from') f.from = elm.value;
+            else if (id === 'att-to') f.to = elm.value;
+            else if (id === 'att-status') f.status = elm.value;
+            else f.employee = elm.value;
+            navigate('attlog');
+          };
+        });
+      }, 100);
+
+      function statCard(label, value, icon, color) {
+        return '<div class="stat-card" style="padding:.85rem"><div class="stat-icon" style="background:' + color + '20;color:' + color + ';width:36px;height:36px"><i data-lucide="' + icon + '" style="width:16px;height:16px"></i></div><div class="stat-body"><div class="label" style="font-size:.7rem">' + esc(label) + '</div><div class="value" style="font-size:1.1rem">' + esc(value) + '</div></div></div>';
+      }
+    };
+  }
+
+  window.__dm60AttDel = function (id) {
+    if (!confirm('حذف هذا السجل؟')) return;
+    State.data.attendance = (State.data.attendance || []).filter(function (a) { return a.id !== id; });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم الحذف', 'success');
+    setTimeout(function () { navigate('attlog'); }, 300);
+  };
+
+  window.__dm60AttExport = function () {
+    var list = State.data.attendance || [];
+    var csv = [['Date','Day','Employee','CheckIn','CheckOut','Status']];
+    list.forEach(function (a) {
+      csv.push([a.date, getDayName(a.date), empName(a.employeeId), a.checkIn || '', a.checkOut || '', a.status]);
+    });
+    var text = csv.map(function (r) { return r.map(function (x) { return '"' + String(x || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'attendance-log.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('✓ تم التصدير', 'success');
+  };
+
+  /* =========================================================
+     5) QR CODES — MutationObserver-based injection
+     ========================================================= */
+  function loadQRLib() {
+    return new Promise(function (resolve) {
+      if (window.QRCode) { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+      s.onload = resolve;
+      s.onerror = resolve;
+      document.head.appendChild(s);
+    });
+  }
+
+  window.__dm60ShowQR = async function (userId) {
+    await loadQRLib();
+    if (!window.QRCode) { toast('فشل تحميل مكتبة QR', 'error'); return; }
+
+    var user = (State.data.users || []).find(function (u) { return u.id === userId; });
+    if (!user) { toast('المستخدم غير موجود', 'error'); return; }
+
+    var emp = user.employeeId ? (State.data.employees || []).find(function (e) { return e.id === user.employeeId; }) : null;
+    var loginUrl = window.location.origin + window.location.pathname;
+
+    var qrContent = JSON.stringify({
+      type: 'drmedia_login',
+      url: loginUrl,
+      username: user.username,
+      password: user.password || '',
+      name: user.name
+    });
+
+    var html = '<div style="text-align:center;padding:1rem">';
+    html += '<div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.85rem">📱 امسح الكود بتطبيق QR Reader</div>';
+    html += '<div style="display:inline-block;padding:1rem;background:#fff;border-radius:12px;margin-bottom:1rem"><div id="dm-qr-target"></div></div>';
+    html += '<div style="padding:.85rem;background:var(--surface-2);border-radius:10px;text-align:start;font-size:.82rem;line-height:1.9">';
+    html += '<div><b>الاسم:</b> ' + esc(user.name) + '</div>';
+    html += '<div><b>البريد:</b> ' + esc(user.username) + '</div>';
+    if (user.password) html += '<div><b>كلمة المرور:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px">' + esc(user.password) + '</code></div>';
+    if (emp) html += '<div><b>الوظيفة:</b> ' + esc(emp.role) + '</div>';
+    html += '</div>';
+    html += '<div style="margin-top:1rem;font-size:.72rem;color:var(--text-muted);line-height:1.6">';
+    html += '⚠️ احفظ الصورة وامسحها بعد الانتهاء للحماية';
+    html += '</div></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔗 QR Code — ' + esc(user.name),
+        size: 'sm',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' +
+                '<button class="btn btn-primary" onclick="window.print()">🖨️ طباعة</button>'
+      });
+
+      setTimeout(function () {
+        var target = document.getElementById('dm-qr-target');
+        if (!target) return;
+        window.QRCode.toCanvas(qrContent, { width: 220, margin: 1 }, function (err, canvas) {
+          if (err) return;
+          target.innerHTML = '';
+          target.appendChild(canvas);
+        });
+      }, 100);
+    }
+  };
+
+  function injectQRButtons() {
+    // Employees page
+    document.querySelectorAll('#content table.data-table tbody tr').forEach(function (tr) {
+      if (tr.querySelector('.dm-qr-btn')) return;
+      var editBtn = tr.querySelector('button[onclick*="editEmployee"]');
+      if (!editBtn) return;
+      var m = editBtn.getAttribute('onclick').match(/editEmployee\(['"]([^'"]+)['"]\)/);
+      if (!m) return;
+      var empId = m[1];
+      var user = (State.data.users || []).find(function (u) { return u.employeeId === empId; });
+      if (!user) return;
+      var actionDiv = tr.querySelector('td:last-child > div');
+      if (!actionDiv) return;
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-icon btn-sm dm-qr-btn';
+      btn.title = 'QR';
+      btn.style.color = '#7c3aed';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>';
+      btn.onclick = function (e) { e.stopPropagation(); window.__dm60ShowQR(user.id); };
+      actionDiv.appendChild(btn);
+    });
+
+    // Users page
+    document.querySelectorAll('#content table.data-table tbody tr').forEach(function (tr) {
+      if (tr.querySelector('.dm-qr-btn')) return;
+      var editBtn = tr.querySelector('button[onclick*="editUser"]');
+      if (!editBtn) return;
+      var m = editBtn.getAttribute('onclick').match(/editUser\(['"]([^'"]+)['"]\)/);
+      if (!m) return;
+      var uid2 = m[1];
+      var actionDiv = tr.querySelector('td:last-child > div');
+      if (!actionDiv) return;
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-icon btn-sm dm-qr-btn';
+      btn.title = 'QR';
+      btn.style.color = '#7c3aed';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>';
+      btn.onclick = function (e) { e.stopPropagation(); window.__dm60ShowQR(uid2); };
+      actionDiv.appendChild(btn);
+    });
+  }
+
+  /* =========================================================
+     6) LOGIN — remove register button, keep clean
+     ========================================================= */
+  function cleanLogin() {
+    // Remove register block from Section 59
+    var reg = document.querySelector('.dm-register-block');
+    if (reg) reg.remove();
+
+    // Remove demo hint
+    var hint = document.querySelector('.demo-hint');
+    if (hint) hint.remove();
+
+    // Clear demo user/pass if present
+    var lu = document.getElementById('login-user') || document.getElementById('saas-email');
+    var lp = document.getElementById('login-pass') || document.getElementById('saas-password');
+    if (lu && lu.value === 'admin' && !lu.dataset.dm60Cleared) {
+      lu.value = '';
+      lu.dataset.dm60Cleared = '1';
+    }
+    if (lp && lp.value === 'admin' && !lp.dataset.dm60Cleared) {
+      lp.value = '';
+      lp.dataset.dm60Cleared = '1';
+    }
+  }
+
+  /* =========================================================
+     7) REFRESH — stay on same page (LOCAL persistence)
+     ========================================================= */
+  var LAST_PAGE_KEY = 'dm_last_page_v60';
+  var REFRESH_FLAG = 'dm_refresh_ok_v60';
+
+  function setupRefreshFlow() {
+    // Save page on every navigate
+    if (!window.navigate.__dm60Save) {
+      var orig = window.navigate;
+      window.navigate = function (page) {
+        if (page && page !== 'login') {
+          try { localStorage.setItem(LAST_PAGE_KEY, page); } catch (e) {}
+        }
+        return orig.apply(this, arguments);
+      };
+      window.navigate.__dm60Save = true;
+    }
+
+    // Set Firebase persistence to LOCAL
+    function setLocalPersist() {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) return false;
+      var am = fb.modules.authMod;
+      if (!am || !am.setPersistence || !am.browserLocalPersistence) return false;
+      am.setPersistence(fb.auth, am.browserLocalPersistence).catch(function () {});
+      return true;
+    }
+
+    // Watch auth state → if logged in, redirect to saved page
+    function watchAuth() {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) return false;
+      var am = fb.modules.authMod;
+      if (!am || !am.onAuthStateChanged) return false;
+
+      am.onAuthStateChanged(fb.auth, function (user) {
+        if (!user) return;
+
+        // User is authenticated — hide login, show app
+        var ls = document.getElementById('login-screen');
+        var app = document.getElementById('app');
+        if (ls) ls.classList.add('hidden');
+        if (app) app.classList.remove('hidden');
+
+        // Wait for SaaS to be ready, then navigate to saved page
+        var tries = 0;
+        var t = setInterval(function () {
+          tries++;
+          if (tries > 60) { clearInterval(t); return; }
+          if (window.__dmSaaS && window.__dmSaaS.ready) {
+            clearInterval(t);
+            var saved = 'dashboard';
+            try { saved = localStorage.getItem(LAST_PAGE_KEY) || 'dashboard'; } catch (e) {}
+            setTimeout(function () {
+              if (typeof navigate === 'function') navigate(saved);
+            }, 300);
+          }
+        }, 150);
+      });
+      return true;
+    }
+
+    var check = setInterval(function () {
+      if (window.DrMediaFB && window.DrMediaFB.ready && window.DrMediaFB.modules) {
+        clearInterval(check);
+        setLocalPersist();
+        setTimeout(watchAuth, 200);
+      }
+    }, 200);
+  }
+
+  /* =========================================================
+     8) SUBSCRIBERS — Add subscriber button + codes generation
+     ========================================================= */
+  function ensureSubscribersPage() {
+    if (!isSA()) return;
+    if (Pages.subscribers && Pages.subscribers.__dm60) return;
+
+    Pages.subscribers = function (el) {
+      // Load data
+      el.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+      var fsMod = window.DrMediaFB.modules.fsMod;
+      var db = window.DrMediaFB.db;
+
+      Promise.all([
+        fsMod.getDocs(fsMod.collection(db, 'companies')),
+        fsMod.getDocs(fsMod.collection(db, 'subscriptions'))
+      ]).then(function (results) {
+        var comps = results[0];
+        var subs = results[1];
+        var subMap = {};
+        subs.forEach(function (d) { subMap[d.id] = d.data(); });
+
+        var companies = [];
+        comps.forEach(function (d) {
+          var c = d.data();
+          var sub = subMap[c.id] || {};
+          var now = Date.now();
+          var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - now) / 86400000)) : 0;
+          var expired = days <= 0;
+          companies.push({
+            id: c.id,
+            name: c.name || '—',
+            ownerEmail: c.ownerEmail || '—',
+            phone: c.phone || '—',
+            planId: sub.planId || 'trial',
+            planName: sub.planName || sub.planId || 'trial',
+            days: days,
+            expired: expired,
+            status: sub.status || 'unknown'
+          });
+        });
+
+        companies.sort(function (a, b) { return a.days - b.days; });
+
+        var html = '';
+
+        // Header with "Add Subscriber" button
+        html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:1rem">';
+        html += '<div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center"><i data-lucide="users" style="color:#fff;width:22px;height:22px"></i></div>';
+        html += '<div><div style="font-weight:800;font-size:1.05rem">المشتركين</div><div style="font-size:.72rem;color:var(--text-muted)">' + companies.length + ' شركة</div></div>';
+        html += '<div style="margin-inline-start:auto;display:flex;gap:.5rem;flex-wrap:wrap">';
+        html += '<button class="btn btn-ghost btn-sm" onclick="navigate(\'subscribers\')"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> تحديث</button>';
+        html += '<button class="btn btn-primary btn-sm" onclick="__dm60AddSubscriber()"><i data-lucide="user-plus" style="width:12px;height:12px"></i> إضافة مشترك</button>';
+        html += '</div></div>';
+
+        // Stats
+        var active = companies.filter(function (c) { return !c.expired; }).length;
+        var expired = companies.filter(function (c) { return c.expired; }).length;
+
+        html += '<div class="grid-stats" style="margin-bottom:1rem">';
+        html += '<div class="stat-card"><div class="stat-icon" style="background:rgba(124,58,237,.1);color:#7c3aed"><i data-lucide="building-2"></i></div><div class="stat-body"><div class="label">إجمالي</div><div class="value">' + companies.length + '</div></div></div>';
+        html += '<div class="stat-card"><div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i data-lucide="check-circle"></i></div><div class="stat-body"><div class="label">نشط</div><div class="value">' + active + '</div></div></div>';
+        html += '<div class="stat-card"><div class="stat-icon" style="background:rgba(239,68,68,.1);color:#ef4444"><i data-lucide="alert-circle"></i></div><div class="stat-body"><div class="label">منتهي</div><div class="value">' + expired + '</div></div></div>';
+        html += '</div>';
+
+        // Table
+        if (!companies.length) {
+          html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="inbox"></i><p>لا يوجد مشتركين — اضغط "إضافة مشترك"</p></div></div>';
+        } else {
+          html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none">';
+          html += '<table class="data-table"><thead><tr>';
+          html += '<th>الشركة</th><th>المالك</th><th>الباقة</th><th>الأيام</th><th>الحالة</th><th style="width:180px">إجراءات</th>';
+          html += '</tr></thead><tbody>';
+
+          companies.forEach(function (c) {
+            var statusColor = c.expired ? 'red' : (c.days <= 3 ? 'yellow' : 'green');
+            var statusText = c.expired ? 'منتهي' : 'نشط';
+            html += '<tr>';
+            html += '<td><b>' + esc(c.name) + '</b></td>';
+            html += '<td>' + esc(c.ownerEmail) + '</td>';
+            html += '<td><span class="badge-pill badge-purple">' + esc(c.planName) + '</span></td>';
+            html += '<td><b style="color:' + (c.expired ? '#ef4444' : '#10b981') + '">' + c.days + '</b></td>';
+            html += '<td><span class="badge-pill badge-' + statusColor + '">' + statusText + '</span></td>';
+            html += '<td><div style="display:flex;gap:.25rem">';
+            html += '<button class="btn btn-success btn-sm" onclick="__dm60ExtendSub(\'' + c.id + '\')" style="font-size:.72rem"><i data-lucide="calendar-plus" style="width:12px;height:12px"></i> تمديد</button>';
+            html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm60ViewSub(\'' + c.id + '\')" style="color:#7c3aed"><i data-lucide="eye" style="width:12px;height:12px"></i></button>';
+            html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm60DeleteSub(\'' + c.id + '\',\'' + esc(c.name) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+            html += '</div></td>';
+            html += '</tr>';
+          });
+
+          html += '</tbody></table></div></div>';
+        }
+
+        el.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+      }).catch(function (err) {
+        el.innerHTML = '<div class="empty-state" style="padding:3rem 1rem"><i data-lucide="alert-triangle"></i><p>فشل التحميل: ' + esc(err.message) + '</p></div>';
+        if (window.lucide) lucide.createIcons();
+      });
+    };
+    Pages.subscribers.__dm60 = true;
+  }
+
+  window.__dm60AddSubscriber = function () {
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(124,58,237,.06);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += 'أنشئ حساب كامل لعميل جديد — يدخل مباشرة بدون انتظار.';
+    html += '</div>';
+    html += '<div class="field"><label>اسم الشركة *</label><input id="subadd-company" type="text" placeholder="شركة الفيديو"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>اسم المسؤول *</label><input id="subadd-name" type="text" placeholder="أحمد محمد"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>البريد الإلكتروني *</label><input id="subadd-email" type="email" placeholder="owner@company.com"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الهاتف</label><input id="subadd-phone" type="tel" placeholder="01xxxxxxxxx"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>كلمة المرور *</label><input id="subadd-pass" type="text" placeholder="أدخل كلمة مرور مؤقتة"></div>';
+    html += '<div class="form-row" style="margin-top:.75rem">';
+    html += '<div class="field"><label>الباقة</label><select id="subadd-plan">';
+    html += '<option value="starter">Starter — 500 EGP</option>';
+    html += '<option value="pro" selected>Professional — 1200 EGP</option>';
+    html += '<option value="business">Business — 2500 EGP</option>';
+    html += '</select></div>';
+    html += '<div class="field"><label>المدة (بالأيام)</label><input id="subadd-days" type="number" value="30" min="1"></div>';
+    html += '</div>';
+    html += '<div id="subadd-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '➕ إضافة مشترك جديد',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm60SaveSubscriber()">إنشاء الحساب</button>'
+      });
+    }
+  };
+
+  window.__dm60SaveSubscriber = async function () {
+    var companyName = (document.getElementById('subadd-company').value || '').trim();
+    var name = (document.getElementById('subadd-name').value || '').trim();
+    var email = (document.getElementById('subadd-email').value || '').trim();
+    var phone = (document.getElementById('subadd-phone').value || '').trim();
+    var pass = (document.getElementById('subadd-pass').value || '').trim();
+    var planId = document.getElementById('subadd-plan').value;
+    var days = parseInt(document.getElementById('subadd-days').value) || 30;
+    var msg = document.getElementById('subadd-msg');
+
+    if (!companyName || !name || !email || !pass) { msg.textContent = 'كل الحقول المطلوبة'; return; }
+    if (pass.length < 6) { msg.textContent = 'كلمة المرور 6+ حروف'; return; }
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = 'جاري الإنشاء…';
+
+    try {
+      var fb = window.DrMediaFB;
+      var authMod = fb.modules.authMod;
+      var fsMod = fb.modules.fsMod;
+
+      // ⚠️ Need a secondary app to avoid signing out the current admin
+      // Create user via REST API instead (or use secondary app)
+      // For simplicity, we'll use a secondary Firebase app instance
+
+      var appName = 'adminCreateApp_' + Date.now();
+      var secondApp = fb.modules.appMod.initializeApp(fb.app.options, appName);
+      var secondAuth = fb.modules.authMod.getAuth(secondApp);
+
+      var cred;
+      try {
+        cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+      } catch (e) {
+        // cleanup
+        try { await secondApp.delete(); } catch (x) {}
+        throw e;
+      }
+
+      var uidNew = cred.user.uid;
+
+      // Sign out from secondary
+      try { await authMod.signOut(secondAuth); } catch (e) {}
+      try { await secondApp.delete(); } catch (e) {}
+
+      // Create company
+      var companyId = 'c_' + uidNew.slice(0, 12);
+      var now = Date.now();
+      var expiresAt = now + (days * 86400000);
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId), {
+        id: companyId,
+        name: companyName,
+        ownerUid: uidNew,
+        ownerEmail: email,
+        phone: phone,
+        active: true,
+        createdAt: fsMod.serverTimestamp(),
+        createdBy: window.__dmSaaS.user.uid
+      });
+
+      // Create user profile
+      await fsMod.setDoc(fsMod.doc(fb.db, 'users', uidNew), {
+        uid: uidNew,
+        email: email,
+        name: name,
+        phone: phone,
+        companyId: companyId,
+        role: 'owner',
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      // Create subscription
+      await fsMod.setDoc(fsMod.doc(fb.db, 'subscriptions', companyId), {
+        companyId: companyId,
+        planId: planId,
+        status: 'active',
+        startedAt: now,
+        expiresAt: expiresAt,
+        activatedBy: window.__dmSaaS.user.uid,
+        activatedAt: fsMod.serverTimestamp()
+      });
+
+      // Seed empty company data
+      var seed = {
+        users: [{ id: uidNew, username: email, password: pass, name: name, role: 'Admin', employeeId: null, email: email, firebaseUid: uidNew }],
+        roles: [
+          { id: 'r1', name: 'Admin', permissions: { '*': ['view','create','edit','delete','export','print','approve'] } },
+          { id: 'r2', name: 'Manager', permissions: { employees:['view','create','edit'], bookings:['view','create','edit','approve'] } },
+          { id: 'r3', name: 'Employee', permissions: { self: ['view'] } }
+        ],
+        employees: [],
+        halls: [
+          { id: 'hall1', name: { ar: 'القاعة المغلقة', en: 'Closed Hall' }, code: 'H1', type: 'Closed', status: 'active', address: '', notes: '', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 5000 },
+          { id: 'hall2', name: { ar: 'القاعة الأوبن', en: 'Open Hall' }, code: 'H2', type: 'Open', status: 'active', address: '', notes: '', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 4500 },
+          { id: 'hall3', name: { ar: 'الكافيه', en: 'Cafe' }, code: 'H3', type: 'Cafe', status: 'active', address: '', notes: '', requirements: [{role:'Photographer',count:1}], cost: 1500 }
+        ],
+        clients: [], equipment: [], bookings: [], distributions: [],
+        attendance: [], leaves: [], substitutions: [],
+        advances: [], deductions: [], bonuses: [], payroll_payments: [],
+        notifications: [], activityLogs: [], trash: [],
+        settings: {
+          companyName: companyName, phone: phone, email: email, address: '',
+          rolePrices: { Director: 300, Photographer: 200, Crane: 250, Supervisor: 250, Assistant: 150 },
+          payroll: { p1: {from:1,to:10}, p2: {from:11,to:20}, p3: {from:21,to:31} },
+          notifications: { enabled: true, whatsapp: false, whatsappApi: '' },
+          distribution: { preventSameHallConsecutive: true, fairRotation: true, maxConsecutiveDays: 6 },
+          security: { passwordMin: 6, sessionTimeout: 60 },
+          theme: 'light', lang: 'ar'
+        }
+      };
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main'), {
+        payload: seed,
+        updatedBy: 'system',
+        updatedByUser: window.__dmSaaS.user.email,
+        updatedAt: fsMod.serverTimestamp(),
+        version: now
+      });
+
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم إنشاء المشترك بنجاح';
+
+      toast('✓ تم إنشاء الحساب لـ ' + companyName, 'success');
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        navigate('subscribers');
+      }, 1200);
+
+    } catch (e) {
+      console.error('[Section 60] Add subscriber failed:', e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'auth/email-already-in-use') msg.textContent = 'البريد مستخدم';
+      else if (e.code === 'auth/weak-password') msg.textContent = 'كلمة مرور ضعيفة';
+      else msg.textContent = 'خطأ: ' + (e.message || '');
+    }
+  };
+
+  window.__dm60ExtendSub = function (companyId) {
+    var days = prompt('كم يوم إضافي؟', '30');
+    if (!days) return;
+    days = parseInt(days);
+    if (!days) return;
+
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    var ref = fsMod.doc(fb.db, 'subscriptions', companyId);
+
+    fsMod.getDoc(ref).then(function (snap) {
+      var cur = snap.exists() ? snap.data() : {};
+      var base = Math.max(cur.expiresAt || 0, Date.now());
+      var newExpiry = base + (days * 86400000);
+
+      return fsMod.setDoc(ref, {
+        companyId: companyId,
+        status: 'active',
+        expiresAt: newExpiry,
+        extendedBy: window.__dmSaaS.user.uid,
+        extendedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+    }).then(function () {
+      toast('✓ تم التمديد ' + days + ' يوم', 'success');
+      navigate('subscribers');
+    }).catch(function (e) {
+      toast('فشل: ' + e.message, 'error');
+    });
+  };
+
+  window.__dm60ViewSub = function (companyId) {
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+
+    Promise.all([
+      fsMod.getDoc(fsMod.doc(fb.db, 'companies', companyId)),
+      fsMod.getDoc(fsMod.doc(fb.db, 'subscriptions', companyId))
+    ]).then(function (results) {
+      var c = results[0].exists() ? results[0].data() : {};
+      var s = results[1].exists() ? results[1].data() : {};
+
+      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:.85rem">';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">ID</b><div>' + esc(c.id || companyId) + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">الاسم</b><div>' + esc(c.name) + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">المالك</b><div>' + esc(c.ownerEmail) + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">الهاتف</b><div>' + esc(c.phone || '—') + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">الباقة</b><div>' + esc(s.planId || '—') + '</div></div>';
+      html += '<div><b style="color:var(--text-muted);font-size:.7rem">ينتهي</b><div>' + (s.expiresAt ? new Date(s.expiresAt).toLocaleDateString() : '—') + '</div></div>';
+      html += '</div>';
+
+      if (typeof openModal === 'function') {
+        openModal({ title: '🏢 تفاصيل المشترك', body: html, size: 'md', footer: '<button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' });
+      }
+    });
+  };
+
+  window.__dm60DeleteSub = function (companyId, name) {
+    if (!confirm('حذف "' + name + '" نهائيًا؟')) return;
+    if (!confirm('تأكيد أخير؟')) return;
+
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+
+    Promise.all([
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main')).catch(function () {}),
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'companies', companyId)).catch(function () {}),
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'subscriptions', companyId)).catch(function () {})
+    ]).then(function () {
+      toast('✓ تم الحذف', 'success');
+      navigate('subscribers');
+    }).catch(function (e) {
+      toast('فشل: ' + e.message, 'error');
+    });
+  };
+
+  /* =========================================================
+     9) ACTIVATION CODES
+     ========================================================= */
+  function registerCodesPage() {
+    Pages.codes = function (el) {
+      if (!isSA()) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="lock"></i><p>للمدير العام فقط</p></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      el.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+
+      var fb = window.DrMediaFB;
+      var fsMod = fb.modules.fsMod;
+
+      fsMod.getDocs(fsMod.collection(fb.db, 'activation_codes')).then(function (snap) {
+        var codes = [];
+        snap.forEach(function (d) { codes.push(Object.assign({ _id: d.id }, d.data())); });
+        codes.sort(function (a, b) { return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0); });
+
+        var html = '';
+        html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">';
+        html += '<div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#ec4899,#be185d);display:flex;align-items:center;justify-content:center"><i data-lucide="key-round" style="color:#fff;width:22px;height:22px"></i></div>';
+        html += '<div><div style="font-weight:800;font-size:1.05rem">أكواد التفعيل</div><div style="font-size:.72rem;color:var(--text-muted)">' + codes.length + ' كود</div></div>';
+        html += '<div style="margin-inline-start:auto"><button class="btn btn-primary btn-sm" onclick="__dm60GenCode()"><i data-lucide="plus" style="width:12px;height:12px"></i> إنشاء كود</button></div>';
+        html += '</div></div>';
+
+        if (!codes.length) {
+          html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="key-round"></i><p>لا يوجد أكواد — اضغط "إنشاء كود"</p></div></div>';
+        } else {
+          html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+          html += '<th>الكود</th><th>الباقة</th><th>الأيام</th><th>مستخدم/الحد</th><th>الحالة</th><th>ينتهي</th><th style="width:100px"></th>';
+          html += '</tr></thead><tbody>';
+
+          codes.forEach(function (c) {
+            var expired = c.expiresAt && c.expiresAt < Date.now();
+            var maxed = c.maxUses && c.usedCount >= c.maxUses;
+            var status = !c.active ? 'معطل' : (expired ? 'منتهي' : (maxed ? 'مستخدم' : 'نشط'));
+            var statusColor = status === 'نشط' ? 'green' : (status === 'معطل' ? 'gray' : 'red');
+
+            html += '<tr>';
+            html += '<td><code style="font-weight:800;font-size:.95rem;color:#ec4899;letter-spacing:.08em;cursor:pointer" onclick="navigator.clipboard.writeText(\'' + esc(c.code) + '\');showToast(\'✓ تم النسخ\',\'success\')" title="اضغط للنسخ">' + esc(c.code) + '</code></td>';
+            html += '<td><span class="badge-pill badge-purple">' + esc(c.planName || c.planId) + '</span></td>';
+            html += '<td><b>' + (c.days || 30) + '</b></td>';
+            html += '<td>' + (c.usedCount || 0) + ' / ' + (c.maxUses || '∞') + '</td>';
+            html += '<td><span class="badge-pill badge-' + statusColor + '">' + status + '</span></td>';
+            html += '<td style="font-size:.78rem">' + (c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : '—') + '</td>';
+            html += '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dm60DelCode(\'' + c._id + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button></td>';
+            html += '</tr>';
+          });
+
+          html += '</tbody></table></div></div>';
+        }
+
+        el.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+      }).catch(function (err) {
+        el.innerHTML = '<div class="empty-state"><p>فشل التحميل: ' + esc(err.message) + '</p></div>';
+      });
+    };
+  }
+
+  function generateCode() {
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var part = function (n) {
+      var s = '';
+      for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+      return s;
+    };
+    return 'DRM-' + part(4) + '-' + part(4);
+  }
+
+  window.__dm60GenCode = function () {
+    var html = '';
+    html += '<div class="form-row">';
+    html += '<div class="field"><label>الباقة</label><select id="code-plan">';
+    html += '<option value="starter">Starter — 500 EGP</option>';
+    html += '<option value="pro" selected>Professional — 1200 EGP</option>';
+    html += '<option value="business">Business — 2500 EGP</option>';
+    html += '</select></div>';
+    html += '<div class="field"><label>عدد الأيام</label><input id="code-days" type="number" value="30" min="1"></div>';
+    html += '</div>';
+    html += '<div class="form-row" style="margin-top:.75rem">';
+    html += '<div class="field"><label>أقصى استخدامات</label><input id="code-max" type="number" value="1" min="1"></div>';
+    html += '<div class="field"><label>صالح لمدة (يوم)</label><input id="code-valid" type="number" value="90" min="1"></div>';
+    html += '</div>';
+    html += '<div class="field" style="margin-top:.75rem"><label>ملاحظة (اختياري)</label><input id="code-note" type="text" placeholder="مثال: عرض العملاء الجدد"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔑 إنشاء كود تفعيل',
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm60SaveCode()">إنشاء</button>'
+      });
+    }
+  };
+
+  window.__dm60SaveCode = async function () {
+    var planId = document.getElementById('code-plan').value;
+    var days = parseInt(document.getElementById('code-days').value) || 30;
+    var maxUses = parseInt(document.getElementById('code-max').value) || 1;
+    var validDays = parseInt(document.getElementById('code-valid').value) || 90;
+    var note = document.getElementById('code-note').value || '';
+
+    var planNames = { starter: 'Starter', pro: 'Professional', business: 'Business' };
+    var code = generateCode();
+
+    try {
+      var fb = window.DrMediaFB;
+      var fsMod = fb.modules.fsMod;
+      var now = Date.now();
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'activation_codes', code), {
+        code: code,
+        planId: planId,
+        planName: planNames[planId] || planId,
+        days: days,
+        maxUses: maxUses,
+        usedCount: 0,
+        expiresAt: now + (validDays * 86400000),
+        active: true,
+        note: note,
+        createdBy: window.__dmSaaS.user.uid,
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      toast('✓ تم إنشاء الكود: ' + code, 'success');
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        // Copy to clipboard
+        try { navigator.clipboard.writeText(code); } catch (e) {}
+        navigate('codes');
+      }, 500);
+    } catch (e) {
+      toast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  window.__dm60DelCode = function (codeId) {
+    if (!confirm('حذف الكود؟')) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.deleteDoc(fsMod.doc(fb.db, 'activation_codes', codeId)).then(function () {
+      toast('✓ تم الحذف', 'success');
+      navigate('codes');
+    });
+  };
+
+  // Register codes page
+  registerCodesPage();
+
+  /* =========================================================
+     10) HALL PRICE → apply to all bookings
+     ========================================================= */
+  function hookHallSave() {
+    if (typeof window.saveHall !== 'function') return;
+    if (window.saveHall.__dm60) return;
+
+    var orig = window.saveHall;
+    window.saveHall = function (id) {
+      // Before calling original, capture old cost
+      var oldCost = 0;
+      var hallId = id;
+      if (id) {
+        var h = State.data.halls.find(function (x) { return x.id === id; });
+        if (h) oldCost = h.cost || 0;
+      }
+
+      // Read new cost from form
+      var costEl = document.getElementById('h-cost');
+      var newCost = costEl ? (+costEl.value || 0) : 0;
+
+      var result = orig.apply(this, arguments);
+
+      // After save, ask about applying to bookings
+      if (id && oldCost !== newCost) {
+        setTimeout(function () {
+          if (typeof confirmDialog === 'function') {
+            confirmDialog(
+              'تم تعديل تكلفة القاعة من ' + oldCost + ' إلى ' + newCost + ' EGP.\n\nهل تريد تطبيق السعر الجديد على كل الحجوزات الحالية في هذه القاعة؟',
+              function () {
+                var count = 0;
+                (State.data.bookings || []).forEach(function (b) {
+                  if (b.hallId === id) {
+                    b.cost = newCost;
+                    count++;
+                  }
+                });
+                try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+                toast('✓ تم تحديث ' + count + ' حجز', 'success');
+                setTimeout(function () { navigate('bookings'); }, 300);
+              }
+            );
+          }
+        }, 400);
+      }
+
+      return result;
+    };
+    window.saveHall.__dm60 = true;
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 300;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined' &&
+             typeof State !== 'undefined' &&
+             typeof navigate === 'function' &&
+             typeof NAV_ITEMS !== 'undefined' &&
+             document.getElementById('content');
+    },
+    function () {
+      // Nav
+      fixNavItems();
+      setInterval(fixNavItems, 3000);
+
+      // Pages
+      registerCounters();
+      registerSubstitutions();
+      registerAttendanceLog();
+      ensureSubscribersPage();
+
+      // QR
+      setInterval(injectQRButtons, 2000);
+
+      // Login
+      cleanLogin();
+      setInterval(cleanLogin, 3000);
+
+      // Refresh flow
+      setupRefreshFlow();
+
+      // Hall price hook
+      hookHallSave();
+      setInterval(hookHallSave, 3000);
+
+      // Super admin nav
+      waitFor(
+        function () { return window.__dmSaaS && window.__dmSaaS.ready; },
+        function () {
+          ensureSuperAdminNav();
+          setInterval(ensureSuperAdminNav, 3000);
+        }
+      );
+
+      // MutationObserver for QR
+      var content = document.getElementById('content');
+      if (content) {
+        var obs = new MutationObserver(function () {
+          clearTimeout(window.__dm60T);
+          window.__dm60T = setTimeout(function () {
+            injectQRButtons();
+            ensureSuperAdminNav();
+          }, 300);
+        });
+        obs.observe(content, { childList: true, subtree: true });
+      }
+
+      console.log('%c[Section 60] ═══ ALL MASTER FIXES READY ═══', 'color:#10b981;font-weight:bold;font-size:15px');
+      console.log('  ✅ Attendance Log (Sidebar → سجل الحضور)');
+      console.log('  ✅ QR Codes (ظهرت جنب الموظفين)');
+      console.log('  ✅ Firebase Counters (كامل بالرسوم)');
+      console.log('  ✅ Substitutions (إضافة/تعديل/حذف)');
+      console.log('  ✅ Login clean (بدون تسجيل)');
+      console.log('  ✅ Refresh → نفس الصفحة');
+      console.log('  ✅ Subscribers + إضافة مشترك');
+      console.log('  ✅ أكواد التفعيل');
+      console.log('  ✅ سعر القاعة → تطبيق على الكل');
+    }
+  );
+
+})();
 
 
 
