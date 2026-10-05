@@ -25535,6 +25535,1214 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 63: Complete Subscribers Hub + Auth Flow
+   Version: 1.0.0
+   ---------------------------------------------------------
+   1) Subscribers Hub: 10 tabs (restore all features)
+   2) Activation code required on signup
+   3) Fix duplicate login screen
+   4) Employee registration button on login
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 63] ═══ Loading ═══', 'color:#8b5cf6;font-weight:bold;font-size:15px');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function isSA() { return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin); }
+  function fmtD(ts) {
+    if (!ts) return '—';
+    var d = new Date(typeof ts === 'object' && ts.seconds ? ts.seconds * 1000 : ts);
+    try { return d.toLocaleDateString('ar-EG'); } catch (e) { return '—'; }
+  }
+  function fmtM(n) { return (n || 0).toLocaleString() + ' EGP'; }
+
+  /* =========================================================
+     1) FIX DUPLICATE LOGIN SCREEN
+     ========================================================= */
+  function fixDuplicateLogin() {
+    var style = document.createElement('style');
+    style.id = 'dm63-login-fix';
+    style.textContent =
+      '#login-screen #login-form,' +
+      '#login-screen .btn-login,' +
+      '#login-screen .demo-hint,' +
+      '#login-screen form:not(.dm-keep){display:none!important;visibility:hidden!important;height:0!important;overflow:hidden!important}' +
+      '#login-screen .login-card .saas-tabs{display:flex!important}';
+    document.head.appendChild(style);
+
+    // Aggressive removal of old form
+    function cleanup() {
+      var oldForm = document.querySelector('#login-screen #login-form');
+      if (oldForm) oldForm.remove();
+      var oldBtn = document.querySelector('#login-screen .btn-login');
+      if (oldBtn) oldBtn.remove();
+      var hint = document.querySelector('#login-screen .demo-hint');
+      if (hint) hint.remove();
+    }
+    cleanup();
+    setInterval(cleanup, 500);
+    console.log('[Section 63] ✓ Duplicate login removed');
+  }
+
+  /* =========================================================
+     2) EMPLOYEE REGISTRATION BUTTON
+     ========================================================= */
+  function addEmployeeRegisterBtn() {
+    var loginCard = document.querySelector('.login-card');
+    if (!loginCard) return;
+    if (loginCard.querySelector('.dm63-emp-btn')) return;
+
+    var block = document.createElement('div');
+    block.className = 'dm63-emp-btn';
+    block.style.cssText = 'margin-top:1rem;padding-top:1rem;border-top:1px dashed rgba(255,255,255,.1);text-align:center';
+    block.innerHTML =
+      '<div style="font-size:.75rem;color:#94a3b8;margin-bottom:.65rem">موظف؟ سجّل دخولك ببيانات حسابك</div>' +
+      '<button type="button" id="dm63-open-emp-reg" style="width:100%;padding:.75rem;border-radius:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.35);color:#93c5fd;font-weight:700;cursor:pointer;font-family:inherit;font-size:.85rem;transition:all .15s">' +
+        '👷 تسجيل موظف جديد' +
+      '</button>';
+
+    var superBlock = loginCard.querySelector('#saas-super-block');
+    if (superBlock && superBlock.parentNode === loginCard) {
+      loginCard.insertBefore(block, superBlock);
+    } else {
+      loginCard.appendChild(block);
+    }
+
+    document.getElementById('dm63-open-emp-reg').onclick = openEmployeeRegister;
+  }
+
+  function openEmployeeRegister() {
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25);border-radius:10px;font-size:.8rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += '📌 <b>للموظفين فقط.</b> بيانات الدخول تكون باسم مستخدم وكلمة مرور فقط. بعد التسجيل، المدير هيربط حسابك ببيانات الموظف.';
+    html += '</div>';
+    html += '<div class="field"><label>اسم المستخدم *</label><input id="emp63-user" type="text" placeholder="مثال: ahmed_photo" autocomplete="off"></div>';
+    html += '<div class="field" style="margin-top:.75rem"><label>كلمة المرور * (6+ حروف)</label><input id="emp63-pass" type="password" placeholder="••••••••"></div>';
+    html += '<div class="field" style="margin-top:.75rem"><label>تأكيد كلمة المرور</label><input id="emp63-pass2" type="password" placeholder="••••••••"></div>';
+    html += '<div id="emp63-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '👷 تسجيل موظف جديد',
+        size: 'md',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm63RegEmployee()">إنشاء الحساب</button>'
+      });
+    }
+  }
+
+  window.__dm63RegEmployee = async function () {
+    var user = (document.getElementById('emp63-user').value || '').trim().toLowerCase();
+    var pass = (document.getElementById('emp63-pass').value || '').trim();
+    var pass2 = (document.getElementById('emp63-pass2').value || '').trim();
+    var msg = document.getElementById('emp63-msg');
+
+    if (!user || !pass) { msg.textContent = 'اسم المستخدم وكلمة المرور مطلوبين'; return; }
+    if (user.length < 3) { msg.textContent = 'اسم المستخدم 3 أحرف على الأقل'; return; }
+    if (pass.length < 6) { msg.textContent = 'كلمة المرور 6+ حروف'; return; }
+    if (pass !== pass2) { msg.textContent = 'كلمتا المرور غير متطابقتين'; return; }
+
+    // Make pseudo-email from username
+    var email = user + '@employee.drmedia.pro';
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = 'جاري إنشاء الحساب…';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) throw new Error('Firebase مش جاهز');
+
+      var appMod = fb.modules.appMod;
+      var authMod = fb.modules.authMod;
+      var fsMod = fb.modules.fsMod;
+
+      var appName = 'empReg_' + Date.now();
+      var secondApp = appMod.initializeApp(fb.app.options, appName);
+      var secondAuth = authMod.getAuth(secondApp);
+
+      var cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+      var newUid = cred.user.uid;
+
+      try { await authMod.signOut(secondAuth); } catch (e) {}
+      try { await secondApp.delete(); } catch (e) {}
+
+      // Create user doc — pending approval
+      await fsMod.setDoc(fsMod.doc(fb.db, 'users', newUid), {
+        uid: newUid,
+        email: email,
+        username: user,
+        name: user,
+        phone: '',
+        role: 'pending_employee',
+        status: 'pending',
+        companyId: null,
+        employeeId: null,
+        createdAt: fsMod.serverTimestamp()
+      });
+
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم إنشاء الحساب — انتظر ربط المدير';
+
+      toast('✓ تم التسجيل: ' + user, 'success');
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+      }, 1500);
+    } catch (e) {
+      console.error('[Section 63]', e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'auth/email-already-in-use') msg.textContent = 'اسم المستخدم محجوز';
+      else if (e.code === 'auth/weak-password') msg.textContent = 'كلمة مرور ضعيفة';
+      else msg.textContent = 'خطأ: ' + (e.message || '');
+    }
+  };
+
+  /* =========================================================
+     3) ACTIVATION CODE ON SIGNUP
+     ========================================================= */
+  function setupActivationFlow() {
+    var codeShowing = false;
+
+    function check() {
+      if (!window.__dmSaaS || !window.__dmSaaS.ready || !window.__dmSaaS.user) return;
+      if (codeShowing) return;
+
+      var sub = window.__dmSaaS.subscription;
+      var profile = window.__dmSaaS.profile;
+
+      // Check if activation is needed
+      var needsCode = false;
+      if (!sub) needsCode = true;
+      else if (sub.planId === 'pending') needsCode = true;
+      else if (!sub.expiresAt || sub.expiresAt <= Date.now()) {
+        // Only require code if it's a brand new account (created < 5 min ago)
+        var created = profile && profile.createdAt ?
+          (profile.createdAt.seconds ? profile.createdAt.seconds * 1000 : profile.createdAt) : 0;
+        var age = Date.now() - created;
+        if (age < 5 * 60 * 1000) needsCode = true;
+      }
+
+      if (needsCode) {
+        codeShowing = true;
+        showActivationModal();
+      }
+    }
+
+    setInterval(check, 1500);
+  }
+
+  function showActivationModal() {
+    var existing = document.getElementById('dm63-activ');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'dm63-activ';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:linear-gradient(135deg,#0f0a1f 0%,#1e1b3a 100%);display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(12px)';
+
+    overlay.innerHTML =
+      '<div style="max-width:480px;width:100%;background:var(--surface);border-radius:20px;padding:2.5rem 2rem;border:1px solid var(--border);box-shadow:0 40px 80px -20px rgba(0,0,0,.6)">' +
+        '<div style="text-align:center;margin-bottom:1.5rem">' +
+          '<div style="width:80px;height:80px;border-radius:24px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:2.5rem;box-shadow:0 20px 40px -10px rgba(124,58,237,.5)">🔑</div>' +
+          '<h2 style="margin:0 0 .5rem;font-size:1.35rem;font-weight:800">أدخل كود التفعيل</h2>' +
+          '<p style="color:var(--text-muted);font-size:.85rem;margin:0;line-height:1.6">لتشغيل حسابك، أدخل كود التفعيل اللي وصلك من الإدارة</p>' +
+        '</div>' +
+
+        '<div class="field" style="margin-bottom:1rem">' +
+          '<label style="text-align:center;display:block;font-size:.8rem;font-weight:700;margin-bottom:.5rem">كود التفعيل</label>' +
+          '<input id="dm63-code-input" type="text" placeholder="DRM-XXXX-XXXX" autocomplete="off" style="width:100%;padding:1rem;text-align:center;font-size:1.25rem;font-weight:800;letter-spacing:.15em;border-radius:12px;border:2px solid var(--border);background:var(--surface-2);color:var(--text);font-family:ui-monospace,monospace;outline:none;text-transform:uppercase">' +
+        '</div>' +
+
+        '<div id="dm63-code-msg" style="font-size:.82rem;text-align:center;min-height:1.4em;margin-bottom:1rem"></div>' +
+
+        '<div style="display:flex;gap:.5rem;flex-direction:column">' +
+          '<button id="dm63-activ-btn" style="width:100%;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:800;font-size:1rem;cursor:pointer;font-family:inherit;box-shadow:0 10px 25px -8px #7c3aed">⚡ تفعيل الحساب</button>' +
+          '<button id="dm63-activ-logout" style="width:100%;padding:.75rem;border-radius:12px;background:transparent;color:var(--text-muted);border:none;font-weight:600;font-size:.85rem;cursor:pointer;font-family:inherit">🚪 تسجيل خروج</button>' +
+        '</div>' +
+
+        '<div style="margin-top:1.5rem;padding-top:1rem;border-top:1px dashed var(--border);font-size:.75rem;color:var(--text-muted);text-align:center;line-height:1.7">' +
+          'لسه ماوصلكش كود؟<br>تواصل مع الإدارة للحصول على كود التفعيل' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+
+    var input = document.getElementById('dm63-code-input');
+    var msg = document.getElementById('dm63-code-msg');
+    var btn = document.getElementById('dm63-activ-btn');
+
+    setTimeout(function () { input.focus(); }, 100);
+    input.addEventListener('input', function (e) {
+      e.target.value = e.target.value.toUpperCase();
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') tryActivate();
+    });
+
+    btn.onclick = tryActivate;
+
+    document.getElementById('dm63-activ-logout').onclick = async function () {
+      try {
+        if (window.DrMediaFB && window.DrMediaFB.auth) {
+          await window.DrMediaFB.modules.authMod.signOut(window.DrMediaFB.auth);
+        }
+      } catch (e) {}
+      location.reload();
+    };
+
+    async function tryActivate() {
+      var code = (input.value || '').trim().toUpperCase();
+      if (!code) { msg.style.color = '#ef4444'; msg.textContent = 'أدخل الكود'; return; }
+      if (code.length < 8) { msg.style.color = '#ef4444'; msg.textContent = 'الكود قصير جدًا'; return; }
+
+      msg.style.color = '#f59e0b';
+      msg.textContent = '⏳ جاري التحقق…';
+      btn.disabled = true;
+      btn.style.opacity = '.6';
+
+      try {
+        var fb = window.DrMediaFB;
+        var fsMod = fb.modules.fsMod;
+        var db = fb.db;
+
+        // Fetch code
+        var codeSnap = await fsMod.getDoc(fsMod.doc(db, 'activation_codes', code));
+        if (!codeSnap.exists()) {
+          msg.style.color = '#ef4444';
+          msg.textContent = '❌ الكود غير موجود';
+          btn.disabled = false; btn.style.opacity = '1';
+          return;
+        }
+
+        var codeData = codeSnap.data();
+
+        // Validate
+        if (!codeData.active) {
+          msg.style.color = '#ef4444'; msg.textContent = '❌ الكود معطل';
+          btn.disabled = false; btn.style.opacity = '1'; return;
+        }
+        if (codeData.expiresAt && codeData.expiresAt <= Date.now()) {
+          msg.style.color = '#ef4444'; msg.textContent = '❌ الكود منتهي';
+          btn.disabled = false; btn.style.opacity = '1'; return;
+        }
+        if (codeData.maxUses && (codeData.usedCount || 0) >= codeData.maxUses) {
+          msg.style.color = '#ef4444'; msg.textContent = '❌ تم استهلاك الكود';
+          btn.disabled = false; btn.style.opacity = '1'; return;
+        }
+
+        // Activate
+        var companyId = window.__dmSaaS.profile.companyId;
+        var days = codeData.days || 30;
+        var now = Date.now();
+        var expiresAt = now + (days * 86400000);
+
+        await fsMod.setDoc(fsMod.doc(db, 'subscriptions', companyId), {
+          companyId: companyId,
+          planId: codeData.planId,
+          planName: codeData.planName || codeData.planId,
+          status: 'active',
+          startedAt: now,
+          expiresAt: expiresAt,
+          activatedByCode: code,
+          activatedAt: fsMod.serverTimestamp()
+        }, { merge: true });
+
+        // Update code usage
+        await fsMod.updateDoc(fsMod.doc(db, 'activation_codes', code), {
+          usedCount: (codeData.usedCount || 0) + 1,
+          usedBy: window.__dmSaaS.user.uid,
+          lastUsedAt: fsMod.serverTimestamp()
+        });
+
+        // Refresh SaaS
+        window.__dmSaaS.subscription = {
+          companyId: companyId,
+          planId: codeData.planId,
+          planName: codeData.planName,
+          status: 'active',
+          startedAt: now,
+          expiresAt: expiresAt
+        };
+
+        msg.style.color = '#10b981';
+        msg.textContent = '✓ تم التفعيل — جاري الدخول…';
+
+        toast('🎉 تم تفعيل حسابك', 'success');
+
+        setTimeout(function () {
+          overlay.remove();
+          location.reload();
+        }, 1200);
+      } catch (e) {
+        console.error('[Section 63] Activation failed:', e);
+        msg.style.color = '#ef4444';
+        msg.textContent = 'فشل: ' + (e.message || '');
+        btn.disabled = false; btn.style.opacity = '1';
+      }
+    }
+  }
+
+  /* =========================================================
+     4) COMPLETE SUBSCRIBERS HUB — 10 TABS
+     ========================================================= */
+  function registerSubscribersHub() {
+    Pages.subscribers = function (el) {
+      if (!isSA()) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="lock"></i><p>للمدير العام فقط</p></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      var tab = State.filters.subsTab || 'dashboard';
+      State.filters.subsTab = tab;
+
+      var tabs = [
+        { id: 'dashboard', icon: 'layout-dashboard', label: 'لوحة القيادة' },
+        { id: 'list', icon: 'users', label: 'المشتركين' },
+        { id: 'codes', icon: 'key-round', label: 'أكواد التفعيل' },
+        { id: 'payments', icon: 'dollar-sign', label: 'المدفوعات' },
+        { id: 'detailed', icon: 'bar-chart-3', label: 'تفصيل الاستركات' },
+        { id: 'coupons', icon: 'gift', label: 'العروض' },
+        { id: 'features', icon: 'settings', label: 'المميزات' },
+        { id: 'broadcast', icon: 'megaphone', label: 'إشعار جماعي' },
+        { id: 'activity', icon: 'history', label: 'سجل النشاط' },
+        { id: 'backup', icon: 'database', label: 'النسخ الاحتياطي' }
+      ];
+
+      var html = '';
+      html += '<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap">';
+      html += '<div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#7c3aed);display:flex;align-items:center;justify-content:center"><i data-lucide="crown" style="color:#fff;width:24px;height:24px"></i></div>';
+      html += '<div><div style="font-weight:800;font-size:1.15rem">إدارة المشتركين</div>';
+      html += '<div style="font-size:.75rem;color:var(--text-muted)">مركز التحكم الكامل</div></div>';
+      html += '</div>';
+
+      html += '<div class="tabs" style="margin-bottom:1.25rem;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">';
+      tabs.forEach(function (t) {
+        html += '<div class="tab ' + (tab === t.id ? 'active' : '') + '" onclick="State.filters.subsTab=\'' + t.id + '\';navigate(\'subscribers\')" style="flex-shrink:0">' + t.label + '</div>';
+      });
+      html += '</div>';
+
+      html += '<div id="dm63-hub-body"></div>';
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      var body = document.getElementById('dm63-hub-body');
+
+      switch (tab) {
+        case 'dashboard': renderDashboardTab(body); break;
+        case 'list': renderListTab63(body); break;
+        case 'codes': renderCodesTab63(body); break;
+        case 'payments': renderPaymentsTab63(body); break;
+        case 'detailed': renderDetailedTab63(body); break;
+        case 'coupons': renderCouponsTab63(body); break;
+        case 'features': renderFeaturesTab63(body); break;
+        case 'broadcast': renderBroadcastTab63(body); break;
+        case 'activity': renderActivityTab63(body); break;
+        case 'backup': renderBackupTab63(body); break;
+        default: renderDashboardTab(body);
+      }
+    };
+  }
+
+  /* ============ TAB: DASHBOARD ============ */
+  function renderDashboardTab(body) {
+    body.innerHTML = '<div class="skeleton" style="height:60px;margin-bottom:1rem"></div><div class="skeleton" style="height:200px"></div>';
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) { body.innerHTML = '<p>Firebase مش جاهز</p>'; return; }
+    var fsMod = fb.modules.fsMod;
+    var db = fb.db;
+
+    Promise.all([
+      fsMod.getDocs(fsMod.collection(db, 'companies')),
+      fsMod.getDocs(fsMod.collection(db, 'subscriptions')),
+      fsMod.getDocs(fsMod.collection(db, 'payment_orders'))
+    ]).then(function (res) {
+      var comps = [], subs = [], orders = [];
+      res[0].forEach(function (d) { comps.push(d.data()); });
+      res[1].forEach(function (d) { subs.push(d.data()); });
+      res[2].forEach(function (d) { orders.push(d.data()); });
+
+      var subMap = {};
+      subs.forEach(function (s) { subMap[s.companyId] = s; });
+
+      var now = Date.now();
+      var total = comps.length;
+      var active = 0, expired = 0, pending = 0;
+      var mrr = 0;
+      var prices = { starter: 500, pro: 1200, business: 2500, enterprise: 0 };
+
+      comps.forEach(function (c) {
+        var sub = subMap[c.id] || {};
+        var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - now) / 86400000)) : 0;
+        if (!sub.expiresAt || sub.planId === 'pending') pending++;
+        else if (days <= 0) expired++;
+        else {
+          active++;
+          mrr += prices[sub.planId] || 0;
+        }
+      });
+
+      var totalRevenue = orders.filter(function (o) { return o.status === 'success'; })
+        .reduce(function (s, o) { return s + (o.amount || 0); }, 0);
+
+      var html = '';
+      html += '<div class="grid-stats" style="margin-bottom:1.25rem">';
+      html += kpi('إجمالي المشتركين', total, 'building-2', '#7c3aed', '');
+      html += kpi('نشط', active, 'check-circle', '#10b981', 'يعمل');
+      html += kpi('قيد التفعيل', pending, 'clock', '#f59e0b', 'ينتظر كود');
+      html += kpi('منتهي', expired, 'alert-circle', '#ef4444', '');
+      html += '</div>';
+
+      html += '<div class="grid-stats" style="margin-bottom:1.25rem">';
+      html += kpi('MRR', fmtM(mrr), 'trending-up', '#06b6d4', 'إيراد شهري');
+      html += kpi('إجمالي الإيراد', fmtM(totalRevenue), 'dollar-sign', '#10b981', '');
+      html += kpi('مدفوعات معلقة', orders.filter(function (o) { return o.status === 'pending_verification'; }).length, 'hourglass', '#f59e0b', '');
+      html += kpi('أكواد متاحة', 0, 'key', '#ec4899', '');
+      html += '</div>';
+
+      html += '<div class="grid-2" style="margin-bottom:1.25rem">';
+      html += '<div class="chart-box"><h4><i data-lucide="bar-chart-3"></i> الإيراد الشهري</h4><div class="chart-canvas-wrap"><canvas id="dm63-chart-rev"></canvas></div></div>';
+      html += '<div class="chart-box"><h4><i data-lucide="pie-chart"></i> توزيع الباقات</h4><div class="chart-canvas-wrap"><canvas id="dm63-chart-pie"></canvas></div></div>';
+      html += '</div>';
+
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      // Charts
+      setTimeout(function () {
+        if (!window.Chart) return;
+        var monthly = {};
+        var nowD = new Date();
+        for (var i = 5; i >= 0; i--) {
+          var dt = new Date(nowD.getFullYear(), nowD.getMonth() - i, 1);
+          var k = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+          monthly[k] = { label: dt.toLocaleDateString('ar-EG', { month: 'short' }), amount: 0 };
+        }
+        orders.forEach(function (o) {
+          if (o.status !== 'success') return;
+          var ts = o.paidAt ? (o.paidAt.seconds ? o.paidAt.seconds * 1000 : o.paidAt) :
+                   o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+          if (!ts) return;
+          var d = new Date(ts);
+          var k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+          if (monthly[k]) monthly[k].amount += (o.amount || 0);
+        });
+        var c1 = document.getElementById('dm63-chart-rev');
+        if (c1) {
+          if (window.__dm63c1) try { window.__dm63c1.destroy(); } catch (e) {}
+          window.__dm63c1 = new Chart(c1, {
+            type: 'bar',
+            data: {
+              labels: Object.values(monthly).map(function (m) { return m.label; }),
+              datasets: [{ data: Object.values(monthly).map(function (m) { return m.amount; }), backgroundColor: '#7c3aed', borderRadius: 8, barThickness: 40 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } }
+          });
+        }
+        var planCount = { starter: 0, pro: 0, business: 0, enterprise: 0, pending: 0 };
+        Object.keys(subMap).forEach(function (cid) {
+          var p = subMap[cid].planId || 'pending';
+          planCount[p] = (planCount[p] || 0) + 1;
+        });
+        var c2 = document.getElementById('dm63-chart-pie');
+        if (c2) {
+          if (window.__dm63c2) try { window.__dm63c2.destroy(); } catch (e) {}
+          window.__dm63c2 = new Chart(c2, {
+            type: 'doughnut',
+            data: {
+              labels: Object.keys(planCount),
+              datasets: [{ data: Object.values(planCount), backgroundColor: ['#06b6d4', '#7c3aed', '#f59e0b', '#10b981', '#94a3b8'], borderWidth: 0 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } } }
+          });
+        }
+      }, 200);
+
+      function kpi(label, value, icon, color, sub) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div><div class="stat-body"><div class="label">' + esc(label) + '</div><div class="value" style="font-size:1.3rem">' + esc(value) + '</div>' + (sub ? '<div style="font-size:.68rem;color:var(--text-muted)">' + esc(sub) + '</div>' : '') + '</div></div>';
+      }
+    }).catch(function (err) {
+      body.innerHTML = '<div class="empty-state"><p>فشل: ' + esc(err.message) + '</p></div>';
+    });
+  }
+
+  /* ============ TAB: LIST ============ */
+  function renderListTab63(body) {
+    body.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+    var fsMod = fb.modules.fsMod;
+    var db = fb.db;
+
+    Promise.all([
+      fsMod.getDocs(fsMod.collection(db, 'companies')),
+      fsMod.getDocs(fsMod.collection(db, 'subscriptions'))
+    ]).then(function (res) {
+      var subMap = {};
+      res[1].forEach(function (d) { subMap[d.id] = d.data(); });
+      var companies = [];
+      res[0].forEach(function (d) {
+        var c = d.data();
+        var sub = subMap[c.id] || {};
+        var now = Date.now();
+        var days = sub.expiresAt ? Math.max(0, Math.ceil((sub.expiresAt - now) / 86400000)) : 0;
+        companies.push({ id: c.id, name: c.name || '—', email: c.ownerEmail || '—', phone: c.phone || '—', planId: sub.planId || 'pending', days: days, expiresAt: sub.expiresAt, pending: !sub.expiresAt || sub.planId === 'pending' });
+      });
+      companies.sort(function (a, b) { return a.days - b.days; });
+
+      var html = '<div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">';
+      html += '<button class="btn btn-primary btn-sm" onclick="__dm63AddSub()"><i data-lucide="user-plus" style="width:12px;height:12px"></i> إضافة مشترك</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="navigate(\'subscribers\')"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> تحديث</button>';
+      html += '</div>';
+
+      html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+      html += '<th>الشركة</th><th>المالك</th><th>الباقة</th><th>الأيام</th><th>الحالة</th><th style="width:220px">إجراءات</th>';
+      html += '</tr></thead><tbody>';
+
+      companies.forEach(function (c) {
+        var sColor = c.pending ? 'yellow' : (c.days <= 0 ? 'red' : (c.days <= 3 ? 'yellow' : 'green'));
+        var sText = c.pending ? 'قيد التفعيل' : (c.days <= 0 ? 'منتهي' : 'نشط');
+        html += '<tr>';
+        html += '<td><div style="display:flex;align-items:center;gap:.5rem"><div style="width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem">' + esc((c.name || '?').charAt(0).toUpperCase()) + '</div><div><b>' + esc(c.name) + '</b><div style="font-size:.68rem;color:var(--text-muted)">' + esc(c.id.slice(0, 18)) + '…</div></div></div></td>';
+        html += '<td><div style="font-size:.82rem">' + esc(c.email) + '</div><div style="font-size:.7rem;color:var(--text-muted)">' + esc(c.phone) + '</div></td>';
+        html += '<td><span class="badge-pill badge-purple">' + esc(c.planId) + '</span></td>';
+        html += '<td>' + (c.pending ? '—' : '<b style="color:' + (c.days <= 0 ? '#ef4444' : '#10b981') + '">' + c.days + '</b>') + '</td>';
+        html += '<td><span class="badge-pill badge-' + sColor + '">' + sText + '</span></td>';
+        html += '<td><div style="display:flex;gap:.2rem;flex-wrap:wrap">';
+        html += '<button class="btn btn-success btn-sm" onclick="__dm63ExtendSub(\'' + c.id + '\')" style="font-size:.7rem;padding:.35rem .65rem"><i data-lucide="calendar-plus" style="width:11px;height:11px"></i> تمديد</button>';
+        html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm63SendCode(\'' + c.id + '\')" style="color:#ec4899" title="إرسال كود"><i data-lucide="key-round" style="width:12px;height:12px"></i></button>';
+        html += '<button class="btn btn-ghost btn-icon btn-sm" onclick="__dm63DelSub(\'' + c.id + '\',\'' + esc(c.name) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+        html += '</div></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    }).catch(function (e) { body.innerHTML = '<p>فشل: ' + esc(e.message) + '</p>'; });
+  }
+
+  /* ============ TAB: CODES ============ */
+  function renderCodesTab63(body) {
+    body.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+    var fsMod = fb.modules.fsMod;
+
+    fsMod.getDocs(fsMod.collection(fb.db, 'activation_codes')).then(function (snap) {
+      var codes = [];
+      snap.forEach(function (d) { var c = d.data(); c._id = d.id; codes.push(c); });
+      codes.sort(function (a, b) { return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0); });
+
+      var active = codes.filter(function (c) { return c.active && (!c.expiresAt || c.expiresAt > Date.now()) && (!c.maxUses || (c.usedCount || 0) < c.maxUses); }).length;
+      var used = codes.filter(function (c) { return (c.usedCount || 0) > 0; }).length;
+
+      var html = '';
+      html += '<div class="grid-stats" style="margin-bottom:1rem">';
+      html += stat('إجمالي', codes.length, 'key', '#ec4899');
+      html += stat('نشطة', active, 'check-circle', '#10b981');
+      html += stat('مستخدمة', used, 'user-check', '#7c3aed');
+      html += stat('منتهية', codes.length - active, 'x-circle', '#ef4444');
+      html += '</div>';
+
+      html += '<div style="display:flex;gap:.5rem;margin-bottom:1rem">';
+      html += '<button class="btn btn-primary btn-sm" onclick="__dm63GenCode()"><i data-lucide="plus" style="width:12px;height:12px"></i> إنشاء كود</button>';
+      html += '</div>';
+
+      if (!codes.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="key-round"></i><p>لا يوجد أكواد</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+        html += '<th>الكود</th><th>الباقة</th><th>الأيام</th><th>مستخدم/الحد</th><th>الحالة</th><th>ينتهي</th><th></th>';
+        html += '</tr></thead><tbody>';
+        codes.forEach(function (c) {
+          var isExpired = c.expiresAt && c.expiresAt < Date.now();
+          var isMaxed = c.maxUses && (c.usedCount || 0) >= c.maxUses;
+          var status = !c.active ? 'معطل' : (isExpired ? 'منتهي' : (isMaxed ? 'مستخدم' : 'نشط'));
+          var sColor = status === 'نشط' ? 'green' : (status === 'معطل' ? 'gray' : 'red');
+          html += '<tr>';
+          html += '<td><code style="font-weight:800;font-size:.9rem;color:#ec4899;cursor:pointer" onclick="__dm63Copy(\'' + esc(c.code) + '\')">' + esc(c.code) + '</code></td>';
+          html += '<td><span class="badge-pill badge-purple">' + esc(c.planName || c.planId) + '</span></td>';
+          html += '<td><b>' + (c.days || 30) + '</b></td>';
+          html += '<td>' + (c.usedCount || 0) + ' / ' + (c.maxUses || '∞') + '</td>';
+          html += '<td><span class="badge-pill badge-' + sColor + '">' + status + '</span></td>';
+          html += '<td style="font-size:.75rem">' + (c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-EG') : '—') + '</td>';
+          html += '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dm63DelCode(\'' + esc(c._id) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button></td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div></div>';
+      }
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      function stat(l, v, i, c) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + c + '20;color:' + c + '"><i data-lucide="' + i + '"></i></div><div class="stat-body"><div class="label">' + esc(l) + '</div><div class="value">' + esc(v) + '</div></div></div>';
+      }
+    }).catch(function (e) {
+      body.innerHTML = '<div class="card"><div style="padding:1rem;background:#1e293b;color:#a7f3d0;font-family:monospace;font-size:.75rem;line-height:1.7;border-radius:10px;white-space:pre">match /activation_codes/{codeId} {\n  allow read: if request.auth != null;\n  allow create, update, delete: if request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == \'super_admin\';\n}</div><p style="margin-top:1rem;color:#ef4444;font-size:.85rem">' + esc(e.message) + '</p></div>';
+    });
+  }
+
+  /* ============ TAB: PAYMENTS ============ */
+  function renderPaymentsTab63(body) {
+    body.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+    var fsMod = fb.modules.fsMod;
+    fsMod.getDocs(fsMod.collection(fb.db, 'payment_orders')).then(function (snap) {
+      var orders = [];
+      snap.forEach(function (d) { var o = d.data(); o._id = d.id; orders.push(o); });
+      orders.sort(function (a, b) { return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0); });
+
+      var html = '';
+      var html2 = '';
+      if (!orders.length) {
+        body.innerHTML = '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="dollar-sign"></i><p>لا يوجد مدفوعات</p></div></div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+      html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+      html += '<th>الشركة</th><th>الباقة</th><th>المبلغ</th><th>الحالة</th><th>التاريخ</th><th></th>';
+      html += '</tr></thead><tbody>';
+      var statusColors = { success: 'green', pending: 'yellow', pending_verification: 'yellow', failed: 'red', rejected: 'red' };
+      orders.forEach(function (o) {
+        var ts = o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+        html += '<tr>';
+        html += '<td><b>' + esc(o.companyName || o.companyId) + '</b></td>';
+        html += '<td><span class="badge-pill badge-purple">' + esc(o.planId || '—') + '</span></td>';
+        html += '<td><b>' + (o.amount || 0) + ' EGP</b></td>';
+        html += '<td><span class="badge-pill badge-' + (statusColors[o.status] || 'gray') + '">' + esc(o.status) + '</span></td>';
+        html += '<td style="font-size:.75rem">' + (ts ? fmtD(ts) : '—') + '</td>';
+        html += '<td>' + (o.status === 'pending_verification' ?
+          '<button class="btn btn-success btn-icon btn-sm" onclick="__dm63Approve(\'' + esc(o._id) + '\',\'' + esc(o.companyId) + '\',\'' + esc(o.planId) + '\')" style="color:#fff"><i data-lucide="check" style="width:12px;height:12px"></i></button>' : '') + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    });
+  }
+
+  /* ============ TAB: DETAILED ============ */
+  function renderDetailedTab63(body) {
+    renderDetailedTab62 ? renderDetailedTab62() : (body.innerHTML = '<p>—</p>');
+  }
+
+  /* ============ TAB: COUPONS ============ */
+  function renderCouponsTab63(body) {
+    body.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+    var fsMod = fb.modules.fsMod;
+
+    fsMod.getDocs(fsMod.collection(fb.db, 'coupons')).then(function (snap) {
+      var coupons = [];
+      snap.forEach(function (d) { var c = d.data(); c._id = d.id; coupons.push(c); });
+
+      var html = '';
+      html += '<div class="card" style="margin-bottom:1rem;padding:1rem">';
+      html += '<div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">';
+      html += '<div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#ec4899,#be185d);display:flex;align-items:center;justify-content:center"><i data-lucide="gift" style="color:#fff;width:20px;height:20px"></i></div>';
+      html += '<div><div style="font-weight:800;font-size:.95rem">العروض والخصومات</div><div style="font-size:.72rem;color:var(--text-muted)">' + coupons.length + ' عرض</div></div>';
+      html += '<div style="margin-inline-start:auto"><button class="btn btn-primary btn-sm" onclick="__dm63AddCoupon()"><i data-lucide="plus" style="width:12px;height:12px"></i> عرض جديد</button></div>';
+      html += '</div></div>';
+
+      if (!coupons.length) {
+        html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="gift"></i><p>لا يوجد عروض</p></div></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr><th>الكود</th><th>الخصم</th><th>الاستخدام</th><th>الحالة</th><th></th></tr></thead><tbody>';
+        coupons.forEach(function (c) {
+          html += '<tr>';
+          html += '<td><code style="font-weight:700;color:#ec4899">' + esc(c.code) + '</code></td>';
+          html += '<td>' + (c.discountType === 'percent' ? c.discount + '%' : c.discount + ' EGP') + '</td>';
+          html += '<td>' + (c.usedCount || 0) + '/' + (c.maxUses || '∞') + '</td>';
+          html += '<td><span class="badge-pill badge-' + (c.active ? 'green' : 'gray') + '">' + (c.active ? 'نشط' : 'معطل') + '</span></td>';
+          html += '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dm63DelCoupon(\'' + esc(c._id) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button></td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div></div>';
+      }
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    });
+  }
+
+  /* ============ TAB: FEATURES ============ */
+  function renderFeaturesTab63(body) {
+    var features = [
+      { id: 'whatsapp', name: 'تكامل واتساب', desc: 'إرسال رسائل للعملاء', icon: '💬', default: true },
+      { id: 'ai_distribution', name: 'التوزيع الذكي', desc: 'توزيع AI', icon: '🤖', default: true },
+      { id: 'client_portal', name: 'بوابة العملاء', desc: 'روابط للعملاء', icon: '🔗', default: true },
+      { id: 'pdf_reports', name: 'تقارير PDF', desc: 'تقارير احترافية', icon: '📄', default: true },
+      { id: 'bulk_import', name: 'الاستيراد الذكي', desc: 'استيراد من PDF/صور', icon: '📥', default: true },
+      { id: 'ai_chat', name: 'المساعد الذكي', desc: 'شات AI', icon: '🧠', default: true },
+      { id: 'timeline', name: 'العرض الزمني', desc: 'Timeline view', icon: '📅', default: true },
+      { id: 'p_l_dashboard', name: 'التحليل المالي', desc: 'P&L Dashboard', icon: '💰', default: true }
+    ];
+
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem('dm_feature_flags') || '{}'); } catch (e) {}
+
+    var html = '<div class="card">';
+    html += '<h4 style="margin:0 0 1rem;font-size:.95rem">⚙️ تحكم في مميزات النظام</h4>';
+    features.forEach(function (f) {
+      var isOn = saved[f.id] !== undefined ? saved[f.id] : f.default;
+      html += '<div style="display:flex;align-items:center;gap:.75rem;padding:.75rem;background:var(--surface-2);border-radius:10px;margin-bottom:.5rem">';
+      html += '<div style="width:36px;height:36px;border-radius:10px;background:rgba(124,58,237,.1);display:flex;align-items:center;justify-content:center;font-size:1.1rem">' + f.icon + '</div>';
+      html += '<div style="flex:1"><div style="font-weight:700;font-size:.88rem">' + esc(f.name) + '</div><div style="font-size:.72rem;color:var(--text-muted)">' + esc(f.desc) + '</div></div>';
+      html += '<label class="switch"><input type="checkbox" data-feat="' + f.id + '"' + (isOn ? ' checked' : '') + '><span class="slider"></span></label>';
+      html += '</div>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+
+    body.querySelectorAll('[data-feat]').forEach(function (cb) {
+      cb.onchange = function () {
+        var flags = {};
+        try { flags = JSON.parse(localStorage.getItem('dm_feature_flags') || '{}'); } catch (e) {}
+        flags[cb.dataset.feat] = cb.checked;
+        localStorage.setItem('dm_feature_flags', JSON.stringify(flags));
+        toast('✓ تم التحديث', 'success');
+      };
+    });
+  }
+
+  /* ============ TAB: BROADCAST ============ */
+  function renderBroadcastTab63(body) {
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+    var fsMod = fb.modules.fsMod;
+    fsMod.getDoc(fsMod.doc(fb.db, 'super_admin', 'announcement')).then(function (snap) {
+      var ann = snap.exists() ? snap.data() : {};
+      var html = '<div class="card">';
+      html += '<h4 style="margin:0 0 1rem">📢 إشعار جماعي</h4>';
+      html += '<div class="field"><label>العنوان</label><input id="bc63-title" type="text" value="' + esc(ann.title || '') + '"></div>';
+      html += '<div class="field" style="margin-top:.65rem"><label>النص</label><textarea id="bc63-body" rows="3">' + esc(ann.body || '') + '</textarea></div>';
+      html += '<div class="form-row" style="margin-top:.65rem">';
+      html += '<div class="field"><label>النوع</label><select id="bc63-type">';
+      ['info','success','warning','danger'].forEach(function (t) {
+        html += '<option value="' + t + '"' + (ann.type === t ? ' selected' : '') + '>' + t + '</option>';
+      });
+      html += '</select></div>';
+      html += '<div class="field"><label>الحالة</label><select id="bc63-active">';
+      html += '<option value="1"' + (ann.active ? ' selected' : '') + '>مفعّل</option>';
+      html += '<option value="0"' + (!ann.active ? ' selected' : '') + '>معطّل</option>';
+      html += '</select></div>';
+      html += '</div>';
+      html += '<button class="btn btn-primary" style="margin-top:1rem" onclick="__dm63SaveBroadcast()">حفظ ونشر</button>';
+      html += '</div>';
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    });
+  }
+
+  /* ============ TAB: ACTIVITY ============ */
+  function renderActivityTab63(body) {
+    body.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+    var fsMod = fb.modules.fsMod;
+
+    fsMod.getDocs(fsMod.collection(fb.db, 'payment_orders')).then(function (snap) {
+      var orders = [];
+      snap.forEach(function (d) { orders.push(d.data()); });
+      orders.sort(function (a, b) { return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0); });
+
+      var html = '<div class="card"><h4 style="margin:0 0 1rem;font-size:.9rem">📜 آخر العمليات</h4>';
+      if (!orders.length) html += '<div class="empty-state"><p>لا يوجد نشاط</p></div>';
+      orders.slice(0, 50).forEach(function (o) {
+        var ts = o.createdAt ? (o.createdAt.seconds ? o.createdAt.seconds * 1000 : o.createdAt) : 0;
+        html += '<div style="display:flex;gap:.75rem;padding:.65rem 0;border-bottom:1px solid var(--border)">';
+        html += '<div style="width:32px;height:32px;border-radius:50%;background:' + (o.status === 'success' ? '#10b98120' : '#f59e0b20') + ';color:' + (o.status === 'success' ? '#10b981' : '#f59e0b') + ';display:flex;align-items:center;justify-content:center">' + (o.status === 'success' ? '✓' : '⏳') + '</div>';
+        html += '<div style="flex:1"><b style="font-size:.85rem">' + esc(o.companyName || o.companyId) + '</b>';
+        html += '<div style="font-size:.72rem;color:var(--text-muted)">' + esc(o.planId) + ' · ' + (o.amount || 0) + ' EGP</div></div>';
+        html += '<div style="font-size:.7rem;color:var(--text-muted)">' + (ts ? fmtD(ts) : '—') + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      body.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+    });
+  }
+
+  /* ============ TAB: BACKUP ============ */
+  function renderBackupTab63(body) {
+    var html = '<div class="grid-2">';
+    html += '<div class="card"><h4 style="margin:0 0 .75rem">💾 تصدير كامل</h4><p style="font-size:.82rem;color:var(--text-muted);margin:0 0 1rem">نسخة JSON من كل البيانات.</p><button class="btn btn-primary btn-sm" onclick="__dm63BackupAll()">تصدير</button></div>';
+    html += '<div class="card"><h4 style="margin:0 0 .75rem">📥 تصدير المشتركين CSV</h4><p style="font-size:.82rem;color:var(--text-muted);margin:0 0 1rem">ملف CSV بقائمة المشتركين.</p><button class="btn btn-ghost btn-sm" onclick="__dm63ExportSubs()">تصدير</button></div>';
+    html += '</div>';
+    body.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+  }
+
+  /* =========================================================
+     ACTIONS
+     ========================================================= */
+  window.__dm63Copy = function (txt) {
+    try { navigator.clipboard.writeText(txt); toast('✓ تم النسخ: ' + txt, 'success'); }
+    catch (e) { toast(txt, 'info'); }
+  };
+
+  window.__dm63GenCode = function () {
+    var html = '<div class="form-row">';
+    html += '<div class="field"><label>الباقة</label><select id="c63-plan"><option value="starter">Starter</option><option value="pro" selected>Professional</option><option value="business">Business</option></select></div>';
+    html += '<div class="field"><label>الأيام</label><input id="c63-days" type="number" value="30"></div>';
+    html += '</div>';
+    html += '<div class="form-row" style="margin-top:.65rem">';
+    html += '<div class="field"><label>أقصى استخدام</label><input id="c63-max" type="number" value="1"></div>';
+    html += '<div class="field"><label>صالح لمدة</label><input id="c63-valid" type="number" value="90"></div>';
+    html += '</div>';
+    html += '<div id="c63-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({ title: '🔑 إنشاء كود', size: 'lg', body: html, footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" onclick="__dm63SaveCode()">إنشاء</button>' });
+    }
+  };
+
+  window.__dm63SaveCode = async function () {
+    var planId = document.getElementById('c63-plan').value;
+    var days = parseInt(document.getElementById('c63-days').value) || 30;
+    var maxUses = parseInt(document.getElementById('c63-max').value) || 1;
+    var validDays = parseInt(document.getElementById('c63-valid').value) || 90;
+    var msg = document.getElementById('c63-msg');
+
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var p = function (n) { var s = ''; for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length)); return s; };
+    var code = 'DRM-' + p(4) + '-' + p(4);
+    var planNames = { starter: 'Starter', pro: 'Professional', business: 'Business' };
+
+    msg.style.color = '#f59e0b'; msg.textContent = 'جاري الإنشاء…';
+
+    try {
+      var fb = window.DrMediaFB;
+      await fb.modules.fsMod.setDoc(fb.modules.fsMod.doc(fb.db, 'activation_codes', code), {
+        code: code, planId: planId, planName: planNames[planId],
+        days: days, maxUses: maxUses, usedCount: 0,
+        expiresAt: Date.now() + (validDays * 86400000),
+        active: true,
+        createdBy: window.__dmSaaS.user.uid,
+        createdAt: fb.modules.fsMod.serverTimestamp()
+      });
+      msg.style.color = '#10b981'; msg.textContent = '✓ ' + code;
+      try { navigator.clipboard.writeText(code); } catch (e) {}
+      toast('✓ ' + code + ' (تم النسخ)', 'success');
+      setTimeout(function () { if (typeof closeModal === 'function') closeModal(); renderCodesTab63(document.getElementById('dm63-hub-body')); }, 800);
+    } catch (e) {
+      msg.style.color = '#ef4444';
+      msg.textContent = e.code === 'permission-denied' ? 'صلاحيات — حدّث Rules' : e.message;
+    }
+  };
+
+  window.__dm63DelCode = function (id) {
+    if (!confirm('حذف الكود؟')) return;
+    var fb = window.DrMediaFB;
+    fb.modules.fsMod.deleteDoc(fb.modules.fsMod.doc(fb.db, 'activation_codes', id)).then(function () {
+      toast('✓', 'success'); renderCodesTab63(document.getElementById('dm63-hub-body'));
+    });
+  };
+
+  window.__dm63AddSub = function () {
+    var html = '';
+    html += '<div class="field"><label>الشركة *</label><input id="a63-company" type="text"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>المسؤول *</label><input id="a63-name" type="text"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>البريد *</label><input id="a63-email" type="email"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>الهاتف</label><input id="a63-phone" type="tel"></div>';
+    html += '<div class="field" style="margin-top:.65rem"><label>كلمة المرور *</label><input id="a63-pass" type="text" value="' + 'Welcome' + Math.floor(Math.random() * 9999) + '" ></div>';
+    html += '<div class="form-row" style="margin-top:.75rem">';
+    html += '<div class="field"><label>الباقة</label><select id="a63-plan"><option value="starter">Starter</option><option value="pro" selected>Professional</option><option value="business">Business</option></select></div>';
+    html += '<div class="field"><label>المدة (يوم)</label><input id="a63-days" type="number" value="30"></div>';
+    html += '</div>';
+    html += '<div id="a63-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({ title: '➕ إضافة مشترك', size: 'lg', body: html, footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" onclick="__dm63SaveSub()">إنشاء</button>' });
+    }
+  };
+
+  window.__dm63SaveSub = async function () {
+    var companyName = document.getElementById('a63-company').value.trim();
+    var name = document.getElementById('a63-name').value.trim();
+    var email = document.getElementById('a63-email').value.trim();
+    var phone = document.getElementById('a63-phone').value.trim();
+    var pass = document.getElementById('a63-pass').value.trim();
+    var planId = document.getElementById('a63-plan').value;
+    var days = parseInt(document.getElementById('a63-days').value) || 30;
+    var msg = document.getElementById('a63-msg');
+
+    if (!companyName || !name || !email || !pass) { msg.textContent = 'الحقول المطلوبة'; return; }
+    msg.style.color = '#f59e0b'; msg.textContent = 'جاري الإنشاء…';
+
+    try {
+      var fb = window.DrMediaFB;
+      var appMod = fb.modules.appMod;
+      var authMod = fb.modules.authMod;
+      var fsMod = fb.modules.fsMod;
+
+      var secondApp = appMod.initializeApp(fb.app.options, 'a63_' + Date.now());
+      var secondAuth = authMod.getAuth(secondApp);
+      var cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+      var uidNew = cred.user.uid;
+      try { await authMod.signOut(secondAuth); } catch (e) {}
+      try { await secondApp.delete(); } catch (e) {}
+
+      var companyId = 'c_' + uidNew.slice(0, 12);
+      var now = Date.now();
+      var expiresAt = now + (days * 86400000);
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId), {
+        id: companyId, name: companyName, ownerUid: uidNew, ownerEmail: email, phone: phone,
+        active: true, createdAt: fsMod.serverTimestamp(), createdBy: window.__dmSaaS.user.uid
+      });
+      await fsMod.setDoc(fsMod.doc(fb.db, 'users', uidNew), {
+        uid: uidNew, email: email, name: name, phone: phone, companyId: companyId, role: 'owner',
+        createdAt: fsMod.serverTimestamp()
+      });
+      await fsMod.setDoc(fsMod.doc(fb.db, 'subscriptions', companyId), {
+        companyId: companyId, planId: planId, status: 'active',
+        startedAt: now, expiresAt: expiresAt, activatedBy: window.__dmSaaS.user.uid
+      });
+
+      // Seed company
+      var seed = {
+        users: [{ id: uidNew, username: email, password: pass, name: name, role: 'Admin', email: email, firebaseUid: uidNew }],
+        roles: [{ id: 'r1', name: 'Admin', permissions: { '*': ['view','create','edit','delete','export','print','approve'] } }],
+        employees: [],
+        halls: [
+          { id: 'hall1', name: { ar: 'القاعة المغلقة', en: 'Closed Hall' }, code: 'H1', type: 'Closed', status: 'active', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 5000 },
+          { id: 'hall2', name: { ar: 'القاعة الأوبن', en: 'Open Hall' }, code: 'H2', type: 'Open', status: 'active', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 4500 },
+          { id: 'hall3', name: { ar: 'الكافيه', en: 'Cafe' }, code: 'H3', type: 'Cafe', status: 'active', requirements: [{role:'Photographer',count:1}], cost: 1500 }
+        ],
+        clients: [], equipment: [], bookings: [], distributions: [],
+        attendance: [], leaves: [], substitutions: [],
+        advances: [], deductions: [], bonuses: [], payroll_payments: [],
+        notifications: [], activityLogs: [], trash: [],
+        settings: { companyName: companyName, phone: phone, email: email, rolePrices: { Director: 300, Photographer: 200, Crane: 250 }, theme: 'light', lang: 'ar' }
+      };
+      await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main'), {
+        payload: seed, updatedBy: 'system', updatedAt: fsMod.serverTimestamp()
+      });
+
+      msg.style.color = '#10b981'; msg.textContent = '✓ تم الإنشاء';
+      toast('✓ ' + companyName, 'success');
+      try { navigator.clipboard.writeText('Email: ' + email + '\nPass: ' + pass); } catch (e) {}
+      setTimeout(function () { if (typeof closeModal === 'function') closeModal(); navigate('subscribers'); }, 1000);
+    } catch (e) {
+      msg.style.color = '#ef4444';
+      msg.textContent = e.code === 'auth/email-already-in-use' ? 'البريد مستخدم' : e.message;
+    }
+  };
+
+  window.__dm63ExtendSub = function (companyId) {
+    var days = prompt('كم يوم؟', '30');
+    if (!days) return;
+    days = parseInt(days);
+    if (!days) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.getDoc(fsMod.doc(fb.db, 'subscriptions', companyId)).then(function (snap) {
+      var cur = snap.exists() ? snap.data() : {};
+      var base = Math.max(cur.expiresAt || 0, Date.now());
+      return fsMod.setDoc(fsMod.doc(fb.db, 'subscriptions', companyId), {
+        companyId: companyId, status: 'active',
+        expiresAt: base + (days * 86400000),
+        extendedBy: window.__dmSaaS.user.uid, extendedAt: fsMod.serverTimestamp()
+      }, { merge: true });
+    }).then(function () { toast('✓ +' + days + ' يوم', 'success'); navigate('subscribers'); });
+  };
+
+  window.__dm63SendCode = function (companyId) {
+    if (!confirm('إنشاء كود جديد وإرساله؟')) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.getDoc(fsMod.doc(fb.db, 'subscriptions', companyId)).then(function (snap) {
+      var sub = snap.exists() ? snap.data() : {};
+      var planId = sub.planId !== 'pending' ? sub.planId : 'pro';
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      var p = function (n) { var s = ''; for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length)); return s; };
+      var code = 'DRM-' + p(4) + '-' + p(4);
+      var planNames = { starter: 'Starter', pro: 'Professional', business: 'Business' };
+      return fsMod.setDoc(fsMod.doc(fb.db, 'activation_codes', code), {
+        code: code, planId: planId, planName: planNames[planId],
+        days: 30, maxUses: 1, usedCount: 0,
+        expiresAt: Date.now() + (90 * 86400000),
+        active: true,
+        note: 'Auto-generated for ' + companyId,
+        createdBy: window.__dmSaaS.user.uid,
+        createdAt: fsMod.serverTimestamp()
+      }).then(function () { return code; });
+    }).then(function (code) {
+      try { navigator.clipboard.writeText(code); } catch (e) {}
+      toast('✓ الكود: ' + code + ' (تم النسخ)', 'success');
+      alert('كود التفعيل: ' + code + '\n\nتم نسخه للحافظة. أرسله للعميل.');
+    });
+  };
+
+  window.__dm63DelSub = function (companyId, name) {
+    if (!confirm('حذف "' + name + '" نهائيًا؟')) return;
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    Promise.all([
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main')).catch(function () {}),
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'companies', companyId)).catch(function () {}),
+      fsMod.deleteDoc(fsMod.doc(fb.db, 'subscriptions', companyId)).catch(function () {})
+    ]).then(function () { toast('✓', 'success'); navigate('subscribers'); });
+  };
+
+  window.__dm63Approve = function (orderId, companyId, planId) {
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    var prices = { starter: 30, pro: 30, business: 30 };
+    var now = Date.now();
+    Promise.all([
+      fsMod.updateDoc(fsMod.doc(fb.db, 'payment_orders', orderId), { status: 'success', paidAt: fsMod.serverTimestamp() }),
+      fsMod.setDoc(fsMod.doc(fb.db, 'subscriptions', companyId), {
+        companyId: companyId, planId: planId, status: 'active',
+        startedAt: now, expiresAt: now + 30 * 86400000, updatedAt: fsMod.serverTimestamp()
+      }, { merge: true })
+    ]).then(function () { toast('✓', 'success'); navigate('subscribers'); });
+  };
+
+  window.__dm63AddCoupon = function () {
+    var code = prompt('كود الخصم:', 'WELCOME10');
+    if (!code) return;
+    var discount = prompt('نسبة الخصم %:', '10');
+    if (!discount) return;
+    var maxUses = prompt('أقصى استخدام:', '50');
+    var fb = window.DrMediaFB;
+    var fsMod = fb.modules.fsMod;
+    fsMod.setDoc(fsMod.doc(fb.db, 'coupons', 'cp_' + code.toUpperCase()), {
+      code: code.toUpperCase(),
+      discountType: 'percent',
+      discount: parseFloat(discount),
+      maxUses: parseInt(maxUses) || 50,
+      usedCount: 0,
+      expiresAt: Date.now() + (30 * 86400000),
+      active: true,
+      createdAt: fsMod.serverTimestamp()
+    }).then(function () { toast('✓', 'success'); navigate('subscribers'); });
+  };
+
+  window.__dm63DelCoupon = function (id) {
+    if (!confirm('حذف؟')) return;
+    var fb = window.DrMediaFB;
+    fb.modules.fsMod.deleteDoc(fb.modules.fsMod.doc(fb.db, 'coupons', id)).then(function () { toast('✓', 'success'); navigate('subscribers'); });
+  };
+
+  window.__dm63SaveBroadcast = function () {
+    var title = document.getElementById('bc63-title').value;
+    var body = document.getElementById('bc63-body').value;
+    var type = document.getElementById('bc63-type').value;
+    var active = document.getElementById('bc63-active').value === '1';
+    var fb = window.DrMediaFB;
+    fb.modules.fsMod.setDoc(fb.modules.fsMod.doc(fb.db, 'super_admin', 'announcement'), {
+      title: title, body: body, type: type, active: active,
+      updatedBy: window.__dmSaaS.user.uid,
+      updatedAt: fb.modules.fsMod.serverTimestamp()
+    }).then(function () { toast('✓ تم النشر', 'success'); });
+  };
+
+  window.__dm63BackupAll = async function () {
+    try {
+      var fb = window.DrMediaFB;
+      var fsMod = fb.modules.fsMod;
+      var cols = ['companies', 'subscriptions', 'users', 'payment_orders', 'coupons', 'activation_codes'];
+      var data = { exportedAt: new Date().toISOString(), data: {} };
+      for (var i = 0; i < cols.length; i++) {
+        var snap = await fsMod.getDocs(fsMod.collection(fb.db, cols[i]));
+        data.data[cols[i]] = [];
+        snap.forEach(function (d) { data.data[cols[i]].push({ id: d.id, ...d.data() }); });
+      }
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'drmedia-backup-' + Date.now() + '.json'; a.click();
+      URL.revokeObjectURL(url);
+      toast('✓ تم التصدير', 'success');
+    } catch (e) { toast('فشل: ' + e.message, 'error'); }
+  };
+
+  window.__dm63ExportSubs = function () {
+    var fb = window.DrMediaFB;
+    fb.modules.fsMod.getDocs(fb.modules.fsMod.collection(fb.db, 'companies')).then(function (snap) {
+      var rows = [['ID', 'Name', 'Email', 'Phone']];
+      snap.forEach(function (d) { var c = d.data(); rows.push([c.id, c.name || '', c.ownerEmail || '', c.phone || '']); });
+      var csv = rows.map(function (r) { return r.map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+      var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'subscribers.csv'; a.click();
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 300;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () { return typeof Pages !== 'undefined' && typeof State !== 'undefined' && typeof navigate === 'function'; },
+    function () {
+      fixDuplicateLogin();
+      registerSubscribersHub();
+
+      // Employee register button
+      setInterval(addEmployeeRegisterBtn, 2000);
+      addEmployeeRegisterBtn();
+
+      // Activation flow
+      setupActivationFlow();
+
+      // Re-inject QR buttons with new handler
+      setInterval(function () {
+        document.querySelectorAll('#content table.data-table tbody tr').forEach(function (tr) {
+          if (tr.querySelector('.dm-qr-btn')) return;
+          var editBtn = tr.querySelector('button[onclick*="editEmployee"]') || tr.querySelector('button[onclick*="editUser"]');
+          if (!editBtn) return;
+          var oc = editBtn.getAttribute('onclick');
+          var m = oc.match(/(?:editEmployee|editUser)\(['"]([^'"]+)['"]\)/);
+          if (!m) return;
+          var id = m[1];
+          var user = oc.indexOf('editEmployee') >= 0 ?
+            (State.data.users || []).find(function (u) { return u.employeeId === id; }) :
+            (State.data.users || []).find(function (u) { return u.id === id; });
+          if (!user) return;
+          var actionDiv = tr.querySelector('td:last-child > div');
+          if (!actionDiv) return;
+          var btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-icon btn-sm dm-qr-btn';
+          btn.title = 'QR';
+          btn.style.color = '#7c3aed';
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>';
+          btn.onclick = function (e) { e.stopPropagation(); window.__dm62ShowQR(user.id); };
+          actionDiv.appendChild(btn);
+        });
+        if (window.lucide) lucide.createIcons();
+      }, 2000);
+
+      console.log('%c[Section 63] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ Duplicate login removed');
+      console.log('  ✅ Employee registration button');
+      console.log('  ✅ Activation code on new signup');
+      console.log('  ✅ Subscribers Hub: 10 tabs');
+    }
+  );
+
+})();
 
 
 
