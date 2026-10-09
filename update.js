@@ -26743,6 +26743,789 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 64: Employee Portal + Permission Codes + SA Guard
+   Version: 1.0.0
+   ---------------------------------------------------------
+   1) Employee login button → dashboard with tasks only
+   2) Remove trial period
+   3) Activation codes WITH permissions
+   4) Super Admin page hidden from non-SA + permission matrix
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 64] ═══ Loading ═══', 'color:#f59e0b;font-weight:bold;font-size:15px');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function isSA() { return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin); }
+  function getFb() { return window.DrMediaFB; }
+
+  /* =========================================================
+     MODULE LIST — all permission-enabled modules
+     ========================================================= */
+  var ALL_MODULES = [
+    { id: 'dashboard', name: 'لوحة التحكم' },
+    { id: 'bookings', name: 'الحجوزات' },
+    { id: 'calendar', name: 'التقويم' },
+    { id: 'distribution', name: 'التوزيع اليومي' },
+    { id: 'timeline', name: 'العرض الزمني' },
+    { id: 'bulkdist', name: 'التوزيع الجماعي' },
+    { id: 'byhall', name: 'توزيع حسب القاعة' },
+    { id: 'distlog', name: 'سجل التوزيعات' },
+    { id: 'halls', name: 'القاعات' },
+    { id: 'clients', name: 'العملاء' },
+    { id: 'employees', name: 'الموظفون' },
+    { id: 'attendance', name: 'الحضور والانصراف' },
+    { id: 'attlog', name: 'سجل الحضور' },
+    { id: 'leaves', name: 'الإجازات' },
+    { id: 'substitutions', name: 'الاستبدالات' },
+    { id: 'payroll', name: 'الرواتب' },
+    { id: 'advances', name: 'السلف' },
+    { id: 'deductions', name: 'الخصومات' },
+    { id: 'bonuses', name: 'المكافآت' },
+    { id: 'equipment', name: 'المعدات' },
+    { id: 'reports', name: 'التقارير' },
+    { id: 'pl', name: 'التحليل المالي' },
+    { id: 'aiimport', name: 'الاستيراد الذكي' },
+    { id: 'users', name: 'المستخدمون' },
+    { id: 'settings', name: 'الإعدادات' },
+    { id: 'notifications', name: 'الإشعارات' },
+    { id: 'activity', name: 'سجل النشاط' },
+    { id: 'trash', name: 'سلة المحذوفات' },
+    { id: 'ai', name: 'التوزيع الذكي' }
+  ];
+
+  /* =========================================================
+     1) SUPABASE-STYLE PERMISSION CHECK
+     ========================================================= */
+  function hasModuleAccess(moduleId) {
+    if (isSA()) return true;
+    var perms = window.__dmCurrentPermissions;
+    if (!perms) return true; // no restriction set = full access (backward compat)
+    return perms.indexOf(moduleId) >= 0;
+  }
+
+  // Override `can()` for all page-level checks
+  function patchCan() {
+    if (typeof window.can !== 'function') return;
+    if (window.can.__dm64) return;
+
+    var origCan = window.can;
+    window.can = function (module, perm) {
+      // Super Admin = always yes
+      if (isSA()) return true;
+
+      // Check module access first
+      if (!hasModuleAccess(module)) return false;
+
+      // Fall through to original logic
+      return origCan.apply(this, arguments);
+    };
+    window.can.__dm64 = true;
+    console.log('[Section 64] ✓ can() patched with permission matrix');
+  }
+
+  /* =========================================================
+     2) LOAD PERMISSIONS FROM USER PROFILE
+     ========================================================= */
+  function loadUserPermissions() {
+    if (!window.__dmSaaS || !window.__dmSaaS.profile) return;
+
+    var profile = window.__dmSaaS.profile;
+    if (profile.role === 'super_admin') {
+      window.__dmCurrentPermissions = null; // full access
+      return;
+    }
+
+    // Permissions stored as array of module IDs
+    if (profile.permissions && Array.isArray(profile.permissions)) {
+      window.__dmCurrentPermissions = profile.permissions;
+    } else {
+      // No permissions set → assume legacy user with full access
+      window.__dmCurrentPermissions = null;
+    }
+
+    console.log('[Section 64] Permissions:', window.__dmCurrentPermissions || 'ALL');
+  }
+
+  /* =========================================================
+     3) HIDE SUPER ADMIN NAV FROM NON-SA
+     ========================================================= */
+  function hideSuperAdminNav() {
+    if (isSA()) return;
+    var nav = document.getElementById('dm-super-nav');
+    if (nav) nav.remove();
+    // Also hide any SA links
+    document.querySelectorAll('[data-page="superadmin"], [data-page="counters"], [data-page="subscribers"]').forEach(function (el) {
+      el.remove();
+    });
+  }
+
+  // Block super admin page access
+  function blockSAPage() {
+    if (typeof Pages === 'undefined') return;
+    if (Pages.superadmin && !Pages.superadmin.__dm64) {
+      var orig = Pages.superadmin;
+      Pages.superadmin = function (el) {
+        if (!isSA()) {
+          el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem">' +
+            '<i data-lucide="shield-off"></i>' +
+            '<p style="font-weight:700;font-size:1.1rem;color:#ef4444;margin:.5rem 0">صفحة غير متاحة</p>' +
+            '<p style="font-size:.85rem;color:var(--text-muted)">ليس لديك صلاحية الوصول لهذه الصفحة</p>' +
+          '</div>';
+          if (window.lucide) lucide.createIcons();
+          return;
+        }
+        return orig.apply(this, arguments);
+      };
+      Pages.superadmin.__dm64 = true;
+    }
+
+    if (Pages.counters && !Pages.counters.__dm64) {
+      var orig2 = Pages.counters;
+      Pages.counters = function (el) {
+        if (!isSA()) {
+          el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="shield-off"></i><p>غير متاح</p></div>';
+          if (window.lucide) lucide.createIcons();
+          return;
+        }
+        return orig2.apply(this, arguments);
+      };
+      Pages.counters.__dm64 = true;
+    }
+
+    if (Pages.subscribers && !Pages.subscribers.__dm64) {
+      var orig3 = Pages.subscribers;
+      Pages.subscribers = function (el) {
+        if (!isSA()) {
+          el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem"><i data-lucide="shield-off"></i><p>غير متاح</p></div>';
+          if (window.lucide) lucide.createIcons();
+          return;
+        }
+        return orig3.apply(this, arguments);
+      };
+      Pages.subscribers.__dm64 = true;
+    }
+  }
+
+  /* =========================================================
+     4) EMPLOYEE PORTAL — track tasks & details
+     ========================================================= */
+  function registerEmployeePortal() {
+    Pages.myportal = function (el) {
+      var emp = null;
+      if (window.__dmSaaS && window.__dmSaaS.profile && window.__dmSaaS.profile.employeeId) {
+        emp = (State.data.employees || []).find(function (e) { return e.id === window.__dmSaaS.profile.employeeId; });
+      }
+      // Also try by email
+      if (!emp && window.__dmSaaS && window.__dmSaaS.user) {
+        emp = (State.data.employees || []).find(function (e) {
+          return e.email === window.__dmSaaS.user.email;
+        });
+      }
+
+      if (!emp) {
+        el.innerHTML = '<div class="empty-state" style="padding:4rem 1rem">' +
+          '<i data-lucide="user-x"></i>' +
+          '<p>لم يتم ربط حسابك بموظف بعد</p>' +
+          '<p style="font-size:.85rem;color:var(--text-muted);margin-top:.5rem">تواصل مع الإدارة لربط حسابك</p>' +
+        '</div>';
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      // Get employee data
+      var today = todayISO();
+      var myDists = (State.data.distributions || []).filter(function (d) {
+        return d.employeeId === emp.id && d.status === 'confirmed';
+      });
+      var todayDists = myDists.filter(function (d) { return d.date === today; });
+      var upcomingDists = myDists.filter(function (d) { return d.date > today; }).sort(function (a, b) { return a.date.localeCompare(b.date); }).slice(0, 10);
+      var pastDists = myDists.filter(function (d) { return d.date < today; }).sort(function (a, b) { return b.date.localeCompare(a.date); }).slice(0, 10);
+
+      var myAtt = (State.data.attendance || []).filter(function (a) { return a.employeeId === emp.id; });
+      var todayAtt = myAtt.find(function (a) { return a.date === today; });
+
+      var myAdvs = (State.data.advances || []).filter(function (a) { return a.employeeId === emp.id; });
+      var myDeds = (State.data.deductions || []).filter(function (a) { return a.employeeId === emp.id; });
+      var myBons = (State.data.bonuses || []).filter(function (a) { return a.employeeId === emp.id; });
+
+      var workDays = myDists.length;
+      var grossPay = workDays * (emp.dayRate || 0);
+      var totalAdv = myAdvs.reduce(function (s, a) { return s + (a.amount || 0); }, 0);
+      var totalDed = myDeds.reduce(function (s, a) { return s + (a.amount || 0); }, 0);
+      var totalBon = myBons.reduce(function (s, a) { return s + (a.amount || 0); }, 0);
+      var netPay = grossPay + totalBon - totalAdv - totalDed;
+
+      var monthPrefix = today.slice(0, 7);
+      var monthDists = myDists.filter(function (d) { return d.date.indexOf(monthPrefix) === 0; });
+      var monthPay = monthDists.length * (emp.dayRate || 0);
+
+      var html = '';
+
+      // Hero
+      html += '<div class="card" style="margin-bottom:1.25rem;background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(168,85,247,.04));border:2px solid rgba(124,58,237,.2);padding:1.5rem">';
+      html += '<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">';
+      html += '<div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.75rem;box-shadow:0 15px 30px -10px rgba(124,58,237,.5)">' + esc(initials(emp.name)) + '</div>';
+      html += '<div style="flex:1;min-width:180px">';
+      html += '<div style="font-size:.75rem;color:var(--text-muted);font-weight:700">أهلاً بك</div>';
+      html += '<div style="font-size:1.5rem;font-weight:800;color:var(--text);line-height:1.2;margin:.15rem 0">' + esc(emp.name) + '</div>';
+      html += '<div style="font-size:.82rem;color:var(--text-muted)">' + esc(emp.role) + ' · ' + esc(emp.code || '') + '</div>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // KPIs
+      html += '<div class="grid-stats" style="margin-bottom:1.25rem">';
+      html += kpi('حجوزات اليوم', todayDists.length, 'calendar-check', '#10b981');
+      html += kpi('حجوزات قادمة', upcomingDists.length, 'calendar', '#7c3aed');
+      html += kpi('أيام عملك', workDays, 'briefcase', '#06b6d4');
+      html += kpi('صافي المستحق', netPay.toLocaleString() + ' ج', 'wallet', '#f59e0b');
+      html += '</div>';
+
+      // Attendance today
+      html += '<div class="card" style="margin-bottom:1.25rem">';
+      html += '<h4 style="margin:0 0 .85rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">';
+      html += '<i data-lucide="clock" style="width:16px;height:16px;color:#7c3aed"></i> حضورك اليوم</h4>';
+      if (todayAtt) {
+        html += '<div style="display:flex;gap:1rem;flex-wrap:wrap">';
+        html += '<div style="flex:1;min-width:120px;padding:.85rem;background:var(--surface-2);border-radius:10px;text-align:center"><div style="font-size:.72rem;color:var(--text-muted)">الحضور</div><div style="font-size:1.25rem;font-weight:800;color:#10b981">' + esc(todayAtt.checkIn || '—') + '</div></div>';
+        html += '<div style="flex:1;min-width:120px;padding:.85rem;background:var(--surface-2);border-radius:10px;text-align:center"><div style="font-size:.72rem;color:var(--text-muted)">الانصراف</div><div style="font-size:1.25rem;font-weight:800;color:#f59e0b">' + esc(todayAtt.checkOut || '—') + '</div></div>';
+        html += '<div style="flex:1;min-width:120px;padding:.85rem;background:var(--surface-2);border-radius:10px;text-align:center"><div style="font-size:.72rem;color:var(--text-muted)">الحالة</div><div style="font-size:1rem;font-weight:800;color:var(--primary)">' + esc(todayAtt.status) + '</div></div>';
+        html += '</div>';
+      } else {
+        html += '<div style="text-align:center;padding:1rem">';
+        html += '<p style="font-size:.85rem;color:var(--text-muted);margin:0 0 1rem">لم تسجل حضورك اليوم بعد</p>';
+        html += '<button class="btn btn-primary btn-sm" onclick="__dm64CheckIn()"><i data-lucide="log-in"></i> تسجيل حضور الآن</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // Today's tasks
+      html += '<div class="card" style="margin-bottom:1.25rem">';
+      html += '<h4 style="margin:0 0 .85rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">';
+      html += '<i data-lucide="target" style="width:16px;height:16px;color:#10b981"></i> مهامك اليوم</h4>';
+      if (todayDists.length) {
+        todayDists.forEach(function (d) {
+          var hall = (State.data.halls || []).find(function (h) { return h.id === d.hallId; });
+          var hallName = hall ? (hall.name[State.lang] || hall.name.ar) : '—';
+          var booking = (State.data.bookings || []).find(function (b) {
+            return b.date === d.date && b.hallId === d.hallId && b.status !== 'cancelled';
+          });
+          html += '<div style="padding:.85rem;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.25);border-radius:10px;margin-bottom:.5rem">';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">';
+          html += '<div><div style="font-weight:800;font-size:.95rem">🏛 ' + esc(hallName) + '</div>';
+          html += '<div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">🎭 ' + esc(d.role) + '</div>';
+          if (booking) {
+            html += '<div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">👤 ' + esc(booking.clientName || '—') + '</div>';
+            if (booking.startTime) html += '<div style="font-size:.78rem;color:var(--text-muted)">⏰ ' + esc(booking.startTime) + (booking.endTime ? ' - ' + esc(booking.endTime) : '') + '</div>';
+          }
+          html += '</div>';
+          html += '<span class="badge-pill badge-green">✓ مؤكد</span>';
+          html += '</div></div>';
+        });
+      } else {
+        html += '<div class="empty-state" style="padding:1.5rem"><i data-lucide="coffee"></i><p>لا توجد مهام اليوم</p></div>';
+      }
+      html += '</div>';
+
+      // Upcoming
+      html += '<div class="card" style="margin-bottom:1.25rem">';
+      html += '<h4 style="margin:0 0 .85rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">';
+      html += '<i data-lucide="calendar-days" style="width:16px;height:16px;color:#7c3aed"></i> مهامك القادمة</h4>';
+      if (upcomingDists.length) {
+        upcomingDists.forEach(function (d) {
+          var hall = (State.data.halls || []).find(function (h) { return h.id === d.hallId; });
+          var hallName = hall ? (hall.name[State.lang] || hall.name.ar) : '—';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:.65rem 0;border-bottom:1px solid var(--border);gap:.5rem;flex-wrap:wrap">';
+          html += '<div><div style="font-weight:600;font-size:.85rem">' + esc(hallName) + ' — ' + esc(d.role) + '</div>';
+          html += '<div style="font-size:.72rem;color:var(--text-muted)">' + esc(getDayName(d.date)) + ' ' + esc(fmtDateShort(d.date)) + '</div></div>';
+          html += '</div>';
+        });
+      } else {
+        html += '<div class="empty-state" style="padding:1.5rem"><p>لا توجد مهام قادمة</p></div>';
+      }
+      html += '</div>';
+
+      // Financial summary
+      html += '<div class="card" style="margin-bottom:1.25rem">';
+      html += '<h4 style="margin:0 0 .85rem;font-size:.95rem;display:flex;align-items:center;gap:.5rem">';
+      html += '<i data-lucide="wallet" style="width:16px;height:16px;color:#f59e0b"></i> ملخصك المالي</h4>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem">';
+      html += finBox('أيام العمل', workDays, '#7c3aed');
+      html += finBox('الأساسي', grossPay.toLocaleString() + ' ج', '#10b981');
+      html += finBox('السلف', totalAdv.toLocaleString() + ' ج', '#f59e0b');
+      html += finBox('الخصومات', totalDed.toLocaleString() + ' ج', '#ef4444');
+      html += finBox('المكافآت', totalBon.toLocaleString() + ' ج', '#06b6d4');
+      html += finBox('الصافي', netPay.toLocaleString() + ' ج', '#10b981');
+      html += '</div>';
+      html += '</div>';
+
+      el.innerHTML = html;
+      if (window.lucide) lucide.createIcons();
+
+      function kpi(label, value, icon, color) {
+        return '<div class="stat-card"><div class="stat-icon" style="background:' + color + '20;color:' + color + '"><i data-lucide="' + icon + '"></i></div><div class="stat-body"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div></div></div>';
+      }
+      function finBox(label, value, color) {
+        return '<div style="padding:.75rem;background:var(--surface-2);border-radius:10px"><div style="font-size:.72rem;color:var(--text-muted)">' + esc(label) + '</div><div style="font-size:1.1rem;font-weight:800;color:' + color + ';margin-top:.15rem">' + esc(value) + '</div></div>';
+      }
+    };
+  }
+
+  window.__dm64CheckIn = function () {
+    var empId = window.__dmSaaS && window.__dmSaaS.profile && window.__dmSaaS.profile.employeeId;
+    if (!empId) { toast('لا يوجد حساب موظف مرتبط', 'error'); return; }
+    var today = todayISO();
+    var time = new Date().toTimeString().slice(0, 5);
+    var isLate = time > '10:00';
+
+    if (!State.data.attendance) State.data.attendance = [];
+    var existing = State.data.attendance.find(function (a) { return a.employeeId === empId && a.date === today; });
+    if (existing) { toast('سجلت حضورك بالفعل', 'warn'); return; }
+
+    State.data.attendance.push({
+      id: 'att_' + Math.random().toString(36).slice(2, 10),
+      employeeId: empId,
+      date: today,
+      checkIn: time,
+      checkOut: null,
+      status: isLate ? 'late' : 'present',
+      source: 'self'
+    });
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    toast('✓ تم تسجيل حضورك ' + time, 'success');
+    setTimeout(function () { navigate('myportal'); }, 400);
+  };
+
+  /* =========================================================
+     5) EMPLOYEE LOGIN MODAL — user + pass only
+     ========================================================= */
+  function openEmployeeLogin() {
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25);border-radius:10px;font-size:.8rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += '👷 للموظفين فقط. سجّل دخولك بمعلومات حسابك.';
+    html += '</div>';
+    html += '<div class="field"><label>اسم المستخدم *</label><input id="emp64-user" type="text" placeholder="ahmed_photo" autocomplete="username" style="text-align:start"></div>';
+    html += '<div class="field" style="margin-top:.75rem"><label>كلمة المرور *</label><input id="emp64-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>';
+    html += '<div id="emp64-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.65rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '👷 دخول الموظفين',
+        size: 'md',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm64EmpLogin()">دخول</button>'
+      });
+
+      setTimeout(function () {
+        var inp = document.getElementById('emp64-user');
+        if (inp) inp.focus();
+        var pass = document.getElementById('emp64-pass');
+        if (pass) pass.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') window.__dm64EmpLogin();
+        });
+      }, 150);
+    }
+  }
+
+  window.__dm64EmpLogin = async function () {
+    var user = (document.getElementById('emp64-user').value || '').trim().toLowerCase();
+    var pass = (document.getElementById('emp64-pass').value || '').trim();
+    var msg = document.getElementById('emp64-msg');
+
+    if (!user || !pass) { msg.textContent = 'الحقول المطلوبة'; return; }
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = 'جاري التحقق…';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) throw new Error('النظام غير جاهز');
+
+      // Try username@employee.drmedia.pro first (our convention)
+      var email = user.indexOf('@') >= 0 ? user : (user + '@employee.drmedia.pro');
+
+      var cred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, email, pass);
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم الدخول';
+      toast('✓ مرحبًا بك', 'success');
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+      }, 500);
+    } catch (e) {
+      console.error('[Section 64] Emp login failed:', e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'auth/user-not-found') msg.textContent = 'اسم المستخدم غير موجود';
+      else if (e.code === 'auth/wrong-password') msg.textContent = 'كلمة المرور خاطئة';
+      else if (e.code === 'auth/invalid-email') msg.textContent = 'اسم مستخدم غير صالح';
+      else msg.textContent = 'فشل: ' + (e.message || '');
+    }
+  };
+
+  /* =========================================================
+     6) ACTIVATION CODES WITH PERMISSIONS
+     ========================================================= */
+  function registerCodesWithPerms() {
+    // Override the codes tab renderer to add permissions
+    window.__dm64RenderCodesTab = function (body) {
+      body.innerHTML = '<div class="skeleton" style="height:200px"></div>';
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready) return;
+      var fsMod = fb.modules.fsMod;
+
+      fsMod.getDocs(fsMod.collection(fb.db, 'activation_codes')).then(function (snap) {
+        var codes = [];
+        snap.forEach(function (d) { var c = d.data(); c._id = d.id; codes.push(c); });
+        codes.sort(function (a, b) { return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0); });
+
+        var html = '';
+        html += '<div class="card" style="margin-bottom:1rem;padding:1rem;background:linear-gradient(135deg,rgba(236,72,153,.06),rgba(124,58,237,.06));border-color:rgba(236,72,153,.2)">';
+        html += '<div style="display:flex;gap:.75rem;align-items:flex-start">';
+        html += '<div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#ec4899,#be185d);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i data-lucide="key-round" style="color:#fff;width:20px;height:20px"></i></div>';
+        html += '<div style="flex:1">';
+        html += '<div style="font-weight:800;font-size:.95rem;margin-bottom:.25rem">أكواد التفعيل مع الصلاحيات</div>';
+        html += '<div style="font-size:.78rem;color:var(--text-muted);line-height:1.6">';
+        html += 'كل كود له مدة صلاحية + صلاحيات محددة تحدد إيه اللي المشترك يقدر يفتحه.';
+        html += '</div></div>';
+        html += '<button class="btn btn-primary btn-sm" onclick="__dm64GenCode()"><i data-lucide="plus" style="width:12px;height:12px"></i> إنشاء كود</button>';
+        html += '</div></div>';
+
+        if (!codes.length) {
+          html += '<div class="card"><div class="empty-state" style="padding:3rem 1rem"><i data-lucide="key-round"></i><p>لا يوجد أكواد</p></div></div>';
+        } else {
+          html += '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap" style="border:none"><table class="data-table"><thead><tr>';
+          html += '<th>الكود</th><th>الباقة</th><th>الأيام</th><th>الصلاحيات</th><th>الحالة</th><th>ينتهي</th><th></th>';
+          html += '</tr></thead><tbody>';
+          codes.forEach(function (c) {
+            var isExpired = c.expiresAt && c.expiresAt < Date.now();
+            var isMaxed = c.maxUses && (c.usedCount || 0) >= c.maxUses;
+            var status = !c.active ? 'معطل' : (isExpired ? 'منتهي' : (isMaxed ? 'مستخدم' : 'نشط'));
+            var sColor = status === 'نشط' ? 'green' : (status === 'معطل' ? 'gray' : 'red');
+            var permsCount = (c.permissions || []).length || ALL_MODULES.length;
+
+            html += '<tr>';
+            html += '<td><code style="font-weight:800;font-size:.9rem;color:#ec4899;cursor:pointer" onclick="__dm64Copy(\'' + esc(c.code) + '\')">' + esc(c.code) + '</code></td>';
+            html += '<td><span class="badge-pill badge-purple">' + esc(c.planName || c.planId) + '</span></td>';
+            html += '<td><b>' + (c.days || 30) + '</b></td>';
+            html += '<td><span class="badge-pill badge-blue">' + permsCount + ' ميزة</span></td>';
+            html += '<td><span class="badge-pill badge-' + sColor + '">' + status + '</span></td>';
+            html += '<td style="font-size:.75rem">' + (c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('ar-EG') : '—') + '</td>';
+            html += '<td><button class="btn btn-ghost btn-icon btn-sm" onclick="__dm64DelCode(\'' + esc(c._id) + '\')" style="color:#ef4444"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button></td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table></div></div>';
+        }
+        body.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+      }).catch(function (e) {
+        body.innerHTML = '<div class="card" style="padding:1.5rem"><p style="color:#ef4444">' + esc(e.message) + '</p></div>';
+      });
+    };
+  }
+
+  window.__dm64GenCode = function () {
+    var html = '';
+    html += '<div class="form-row">';
+    html += '<div class="field"><label>الباقة</label><select id="c64-plan">';
+    html += '<option value="starter">Starter</option>';
+    html += '<option value="pro" selected>Professional</option>';
+    html += '<option value="business">Business</option>';
+    html += '</select></div>';
+    html += '<div class="field"><label>الأيام</label><input id="c64-days" type="number" value="30" min="1"></div>';
+    html += '</div>';
+    html += '<div class="form-row" style="margin-top:.65rem">';
+    html += '<div class="field"><label>أقصى استخدام</label><input id="c64-max" type="number" value="1" min="1"></div>';
+    html += '<div class="field"><label>صالح لمدة (يوم)</label><input id="c64-valid" type="number" value="90" min="1"></div>';
+    html += '</div>';
+
+    // Permissions matrix
+    html += '<div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">';
+    html += '<label style="font-size:.85rem;font-weight:800">🔐 صلاحيات هذا الكود</label>';
+    html += '<div style="display:flex;gap:.35rem">';
+    html += '<button type="button" class="btn btn-ghost btn-sm" onclick="__dm64SelectAll(true)">الكل</button>';
+    html += '<button type="button" class="btn btn-ghost btn-sm" onclick="__dm64SelectAll(false)">لا شيء</button>';
+    html += '</div></div>';
+    html += '<div style="padding:.75rem;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;font-size:.72rem;color:var(--text-muted);margin-bottom:.85rem;line-height:1.6">';
+    html += '⚠️ <b>الصفحة الرئيسية (لوحة التحكم) مطلوبة دائمًا.</b> الميزات المختارة هي اللي المشترك هيقدر يفتحها.';
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem;max-height:280px;overflow-y:auto;padding:.35rem">';
+
+    ALL_MODULES.forEach(function (m) {
+      var isDashboard = m.id === 'dashboard';
+      html += '<label class="dm64-perm-label" data-mod="' + m.id + '" style="display:flex;align-items:center;gap:.5rem;padding:.55rem .7rem;background:var(--surface-2);border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;' + (isDashboard ? 'opacity:.6;' : '') + '">';
+      html += '<input type="checkbox" class="dm64-perm-cb" data-mod="' + m.id + '"' + (isDashboard ? ' checked disabled' : ' checked') + ' style="accent-color:var(--primary);width:16px;height:16px">';
+      html += '<span style="font-size:.8rem;font-weight:600">' + esc(m.name) + '</span>';
+      html += '</label>';
+    });
+    html += '</div></div>';
+
+    html += '<div id="c64-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.85rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔑 إنشاء كود تفعيل',
+        size: 'xl',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm64SaveCode()">إنشاء الكود</button>'
+      });
+
+      setTimeout(function () {
+        document.querySelectorAll('.dm64-perm-cb').forEach(function (cb) {
+          cb.onchange = function () {
+            var lbl = cb.closest('.dm64-perm-label');
+            if (cb.checked) { lbl.style.borderColor = 'var(--primary)'; lbl.style.background = 'rgba(124,58,237,.08)'; }
+            else { lbl.style.borderColor = 'var(--border)'; lbl.style.background = 'var(--surface-2)'; }
+          };
+          if (cb.checked) {
+            var lbl = cb.closest('.dm64-perm-label');
+            if (lbl) lbl.style.background = 'rgba(124,58,237,.08)';
+          }
+        });
+      }, 150);
+    }
+  };
+
+  window.__dm64SelectAll = function (val) {
+    document.querySelectorAll('.dm64-perm-cb').forEach(function (cb) {
+      if (cb.disabled) return;
+      cb.checked = val;
+      var lbl = cb.closest('.dm64-perm-label');
+      if (val) { lbl.style.borderColor = 'var(--primary)'; lbl.style.background = 'rgba(124,58,237,.08)'; }
+      else { lbl.style.borderColor = 'var(--border)'; lbl.style.background = 'var(--surface-2)'; }
+    });
+  };
+
+  window.__dm64SaveCode = async function () {
+    var planId = document.getElementById('c64-plan').value;
+    var days = parseInt(document.getElementById('c64-days').value) || 30;
+    var maxUses = parseInt(document.getElementById('c64-max').value) || 1;
+    var validDays = parseInt(document.getElementById('c64-valid').value) || 90;
+    var msg = document.getElementById('c64-msg');
+
+    var permissions = [];
+    document.querySelectorAll('.dm64-perm-cb:checked').forEach(function (cb) {
+      permissions.push(cb.dataset.mod);
+    });
+
+    if (!permissions.length) { msg.textContent = 'اختر صلاحية واحدة على الأقل'; return; }
+    if (permissions.indexOf('dashboard') < 0) permissions.unshift('dashboard');
+
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var p = function (n) { var s = ''; for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length)); return s; };
+    var code = 'DRM-' + p(4) + '-' + p(4);
+    var planNames = { starter: 'Starter', pro: 'Professional', business: 'Business' };
+
+    msg.style.color = '#f59e0b'; msg.textContent = 'جاري الإنشاء…';
+
+    try {
+      var fb = window.DrMediaFB;
+      await fb.modules.fsMod.setDoc(fb.modules.fsMod.doc(fb.db, 'activation_codes', code), {
+        code: code, planId: planId, planName: planNames[planId],
+        days: days, maxUses: maxUses, usedCount: 0,
+        expiresAt: Date.now() + (validDays * 86400000),
+        active: true,
+        permissions: permissions,
+        createdBy: window.__dmSaaS.user.uid,
+        createdAt: fb.modules.fsMod.serverTimestamp()
+      });
+
+      msg.style.color = '#10b981'; msg.textContent = '✓ ' + code;
+      try { navigator.clipboard.writeText(code); } catch (e) {}
+      toast('✓ ' + code + ' (نسخ)', 'success');
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        if (window.__dm64RenderCodesTab) window.__dm64RenderCodesTab(document.getElementById('dm63-hub-body'));
+      }, 800);
+    } catch (e) {
+      msg.style.color = '#ef4444';
+      msg.textContent = e.code === 'permission-denied' ? 'حدّث Firestore Rules' : e.message;
+    }
+  };
+
+  window.__dm64DelCode = function (id) {
+    if (!confirm('حذف الكود؟')) return;
+    var fb = window.DrMediaFB;
+    fb.modules.fsMod.deleteDoc(fb.modules.fsMod.doc(fb.db, 'activation_codes', id)).then(function () {
+      toast('✓', 'success');
+      if (window.__dm64RenderCodesTab) window.__dm64RenderCodesTab(document.getElementById('dm63-hub-body'));
+    });
+  };
+
+  window.__dm64Copy = function (txt) {
+    try { navigator.clipboard.writeText(txt); toast('✓ نسخ', 'success'); }
+    catch (e) { toast(txt, 'info'); }
+  };
+
+  /* =========================================================
+     7) APPLY ACTIVATION CODE → SET PERMISSIONS
+     ========================================================= */
+  function patchActivationFlow() {
+    // Hook into the existing activation modal to also apply permissions
+    var origBtn = null;
+
+    var check = setInterval(function () {
+      var overlay = document.getElementById('dm63-activ');
+      if (!overlay) return;
+      if (overlay.__dm64) return;
+      overlay.__dm64 = true;
+
+      var btn = document.getElementById('dm63-activ-btn');
+      if (!btn) return;
+
+      // Intercept tryActivate — but it's local to Section 63.
+      // Instead, we'll add a MutationObserver to detect success
+      var obs = new MutationObserver(function () {
+        var msg = document.getElementById('dm63-code-msg');
+        if (!msg) return;
+        if (msg.textContent.indexOf('تم التفعيل') >= 0 || msg.textContent.indexOf('جاري الدخول') >= 0) {
+          // Success — apply permissions
+          var input = document.getElementById('dm63-code-input');
+          var code = input ? input.value.trim().toUpperCase() : '';
+          if (code) applyCodePermissions(code);
+          obs.disconnect();
+        }
+      });
+      obs.observe(document.getElementById('dm63-code-msg') || overlay, { childList: true, characterData: true, subtree: true });
+    }, 500);
+  }
+
+  async function applyCodePermissions(code) {
+    try {
+      var fb = window.DrMediaFB;
+      var snap = await fb.modules.fsMod.getDoc(fb.modules.fsMod.doc(fb.db, 'activation_codes', code));
+      if (!snap.exists()) return;
+      var codeData = snap.data();
+      var perms = codeData.permissions || null;
+
+      // Update user profile with permissions
+      if (window.__dmSaaS && window.__dmSaaS.user) {
+        await fb.modules.fsMod.updateDoc(fb.modules.fsMod.doc(fb.db, 'users', window.__dmSaaS.user.uid), {
+          permissions: perms,
+          permissionsSetAt: fb.modules.fsMod.serverTimestamp()
+        });
+
+        // Apply locally
+        window.__dmCurrentPermissions = perms;
+        console.log('[Section 64] ✓ Permissions applied:', perms);
+      }
+    } catch (e) {
+      console.error('[Section 64] applyCodePermissions failed:', e);
+    }
+  }
+
+  /* =========================================================
+     8) REMOVE TRIAL — require code on signup
+     ========================================================= */
+  function removeTrial() {
+    if (window.__dmPlans && window.__dmPlans.trial) {
+      delete window.__dmPlans.trial;
+    }
+    console.log('[Section 64] ✓ Trial plan removed');
+  }
+
+  /* =========================================================
+     9) LOGIN PAGE — Employee button
+     ========================================================= */
+  function addEmpLoginButton() {
+    var loginCard = document.querySelector('.login-card');
+    if (!loginCard) return;
+
+    // Remove old employee register button if exists
+    var oldBtn = loginCard.querySelector('.dm63-emp-btn');
+    if (oldBtn) oldBtn.remove();
+
+    if (loginCard.querySelector('.dm64-emp-btn')) return;
+
+    var block = document.createElement('div');
+    block.className = 'dm64-emp-btn';
+    block.style.cssText = 'margin-top:1rem;padding-top:1rem;border-top:1px dashed rgba(255,255,255,.1);text-align:center';
+    block.innerHTML =
+      '<button type="button" id="dm64-open-emp-login" style="width:100%;padding:.75rem;border-radius:12px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:#93c5fd;font-weight:700;cursor:pointer;font-family:inherit;font-size:.85rem;transition:all .15s">' +
+        '👷 دخول الموظفين' +
+      '</button>' +
+      '<div style="font-size:.7rem;color:#94a3b8;margin-top:.5rem">اسم المستخدم وكلمة المرور فقط</div>';
+
+    var superBlock = loginCard.querySelector('#saas-super-block');
+    if (superBlock && superBlock.parentNode === loginCard) {
+      loginCard.insertBefore(block, superBlock);
+    } else {
+      loginCard.appendChild(block);
+    }
+
+    document.getElementById('dm64-open-emp-login').onclick = openEmployeeLogin;
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 300;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof Pages !== 'undefined' &&
+             typeof State !== 'undefined' &&
+             typeof NAV_ITEMS !== 'undefined' &&
+             typeof navigate === 'function';
+    },
+    function () {
+      patchCan();
+      blockSAPage();
+      removeTrial();
+      registerEmployeePortal();
+      registerCodesWithPerms();
+      patchActivationFlow();
+
+      // Wait for SaaS ready → apply permissions
+      waitFor(
+        function () { return window.__dmSaaS && window.__dmSaaS.ready; },
+        function () {
+          loadUserPermissions();
+          hideSuperAdminNav();
+          setInterval(hideSuperAdminNav, 3000);
+
+          // Add myportal nav for employees
+          if (!isSA()) {
+            var ops = NAV_ITEMS.find(function (g) { return g.section === 'operations'; });
+            if (ops && !ops.items.find(function (i) { return i.id === 'myportal'; })) {
+              ops.items.unshift({ id: 'myportal', icon: 'user-circle', label: 'مهامي' });
+            }
+            try { renderSidebar(); } catch (e) {}
+          }
+        }
+      );
+
+      // Employee login button
+      setInterval(addEmpLoginButton, 2000);
+      addEmpLoginButton();
+
+      console.log('%c[Section 64] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ دخول الموظفين (username + password)');
+      console.log('  ✅ صفحة "مهامي" — تفاصيل + مالية + حضور');
+      console.log('  ✅ أكواد التفعيل مع صلاحيات محددة');
+      console.log('  ✅ Super Admin مخفي عن غير المصرح');
+      console.log('  ✅ إلغاء التجربة');
+    }
+  );
+
+})();
 
 
 
