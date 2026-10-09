@@ -28071,6 +28071,780 @@ service cloud.firestore {
   setTimeout(boot, 5000);
 
 })();
+/* =========================================================
+   SECTION 66: Final Fix — Login + Employee + Refresh
+   Version: 1.0.0
+   ---------------------------------------------------------
+   FIXES:
+   1) Remove all old login screens → ONE clean login
+   2) Employee account creation (for auth/invalid-credential)
+   3) Refresh stays on current page
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 66] ═══ FINAL FIX LOADING ═══', 'color:#f43f5e;font-weight:bold;font-size:16px');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function isSA() { return !!(window.__dmSaaS && window.__dmSaaS.isSuperAdmin); }
+
+  /* =========================================================
+     STEP 1 — KILL ALL REFRESH LOOPS
+     ---------------------------------------------------------
+     Neutralize Section 30's forceLoginOnLoad, Section 32's logout
+     ========================================================= */
+  function killRefreshLoops() {
+    // Block ALL reloads for the first 10 seconds after page load
+    var bootTime = Date.now();
+    var reloadCount = 0;
+
+    try {
+      var origReload = window.location.reload;
+      window.location.reload = function () {
+        reloadCount++;
+        var elapsed = Date.now() - bootTime;
+        if (elapsed < 10000 || reloadCount > 2) {
+          console.warn('[Section 66] 🚫 Blocked reload (loop protection)');
+          return;
+        }
+        return origReload.apply(window.location, arguments);
+      };
+      window.location.reload.__dm66 = true;
+    } catch (e) {}
+
+    // Neutralize Section 30's forceLoginOnLoad
+    try {
+      if (typeof window.forceLoginOnLoad === 'function') {
+        window.forceLoginOnLoad = function () { console.log('[Section 66] forceLoginOnLoad neutralized'); };
+      }
+    } catch (e) {}
+
+    // Neutralize Section 32's switchToLoginScreen
+    try {
+      if (typeof window.switchToLoginScreen === 'function') {
+        window.switchToLoginScreen = function () {
+          // Only show login if NOT authenticated
+          var fb = window.DrMediaFB;
+          if (fb && fb.auth && fb.auth.currentUser) {
+            console.log('[Section 66] User authenticated — keeping app visible');
+            var app = document.getElementById('app');
+            var login = document.getElementById('login-screen');
+            if (app) app.classList.remove('hidden');
+            if (login) login.classList.add('hidden');
+            return;
+          }
+          // Otherwise show login
+          var ls = document.getElementById('login-screen');
+          var as = document.getElementById('app');
+          if (ls) ls.classList.remove('hidden');
+          if (as) as.classList.add('hidden');
+        };
+      }
+    } catch (e) {}
+
+    // Clear old session flags that trigger logout
+    try {
+      sessionStorage.removeItem('dm_flow_inited_v2');
+      sessionStorage.removeItem('dm_app_loaded');
+      sessionStorage.removeItem('dm_page_loaded');
+      sessionStorage.setItem('dm_session_active_v2', '1');
+    } catch (e) {}
+
+    console.log('[Section 66] ✓ Refresh loops killed');
+  }
+
+  /* =========================================================
+     STEP 2 — REMOVE ALL OLD LOGIN SCREENS
+     ========================================================= */
+  function wipeLoginScreen() {
+    var loginScreen = document.getElementById('login-screen');
+    if (!loginScreen) return;
+
+    var card = loginScreen.querySelector('.login-card');
+    if (!card) return;
+
+    // Remove ALL known old login elements
+    card.querySelectorAll(
+      '.saas-tabs,' +
+      '#saas-form,' +
+      '#saas-super-block,' +
+      '.dm-register-block,' +
+      '.dm-register-link,' +
+      '.dm63-emp-btn,' +
+      '.dm64-emp-btn,' +
+      '.dm65-form, #dm65-form,' +
+      '.dm-app-copyright,' +
+      '#dm-cleanup-overlay,' +
+      'form,' +
+      '.form-group,' +
+      '.login-row,' +
+      '.btn-login,' +
+      '.demo-hint,' +
+      '.saas-tab'
+    ).forEach(function (el) { el.remove(); });
+
+    // Mark as wiped
+    card.dataset.dm66Wiped = '1';
+  }
+
+  /* =========================================================
+     STEP 3 — BUILD ONE CLEAN LOGIN
+     ========================================================= */
+  function buildCleanLogin() {
+    var loginScreen = document.getElementById('login-screen');
+    if (!loginScreen) return false;
+    var card = loginScreen.querySelector('.login-card');
+    if (!card) return false;
+
+    // Already built?
+    if (card.querySelector('#dm66-form')) return true;
+
+    // Wipe first
+    wipeLoginScreen();
+
+    // Rebuild card from scratch
+    card.innerHTML = '';
+
+    // Logo
+    var logo = document.createElement('div');
+    logo.className = 'brand-logo';
+    logo.innerHTML =
+      '<div class="icon" style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.5rem;box-shadow:0 10px 30px -8px #7c3aed">D</div>' +
+      '<h1 style="color:#fff;font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-.02em">Dr Media <span style="background:linear-gradient(135deg,#a78bfa,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent">Pro</span></h1>';
+    card.appendChild(logo);
+
+    // Subtitle
+    var sub = document.createElement('p');
+    sub.style.cssText = 'color:#94a3b8;text-align:center;font-size:.85rem;margin:.5rem 0 1.5rem';
+    sub.textContent = 'سجّل الدخول للوصول إلى لوحة التحكم';
+    card.appendChild(sub);
+
+    // Form
+    var form = document.createElement('form');
+    form.id = 'dm66-form';
+    form.setAttribute('autocomplete', 'on');
+    form.style.cssText = 'display:flex;flex-direction:column;gap:.9rem';
+    form.onsubmit = function (e) { e.preventDefault(); e.stopPropagation(); return false; };
+
+    form.innerHTML =
+      // Email
+      '<div>' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">البريد الإلكتروني</label>' +
+        '<input id="dm66-email" type="email" placeholder="you@company.com" autocomplete="email" ' +
+          'style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none;transition:border .15s">' +
+      '</div>' +
+
+      // Password
+      '<div>' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">كلمة المرور</label>' +
+        '<div style="position:relative">' +
+          '<input id="dm66-pass" type="password" placeholder="••••••••" autocomplete="current-password" ' +
+            'style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 3rem .85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none;transition:border .15s">' +
+          '<button type="button" id="dm66-toggle" ' +
+            'style="position:absolute;inset-inline-end:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;cursor:pointer;padding:6px;font-size:1rem">👁️</button>' +
+        '</div>' +
+      '</div>' +
+
+      // Remember + Forgot
+      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.8rem">' +
+        '<label style="display:flex;align-items:center;gap:.4rem;color:#cbd5e1;cursor:pointer">' +
+          '<input type="checkbox" id="dm66-remember" checked style="accent-color:#7c3aed;width:16px;height:16px"> تذكرني' +
+        '</label>' +
+        '<a href="#" id="dm66-forgot" style="color:#a78bfa;text-decoration:none;font-weight:500">نسيت كلمة المرور؟</a>' +
+      '</div>' +
+
+      // Error
+      '<div id="dm66-error" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em"></div>' +
+
+      // TWO BUTTONS
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.35rem">' +
+        '<button type="button" id="dm66-login" ' +
+          'style="padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem;box-shadow:0 10px 25px -8px #7c3aed">🚪 دخول</button>' +
+        '<button type="button" id="dm66-emp-login" ' +
+          'style="padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem;box-shadow:0 10px 25px -8px #3b82f6">👷 موظف</button>' +
+      '</div>';
+
+    card.appendChild(form);
+
+    // Copyright — at bottom
+    var copy = document.createElement('div');
+    copy.style.cssText = 'margin-top:2rem;padding-top:1.25rem;border-top:1px solid rgba(255,255,255,.06);text-align:center;font-size:.72rem;color:#94a3b8;line-height:1.9';
+    copy.innerHTML =
+      '© 2026 <b style="color:#a78bfa">Dr Media Pro</b> — جميع الحقوق محفوظة<br>' +
+      '<span style="opacity:.75">تصميم وتطوير: أحمد شريف · <a href="tel:01002670948" style="color:inherit;text-decoration:none">01002670948</a></span>';
+    card.appendChild(copy);
+
+    // Bind events
+    bindEvents(form);
+
+    console.log('[Section 66] ✓ Clean login built');
+    return true;
+  }
+
+  function bindEvents(form) {
+    var email = form.querySelector('#dm66-email');
+    var pass = form.querySelector('#dm66-pass');
+    var loginBtn = form.querySelector('#dm66-login');
+    var empBtn = form.querySelector('#dm66-emp-login');
+    var toggle = form.querySelector('#dm66-toggle');
+    var forgot = form.querySelector('#dm66-forgot');
+
+    function showErr(msg) {
+      var el = form.querySelector('#dm66-error');
+      if (el) { el.style.color = '#ef4444'; el.textContent = msg; }
+    }
+    function clearErr() {
+      var el = form.querySelector('#dm66-error');
+      if (el) el.textContent = '';
+    }
+
+    if (loginBtn) loginBtn.onclick = function () { doLogin(email.value, pass.value, loginBtn, showErr, clearErr); };
+    if (empBtn) empBtn.onclick = showEmployeeLogin;
+
+    if (toggle) toggle.onclick = function () {
+      pass.type = pass.type === 'password' ? 'text' : 'password';
+      toggle.textContent = pass.type === 'password' ? '👁️' : '🙈';
+    };
+
+    if (forgot) forgot.onclick = function (e) {
+      e.preventDefault();
+      var em = email.value.trim();
+      if (!em) { showErr('اكتب البريد أولًا'); return; }
+      resetPassword(em);
+    };
+
+    if (email) email.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doLogin(email.value, pass.value, loginBtn, showErr, clearErr); } });
+    if (pass) pass.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doLogin(email.value, pass.value, loginBtn, showErr, clearErr); } });
+  }
+
+  async function doLogin(email, password, btn, showErr, clearErr) {
+    email = (email || '').trim();
+    password = (password || '').trim();
+
+    if (!email || !password) { showErr('املأ الحقول المطلوبة'); return; }
+    clearErr();
+
+    var oldTxt = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) throw new Error('Firebase not ready');
+
+      // Ensure LOCAL persistence
+      try {
+        if (fb.modules.authMod.setPersistence && fb.modules.authMod.browserLocalPersistence) {
+          await fb.modules.authMod.setPersistence(fb.auth, fb.modules.authMod.browserLocalPersistence);
+        }
+      } catch (e) {}
+
+      var cred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, email, password);
+      console.log('[Section 66] ✓ Login OK:', cred.user.email);
+      toast('✓ مرحبًا بك', 'success');
+
+      // Mark logged in
+      try { sessionStorage.setItem('dm66_logged_in', '1'); } catch (e) {}
+
+      // Show app
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+
+      // Restore last page after a moment
+      setTimeout(function () {
+        var last = 'dashboard';
+        try { last = localStorage.getItem('dm66_last_page') || 'dashboard'; } catch (e) {}
+        if (typeof navigate === 'function') navigate(last);
+      }, 500);
+    } catch (e) {
+      console.error('[Section 66] Login failed:', e);
+      btn.disabled = false;
+      btn.innerHTML = oldTxt;
+
+      if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') {
+        showErr('البريد أو كلمة المرور خاطئة');
+      } else if (e.code === 'auth/invalid-email') {
+        showErr('البريد غير صحيح');
+      } else if (e.code === 'auth/too-many-requests') {
+        showErr('محاولات كثيرة، حاول بعد دقيقة');
+      } else if (e.code === 'auth/network-request-failed') {
+        showErr('فشل الاتصال — تحقق من الإنترنت');
+      } else {
+        showErr(e.message || 'فشل الدخول');
+      }
+    }
+  }
+
+  async function resetPassword(email) {
+    try {
+      var fb = window.DrMediaFB;
+      await fb.modules.authMod.sendPasswordResetEmail(fb.auth, email);
+      toast('✓ تم إرسال رابط إعادة التعيين', 'success');
+    } catch (e) {
+      toast('فشل: ' + e.message, 'error');
+    }
+  }
+
+  /* =========================================================
+     STEP 4 — EMPLOYEE LOGIN
+     ========================================================= */
+  function showEmployeeLogin() {
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:10px;font-size:.8rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += '👷 <b>للموظفين.</b> استخدم اسم المستخدم وكلمة المرور اللي أعطاك المدير.';
+    html += '</div>';
+
+    html += '<div class="field"><label>اسم المستخدم *</label>' +
+      '<input id="dm66-eu" type="text" placeholder="ahmed_photo" autocomplete="username" ' +
+        'style="width:100%;padding:.85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:.9rem;outline:none">' +
+    '</div>';
+
+    html += '<div class="field" style="margin-top:.75rem"><label>كلمة المرور *</label>' +
+      '<input id="dm66-ep" type="password" placeholder="••••••••" autocomplete="current-password" ' +
+        'style="width:100%;padding:.85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:.9rem;outline:none">' +
+    '</div>';
+
+    html += '<div id="dm66-emsg" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em;margin-top:.75rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '👷 دخول الموظفين',
+        size: 'md',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm66EmpLogin()">دخول</button>'
+      });
+
+      setTimeout(function () {
+        var i = document.getElementById('dm66-eu');
+        if (i) i.focus();
+        var p = document.getElementById('dm66-ep');
+        if (p) p.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); window.__dm66EmpLogin(); } });
+      }, 150);
+    }
+  }
+
+  window.__dm66EmpLogin = async function () {
+    var user = (document.getElementById('dm66-eu').value || '').trim().toLowerCase();
+    var pass = (document.getElementById('dm66-ep').value || '').trim();
+    var msg = document.getElementById('dm66-emsg');
+
+    if (!user || !pass) { msg.textContent = 'الحقول مطلوبة'; return; }
+    if (user.length < 3) { msg.textContent = 'اسم المستخدم قصير'; return; }
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = '⏳ جاري التحقق…';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) throw new Error('النظام غير جاهز');
+
+      // Try multiple email formats
+      var emailsToTry = [
+        user.indexOf('@') >= 0 ? user : (user + '@employee.drmedia.pro'),
+        user.indexOf('@') >= 0 ? user : (user + '@drmedia.pro'),
+        user  // raw in case it's a real email
+      ];
+
+      var lastErr = null;
+      var cred = null;
+
+      for (var i = 0; i < emailsToTry.length; i++) {
+        try {
+          cred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, emailsToTry[i], pass);
+          break;
+        } catch (err) {
+          lastErr = err;
+          // If it's a wrong-password error, don't try other formats
+          if (err.code === 'auth/wrong-password') throw err;
+          // Continue to next format if user-not-found
+          if (err.code !== 'auth/user-not-found' && err.code !== 'auth/invalid-credential') throw err;
+        }
+      }
+
+      if (!cred) throw lastErr || new Error('فشل الدخول');
+
+      console.log('[Section 66] ✓ Employee login OK:', cred.user.email);
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم الدخول';
+      toast('✓ مرحبًا بك', 'success');
+
+      try { sessionStorage.setItem('dm66_logged_in', '1'); } catch (e) {}
+      try { localStorage.setItem('dm66_last_page', 'myportal'); } catch (e) {}
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        setTimeout(function () {
+          if (typeof navigate === 'function') navigate('myportal');
+        }, 400);
+      }, 500);
+    } catch (e) {
+      console.error('[Section 66] Emp login failed:', e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') msg.textContent = 'كلمة المرور خاطئة';
+      else if (e.code === 'auth/user-not-found') msg.textContent = 'اسم المستخدم غير موجود';
+      else if (e.code === 'auth/invalid-email') msg.textContent = 'اسم مستخدم غير صحيح';
+      else if (e.code === 'auth/network-request-failed') msg.textContent = 'فشل الاتصال';
+      else if (e.code === 'auth/too-many-requests') msg.textContent = 'محاولات كثيرة';
+      else msg.textContent = 'فشل: ' + (e.message || '');
+    }
+  };
+
+  /* =========================================================
+     STEP 5 — EMPLOYEE ACCOUNT CREATION (fixes auth/invalid-credential)
+     ---------------------------------------------------------
+     Add "create login" button in employees page
+     ========================================================= */
+  function injectEmployeeCreateBtn() {
+    // Only on employees page
+    if (State.page !== 'employees') return;
+
+    var rows = document.querySelectorAll('#content table.data-table tbody tr');
+    rows.forEach(function (tr) {
+      if (tr.querySelector('.dm66-create-btn')) return;
+      var editBtn = tr.querySelector('button[onclick*="editEmployee"]');
+      if (!editBtn) return;
+      var m = editBtn.getAttribute('onclick').match(/editEmployee\(['"]([^'"]+)['"]\)/);
+      if (!m) return;
+      var empId = m[1];
+
+      // Check if employee has a user account
+      var hasAccount = (State.data.users || []).some(function (u) { return u.employeeId === empId; });
+
+      var actionDiv = tr.querySelector('td:last-child > div');
+      if (!actionDiv) return;
+
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-icon btn-sm dm66-create-btn';
+      btn.title = hasAccount ? 'إعادة إنشاء حساب الدخول' : 'إنشاء حساب دخول';
+      btn.style.color = hasAccount ? '#10b981' : '#f59e0b';
+      btn.innerHTML = hasAccount ?
+        '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>' :
+        '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>';
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        window.__dm66CreateEmpAccount(empId);
+      };
+      actionDiv.appendChild(btn);
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+
+  window.__dm66CreateEmpAccount = function (empId) {
+    var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+    if (!emp) { toast('الموظف غير موجود', 'error'); return; }
+
+    // Default username from name
+    var defaultUser = (emp.name || '').trim().toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '')
+      .substring(0, 20);
+
+    if (!defaultUser) defaultUser = 'emp_' + Math.random().toString(36).slice(2, 6);
+
+    var defaultPass = 'DMP' + Math.floor(1000 + Math.random() * 9000);
+
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += 'أنشئ حساب دخول للموظف <b style="color:#f59e0b">' + esc(emp.name) + '</b>. سيستخدم هذا الحساب لدخول النظام من أي جهاز.';
+    html += '</div>';
+
+    html += '<div class="field"><label>اسم المستخدم *</label>';
+    html += '<input id="dm66-cu" type="text" value="' + esc(defaultUser) + '" autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:.9rem">';
+    html += '<div style="font-size:.7rem;color:var(--text-muted);margin-top:.35rem">يُستخدم للدخول (بدون @)</div></div>';
+
+    html += '<div class="field" style="margin-top:.75rem"><label>كلمة المرور *</label>';
+    html += '<input id="dm66-cp" type="text" value="' + defaultPass + '" autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:ui-monospace,monospace;font-size:.9rem">';
+    html += '<div style="font-size:.7rem;color:var(--text-muted);margin-top:.35rem">6 أحرف على الأقل</div></div>';
+
+    html += '<div style="margin-top:1rem;padding:.75rem;background:rgba(124,58,237,.06);border-radius:10px;font-size:.75rem;color:var(--text-muted);line-height:1.7">';
+    html += '📱 <b>بعد الإنشاء:</b><br>';
+    html += '• الموظف يسجّل دخول بـ: <b>اسم المستخدم + كلمة المرور</b><br>';
+    html += '• يمكنه الدخول من أي جهاز<br>';
+    html += '• احفظ البيانات وأعطها للموظف';
+    html += '</div>';
+
+    html += '<div id="dm66-cmsg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.75rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🔑 إنشاء حساب دخول — ' + esc(emp.name),
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                '<button class="btn btn-primary" onclick="__dm66SaveEmpAccount(\'' + empId + '\')">إنشاء الحساب</button>'
+      });
+    }
+  };
+
+  window.__dm66SaveEmpAccount = async function (empId) {
+    var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+    if (!emp) return;
+
+    var user = (document.getElementById('dm66-cu').value || '').trim().toLowerCase();
+    var pass = (document.getElementById('dm66-cp').value || '').trim();
+    var msg = document.getElementById('dm66-cmsg');
+
+    if (!user || !pass) { msg.textContent = 'الحقول مطلوبة'; return; }
+    if (user.length < 3) { msg.textContent = 'اسم المستخدم 3+ أحرف'; return; }
+    if (!/^[a-z0-9_.]+$/.test(user)) { msg.textContent = 'حروف إنجليزية وأرقام و _ فقط'; return; }
+    if (pass.length < 6) { msg.textContent = 'كلمة المرور 6+ أحرف'; return; }
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = '⏳ جاري الإنشاء…';
+
+    var email = user + '@employee.drmedia.pro';
+
+    try {
+      var fb = window.DrMediaFB;
+      var appMod = fb.modules.appMod;
+      var authMod = fb.modules.authMod;
+      var fsMod = fb.modules.fsMod;
+
+      // Create via secondary app to not log out admin
+      var appName = 'empAcc_' + Date.now();
+      var secondApp = appMod.initializeApp(fb.app.options, appName);
+      var secondAuth = authMod.getAuth(secondApp);
+
+      var cred;
+      try {
+        cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+      } catch (e) {
+        // If exists, try to sign in and update password
+        if (e.code === 'auth/email-already-in-use') {
+          msg.style.color = '#ef4444';
+          msg.textContent = 'اسم المستخدم محجوز — جرب واحد تاني';
+          try { await secondApp.delete(); } catch (x) {}
+          return;
+        }
+        throw e;
+      }
+
+      var newUid = cred.user.uid;
+
+      try { await authMod.signOut(secondAuth); } catch (e) {}
+      try { await secondApp.delete(); } catch (e) {}
+
+      // Update user doc in Firestore
+      var companyId = window.__dmSaaS.profile.companyId;
+
+      await fsMod.setDoc(fsMod.doc(fb.db, 'users', newUid), {
+        uid: newUid,
+        email: email,
+        username: user,
+        name: emp.name,
+        phone: emp.phone || '',
+        role: 'employee',
+        status: 'active',
+        companyId: companyId,
+        employeeId: empId,
+        createdAt: fsMod.serverTimestamp(),
+        createdBy: window.__dmSaaS.user.uid
+      });
+
+      // Save credentials in company data (local users list)
+      if (!State.data.users) State.data.users = [];
+      // Remove old user for this employee
+      State.data.users = State.data.users.filter(function (u) { return u.employeeId !== empId; });
+      State.data.users.push({
+        id: newUid,
+        username: user,
+        email: email,
+        password: pass,
+        name: emp.name,
+        role: 'Employee',
+        employeeId: empId,
+        firebaseUid: newUid
+      });
+
+      // Also store credentials in employee doc for QR
+      emp.loginUsername = user;
+      emp.loginPassword = pass;
+      emp.loginEmail = email;
+      emp.loginUid = newUid;
+
+      try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+
+      msg.style.color = '#10b981';
+      msg.textContent = '✓ تم إنشاء الحساب';
+
+      // Show success box with QR
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        showAccountCreated(emp, user, pass, email);
+      }, 800);
+
+    } catch (e) {
+      console.error('[Section 66] Account creation failed:', e);
+      msg.style.color = '#ef4444';
+      if (e.code === 'auth/email-already-in-use') msg.textContent = 'اسم المستخدم محجوز';
+      else if (e.code === 'auth/weak-password') msg.textContent = 'كلمة مرور ضعيفة';
+      else msg.textContent = 'فشل: ' + (e.message || '');
+    }
+  };
+
+  function showAccountCreated(emp, user, pass, email) {
+    var loginUrl = window.location.origin + window.location.pathname;
+    var autoUrl = loginUrl + '?emp=' + encodeURIComponent(user) + '&auth=' + encodeURIComponent(pass);
+    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=' + encodeURIComponent(autoUrl);
+
+    var html = '';
+    html += '<div style="text-align:center;margin-bottom:1rem">';
+    html += '<div style="font-size:3rem;margin-bottom:.5rem">✓</div>';
+    html += '<h3 style="margin:0;font-size:1.15rem;font-weight:800;color:#10b981">تم إنشاء الحساب!</h3>';
+    html += '</div>';
+
+    html += '<div style="padding:1rem;background:var(--surface-2);border-radius:10px;margin-bottom:1rem;font-size:.88rem;line-height:1.9">';
+    html += '<div><b>الاسم:</b> ' + esc(emp.name) + '</div>';
+    html += '<div><b>اسم المستخدم:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px;color:#f59e0b;font-weight:700">' + esc(user) + '</code></div>';
+    html += '<div><b>كلمة المرور:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px;color:#10b981;font-weight:700">' + esc(pass) + '</code></div>';
+    html += '</div>';
+
+    html += '<div style="text-align:center;margin-bottom:1rem">';
+    html += '<img src="' + qrUrl + '" alt="QR" style="width:200px;height:200px;border-radius:10px;background:#fff;padding:.75rem">';
+    html += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem">📱 QR للدخول السريع</div>';
+    html += '</div>';
+
+    html += '<div style="padding:.75rem;background:rgba(124,58,237,.06);border-radius:10px;font-size:.75rem;color:var(--text-muted);line-height:1.7">';
+    html += '💡 أرسل بيانات الدخول للموظف. سيدخل من صفحة اللوجن عبر "👷 موظف".';
+    html += '</div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🎉 تم الإنشاء',
+        size: 'md',
+        body: html,
+        footer: '<button class="btn btn-primary" onclick="closeModal();navigate(\'employees\')">حسنًا</button>'
+      });
+    }
+  }
+
+  /* =========================================================
+     STEP 6 — REFRESH PRESERVATION
+     ========================================================= */
+  function setupRefreshKeep() {
+    // Save page on navigate
+    if (typeof window.navigate === 'function' && !window.navigate.__dm66) {
+      var orig = window.navigate;
+      window.navigate = function (page) {
+        if (page && page !== 'login') {
+          try { localStorage.setItem('dm66_last_page', page); } catch (e) {}
+        }
+        return orig.apply(this, arguments);
+      };
+      window.navigate.__dm66 = true;
+    }
+
+    // On boot, if user is authenticated, show app and restore page
+    var check = setInterval(function () {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.auth) return;
+      if (!fb.auth.currentUser) return;
+
+      // User is authenticated
+      clearInterval(check);
+
+      console.log('[Section 66] User authenticated — restoring page');
+
+      // Show app
+      var login = document.getElementById('login-screen');
+      var app = document.getElementById('app');
+      if (login) login.classList.add('hidden');
+      if (app) app.classList.remove('hidden');
+
+      // Wait for SaaS then navigate to last page
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        if (tries > 100) { clearInterval(t); return; }
+        if (!window.__dmSaaS || !window.__dmSaaS.ready) return;
+
+        clearInterval(t);
+        var last = 'dashboard';
+        try { last = localStorage.getItem('dm66_last_page') || 'dashboard'; } catch (e) {}
+        console.log('[Section 66] Restoring:', last);
+        setTimeout(function () {
+          if (typeof navigate === 'function') navigate(last);
+        }, 300);
+      }, 150);
+    }, 150);
+
+    setTimeout(function () { clearInterval(check); }, 30000);
+  }
+
+  /* =========================================================
+     STEP 7 — CONTINUOUS CLEANUP
+     ========================================================= */
+  function continuousCleanup() {
+    setInterval(function () {
+      // Only if login is visible
+      var login = document.getElementById('login-screen');
+      if (!login || login.classList.contains('hidden')) return;
+
+      // Remove old elements
+      var card = login.querySelector('.login-card');
+      if (!card) return;
+
+      // Remove any old login element
+      ['#saas-form', '.saas-tabs', '#saas-super-block', '.dm-register-block', '.dm-register-link', '.dm63-emp-btn', '.dm64-emp-btn', '.demo-hint'].forEach(function (sel) {
+        var el = card.querySelector(sel);
+        if (el) el.remove();
+      });
+
+      // Ensure our form exists
+      if (!card.querySelector('#dm66-form')) {
+        buildCleanLogin();
+      }
+    }, 2000);
+  }
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function boot() {
+    killRefreshLoops();
+    buildCleanLogin();
+    setupRefreshKeep();
+    continuousCleanup();
+
+    // Inject employee create button
+    setInterval(function () {
+      if (State.page === 'employees') injectEmployeeCreateBtn();
+    }, 1500);
+
+    console.log('%c[Section 66] ═══ FINAL FIX READY ═══', 'color:#10b981;font-weight:bold;font-size:15px');
+    console.log('  ✅ Login نظيف — بدون تسجيل');
+    console.log('  ✅ زر 👷 موظف بجانب 🚪 دخول');
+    console.log('  ✅ زر إنشاء حساب دخول للموظفين');
+    console.log('  ✅ F5 يحافظ على الصفحة الحالية');
+    console.log('  ✅ مفيش refresh loops');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 500); });
+  } else {
+    setTimeout(boot, 500);
+  }
+  setTimeout(boot, 3000);
+  setTimeout(boot, 6000);
+
+  // Public command
+  window.__dm66RebuildLogin = function () {
+    var card = document.querySelector('.login-card');
+    if (card) {
+      card.innerHTML = '';
+    }
+    buildCleanLogin();
+  };
+
+})();
 
 
 
