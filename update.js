@@ -28009,7 +28009,124 @@ service cloud.firestore {
   console.log('  ✅ Anonymous user cleanup');
   console.log('  💡 Manual: __dm68Sync()');
 })();
+/* =========================================================
+   SECTION 69: Skip Activation Code for Employees
+   Version: 1.0.0
+   ---------------------------------------------------------
+   ✅ Employee login works directly (username + password)
+   ✅ No activation code requested
+   ✅ Activation modal only for OWNER signup (via Try System)
+   ========================================================= */
+(function () {
+  'use strict';
+  console.log('%c[Section 69] Employee bypass loading…', 'color:#10b981;font-weight:bold;font-size:14px');
 
+  function isEmployee() {
+    var p = window.__dmSaaS && window.__dmSaaS.profile;
+    if (!p) return false;
+    if (p.role === 'employee') return true;
+    if (p.role === 'pending_employee') return true;
+    if (p.status === 'pending') return true;
+    return false;
+  }
+
+  /* ========== BLOCK the activation modal for employees ========== */
+  function blockActivationForEmployees() {
+    // Aggressively remove activation overlay if employee
+    setInterval(function () {
+      if (!isEmployee()) return;
+      var ov = document.getElementById('dm63-activ');
+      if (ov) {
+        ov.remove();
+        console.log('[Section 69] ✓ Blocked activation modal for employee');
+      }
+    }, 500);
+  }
+
+  /* ========== OVERRIDE showActivationModal if possible ========== */
+  function overrideShowActivationModal() {
+    // Section 63 has showActivationModal as internal function
+    // We patch it via the DOM guard above
+  }
+
+  /* ========== PATCH Section 63's check function ========== */
+  function patchActivationFlow() {
+    // Intercept in the DOM: if activation modal appears and it's an employee → close
+    // Already handled by blockActivationForEmployees
+  }
+
+  /* ========== ALSO: Auto-hide modal right after creation ========== */
+  function watchLoginScreen() {
+    // Watch for login completion → mark employee session
+    var check = setInterval(function () {
+      var app = document.getElementById('app');
+      if (!app || app.classList.contains('hidden')) return;
+      if (!window.__dmSaaS || !window.__dmSaaS.ready) return;
+
+      clearInterval(check);
+      if (isEmployee()) {
+        console.log('[Section 69] ✓ Employee session — no subscription needed');
+        // Remove any subscription banner or overlay
+        var sub = document.getElementById('dm-sub-banner');
+        if (sub) sub.remove();
+        var grace = document.getElementById('dm-grace-banner');
+        if (grace) grace.remove();
+        var enf = document.getElementById('dm-enf-overlay');
+        if (enf) enf.remove();
+        var activ = document.getElementById('dm63-activ');
+        if (activ) activ.remove();
+      }
+    }, 500);
+    setTimeout(function () { clearInterval(check); }, 30000);
+  }
+
+  /* ========== HOOK: Watch auth state change ========== */
+  function watchAuthState() {
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready || !fb.modules) {
+      setTimeout(watchAuthState, 500);
+      return;
+    }
+    var am = fb.modules.authMod;
+    if (!am || !am.onAuthStateChanged) return;
+
+    am.onAuthStateChanged(fb.auth, function (user) {
+      if (user) {
+        // User signed in → check role after SaaS ready
+        setTimeout(function () {
+          if (isEmployee()) {
+            console.log('[Section 69] Employee signed in — bypassing activation');
+            var activ = document.getElementById('dm63-activ');
+            if (activ) activ.remove();
+          }
+        }, 1000);
+      }
+    });
+  }
+
+  /* ========== BOOT ========== */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () { return typeof State !== 'undefined' && window.DrMediaFB; },
+    function () {
+      blockActivationForEmployees();
+      watchLoginScreen();
+      watchAuthState();
+      console.log('%c[Section 69] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ الموظفين بيدخلوا بدون كود');
+      console.log('  ✅ كود التفعيل بيظهر للمشتركين الجدد فقط');
+    }
+  );
+
+})();
 
 
 
