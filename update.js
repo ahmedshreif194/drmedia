@@ -29349,7 +29349,17 @@ service cloud.firestore {
   /* =========================================================
      BOOT
      ========================================================= */
-  function boot() {
+function boot() {
+    // 🛑 KILL Sections 65 + 66 — Section 67 is sole owner
+    try {
+      window.__dm66RebuildLogin = function () {};
+      window.rebuildLoginPage = function () { return true; };
+      window.__dm65_KILLED = true;
+      window.__dm66_KILLED = true;
+      window.__dm67_ONLY = true;
+      console.log('%c[Section 67] 🛑 Killed 65+66 — 67 is sole owner', 'color:#ef4444;font-weight:bold');
+    } catch (e) {}
+
     console.log('[Section 67] Booting…');
 
     blockOldSections();
@@ -29364,7 +29374,6 @@ service cloud.firestore {
       var card = loginScreen.querySelector('.login-card');
       if (!card) return;
 
-      // Check integrity
       var forms = card.querySelectorAll('#dm67-form');
       var totalForms = card.querySelectorAll('form');
       var logos = card.querySelectorAll('.dm67-logo');
@@ -29377,24 +29386,7 @@ service cloud.firestore {
     }, 1500);
 
     console.log('%c[Section 67] ═══ READY — One login, one style ═══', 'color:#10b981;font-weight:bold;font-size:15px');
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 300); });
-  } else {
-    setTimeout(boot, 300);
-  }
-
-  setTimeout(boot, 2000);
-  setTimeout(boot, 5000);
-
-  // Public
-  window.__dm67ForceRebuild = function () {
-    buildLogin();
-    console.log('✓ Rebuilt');
-  };
-
-})();
+}
 
 
 
