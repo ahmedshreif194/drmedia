@@ -27784,7 +27784,7 @@ service cloud.firestore {
     u.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); p.focus(); } });
   }
 
-  async function employeeLogin(user, pass, msgEl) {
+    async function employeeLogin(user, pass, msgEl) {
     user = (user || '').trim().toLowerCase();
     pass = (pass || '').trim();
     if (!user || !pass) { msgEl.style.color = '#ef4444'; msgEl.textContent = 'الحقول مطلوبة'; return; }
@@ -27797,11 +27797,59 @@ service cloud.firestore {
       var fb = window.DrMediaFB;
       if (!fb || !fb.ready || !fb.modules) throw new Error('Firebase not ready');
 
-      var emailsToTry = [
-        user.indexOf('@') >= 0 ? user : (user + '@employee.drmedia.pro'),
-        user.indexOf('@') >= 0 ? user : (user + '@drmedia.pro'),
-        user
-      ];
+      // ⭐ STEP 1: Look up in State.data.users
+      var actualEmail = null;
+      var foundUser = (State.data.users || []).find(function (u) {
+        return (u.username || '').toLowerCase() === user ||
+               (u.email || '').toLowerCase() === user ||
+               (u.loginUsername || '').toLowerCase() === user;
+      });
+      if (foundUser) {
+        actualEmail = foundUser.email || foundUser.loginEmail;
+        console.log('[Section 65] ✓ User found in State.data.users:', actualEmail);
+      }
+
+      // ⭐ STEP 2: Look up in employees list
+      if (!actualEmail) {
+        var empFound = (State.data.employees || []).find(function (e) {
+          return (e.loginUsername || '').toLowerCase() === user ||
+                 (e.loginEmail || '').toLowerCase() === user;
+        });
+        if (empFound && empFound.loginEmail) {
+          actualEmail = empFound.loginEmail;
+          console.log('[Section 65] ✓ User found in employees:', actualEmail);
+        }
+      }
+
+      // ⭐ STEP 3: Look up in Firestore users collection
+      if (!actualEmail) {
+        try {
+          var fsMod = fb.modules.fsMod;
+          var q = fsMod.query(
+            fsMod.collection(fb.db, 'users'),
+            fsMod.where('username', '==', user)
+          );
+          var snap = await fsMod.getDocs(q);
+          if (!snap.empty) {
+            actualEmail = snap.docs[0].data().email;
+            console.log('[Section 65] ✓ User found in Firestore:', actualEmail);
+          }
+        } catch (e) {
+          console.warn('[Section 65] Firestore lookup failed:', e);
+        }
+      }
+
+      // ⭐ STEP 4: Build list of emails to try
+      var emailsToTry = [];
+      if (actualEmail) emailsToTry.push(actualEmail);
+      if (user.indexOf('@') >= 0) {
+        emailsToTry.push(user);
+      } else {
+        emailsToTry.push(user + '@employee.drmedia.pro');
+        emailsToTry.push(user + '@drmedia.pro');
+      }
+      // Remove duplicates
+      emailsToTry = emailsToTry.filter(function (v, i, a) { return a.indexOf(v) === i; });
 
       var cred = null;
       var lastErr = null;
@@ -27812,7 +27860,7 @@ service cloud.firestore {
         } catch (err) {
           lastErr = err;
           if (err.code === 'auth/wrong-password') throw err;
-          if (err.code !== 'auth/user-not-found' && err.code !== 'auth/invalid-credential') throw err;
+          if (err.code !== 'auth/user-not-found' && err.code !== 'auth/invalid-email' && err.code !== 'auth/invalid-credential') throw err;
         }
       }
       if (!cred) throw lastErr || new Error('فشل الدخول');
@@ -27825,7 +27873,8 @@ service cloud.firestore {
       try { localStorage.setItem('dm65_last_page', 'myportal'); } catch (e) {}
 
       setTimeout(function () {
-        document.getElementById('dm65-emp-modal').remove();
+        var modal = document.getElementById('dm65-emp-modal');
+        if (modal) modal.remove();
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
         setTimeout(function () { if (typeof navigate === 'function') navigate('myportal'); }, 400);
@@ -27834,13 +27883,12 @@ service cloud.firestore {
       console.error('[Section 65] Emp login failed:', e);
       msgEl.style.color = '#ef4444';
       if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') msgEl.textContent = 'كلمة المرور خاطئة';
-      else if (e.code === 'auth/user-not-found') msgEl.textContent = 'اسم المستخدم غير موجود';
-      else if (e.code === 'auth/invalid-email') msgEl.textContent = 'اسم مستخدم غير صحيح';
+      else if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-email') msgEl.textContent = '❌ الموظف مش مسجل في النظام — تواصل مع الإدارة';
       else if (e.code === 'auth/network-request-failed') msgEl.textContent = 'فشل الاتصال';
+      else if (e.code === 'auth/too-many-requests') msgEl.textContent = 'محاولات كثيرة';
       else msgEl.textContent = 'فشل: ' + (e.message || '');
     }
   }
-
   /* ========== 6) TRY SYSTEM (Activation Code) ========== */
   function showTrySystem() {
     var old = document.getElementById('dm65-try-modal');
@@ -28227,7 +28275,354 @@ service cloud.firestore {
   window.__dm65Rebuild = function () { buildLoginPage(); console.log('✓ Rebuilt'); };
 
 })();
+/* =========================================================
+   SECTION 66: Employee Account Manager
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Admin creates login account for each employee
+   - Button appears in employees page (🔑 icon)
+   - Creates Firebase Auth account + Firestore user doc
+   ========================================================= */
+(function () {
+  'use strict';
 
+  console.log('%c[Section 66] Employee Accounts loading…', 'color:#f59e0b;font-weight:bold;font-size:14px');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+
+  /* ========== ADD BUTTON TO EMPLOYEES PAGE ========== */
+  function addButtonToEmployees() {
+    if (State.page !== 'employees') return;
+    var rows = document.querySelectorAll('#content table.data-table tbody tr');
+    rows.forEach(function (tr) {
+      if (tr.querySelector('.dm66-key-btn')) return;
+      var editBtn = tr.querySelector('button[onclick*="editEmployee"]');
+      if (!editBtn) return;
+      var m = editBtn.getAttribute('onclick').match(/editEmployee\(['"]([^'"]+)['"]\)/);
+      if (!m) return;
+      var empId = m[1];
+
+      var hasAcc = (State.data.users || []).some(function (u) { return u.employeeId === empId; });
+      var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+      if (emp && emp.loginUsername) hasAcc = true;
+
+      var actionDiv = tr.querySelector('td:last-child > div');
+      if (!actionDiv) return;
+
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-icon btn-sm dm66-key-btn';
+      btn.title = hasAcc ? 'حساب موجود — اضغط للتعديل' : 'إنشاء حساب دخول';
+      btn.style.color = hasAcc ? '#10b981' : '#f59e0b';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>';
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        showAccountModal(empId);
+      };
+      actionDiv.appendChild(btn);
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+
+  /* ========== MODAL ========== */
+  function showAccountModal(empId) {
+    var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+    if (!emp) { toast('الموظف غير موجود', 'error'); return; }
+
+    var existingUser = (State.data.users || []).find(function (u) { return u.employeeId === empId; });
+    var isEdit = !!existingUser || !!(emp.loginUsername);
+
+    var defaultUser = isEdit
+      ? (existingUser ? existingUser.username : emp.loginUsername) || ''
+      : (emp.name || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 20);
+    if (!defaultUser) defaultUser = 'emp_' + Math.random().toString(36).slice(2, 6);
+
+    var defaultPass = isEdit
+      ? (existingUser ? existingUser.password : emp.loginPassword) || ''
+      : 'DMP' + Math.floor(1000 + Math.random() * 9000);
+
+    var html = '';
+    html += '<div style="padding:.85rem;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;font-size:.78rem;color:var(--text-muted);margin-bottom:1rem;line-height:1.7">';
+    html += isEdit ? '✏️ <b>تعديل حساب الدخول</b> للموظف <b style="color:#f59e0b">' + esc(emp.name) + '</b>'
+      : '🔑 <b>إنشاء حساب دخول</b> للموظف <b style="color:#f59e0b">' + esc(emp.name) + '</b>';
+    html += '</div>';
+
+    html += '<div class="field"><label>اسم المستخدم *</label>';
+    html += '<input id="dm66u-user" type="text" value="' + esc(defaultUser) + '" placeholder="ahmed_photo" autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:.9rem">';
+    html += '<div style="font-size:.7rem;color:var(--text-muted);margin-top:.35rem">حروف إنجليزية صغيرة، أرقام، _ فقط</div></div>';
+
+    html += '<div class="field" style="margin-top:.85rem"><label>كلمة المرور *</label>';
+    html += '<input id="dm66u-pass" type="text" value="' + esc(defaultPass) + '" placeholder="6+ حروف" autocomplete="off" style="width:100%;padding:.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:ui-monospace,monospace;font-size:.9rem">';
+    html += '<div style="font-size:.7rem;color:var(--text-muted);margin-top:.35rem">6 أحرف على الأقل</div></div>';
+
+    if (!isEdit) {
+      html += '<div style="margin-top:1rem;padding:.75rem;background:rgba(16,185,129,.06);border-radius:10px;font-size:.75rem;color:var(--text-muted);line-height:1.7">';
+      html += '📱 <b>بعد الإنشاء:</b><br>';
+      html += '• الموظف يفتح الموقع<br>';
+      html += '• يضغط <b>👷 دخول موظف</b><br>';
+      html += '• يدخل اسم المستخدم وكلمة المرور';
+      html += '</div>';
+    }
+
+    html += '<div id="dm66u-msg" style="color:#ef4444;font-size:.78rem;min-height:1.2em;margin-top:.85rem"></div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: (isEdit ? '✏️ تعديل حساب — ' : '🔑 إنشاء حساب — ') + esc(emp.name),
+        size: 'lg',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+                (isEdit ? '<button class="btn btn-danger" onclick="__dm66DeleteAcc(\'' + empId + '\')">🗑️ حذف</button>' : '') +
+                '<button class="btn btn-primary" onclick="__dm66SaveAcc(\'' + empId + '\', ' + isEdit + ')">' + (isEdit ? '💾 حفظ' : '🔑 إنشاء') + '</button>'
+      });
+    }
+  }
+
+  /* ========== SAVE ========== */
+  window.__dm66SaveAcc = async function (empId, isEdit) {
+    var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+    if (!emp) return;
+
+    var username = (document.getElementById('dm66u-user').value || '').trim().toLowerCase();
+    var pass = (document.getElementById('dm66u-pass').value || '').trim();
+    var msg = document.getElementById('dm66u-msg');
+
+    if (!username || username.length < 3) { msg.textContent = '❌ اسم المستخدم 3+ أحرف'; return; }
+    if (!/^[a-z0-9_.]+$/.test(username)) { msg.textContent = '❌ حروف إنجليزية صغيرة، أرقام، _ فقط'; return; }
+    if (!pass || pass.length < 6) { msg.textContent = '❌ كلمة المرور 6+ أحرف'; return; }
+
+    msg.style.color = '#f59e0b';
+    msg.textContent = isEdit ? '⏳ جاري التحديث…' : '⏳ جاري إنشاء الحساب…';
+
+    var email = username + '@employee.drmedia.pro';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready) throw new Error('Firebase not ready');
+
+      var appMod = fb.modules.appMod;
+      var authMod = fb.modules.authMod;
+      var fsMod = fb.modules.fsMod;
+
+      var uidNew = null;
+
+      if (isEdit) {
+        var existingUser = (State.data.users || []).find(function (u) { return u.employeeId === empId; });
+        uidNew = existingUser ? existingUser.id : emp.loginUid;
+
+        if (!uidNew) throw new Error('Account ID not found');
+
+        // Update Firestore user doc
+        try {
+          await fsMod.updateDoc(fsMod.doc(fb.db, 'users', uidNew), {
+            username: username,
+            email: email,
+            name: emp.name,
+            phone: emp.phone || '',
+            employeeId: empId,
+            updatedAt: fsMod.serverTimestamp()
+          });
+        } catch (e) { console.warn('[Section 66] Firestore update failed:', e); }
+
+        // Update State
+        if (existingUser) {
+          existingUser.username = username;
+          existingUser.email = email;
+          existingUser.password = pass;
+        }
+
+      } else {
+        // Create new Firebase Auth user (secondary app)
+        var appName = 'newEmp_' + Date.now();
+        var secondApp = appMod.initializeApp(fb.app.options, appName);
+        var secondAuth = authMod.getAuth(secondApp);
+
+        var cred;
+        try {
+          cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+        } catch (e) {
+          try { await secondApp.delete(); } catch (x) {}
+          if (e.code === 'auth/email-already-in-use') {
+            msg.textContent = '❌ اسم المستخدم مستخدم بالفعل — جرب اسم تاني';
+            return;
+          }
+          throw e;
+        }
+
+        uidNew = cred.user.uid;
+        try { await authMod.signOut(secondAuth); } catch (e) {}
+        try { await secondApp.delete(); } catch (e) {}
+
+        // Create Firestore user doc
+        var companyId = window.__dmSaaS && window.__dmSaaS.profile ? window.__dmSaaS.profile.companyId : null;
+
+        await fsMod.setDoc(fsMod.doc(fb.db, 'users', uidNew), {
+          uid: uidNew,
+          email: email,
+          username: username,
+          name: emp.name,
+          phone: emp.phone || '',
+          role: 'employee',
+          status: 'active',
+          companyId: companyId,
+          employeeId: empId,
+          createdAt: fsMod.serverTimestamp(),
+          createdBy: window.__dmSaaS && window.__dmSaaS.user ? window.__dmSaaS.user.uid : null
+        });
+
+        // Save to State.data.users
+        if (!State.data.users) State.data.users = [];
+        State.data.users.push({
+          id: uidNew,
+          username: username,
+          email: email,
+          password: pass,
+          name: emp.name,
+          role: 'Employee',
+          employeeId: empId,
+          firebaseUid: uidNew
+        });
+      }
+
+      // Save to employee record
+      emp.loginUsername = username;
+      emp.loginPassword = pass;
+      emp.loginEmail = email;
+      emp.loginUid = uidNew;
+
+      try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+
+      msg.style.color = '#10b981';
+      msg.textContent = isEdit ? '✓ تم التحديث' : '✓ تم إنشاء الحساب';
+
+      toast((isEdit ? '✓ تم التحديث' : '✓ تم إنشاء حساب ' + emp.name), 'success');
+
+      setTimeout(function () {
+        if (typeof closeModal === 'function') closeModal();
+        if (isEdit) {
+          navigate('employees');
+        } else {
+          showSuccess(emp, username, pass);
+        }
+      }, 700);
+
+    } catch (e) {
+      console.error('[Section 66] Save failed:', e);
+      msg.style.color = '#ef4444';
+      msg.textContent = '❌ فشل: ' + (e.message || '');
+    }
+  };
+
+  /* ========== SUCCESS SCREEN ========== */
+  function showSuccess(emp, username, pass) {
+    var html = '';
+    html += '<div style="text-align:center;margin-bottom:1rem">';
+    html += '<div style="font-size:3rem;margin-bottom:.5rem">✓</div>';
+    html += '<h3 style="margin:0;font-size:1.15rem;font-weight:800;color:#10b981">تم إنشاء الحساب!</h3>';
+    html += '</div>';
+    html += '<div style="padding:1rem;background:var(--surface-2);border-radius:10px;margin-bottom:1rem;font-size:.88rem;line-height:1.9">';
+    html += '<div><b>الموظف:</b> ' + esc(emp.name) + '</div>';
+    html += '<div><b>اسم المستخدم:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px;color:#f59e0b;font-weight:700">' + esc(username) + '</code></div>';
+    html += '<div><b>كلمة المرور:</b> <code style="background:var(--surface);padding:.15rem .4rem;border-radius:4px;color:#10b981;font-weight:700">' + esc(pass) + '</code></div>';
+    html += '</div>';
+    html += '<div style="padding:.85rem;background:rgba(59,130,246,.08);border-radius:10px;font-size:.75rem;color:var(--text-muted);line-height:1.7">';
+    html += '📱 <b>الخطوة التالية:</b><br>';
+    html += '1. ابعت البيانات دي للموظف<br>';
+    html += '2. الموظف يفتح الموقع<br>';
+    html += '3. يضغط <b>👷 دخول موظف</b><br>';
+    html += '4. يدخل اليوزرنيم والباسورد';
+    html += '</div>';
+
+    if (typeof openModal === 'function') {
+      openModal({
+        title: '🎉 تم الإنشاء',
+        size: 'md',
+        body: html,
+        footer: '<button class="btn btn-ghost" onclick="closeModal()">حسنًا</button>' +
+                '<button class="btn btn-primary" id="dm66-copy-creds">📋 نسخ البيانات</button>'
+      });
+      setTimeout(function () {
+        var copyBtn = document.getElementById('dm66-copy-creds');
+        if (copyBtn) {
+          copyBtn.onclick = function () {
+            var text = 'اسم المستخدم: ' + username + '\nكلمة المرور: ' + pass + '\nالرابط: ' + window.location.origin;
+            try {
+              navigator.clipboard.writeText(text);
+              toast('✓ تم النسخ', 'success');
+            } catch (e) { toast(text, 'info'); }
+            if (typeof closeModal === 'function') closeModal();
+            setTimeout(function () { navigate('employees'); }, 300);
+          };
+        }
+      }, 200);
+    }
+  }
+
+  /* ========== DELETE ========== */
+  window.__dm66DeleteAcc = async function (empId) {
+    if (!confirm('حذف حساب الدخول للموظف؟')) return;
+
+    var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+    var user = (State.data.users || []).find(function (u) { return u.employeeId === empId; });
+
+    try {
+      var fb = window.DrMediaFB;
+      var fsMod = fb.modules.fsMod;
+
+      if (user && user.id) {
+        try { await fsMod.deleteDoc(fsMod.doc(fb.db, 'users', user.id)); } catch (e) {}
+      }
+
+      State.data.users = (State.data.users || []).filter(function (u) { return u.employeeId !== empId; });
+
+      if (emp) {
+        delete emp.loginUsername;
+        delete emp.loginPassword;
+        delete emp.loginEmail;
+        delete emp.loginUid;
+      }
+
+      try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+
+      toast('✓ تم حذف الحساب', 'success');
+      if (typeof closeModal === 'function') closeModal();
+      setTimeout(function () { navigate('employees'); }, 400);
+    } catch (e) {
+      toast('فشل: ' + e.message, 'error');
+    }
+  };
+
+  /* ========== BOOT ========== */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof State !== 'undefined' && typeof Pages !== 'undefined' && typeof navigate === 'function';
+    },
+    function () {
+      setInterval(function () {
+        if (State.page === 'employees') addButtonToEmployees();
+      }, 1500);
+
+      console.log('%c[Section 66] ═══ Employee Account Manager READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  ✅ زر 🔑 في صفحة الموظفين');
+      console.log('  ✅ ينشئ حساب Firebase Auth');
+      console.log('  ✅ يحفظ username + password في State');
+    }
+  );
+
+})();
 
 
 
