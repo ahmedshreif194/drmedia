@@ -27526,6 +27526,707 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 65 (Master): Login Master
+   Version: 4.0.0
+   ---------------------------------------------------------
+   ✅ Remove 14-day trial
+   ✅ Keep Owner Login (email + password)
+   ✅ Employee Login (username + password)
+   ✅ Try System (activation code → auto signup)
+   ✅ Remove Sign Up tab
+   ✅ MutationObserver guard
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 65] ═══ Login Master Loading ═══', 'color:#7c3aed;font-weight:bold;font-size:15px');
+
+  var BUILDING = false;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function toast(m, t) {
+    if (typeof showToast === 'function') showToast(m, t || 'info');
+    else console.log('[' + (t || 'info') + ']', m);
+  }
+
+  /* ========== 1) REMOVE TRIAL ========== */
+  function removeTrial() {
+    if (window.__dmPlans && window.__dmPlans.trial) {
+      delete window.__dmPlans.trial;
+      console.log('[Section 65] ✓ Trial removed');
+    }
+  }
+
+  /* ========== 2) BUILD LOGIN PAGE ========== */
+  function buildLoginPage() {
+    var loginScreen = document.getElementById('login-screen');
+    if (!loginScreen) return false;
+    var card = loginScreen.querySelector('.login-card');
+    if (!card) return false;
+
+    // Skip if healthy
+    if (card.querySelector('#dm65-form') && !BUILDING) {
+      var bad = card.querySelectorAll('.saas-tabs, #saas-form, #saas-super-block, .dm-register-block, #dm66-form, #dm67-form, .dm67-logo, #dm63-form, #dm64-form');
+      var forms = card.querySelectorAll('form').length;
+      if (bad.length === 0 && forms <= 1) return true;
+    }
+
+    BUILDING = true;
+    while (card.firstChild) card.removeChild(card.firstChild);
+
+    /* LOGO */
+    var logo = document.createElement('div');
+    logo.className = 'dm65-logo';
+    logo.style.cssText = 'display:flex;align-items:center;gap:.75rem;justify-content:center;margin-bottom:1.25rem';
+    logo.innerHTML =
+      '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:1.5rem;box-shadow:0 10px 30px -8px rgba(124,58,237,.5)">D</div>' +
+      '<h1 style="color:#fff;font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-.02em">Dr Media <span style="background:linear-gradient(135deg,#a78bfa,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent">Pro</span></h1>';
+    card.appendChild(logo);
+
+    /* SUBTITLE */
+    var sub = document.createElement('p');
+    sub.style.cssText = 'color:#94a3b8;text-align:center;font-size:.85rem;margin:0 0 1.5rem';
+    sub.textContent = 'سجّل الدخول للوصول إلى لوحة التحكم';
+    card.appendChild(sub);
+
+    /* FORM */
+    var form = document.createElement('div');
+    form.id = 'dm65-form';
+    form.style.cssText = 'display:flex;flex-direction:column;gap:.85rem';
+
+    form.innerHTML =
+      '<div>' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">البريد الإلكتروني</label>' +
+        '<input id="dm65-email" type="email" placeholder="you@company.com" autocomplete="email" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" onfocus="this.style.borderColor=\'#7c3aed\'" onblur="this.style.borderColor=\'rgba(255,255,255,.1)\'">' +
+      '</div>' +
+      '<div>' +
+        '<label style="color:#cbd5e1;font-size:.8rem;font-weight:500;display:block;margin-bottom:.4rem">كلمة المرور</label>' +
+        '<div style="position:relative">' +
+          '<input id="dm65-pass" type="password" placeholder="••••••••" autocomplete="current-password" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 3rem .85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none" onfocus="this.style.borderColor=\'#7c3aed\'" onblur="this.style.borderColor=\'rgba(255,255,255,.1)\'">' +
+          '<button type="button" id="dm65-toggle" style="position:absolute;inset-inline-end:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:#94a3b8;cursor:pointer;padding:6px;font-size:1rem;line-height:1">👁️</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.8rem">' +
+        '<label style="display:flex;align-items:center;gap:.4rem;color:#cbd5e1;cursor:pointer"><input type="checkbox" id="dm65-remember" checked style="accent-color:#7c3aed;width:16px;height:16px"> تذكرني</label>' +
+        '<a href="#" id="dm65-forgot" style="color:#a78bfa;text-decoration:none;font-weight:500">نسيت كلمة المرور؟</a>' +
+      '</div>' +
+      '<div id="dm65-error" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em"></div>' +
+      '<button type="button" id="dm65-login" style="width:100%;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:1rem;box-shadow:0 10px 25px -8px #7c3aed">🚪 دخول</button>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.25rem">' +
+        '<button type="button" id="dm65-emp" style="padding:.85rem .5rem;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.82rem;box-shadow:0 10px 25px -8px #3b82f6">👷 دخول موظف</button>' +
+        '<button type="button" id="dm65-try" style="padding:.85rem .5rem;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.82rem;box-shadow:0 10px 25px -8px #10b981">🎁 تجربة النظام</button>' +
+      '</div>';
+
+    card.appendChild(form);
+
+    /* Hidden placeholders — prevent Sections 63 & 64 from re-adding buttons */
+    var d63 = document.createElement('div');
+    d63.className = 'dm63-emp-btn';
+    d63.style.display = 'none';
+    card.appendChild(d63);
+
+    var d64 = document.createElement('div');
+    d64.className = 'dm64-emp-btn';
+    d64.style.display = 'none';
+    card.appendChild(d64);
+
+    /* COPYRIGHT */
+    var copy = document.createElement('div');
+    copy.className = 'dm65-copyright';
+    copy.style.cssText = 'margin-top:2rem;padding-top:1.25rem;border-top:1px solid rgba(255,255,255,.06);text-align:center;font-size:.72rem;color:#94a3b8;line-height:1.9';
+    copy.innerHTML = '© 2026 <b style="color:#a78bfa">Dr Media Pro</b> — جميع الحقوق محفوظة<br><span style="opacity:.75">تصميم وتطوير: أحمد شريف · <a href="tel:01002670948" style="color:inherit;text-decoration:none">01002670948</a></span>';
+    card.appendChild(copy);
+
+    BUILDING = false;
+    bindEvents();
+    console.log('[Section 65] ✓ Login page built');
+    return true;
+  }
+
+  /* ========== 3) BIND EVENTS ========== */
+  function bindEvents() {
+    var email = document.getElementById('dm65-email');
+    var pass = document.getElementById('dm65-pass');
+    var loginBtn = document.getElementById('dm65-login');
+    var empBtn = document.getElementById('dm65-emp');
+    var tryBtn = document.getElementById('dm65-try');
+    var toggle = document.getElementById('dm65-toggle');
+    var forgot = document.getElementById('dm65-forgot');
+
+    function showErr(m) {
+      var el = document.getElementById('dm65-error');
+      if (el) { el.style.color = '#ef4444'; el.textContent = m; }
+    }
+    function clearErr() {
+      var el = document.getElementById('dm65-error');
+      if (el) el.textContent = '';
+    }
+
+    if (loginBtn) loginBtn.onclick = function () { doEmailLogin(email.value, pass.value, loginBtn, showErr, clearErr); };
+    if (empBtn) empBtn.onclick = showEmployeeLogin;
+    if (tryBtn) tryBtn.onclick = showTrySystem;
+    if (toggle) toggle.onclick = function () {
+      pass.type = pass.type === 'password' ? 'text' : 'password';
+      toggle.textContent = pass.type === 'password' ? '👁️' : '🙈';
+    };
+    if (forgot) forgot.onclick = function (e) {
+      e.preventDefault();
+      var em = email.value.trim();
+      if (!em) { showErr('اكتب البريد أولًا'); return; }
+      resetPassword(em);
+    };
+    if (email) email.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doEmailLogin(email.value, pass.value, loginBtn, showErr, clearErr); } });
+    if (pass) pass.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); doEmailLogin(email.value, pass.value, loginBtn, showErr, clearErr); } });
+  }
+
+  /* ========== 4) OWNER LOGIN ========== */
+  async function doEmailLogin(email, password, btn, showErr, clearErr) {
+    email = (email || '').trim();
+    password = (password || '').trim();
+    if (!email || !password) { showErr('املأ الحقول المطلوبة'); return; }
+    clearErr();
+
+    var oldTxt = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ جاري...';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) throw new Error('Firebase not ready');
+      try {
+        if (fb.modules.authMod.setPersistence && fb.modules.authMod.browserLocalPersistence) {
+          await fb.modules.authMod.setPersistence(fb.auth, fb.modules.authMod.browserLocalPersistence);
+        }
+      } catch (e) {}
+
+      var cred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, email, password);
+      console.log('[Section 65] ✓ Login OK:', cred.user.email);
+      toast('✓ مرحبًا بك', 'success');
+      try { sessionStorage.setItem('dm65_logged_in', '1'); } catch (e) {}
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      setTimeout(function () {
+        var last = 'dashboard';
+        try { last = localStorage.getItem('dm65_last_page') || 'dashboard'; } catch (e) {}
+        if (typeof navigate === 'function') navigate(last);
+      }, 500);
+    } catch (e) {
+      console.error('[Section 65] Login failed:', e);
+      btn.disabled = false;
+      btn.innerHTML = oldTxt;
+      if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found') showErr('البريد أو كلمة المرور خاطئة');
+      else if (e.code === 'auth/invalid-email') showErr('البريد غير صحيح');
+      else if (e.code === 'auth/too-many-requests') showErr('محاولات كثيرة، حاول بعد دقيقة');
+      else if (e.code === 'auth/network-request-failed') showErr('فشل الاتصال');
+      else showErr(e.message || 'فشل الدخول');
+    }
+  }
+
+  async function resetPassword(email) {
+    try {
+      var fb = window.DrMediaFB;
+      await fb.modules.authMod.sendPasswordResetEmail(fb.auth, email);
+      toast('✓ تم إرسال رابط إعادة التعيين', 'success');
+    } catch (e) { toast('فشل: ' + e.message, 'error'); }
+  }
+
+  /* ========== 5) EMPLOYEE LOGIN ========== */
+  function showEmployeeLogin() {
+    var old = document.getElementById('dm65-emp-modal');
+    if (old) old.remove();
+
+    var ov = document.createElement('div');
+    ov.id = 'dm65-emp-modal';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem';
+    ov.onclick = function (e) { if (e.target === ov) ov.remove(); };
+
+    ov.innerHTML =
+      '<div style="max-width:420px;width:100%;background:#1a1433;border-radius:20px;padding:2rem;border:1px solid rgba(255,255,255,.1);box-shadow:0 40px 80px -20px rgba(0,0,0,.6)">' +
+        '<div style="text-align:center;margin-bottom:1.25rem">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">👷</div>' +
+          '<h3 style="margin:0;color:#fff;font-size:1.2rem;font-weight:800">دخول الموظفين</h3>' +
+          '<p style="color:#94a3b8;font-size:.82rem;margin:.5rem 0 0">اسم المستخدم وكلمة المرور</p>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:.85rem">' +
+          '<div>' +
+            '<label style="color:#cbd5e1;font-size:.8rem;display:block;margin-bottom:.4rem">اسم المستخدم</label>' +
+            '<input id="dm65-eu" type="text" placeholder="ahmed_photo" autocomplete="username" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none">' +
+          '</div>' +
+          '<div>' +
+            '<label style="color:#cbd5e1;font-size:.8rem;display:block;margin-bottom:.4rem">كلمة المرور</label>' +
+            '<input id="dm65-ep" type="password" placeholder="••••••••" autocomplete="current-password" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.85rem 1rem;color:#fff;font-size:.95rem;font-family:inherit;outline:none">' +
+          '</div>' +
+          '<div id="dm65-emsg" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em"></div>' +
+          '<button id="dm65-emp-go" style="width:100%;padding:.9rem;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem">دخول</button>' +
+          '<button id="dm65-emp-cancel" style="width:100%;padding:.65rem;border-radius:12px;background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,.1);font-weight:600;cursor:pointer;font-family:inherit;font-size:.85rem">إلغاء</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(ov);
+
+    var u = document.getElementById('dm65-eu');
+    var p = document.getElementById('dm65-ep');
+    var go = document.getElementById('dm65-emp-go');
+    var cancel = document.getElementById('dm65-emp-cancel');
+    var msg = document.getElementById('dm65-emsg');
+
+    setTimeout(function () { u.focus(); }, 150);
+
+    function tryLogin() { employeeLogin(u.value, p.value, msg); }
+    go.onclick = tryLogin;
+    cancel.onclick = function () { ov.remove(); };
+    p.addEventListener('keydown', function (e) { if (e.key === 'Enter') tryLogin(); });
+    u.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); p.focus(); } });
+  }
+
+  async function employeeLogin(user, pass, msgEl) {
+    user = (user || '').trim().toLowerCase();
+    pass = (pass || '').trim();
+    if (!user || !pass) { msgEl.style.color = '#ef4444'; msgEl.textContent = 'الحقول مطلوبة'; return; }
+    if (user.length < 3) { msgEl.style.color = '#ef4444'; msgEl.textContent = 'اسم المستخدم قصير'; return; }
+
+    msgEl.style.color = '#f59e0b';
+    msgEl.textContent = '⏳ جاري التحقق…';
+
+    try {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.modules) throw new Error('Firebase not ready');
+
+      var emailsToTry = [
+        user.indexOf('@') >= 0 ? user : (user + '@employee.drmedia.pro'),
+        user.indexOf('@') >= 0 ? user : (user + '@drmedia.pro'),
+        user
+      ];
+
+      var cred = null;
+      var lastErr = null;
+      for (var i = 0; i < emailsToTry.length; i++) {
+        try {
+          cred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, emailsToTry[i], pass);
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (err.code === 'auth/wrong-password') throw err;
+          if (err.code !== 'auth/user-not-found' && err.code !== 'auth/invalid-credential') throw err;
+        }
+      }
+      if (!cred) throw lastErr || new Error('فشل الدخول');
+
+      console.log('[Section 65] ✓ Employee login OK:', cred.user.email);
+      msgEl.style.color = '#10b981';
+      msgEl.textContent = '✓ تم الدخول';
+      toast('✓ مرحبًا بك', 'success');
+      try { sessionStorage.setItem('dm65_logged_in', '1'); } catch (e) {}
+      try { localStorage.setItem('dm65_last_page', 'myportal'); } catch (e) {}
+
+      setTimeout(function () {
+        document.getElementById('dm65-emp-modal').remove();
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        setTimeout(function () { if (typeof navigate === 'function') navigate('myportal'); }, 400);
+      }, 500);
+    } catch (e) {
+      console.error('[Section 65] Emp login failed:', e);
+      msgEl.style.color = '#ef4444';
+      if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') msgEl.textContent = 'كلمة المرور خاطئة';
+      else if (e.code === 'auth/user-not-found') msgEl.textContent = 'اسم المستخدم غير موجود';
+      else if (e.code === 'auth/invalid-email') msgEl.textContent = 'اسم مستخدم غير صحيح';
+      else if (e.code === 'auth/network-request-failed') msgEl.textContent = 'فشل الاتصال';
+      else msgEl.textContent = 'فشل: ' + (e.message || '');
+    }
+  }
+
+  /* ========== 6) TRY SYSTEM (Activation Code) ========== */
+  function showTrySystem() {
+    var old = document.getElementById('dm65-try-modal');
+    if (old) old.remove();
+
+    var ov = document.createElement('div');
+    ov.id = 'dm65-try-modal';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;overflow-y:auto';
+    ov.onclick = function (e) { if (e.target === ov) ov.remove(); };
+
+    ov.innerHTML =
+      '<div style="max-width:480px;width:100%;background:#1a1433;border-radius:20px;padding:2rem;border:1px solid rgba(255,255,255,.1);box-shadow:0 40px 80px -20px rgba(0,0,0,.6);margin:auto">' +
+        '<div style="text-align:center;margin-bottom:1.25rem">' +
+          '<div style="font-size:2.5rem;margin-bottom:.5rem">🎁</div>' +
+          '<h3 style="margin:0;color:#fff;font-size:1.2rem;font-weight:800">تجربة النظام</h3>' +
+          '<p style="color:#94a3b8;font-size:.82rem;margin:.5rem 0 0">أدخل كود التفعيل اللي وصلك من الإدارة</p>' +
+        '</div>' +
+
+        /* Step 1: Code */
+        '<div id="dm65-step1">' +
+          '<div style="padding:.75rem;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:10px;font-size:.75rem;color:#6ee7b7;margin-bottom:1rem;line-height:1.7;text-align:center">' +
+            '📌 مش عندك كود؟ تواصل مع الإدارة' +
+          '</div>' +
+          '<div style="margin-bottom:1rem">' +
+            '<label style="color:#cbd5e1;font-size:.8rem;font-weight:600;display:block;margin-bottom:.4rem">كود التفعيل *</label>' +
+            '<input id="dm65-code" type="text" placeholder="DRM-XXXX-XXXX" autocomplete="off" style="width:100%;padding:1rem;text-align:center;font-size:1.15rem;font-weight:800;letter-spacing:.15em;border-radius:12px;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#fff;font-family:ui-monospace,monospace;outline:none;text-transform:uppercase">' +
+          '</div>' +
+          '<div id="dm65-code-msg" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em;margin-bottom:1rem"></div>' +
+          '<button id="dm65-code-next" style="width:100%;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem;box-shadow:0 10px 25px -8px #10b981">✓ التحقق من الكود</button>' +
+          '<button id="dm65-try-cancel" style="width:100%;margin-top:.65rem;padding:.65rem;border-radius:12px;background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,.1);font-weight:600;cursor:pointer;font-family:inherit;font-size:.85rem">إلغاء</button>' +
+        '</div>' +
+
+        /* Step 2: Registration */
+        '<div id="dm65-step2" style="display:none">' +
+          '<div style="padding:.75rem;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:10px;margin-bottom:1rem;text-align:center">' +
+            '<div style="font-size:.75rem;color:#6ee7b7">✓ الكود صحيح</div>' +
+            '<div id="dm65-code-info" style="font-size:.7rem;color:#94a3b8;margin-top:.25rem"></div>' +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:.7rem">' +
+            '<div><label style="color:#cbd5e1;font-size:.75rem;font-weight:600;display:block;margin-bottom:.35rem">اسم الشركة *</label><input id="dm65-reg-company" type="text" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-size:.9rem;font-family:inherit;outline:none"></div>' +
+            '<div><label style="color:#cbd5e1;font-size:.75rem;font-weight:600;display:block;margin-bottom:.35rem">اسمك *</label><input id="dm65-reg-name" type="text" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-size:.9rem;font-family:inherit;outline:none"></div>' +
+            '<div><label style="color:#cbd5e1;font-size:.75rem;font-weight:600;display:block;margin-bottom:.35rem">البريد الإلكتروني *</label><input id="dm65-reg-email" type="email" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-size:.9rem;font-family:inherit;outline:none"></div>' +
+            '<div><label style="color:#cbd5e1;font-size:.75rem;font-weight:600;display:block;margin-bottom:.35rem">كلمة المرور *</label><input id="dm65-reg-pass" type="password" style="width:100%;padding:.75rem;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-size:.9rem;font-family:inherit;outline:none"></div>' +
+          '</div>' +
+          '<div id="dm65-reg-msg" style="color:#ef4444;font-size:.8rem;text-align:center;min-height:1.2em;margin-top:.85rem"></div>' +
+          '<button id="dm65-create" style="width:100%;padding:.95rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem;box-shadow:0 10px 25px -8px #7c3aed;margin-top:.5rem">🚀 إنشاء الحساب والبدء</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(ov);
+
+    var codeInput = document.getElementById('dm65-code');
+    var codeMsg = document.getElementById('dm65-code-msg');
+    var codeNext = document.getElementById('dm65-code-next');
+    var tryCancel = document.getElementById('dm65-try-cancel');
+    var step1 = document.getElementById('dm65-step1');
+    var step2 = document.getElementById('dm65-step2');
+    var codeInfo = document.getElementById('dm65-code-info');
+    var createBtn = document.getElementById('dm65-create');
+    var regMsg = document.getElementById('dm65-reg-msg');
+
+    var validatedCode = null;
+
+    setTimeout(function () { codeInput.focus(); }, 150);
+    codeInput.addEventListener('input', function (e) { e.target.value = e.target.value.toUpperCase(); });
+    codeInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); validateCode(); } });
+    tryCancel.onclick = function () { ov.remove(); };
+    codeNext.onclick = validateCode;
+    createBtn.onclick = createAccount;
+
+    /* --- Validate Code --- */
+    async function validateCode() {
+      var code = (codeInput.value || '').trim().toUpperCase();
+      if (!code) { codeMsg.style.color = '#ef4444'; codeMsg.textContent = 'أدخل الكود'; return; }
+      if (code.length < 8) { codeMsg.style.color = '#ef4444'; codeMsg.textContent = 'الكود قصير جدًا'; return; }
+
+      codeMsg.style.color = '#f59e0b';
+      codeMsg.textContent = '⏳ جاري التحقق…';
+      codeNext.disabled = true;
+      codeNext.style.opacity = '.6';
+
+      try {
+        var fb = window.DrMediaFB;
+        if (!fb || !fb.ready) throw new Error('Firebase not ready');
+        var fsMod = fb.modules.fsMod;
+        var snap = await fsMod.getDoc(fsMod.doc(fb.db, 'activation_codes', code));
+        if (!snap.exists()) {
+          codeMsg.style.color = '#ef4444'; codeMsg.textContent = '❌ الكود غير موجود';
+          codeNext.disabled = false; codeNext.style.opacity = '1'; return;
+        }
+        var c = snap.data();
+        if (!c.active) { codeMsg.style.color = '#ef4444'; codeMsg.textContent = '❌ الكود معطل'; codeNext.disabled = false; codeNext.style.opacity = '1'; return; }
+        if (c.expiresAt && c.expiresAt <= Date.now()) { codeMsg.style.color = '#ef4444'; codeMsg.textContent = '❌ الكود منتهي'; codeNext.disabled = false; codeNext.style.opacity = '1'; return; }
+        if (c.maxUses && (c.usedCount || 0) >= c.maxUses) { codeMsg.style.color = '#ef4444'; codeMsg.textContent = '❌ تم استهلاك الكود'; codeNext.disabled = false; codeNext.style.opacity = '1'; return; }
+
+        validatedCode = { code: code, data: c };
+        codeInfo.textContent = (c.planName || c.planId) + ' · ' + (c.days || 30) + ' يوم';
+        step1.style.display = 'none';
+        step2.style.display = 'block';
+      } catch (e) {
+        console.error('[Section 65] Validate failed:', e);
+        codeMsg.style.color = '#ef4444'; codeMsg.textContent = 'فشل: ' + (e.message || '');
+        codeNext.disabled = false; codeNext.style.opacity = '1';
+      }
+    }
+
+    /* --- Create Account --- */
+    async function createAccount() {
+      if (!validatedCode) return;
+      var companyName = (document.getElementById('dm65-reg-company').value || '').trim();
+      var name = (document.getElementById('dm65-reg-name').value || '').trim();
+      var email = (document.getElementById('dm65-reg-email').value || '').trim();
+      var pass = (document.getElementById('dm65-reg-pass').value || '').trim();
+
+      if (!companyName) { regMsg.textContent = 'اسم الشركة مطلوب'; return; }
+      if (!name) { regMsg.textContent = 'اسمك مطلوب'; return; }
+      if (!email || email.indexOf('@') < 0) { regMsg.textContent = 'بريد صحيح مطلوب'; return; }
+      if (!pass || pass.length < 6) { regMsg.textContent = 'كلمة المرور 6+ حروف'; return; }
+
+      regMsg.style.color = '#f59e0b';
+      regMsg.textContent = '⏳ جاري إنشاء الحساب…';
+      createBtn.disabled = true;
+      createBtn.style.opacity = '.6';
+
+      try {
+        var fb = window.DrMediaFB;
+        var authMod = fb.modules.authMod;
+        var appMod = fb.modules.appMod;
+        var fsMod = fb.modules.fsMod;
+
+        // 1) Create user via secondary app (to not disturb current session)
+        var appName = 'trySys_' + Date.now();
+        var secondApp = appMod.initializeApp(fb.app.options, appName);
+        var secondAuth = authMod.getAuth(secondApp);
+
+        var cred;
+        try {
+          cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+        } catch (e) {
+          try { await secondApp.delete(); } catch (x) {}
+          throw e;
+        }
+
+        var uidNew = cred.user.uid;
+        try { await authMod.signOut(secondAuth); } catch (e) {}
+        try { await secondApp.delete(); } catch (e) {}
+
+        // 2) Create company + user + subscription
+        var companyId = 'c_' + uidNew.slice(0, 12);
+        var now = Date.now();
+        var days = validatedCode.data.days || 30;
+        var expiresAt = now + (days * 86400000);
+
+        await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId), {
+          id: companyId,
+          name: companyName,
+          ownerUid: uidNew,
+          ownerEmail: email,
+          phone: '',
+          active: true,
+          createdAt: fsMod.serverTimestamp(),
+          createdByCode: validatedCode.code
+        });
+
+        await fsMod.setDoc(fsMod.doc(fb.db, 'users', uidNew), {
+          uid: uidNew,
+          email: email,
+          name: name,
+          phone: '',
+          companyId: companyId,
+          role: 'owner',
+          permissions: validatedCode.data.permissions || null,
+          createdAt: fsMod.serverTimestamp()
+        });
+
+        await fsMod.setDoc(fsMod.doc(fb.db, 'subscriptions', companyId), {
+          companyId: companyId,
+          planId: validatedCode.data.planId,
+          planName: validatedCode.data.planName || validatedCode.data.planId,
+          status: 'active',
+          startedAt: now,
+          expiresAt: expiresAt,
+          activatedByCode: validatedCode.code,
+          createdAt: fsMod.serverTimestamp()
+        });
+
+        // 3) Seed company data
+        var seed = {
+          users: [{ id: uidNew, username: email, password: pass, name: name, role: 'Admin', employeeId: null, email: email, firebaseUid: uidNew }],
+          roles: [
+            { id: 'r1', name: 'Admin', permissions: { '*': ['view','create','edit','delete','export','print','approve'] } },
+            { id: 'r2', name: 'Manager', permissions: { employees:['view','create','edit'], bookings:['view','create','edit','approve'] } },
+            { id: 'r3', name: 'Employee', permissions: { self: ['view'] } }
+          ],
+          employees: [],
+          halls: [
+            { id: 'hall1', name: { ar: 'القاعة المغلقة', en: 'Closed Hall' }, code: 'H1', type: 'Closed', status: 'active', address: '', notes: '', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 5000 },
+            { id: 'hall2', name: { ar: 'القاعة الأوبن', en: 'Open Hall' }, code: 'H2', type: 'Open', status: 'active', address: '', notes: '', requirements: [{role:'Director',count:1},{role:'Photographer',count:2},{role:'Crane',count:1}], cost: 4500 },
+            { id: 'hall3', name: { ar: 'الكافيه', en: 'Cafe' }, code: 'H3', type: 'Cafe', status: 'active', address: '', notes: '', requirements: [{role:'Photographer',count:1}], cost: 1500 }
+          ],
+          clients: [], equipment: [], bookings: [], distributions: [],
+          attendance: [], leaves: [], substitutions: [],
+          advances: [], deductions: [], bonuses: [], payroll_payments: [],
+          notifications: [], activityLogs: [], trash: [],
+          settings: {
+            companyName: companyName, phone: '', email: email, address: '',
+            rolePrices: { Director: 300, Photographer: 200, Crane: 250, Supervisor: 250, Assistant: 150 },
+            payroll: { p1: {from:1,to:10}, p2: {from:11,to:20}, p3: {from:21,to:31} },
+            notifications: { enabled: true, whatsapp: false, whatsappApi: '' },
+            distribution: { preventSameHallConsecutive: true, fairRotation: true, maxConsecutiveDays: 6 },
+            security: { passwordMin: 6, sessionTimeout: 60 },
+            theme: 'light', lang: 'ar'
+          }
+        };
+
+        await fsMod.setDoc(fsMod.doc(fb.db, 'companies', companyId, 'app', 'main'), {
+          payload: seed,
+          updatedBy: 'system',
+          updatedByUser: email,
+          updatedAt: fsMod.serverTimestamp(),
+          version: now
+        });
+
+        // 4) Update code usage
+        await fsMod.updateDoc(fsMod.doc(fb.db, 'activation_codes', validatedCode.code), {
+          usedCount: (validatedCode.data.usedCount || 0) + 1,
+          usedBy: uidNew,
+          usedAt: fsMod.serverTimestamp()
+        });
+
+        regMsg.style.color = '#10b981';
+        regMsg.textContent = '✓ تم إنشاء الحساب! جاري تسجيل الدخول…';
+
+        // 5) Sign in to the main Firebase auth
+        var mainCred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, email, pass);
+
+        console.log('[Section 65] ✓ Trial account created + logged in:', mainCred.user.email);
+        toast('🎉 تم إنشاء حسابك — أهلاً بك!', 'success');
+
+        try { sessionStorage.setItem('dm65_logged_in', '1'); } catch (e) {}
+        try { localStorage.setItem('dm65_last_page', 'dashboard'); } catch (e) {}
+
+        setTimeout(function () {
+          ov.remove();
+          document.getElementById('login-screen').classList.add('hidden');
+          document.getElementById('app').classList.remove('hidden');
+        }, 900);
+
+      } catch (e) {
+        console.error('[Section 65] Trial account creation failed:', e);
+        createBtn.disabled = false;
+        createBtn.style.opacity = '1';
+        if (e.code === 'auth/email-already-in-use') regMsg.textContent = '❌ البريد مستخدم بالفعل';
+        else if (e.code === 'auth/weak-password') regMsg.textContent = '❌ كلمة مرور ضعيفة';
+        else if (e.code === 'auth/invalid-email') regMsg.textContent = '❌ بريد غير صحيح';
+        else regMsg.textContent = '❌ فشل: ' + (e.message || '');
+      }
+    }
+  }
+
+  /* ========== 7) GUARD ========== */
+  function startGuard() {
+    var loginScreen = document.getElementById('login-screen');
+    if (!loginScreen) { setTimeout(startGuard, 500); return; }
+
+    var observer = new MutationObserver(function () {
+      if (BUILDING) return;
+      if (loginScreen.classList.contains('hidden')) return;
+      var card = loginScreen.querySelector('.login-card');
+      if (!card) return;
+
+      var dupes = 0;
+      var forms = card.querySelectorAll('form, #dm63-form, #dm64-form, #dm65-form, #dm66-form, #dm67-form, #saas-form');
+      if (forms.length > 1) dupes++;
+      if (forms.length === 0) dupes++;
+      var logos = card.querySelectorAll('.brand-logo, .dm65-logo, .dm67-logo');
+      if (logos.length > 1) dupes++;
+      var oldStuff = card.querySelectorAll('.saas-tabs, #saas-super-block, .dm-register-block, .dm-register-link, .demo-hint, #dm66-form, #dm67-form, .dm67-logo');
+      if (oldStuff.length > 0) dupes++;
+      var copyrights = card.querySelectorAll('.dm65-copyright, .dm-copyright, .dm-app-copyright');
+      if (copyrights.length > 1) dupes++;
+
+      if (dupes > 0) {
+        console.log('[Section 65] Guard: rebuilding');
+        oldStuff.forEach(function (el) { el.remove(); });
+        buildLoginPage();
+      }
+    });
+
+    observer.observe(loginScreen, { childList: true, subtree: true });
+    console.log('[Section 65] ✓ Guard active');
+  }
+
+  /* ========== 8) PAGE TRACKING ========== */
+  function trackPage() {
+    if (typeof window.navigate === 'function' && !window.navigate.__dm65) {
+      var orig = window.navigate;
+      window.navigate = function (page) {
+        if (page && page !== 'login') {
+          try { localStorage.setItem('dm65_last_page', page); } catch (e) {}
+        }
+        return orig.apply(this, arguments);
+      };
+      window.navigate.__dm65 = true;
+    }
+
+    // On boot — if authenticated, restore page
+    var check = setInterval(function () {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.auth) return;
+      if (!fb.auth.currentUser) return;
+      clearInterval(check);
+
+      var login = document.getElementById('login-screen');
+      var app = document.getElementById('app');
+      if (login) login.classList.add('hidden');
+      if (app) app.classList.remove('hidden');
+
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        if (tries > 100) { clearInterval(t); return; }
+        if (!window.__dmSaaS || !window.__dmSaaS.ready) return;
+        clearInterval(t);
+        var last = 'dashboard';
+        try { last = localStorage.getItem('dm65_last_page') || 'dashboard'; } catch (e) {}
+        setTimeout(function () { if (typeof navigate === 'function') navigate(last); }, 300);
+      }, 150);
+    }, 150);
+    setTimeout(function () { clearInterval(check); }, 30000);
+  }
+
+  /* ========== 9) BOOT ========== */
+  function boot() {
+    try {
+      // Kill old login rebuilders (65/66/67 from earlier)
+      window.rebuildLoginPage = function () { return true; };
+      window.__dm65RebuildLogin = function () {};
+      window.__dm66RebuildLogin = function () {};
+      window.__dm67ForceRebuild = function () {};
+      window.__dm67_ONLY = false;
+      console.log('%c[Section 65] 🛑 Killed old login rebuilders', 'color:#ef4444;font-weight:bold');
+    } catch (e) {}
+
+    removeTrial();
+    buildLoginPage();
+    startGuard();
+    trackPage();
+
+    // Periodic integrity check
+    setInterval(function () {
+      var loginScreen = document.getElementById('login-screen');
+      if (!loginScreen || loginScreen.classList.contains('hidden')) return;
+      var card = loginScreen.querySelector('.login-card');
+      if (!card) return;
+
+      var forms = card.querySelectorAll('#dm65-form');
+      var totalForms = card.querySelectorAll('form');
+      var logos = card.querySelectorAll('.dm65-logo');
+      var copyrights = card.querySelectorAll('.dm65-copyright');
+
+      if (forms.length !== 1 || totalForms.length > 1 || logos.length !== 1 || copyrights.length !== 1) {
+        console.log('[Section 65] Integrity check — rebuilding');
+        buildLoginPage();
+      }
+    }, 1500);
+
+    console.log('%c[Section 65] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:15px');
+    console.log('  ✅ Trial removed');
+    console.log('  ✅ Owner login (email + password)');
+    console.log('  ✅ Employee login (username + password)');
+    console.log('  ✅ Try System (activation code)');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(boot, 400); });
+  } else {
+    setTimeout(boot, 400);
+  }
+  setTimeout(boot, 2000);
+  setTimeout(boot, 5000);
+
+  // Public rebuild command
+  window.__dm65Rebuild = function () { buildLoginPage(); console.log('✓ Rebuilt'); };
+
+})();
 
 
 
