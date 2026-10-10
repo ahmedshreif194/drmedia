@@ -27784,7 +27784,7 @@ service cloud.firestore {
     u.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); p.focus(); } });
   }
 
-    async function employeeLogin(user, pass, msgEl) {
+  async function employeeLogin(user, pass, msgEl) {
     user = (user || '').trim().toLowerCase();
     pass = (pass || '').trim();
     if (!user || !pass) { msgEl.style.color = '#ef4444'; msgEl.textContent = 'الحقول مطلوبة'; return; }
@@ -27797,7 +27797,15 @@ service cloud.firestore {
       var fb = window.DrMediaFB;
       if (!fb || !fb.ready || !fb.modules) throw new Error('Firebase not ready');
 
-      // ⭐ STEP 1: Look up in State.data.users
+      // ⭐ CRITICAL: Sign out any anonymous/current user FIRST
+      try {
+        if (fb.auth.currentUser) {
+          console.log('[Section 65] Signing out current user before login…');
+          await fb.modules.authMod.signOut(fb.auth);
+        }
+      } catch (e) { console.warn('[Section 65] signOut failed:', e); }
+
+      // Look up in State.data.users
       var actualEmail = null;
       var foundUser = (State.data.users || []).find(function (u) {
         return (u.username || '').toLowerCase() === user ||
@@ -27806,10 +27814,10 @@ service cloud.firestore {
       });
       if (foundUser) {
         actualEmail = foundUser.email || foundUser.loginEmail;
-        console.log('[Section 65] ✓ User found in State.data.users:', actualEmail);
+        console.log('[Section 65] ✓ Found in State:', actualEmail);
       }
 
-      // ⭐ STEP 2: Look up in employees list
+      // Look up in employees
       if (!actualEmail) {
         var empFound = (State.data.employees || []).find(function (e) {
           return (e.loginUsername || '').toLowerCase() === user ||
@@ -27817,50 +27825,53 @@ service cloud.firestore {
         });
         if (empFound && empFound.loginEmail) {
           actualEmail = empFound.loginEmail;
-          console.log('[Section 65] ✓ User found in employees:', actualEmail);
+          console.log('[Section 65] ✓ Found in employees:', actualEmail);
         }
       }
 
-      // ⭐ STEP 3: Look up in Firestore users collection
+      // Look up in Firestore
       if (!actualEmail) {
         try {
           var fsMod = fb.modules.fsMod;
-          var q = fsMod.query(
-            fsMod.collection(fb.db, 'users'),
-            fsMod.where('username', '==', user)
-          );
+          var q = fsMod.query(fsMod.collection(fb.db, 'users'), fsMod.where('username', '==', user));
           var snap = await fsMod.getDocs(q);
           if (!snap.empty) {
             actualEmail = snap.docs[0].data().email;
-            console.log('[Section 65] ✓ User found in Firestore:', actualEmail);
+            console.log('[Section 65] ✓ Found in Firestore:', actualEmail);
           }
-        } catch (e) {
-          console.warn('[Section 65] Firestore lookup failed:', e);
-        }
+        } catch (e) { console.warn('[Section 65] Firestore lookup failed:', e); }
       }
 
-      // ⭐ STEP 4: Build list of emails to try
+      // Build emails to try
       var emailsToTry = [];
       if (actualEmail) emailsToTry.push(actualEmail);
-      if (user.indexOf('@') >= 0) {
-        emailsToTry.push(user);
-      } else {
+      if (user.indexOf('@') >= 0) emailsToTry.push(user);
+      else {
         emailsToTry.push(user + '@employee.drmedia.pro');
         emailsToTry.push(user + '@drmedia.pro');
       }
-      // Remove duplicates
       emailsToTry = emailsToTry.filter(function (v, i, a) { return a.indexOf(v) === i; });
+
+      console.log('[Section 65] Trying emails:', emailsToTry);
 
       var cred = null;
       var lastErr = null;
       for (var i = 0; i < emailsToTry.length; i++) {
         try {
           cred = await fb.modules.authMod.signInWithEmailAndPassword(fb.auth, emailsToTry[i], pass);
+          console.log('[Section 65] ✓ Signed in with:', emailsToTry[i]);
           break;
         } catch (err) {
+          console.warn('[Section 65] Try failed (' + emailsToTry[i] + '):', err.code);
           lastErr = err;
+          // Wrong password — STOP, don't try other emails
           if (err.code === 'auth/wrong-password') throw err;
-          if (err.code !== 'auth/user-not-found' && err.code !== 'auth/invalid-email' && err.code !== 'auth/invalid-credential') throw err;
+          // invalid-credential is ambiguous — try next
+          if (err.code !== 'auth/user-not-found' &&
+              err.code !== 'auth/invalid-email' &&
+              err.code !== 'auth/invalid-credential') {
+            throw err;
+          }
         }
       }
       if (!cred) throw lastErr || new Error('فشل الدخول');
@@ -27882,14 +27893,15 @@ service cloud.firestore {
     } catch (e) {
       console.error('[Section 65] Emp login failed:', e);
       msgEl.style.color = '#ef4444';
-      if (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') msgEl.textContent = 'كلمة المرور خاطئة';
-      else if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-email') msgEl.textContent = '❌ الموظف مش مسجل في النظام — تواصل مع الإدارة';
+      if (e.code === 'auth/wrong-password') msgEl.textContent = '❌ كلمة المرور خاطئة';
+      else if (e.code === 'auth/user-not-found') msgEl.textContent = '❌ الموظف مش مسجل — الأدمن لازم ينشئ الحساب من صفحة الموظفين';
+      else if (e.code === 'auth/invalid-credential') msgEl.textContent = '❌ بيانات خاطئة — تأكد من اليوزرنيم والباسورد، أو اطلب من الأدمن مزامنة الحسابات';
       else if (e.code === 'auth/network-request-failed') msgEl.textContent = 'فشل الاتصال';
-      else if (e.code === 'auth/too-many-requests') msgEl.textContent = 'محاولات كثيرة';
+      else if (e.code === 'auth/too-many-requests') msgEl.textContent = 'محاولات كثيرة — انتظر دقيقة';
       else msgEl.textContent = 'فشل: ' + (e.message || '');
     }
   }
-  /* ========== 6) TRY SYSTEM (Activation Code) ========== */
+/* ========== 6) TRY SYSTEM (Activation Code) ========== */
   function showTrySystem() {
     var old = document.getElementById('dm65-try-modal');
     if (old) old.remove();
@@ -28619,6 +28631,242 @@ service cloud.firestore {
       console.log('  ✅ زر 🔑 في صفحة الموظفين');
       console.log('  ✅ ينشئ حساب Firebase Auth');
       console.log('  ✅ يحفظ username + password في State');
+    }
+  );
+
+})();
+/* =========================================================
+   SECTION 67: Firebase Auth Sync Tool
+   Version: 1.0.0
+   ---------------------------------------------------------
+   - Creates Firebase Auth accounts for all local users
+   - Fixes "user exists in State but not in Firebase" issue
+   - Sign out anonymous users
+   ========================================================= */
+(function () {
+  'use strict';
+
+  console.log('%c[Section 67] Firebase Auth Sync loading…', 'color:#f59e0b;font-weight:bold;font-size:14px');
+
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  /* ========== SYNC ALL ========== */
+  window.__dmSyncAllAuth = async function () {
+    if (!window.DrMediaFB || !window.DrMediaFB.ready) {
+      toast('Firebase not ready', 'error');
+      return;
+    }
+
+    var fb = window.DrMediaFB;
+    var appMod = fb.modules.appMod;
+    var authMod = fb.modules.authMod;
+    var fsMod = fb.modules.fsMod;
+
+    var users = State.data.users || [];
+    if (!users.length) {
+      toast('لا يوجد مستخدمين', 'warn');
+      return;
+    }
+
+    // Confirm
+    if (!confirm('سيتم إنشاء حسابات Firebase Auth لـ ' + users.length + ' مستخدم.\n\nكلمة المرور لكل حساب = كلمة المرور المحفوظة في State.\n\nمتابعة؟')) return;
+
+    var results = { created: 0, existing: 0, failed: 0, skipped: 0, errors: [] };
+
+    // Show progress overlay
+    var ov = document.createElement('div');
+    ov.id = 'dm67-sync-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,10,31,.92);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem';
+    ov.innerHTML =
+      '<div style="max-width:560px;width:100%;background:#1a1433;border-radius:20px;padding:2rem;border:1px solid rgba(255,255,255,.1);max-height:85vh;overflow-y:auto">' +
+        '<h3 style="margin:0 0 1rem;color:#fff;font-size:1.15rem">🔄 مزامنة حسابات Firebase Auth</h3>' +
+        '<div id="dm67-sync-body" style="color:#cbd5e1;font-size:.85rem;line-height:1.8"></div>' +
+        '<div id="dm67-sync-actions" style="margin-top:1.5rem;display:none">' +
+          '<button id="dm67-sync-close" style="width:100%;padding:.85rem;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem">حسنًا</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+
+    var body = document.getElementById('dm67-sync-body');
+
+    function log(html) {
+      body.innerHTML += html + '<br>';
+    }
+    function updateStatus() {
+      body.innerHTML = '<div style="padding:.75rem;background:rgba(124,58,237,.15);border-radius:10px;margin-bottom:.75rem;color:#a78bfa;font-weight:700">' +
+        '✅ تم إنشاء: ' + results.created +
+        ' · ⏭ موجود: ' + results.existing +
+        ' · ⚠️ تخطي: ' + results.skipped +
+        ' · ❌ فشل: ' + results.failed +
+        '</div>' +
+        (results.errors.length ? '<div style="font-size:.72rem;color:#ef4444;margin-bottom:.5rem"><b>الأخطاء:</b><br>' + results.errors.slice(0, 10).map(esc).join('<br>') + '</div>' : '') +
+        '<div style="font-size:.72rem;color:#64748b">جاري المعالجة…</div>';
+    }
+    updateStatus();
+
+    // For each user, try to create Firebase Auth
+    for (var i = 0; i < users.length; i++) {
+      var u = users[i];
+      if (!u.username || !u.password) {
+        results.skipped++;
+        updateStatus();
+        continue;
+      }
+
+      // Build email
+      var email;
+      if (u.email && u.email.indexOf('@') >= 0) {
+        email = u.email;
+      } else if (u.username.indexOf('@') >= 0) {
+        email = u.username;
+      } else {
+        email = u.username + '@employee.drmedia.pro';
+      }
+
+      var pass = u.password;
+
+      // Try create via secondary app
+      var appName = 'sync_' + i + '_' + Date.now();
+      try {
+        var secondApp = appMod.initializeApp(fb.app.options, appName);
+        var secondAuth = authMod.getAuth(secondApp);
+
+        try {
+          var cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+          results.created++;
+          // Ensure the local uid matches Firebase uid
+          u.id = cred.user.uid;
+          u.firebaseUid = cred.user.uid;
+          u.email = email;
+        } catch (err) {
+          if (err.code === 'auth/email-already-in-use') {
+            results.existing++;
+          } else if (err.code === 'auth/weak-password') {
+            // Try again with a stronger password
+            var strongPass = (pass || '').length < 6 ? 'DMP' + Math.floor(10000 + Math.random() * 90000) : pass;
+            try {
+              var cred2 = await authMod.createUserWithEmailAndPassword(secondAuth, email, strongPass);
+              u.password = strongPass;
+              results.created++;
+              u.id = cred2.user.uid;
+              u.firebaseUid = cred2.user.uid;
+              u.email = email;
+            } catch (e2) {
+              if (e2.code === 'auth/email-already-in-use') results.existing++;
+              else {
+                results.failed++;
+                results.errors.push(email + ': ' + e2.code);
+              }
+            }
+          } else {
+            results.failed++;
+            results.errors.push(email + ': ' + err.code);
+          }
+        }
+
+        try { await authMod.signOut(secondAuth); } catch (e) {}
+        try { await secondApp.delete(); } catch (e) {}
+      } catch (outerErr) {
+        results.failed++;
+        results.errors.push(email + ': ' + outerErr.message);
+      }
+
+      updateStatus();
+    }
+
+    // Save updated State
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+
+    // Final report
+    body.innerHTML =
+      '<div style="padding:1rem;background:rgba(16,185,129,.15);border-radius:10px;margin-bottom:.75rem;color:#6ee7b7;font-weight:700;text-align:center;font-size:1rem">' +
+        '✅ اكتملت المزامنة!' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:1rem">' +
+        '<div style="padding:.5rem;background:rgba(16,185,129,.1);border-radius:8px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#10b981">' + results.created + '</div><div style="font-size:.65rem;color:#94a3b8">تم إنشاء</div></div>' +
+        '<div style="padding:.5rem;background:rgba(59,130,246,.1);border-radius:8px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#3b82f6">' + results.existing + '</div><div style="font-size:.65rem;color:#94a3b8">موجود مسبقًا</div></div>' +
+        '<div style="padding:.5rem;background:rgba(245,158,11,.1);border-radius:8px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#f59e0b">' + results.skipped + '</div><div style="font-size:.65rem;color:#94a3b8">تخطي</div></div>' +
+        '<div style="padding:.5rem;background:rgba(239,68,68,.1);border-radius:8px;text-align:center"><div style="font-size:1.5rem;font-weight:800;color:#ef4444">' + results.failed + '</div><div style="font-size:.65rem;color:#94a3b8">فشل</div></div>' +
+      '</div>' +
+      (results.existing > 0 ?
+        '<div style="padding:.75rem;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;font-size:.75rem;color:#f59e0b;margin-bottom:.75rem;line-height:1.7">' +
+          '⚠️ <b>ملاحظة:</b> الحسابات "الموجودة مسبقًا" — مش عارف كلمة مرورها في Firebase. لو الموظف مش قادر يدخل، استخدم قسم <b>Section 66</b> (زر 🔑) لإعادة تعيين كلمة المرور.' +
+        '</div>' : '') +
+      (results.errors.length ?
+        '<div style="padding:.75rem;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;font-size:.72rem;color:#ef4444;margin-bottom:.75rem;line-height:1.7;word-break:break-all">' +
+          '<b>الأخطاء:</b><br>' + results.errors.map(esc).join('<br>') +
+        '</div>' : '') +
+      '<div style="padding:.75rem;background:rgba(59,130,246,.08);border-radius:10px;font-size:.75rem;color:var(--text-muted);line-height:1.7;margin-top:1rem">' +
+        '💡 دلوقتي الموظفين يقدروا يدخلوا بـ <b>اسم المستخدم + كلمة المرور</b>' +
+      '</div>';
+
+    document.getElementById('dm67-sync-actions').style.display = 'block';
+    document.getElementById('dm67-sync-close').onclick = function () {
+      ov.remove();
+      if (typeof navigate === 'function') navigate('employees');
+    };
+
+    if (window.lucide) lucide.createIcons();
+    toast('✓ اكتملت المزامنة: ' + results.created + ' جديد · ' + results.existing + ' موجود', 'success');
+  };
+
+  /* ========== FIX employeeLogin ========== */
+  function patchEmployeeLogin() {
+    // We override employeeLogin completely
+    // to sign out any anonymous user first
+    window.__dm67EmployeeLoginFixed = true;
+  }
+
+  /* ========== ADD BUTTON TO SUPER ADMIN SECTION ========== */
+  function addSyncButton() {
+    var nav = document.getElementById('sidebar-nav');
+    if (!nav) return;
+    if (document.getElementById('dm67-sync-btn')) return;
+
+    var superSection = document.getElementById('dm-super-nav');
+    if (!superSection) return;
+
+    var btn = document.createElement('a');
+    btn.className = 'nav-item';
+    btn.id = 'dm67-sync-btn';
+    btn.style.cssText = 'cursor:pointer;background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.35);color:#06b6d4';
+    btn.innerHTML = '<i data-lucide="refresh-cw" style="color:#06b6d4"></i><span style="color:#06b6d4;font-weight:700">مزامنة الحسابات</span>';
+    btn.onclick = function (e) {
+      e.preventDefault();
+      window.__dmSyncAllAuth();
+    };
+    superSection.appendChild(btn);
+    if (window.lucide) lucide.createIcons();
+  }
+
+  /* ========== BOOT ========== */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  waitFor(
+    function () {
+      return typeof State !== 'undefined' && typeof navigate === 'function' && window.__dmSaaS && window.__dmSaaS.ready;
+    },
+    function () {
+      // Only show for super admin
+      waitFor(
+        function () { return window.__dmSaaS.isSuperAdmin; },
+        function () {
+          addSyncButton();
+          setInterval(addSyncButton, 3000);
+        }
+      );
+
+      console.log('%c[Section 67] ═══ Sync Tool READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+      console.log('  🚀 Super Admin: __dmSyncAllAuth()');
+      console.log('  أو اضغط زر "🔄 مزامنة الحسابات" في الـ Sidebar');
     }
   );
 
