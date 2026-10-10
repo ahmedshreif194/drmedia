@@ -28871,6 +28871,253 @@ service cloud.firestore {
   );
 
 })();
+/* =========================================================
+   SECTION 68: Auto-Sync + Employee Login Fix
+   Version: 2.0.0
+   ---------------------------------------------------------
+   ✅ No self-registration button
+   ✅ Automatic Firebase Auth sync (silent)
+   ✅ Fix anonymous user issue
+   ========================================================= */
+(function () {
+  'use strict';
+  console.log('%c[Section 68] Auto-Sync v2 loading…', 'color:#10b981;font-weight:bold;font-size:14px');
+
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'info'); }
+
+  /* =========================================================
+     1) REMOVE self-registration button (if exists)
+     ========================================================= */
+  function removeSelfRegButton() {
+    var btn = document.getElementById('dm68-reg-btn');
+    if (btn) btn.remove();
+    var modal = document.getElementById('dm68-reg-modal');
+    if (modal) modal.remove();
+  }
+
+  /* =========================================================
+     2) SILENT AUTO-SYNC — for legacy users in State without Firebase Auth
+     ========================================================= */
+  async function silentSync() {
+    if (!window.__dmSaaS || !window.__dmSaaS.isSuperAdmin) return;
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready || !fb.modules) return;
+
+    var users = (State.data.users || []).filter(function (u) {
+      return u.username && u.password && !u.firebaseUid;
+    });
+    if (!users.length) return;
+
+    console.log('[Section 68] 🔄 Syncing ' + users.length + ' legacy users…');
+
+    var appMod = fb.modules.appMod;
+    var authMod = fb.modules.authMod;
+    var fsMod = fb.modules.fsMod;
+    var created = 0, existing = 0, failed = 0;
+
+    for (var i = 0; i < users.length; i++) {
+      var u = users[i];
+      var email = (u.email && u.email.indexOf('@') >= 0) ? u.email
+                : (u.username.indexOf('@') >= 0) ? u.username
+                : u.username + '@employee.drmedia.pro';
+      var pass = u.password;
+      if (!pass || pass.length < 6) continue;
+
+      try {
+        var appName = 's68_' + i + '_' + Date.now();
+        var secondApp = appMod.initializeApp(fb.app.options, appName);
+        var secondAuth = authMod.getAuth(secondApp);
+
+        try {
+          var cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+          u.id = cred.user.uid;
+          u.firebaseUid = cred.user.uid;
+          u.email = email;
+          created++;
+        } catch (err) {
+          if (err.code === 'auth/email-already-in-use') {
+            // Already exists in Firebase — mark it as synced
+            u.firebaseUid = 'synced_' + Date.now();
+            existing++;
+          } else if (err.code === 'auth/weak-password') {
+            var strongPass = 'DMP' + Math.floor(10000 + Math.random() * 90000);
+            try {
+              var cred2 = await authMod.createUserWithEmailAndPassword(secondAuth, email, strongPass);
+              u.password = strongPass;
+              u.id = cred2.user.uid;
+              u.firebaseUid = cred2.user.uid;
+              u.email = email;
+              created++;
+            } catch (e2) {
+              if (e2.code === 'auth/email-already-in-use') {
+                u.firebaseUid = 'synced_' + Date.now();
+                existing++;
+              } else failed++;
+            }
+          } else failed++;
+        }
+
+        try { await authMod.signOut(secondAuth); } catch (e) {}
+        try { await secondApp.delete(); } catch (e) {}
+      } catch (e) { failed++; }
+    }
+
+    if (created > 0) {
+      try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    }
+
+    console.log('[Section 68] ✓ Sync: ' + created + ' new · ' + existing + ' existing · ' + failed + ' failed');
+  }
+
+  /* =========================================================
+     3) HOOK Section 66 — sync immediately when account is created
+     ========================================================= */
+  function hookSection66() {
+    if (window.__dm66SaveAcc && !window.__dm66SaveAcc.__dm68Hooked) {
+      var orig = window.__dm66SaveAcc;
+      window.__dm66SaveAcc = async function (empId, isEdit) {
+        var result = await orig.apply(this, arguments);
+
+        // After account creation, ensure it's synced to Firebase Auth
+        setTimeout(function () {
+          var emp = (State.data.employees || []).find(function (e) { return e.id === empId; });
+          if (emp && emp.loginUsername && emp.loginPassword && !emp.loginUid) {
+            console.log('[Section 68] Auto-syncing new account:', emp.loginUsername);
+            syncSingleEmployee(emp);
+          }
+        }, 500);
+
+        return result;
+      };
+      window.__dm66SaveAcc.__dm68Hooked = true;
+      console.log('[Section 68] ✓ Hooked Section 66 save');
+    }
+  }
+
+  /* =========================================================
+     4) SYNC a single employee — ensure Firebase Auth exists
+     ========================================================= */
+  async function syncSingleEmployee(emp) {
+    var fb = window.DrMediaFB;
+    if (!fb || !fb.ready) return;
+
+    var email = emp.loginEmail || (emp.loginUsername + '@employee.drmedia.pro');
+    var pass = emp.loginPassword;
+
+    var appMod = fb.modules.appMod;
+    var authMod = fb.modules.authMod;
+
+    try {
+      var secondApp = appMod.initializeApp(fb.app.options, 'sync1_' + Date.now());
+      var secondAuth = authMod.getAuth(secondApp);
+
+      try {
+        var cred = await authMod.createUserWithEmailAndPassword(secondAuth, email, pass);
+        emp.loginUid = cred.user.uid;
+        if (!State.data.users) State.data.users = [];
+        var existing = State.data.users.find(function (u) { return u.employeeId === emp.id; });
+        if (existing) {
+          existing.firebaseUid = cred.user.uid;
+          existing.id = cred.user.uid;
+        }
+        try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+        console.log('[Section 68] ✓ Firebase Auth created for', email);
+      } catch (e) {
+        if (e.code === 'auth/email-already-in-use') {
+          console.log('[Section 68] Account already exists in Firebase:', email);
+          emp.loginUid = 'existing';
+        } else {
+          console.warn('[Section 68] Sync failed:', e.code);
+        }
+      }
+
+      try { await authMod.signOut(secondAuth); } catch (e) {}
+      try { await secondApp.delete(); } catch (e) {}
+    } catch (e) {
+      console.warn('[Section 68] syncSingleEmployee error:', e);
+    }
+  }
+
+  /* =========================================================
+     5) FIX EMPLOYEE LOGIN — sign out anonymous users first
+     ========================================================= */
+  function hookEmployeeLogin() {
+    // We can't modify the internal function directly,
+    // but we can ensure no anonymous user is signed in
+    // by checking auth state periodically
+    setInterval(function () {
+      var fb = window.DrMediaFB;
+      if (!fb || !fb.ready || !fb.auth) return;
+      var u = fb.auth.currentUser;
+      if (u && u.isAnonymous) {
+        console.log('[Section 68] Detected anonymous user — signing out');
+        fb.modules.authMod.signOut(fb.auth).catch(function () {});
+      }
+    }, 5000);
+  }
+
+  /* =========================================================
+     6) BOOT
+     ========================================================= */
+  function waitFor(cond, cb, tries) {
+    tries = tries || 200;
+    var n = 0;
+    var t = setInterval(function () {
+      if (++n > tries) { clearInterval(t); return; }
+      if (cond()) { clearInterval(t); cb(); }
+    }, 100);
+  }
+
+  // Remove old self-reg button on load
+  waitFor(
+    function () { return document.getElementById('login-screen'); },
+    function () {
+      removeSelfRegButton();
+      setInterval(removeSelfRegButton, 1500);
+    }
+  );
+
+  // Hook Section 66
+  waitFor(
+    function () { return typeof window.__dm66SaveAcc === 'function'; },
+    function () {
+      hookSection66();
+    }
+  );
+
+  // Auto-sync on admin login
+  waitFor(
+    function () { return window.__dmSaaS && window.__dmSaaS.ready; },
+    function () {
+      var trySync = function () {
+        if (window.__dmSaaS && window.__dmSaaS.isSuperAdmin) {
+          setTimeout(silentSync, 3000);
+        }
+      };
+      trySync();
+      // Retry when admin status changes
+      var check = setInterval(function () {
+        if (window.__dmSaaS && window.__dmSaaS.isSuperAdmin && !window.__dm68Synced) {
+          window.__dm68Synced = true;
+          setTimeout(silentSync, 3000);
+          clearInterval(check);
+        }
+      }, 2000);
+    }
+  );
+
+  // Start anonymous user cleaner
+  hookEmployeeLogin();
+
+  window.__dm68Sync = silentSync;
+
+  console.log('%c[Section 68] ═══ READY ═══', 'color:#10b981;font-weight:bold;font-size:14px');
+  console.log('  ✅ No self-registration');
+  console.log('  ✅ Auto-sync on admin login');
+  console.log('  ✅ Auto-sync when Section 66 creates account');
+  console.log('  ✅ Anonymous user cleanup');
+  console.log('  💡 Manual: __dm68Sync()');
+})();
 
 
 
