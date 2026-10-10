@@ -28845,7 +28845,6 @@ service cloud.firestore {
   };
 
 })();
-})();
 /* =========================================================
    SECTION 67: Login Screen Total Cleanup
    Version: 1.0.0
